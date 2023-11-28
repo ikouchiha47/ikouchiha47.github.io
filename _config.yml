@@ -2,7 +2,7 @@ title:              iko's blog
 email:              amitava.dev@proton.me
 author:             ikouchiha47
 domain:             ikouchiha47.github.io
-baseurl:            "https://ikouchiha47.github.io"
+baseurl:            ""
 url:                ""
 description: >- # this means to ignore newlines until "baseurl:"
   Personal blog to keep a tack of my work, experiments, findings and thoughts.
