@@ -28,6 +28,14 @@ layout: default
 <div class="container">
   <div class="row">
     <div class="col-lg-8 col-md-10 mx-auto">
+      <i>Personal blog to keep a tack of my work, experiments, findings and thoughts.</i>
+    </div>
+  </div>
+
+  <p>&nbsp;</p>
+
+  <div class="row">
+    <div class="col-lg-8 col-md-10 mx-auto">
 
       {{ content }}
 
