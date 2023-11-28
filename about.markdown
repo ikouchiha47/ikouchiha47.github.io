@@ -16,6 +16,11 @@ to improve code quality and performance. I also like nerning new languages.
 
 <p>&nbsp;</p>
 
+Here goes my <a href="{{"/resume" | relative_url }}">Resume</a>
+
+
+<p>&nbsp;</p>
+
 ### Skills:
 - Golang, JavaScript, Bash, Python, Rails (4, 7), Lua
 - RDBMS: MySQL, PostgreSQL

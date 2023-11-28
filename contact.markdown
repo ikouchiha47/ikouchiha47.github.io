@@ -2,7 +2,7 @@
 layout: page
 title: Contact Me
 description: If you want to get in touch for a consult or opportunity.
-background: '#000'
+background_color: '#000'
 form: true
 ---
 
