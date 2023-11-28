@@ -6,3 +6,5 @@ Gemfile.lock
 .DS_Store
 tmp/
 bin/
+_cache/**
+!_cache/.keep

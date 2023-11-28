@@ -3,7 +3,7 @@ layout: post
 title: "Hosting Server on Bare Metals"
 subtitle: "Host your server from your home network and laptop/server"
 date: 2023-11-27 00:00:00
-background: 'https://media.licdn.com/dms/image/D5612AQEeWiBrD42t6g/article-cover_image-shrink_720_1280/0/1697389022167?e=1706745600&v=beta&t=nu7f2YaKg-xtceki9lxuDiw8QK2wyMqn30hxNzW22rs'
+background: '/img/bg_self_hosting.png'
 ---
 
 __Make Your Laptop Work Overtime as a Web Server__: A DIY Guide
@@ -51,7 +51,9 @@ These is where you either need a __Dynamic DNS__ or contact your ISP for a stati
 
 Dynamic DNS providers make it dead simple to assign a memorable name to your home IP address by automatically updating your public-facing domain name entry to point at your home internet IP address at any given moment. 
 
-And it does just that, there are a couple of free providers, one of the notable ones is [no-ip.com](https://no-ip.com) . You can also find a list of it in your router config.
+And it does just that, there are a couple of free providers, one of the notable ones is [no-ip.com](https://noip.com) . You can also find a list of it in your router config.
+
+{% preview "https://www.noip.com" %}
 
 Generally your router should have a settings where you can update the credentials for your account at no-ip.com . Or you can have a cronjob which makes a request to the api which updates the ip every couple of minute interval.
 
@@ -73,6 +75,8 @@ _Well, in the end when we do end up using a vps from cloud we can get rid of the
 
 __First__, setup nginx along with ssl certificates using [letsencrypt](https://www.digitalocean.com/community/tutorials/how-to-secure-nginx-with-let-s-encrypt-on-ubuntu-20-04). (I am not going to expand on this right now, please check the article below)  
 
+{% preview "https://www.digitalocean.com/community/tutorials/how-to-secure-nginx-with-let-s-encrypt-on-ubuntu-20-04" %}
+
 __Second__, Modify your nginx config server block to match the proper domain name, and terminate the ssl at the nginx layer.  
 
 Nginx is going to act as a reverse proxy, that will forward the request to your server and then send the response back from the server via nginx.
@@ -82,8 +86,11 @@ __Third__, Setup `firewall` and also enable `sshd`. For a firewall I chose to us
 
 The configuration is to block everything except SSH and NGINX. You can find the [setup guide here, on a digitalocean article.](https://www.digitalocean.com/community/tutorials/ufw-essentials-common-firewall-rules-and-commands#list-available-application-profiles)
 
+{% preview "https://www.digitalocean.com/community/tutorials/ufw-essentials-common-firewall-rules-and-commands" %}
 
 And this awesome article from [zerotier](https://www.zerotier.com/blog/the-state-of-nat-traversal/)
+
+{% preview "https://www.zerotier.com/blog/the-state-of-nat-traversal/" %}
 
 <p>&nbsp;</p>
 
