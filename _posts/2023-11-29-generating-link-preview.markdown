@@ -18,8 +18,8 @@ and its done usually using the `meta` tags, and the convention is called [OpenGr
 
 ### Opengraph protocol
 
-It deals with a bunch of `<meta>` tags as presented on the external website, to get the details. An example from a website looks like
-this.
+It deals with a bunch of `<meta>` tags as presented on the external website, to get the details.
+
 
 This is how it looks like:
 
@@ -88,6 +88,8 @@ _from jekyll [docs](https://jekyllrb.com/docs/plugins/tags/)_
 
 
 To write this custom link preview tag we need something similar. And these tags will be executed during the loading phase, before jekyll generate the static pages, _obviously_.
+
+<p>&nbsp;</p>
 
 ### Implementation details
 
@@ -180,7 +182,7 @@ And then you need to have a template to `render` into. And you can use string su
   <section class="flex-1 image-preview>
     <img src=#{image} />
   </section>
-  <section> class="flex-2 content-wrapper>
+  <section> class="flex-2 content-wrapper">
     <a class="content-title" href=#{domain}>#{title}</em>
     <p class="description">#{description}</p>
   </section>
@@ -229,12 +231,12 @@ And that's it.
 ### Usage
 
 ```ruby
-{{ 'preview "https://ikouchiha47.github.io/2023/11/27/self-hosted-website.html"' }}
+{% raw %}
+{% preview "https://ikouchiha47.github.io/2023/11/27/self-hosted-website.html" %}
+{% endraw %}
 ```
 
 And it looks like:
 
 {% preview "https://ikouchiha47.github.io/2023/11/27/self-hosted-website.html" %}
 
-
-Thanks,

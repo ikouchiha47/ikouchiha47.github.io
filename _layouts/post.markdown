@@ -37,6 +37,7 @@ layout: default
       {{ content }}
 
       <hr>
+      {% include thanks.html %}
 
       <div class="clearfix">
 
