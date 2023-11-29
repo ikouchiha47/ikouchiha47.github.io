@@ -3,7 +3,7 @@ layout: post
 title: "Go getters"
 subtitle: "Generating getters in go with go generate"
 date: 2023-11-20 00:00:00
-background: ''
+background_color: '#000'
 ---
 
 In this article we will explore how to beat Intellij.

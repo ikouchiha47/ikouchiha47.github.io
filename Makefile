@@ -1,3 +1,5 @@
+DATE := $(shell date +"%Y-%m-%d")
+FILE := $(DATE)-$(TOPIC)
 serve:
 	LANG="en_US.UTF-8" \
 	     LANGUAGE="en_US.UTF-8" \
@@ -5,3 +7,10 @@ serve:
 	     LC_MONETARY="en_US.UTF-8" \
 	     LC_NUMERIC="en_US.UTF-8" \
 	     LC_ALL="en_US.UTF-8" ./bin/jekyll serve --livereload
+
+gen.file:
+	echo $(FILE)
+	touch _posts/$(FILE).markdown
+
+clear.cache:
+	rm _cache/**

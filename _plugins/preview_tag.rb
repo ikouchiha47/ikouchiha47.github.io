@@ -67,15 +67,15 @@ module Jekyll
           'image_height' => get_property(properties, 'og:image:height'),
           'image_alt' => get_property(properties, 'og:image:alt'),
           ## video
-          'video' => convert_to_absolute_url(get_property(properties, 'og:video'), page.root_url),
-          'video_secure_url' => convert_to_absolute_url(get_property(properties, 'og:video:secure_url'), page.root_url),
-          'video_type' => get_property(properties, 'og:video:type'),
-          'video_width' => get_property(properties, 'og:video:width'),
-          'video_height' => get_property(properties, 'og:video:height'),
+          # 'video' => convert_to_absolute_url(get_property(properties, 'og:video'), page.root_url),
+          # 'video_secure_url' => convert_to_absolute_url(get_property(properties, 'og:video:secure_url'), page.root_url),
+          # 'video_type' => get_property(properties, 'og:video:type'),
+          # 'video_width' => get_property(properties, 'og:video:width'),
+          # 'video_height' => get_property(properties, 'og:video:height'),
           ## audio
-          'audio' => convert_to_absolute_url(get_property(properties, 'og:audio'), page.root_url),
-          'audio_secure_url' => convert_to_absolute_url(get_property(properties, 'og:audio:secure_url'), page.root_url),
-          'audio_type' => get_property(properties, 'og:audio:type'),
+          # 'audio' => convert_to_absolute_url(get_property(properties, 'og:audio'), page.root_url),
+          # 'audio_secure_url' => convert_to_absolute_url(get_property(properties, 'og:audio:secure_url'), page.root_url),
+          # 'audio_type' => get_property(properties, 'og:audio:type'),
           ## other optional metadata
           'description' => get_property(properties, 'og:description'),
           'determiner' => get_property(properties, 'og:determiner'),
@@ -164,6 +164,8 @@ module Jekyll
 
       def get_properties(url)
         cache_filepath = "#{@@cache_dir}/%s.json" % Digest::MD5.hexdigest(url)
+
+        p "url ==> #{url}, filepath ==> #{cache_filepath}"
 
         if File.exist?(cache_filepath) then
           hash = load_cache_file(cache_filepath)
