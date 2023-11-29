@@ -1,0 +1,18 @@
+name: workflow
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    name: deploy
+    runs-on: ubuntu-18.04
+    steps:
+      # checkout to main repo
+      - uses: actions/checkout@v2
+      - uses: ./.github/actions/build_site
+        env:
+          GIHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_ACTOR: ${{ secrets.GITHUB_ACTOR }}
+          GITHUB_REPO: ${{ secrets.GITHUB_REPOSITORY }}

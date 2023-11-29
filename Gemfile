@@ -1,5 +1,7 @@
 source "https://rubygems.org"
 
+ruby "3.2.2"
+
 gem 'rogue'
 gem "jekyll", "~> 4.2"
 
@@ -7,7 +9,7 @@ group :jekyll_plugins do
   gem "jekyll-feed", "~> 0.6"
   gem "jekyll-paginate", "~> 1.1.0"
   gem "jekyll-sitemap"
-  # gem "github-pages", "~> 228"
+  gem 'jekyll-seo-tags'
 end
 
 gem 'pry'
