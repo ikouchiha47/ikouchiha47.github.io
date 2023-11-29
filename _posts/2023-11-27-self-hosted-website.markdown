@@ -2,6 +2,7 @@
 layout: post
 title: "Hosting Server on Bare Metals"
 subtitle: "Host your server from your home network and laptop/server"
+description: "Host your server from your home network and laptop/server"
 date: 2023-11-27 00:00:00
 background: '/img/bg_self_hosting.png'
 ---

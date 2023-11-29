@@ -2,6 +2,7 @@
 layout: post
 title: "Go getters"
 subtitle: "Generating getters in go with go generate"
+description: "Generating getters in go with go generate"
 date: 2023-11-20 00:00:00
 background_color: '#000'
 ---

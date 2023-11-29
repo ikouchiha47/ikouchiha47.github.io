@@ -2,6 +2,7 @@
 layout: post
 title: "Generate Link Preview"
 subtitle: "jekyll plugin to generate link preview from open graph"
+description: "How to wite a jekyll plugin to create a liquid tag to render link preview with opengraph"
 date: 2023-11-29 00:00:00
 background_color: '#000'
 ---
