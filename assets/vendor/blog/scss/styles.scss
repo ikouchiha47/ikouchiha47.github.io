@@ -17,8 +17,14 @@
 @import "./sections/masthead";
 @import "./sections/post";
 
-// Syntac Highlighter
+// Syntax Highlighter
 @import "./syntax/github";
 @import "./syntax/overrides";
 
 @import "./components/linkpreview";
+
+// Overrides:
+
+ol, ul, dl {
+    padding-left: 20px;
+}

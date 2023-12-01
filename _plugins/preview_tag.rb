@@ -26,8 +26,8 @@ module Jekyll
   module Preview
     class OverrideImage
       def self.overrides(url, image_src)
-        if url.include?("://docs.aws.amazon.") && image_src.include?("warning")
-          return IMAGE_OVERRIDES[:AWS]
+        if url.include?("://docs.aws.amazon.") && (!image_src || image_src&.include?("warning"))
+            return IMAGE_OVERRIDES[:AWS]
         elsif url.include?("://www.terraform.io")
           return IMAGE_OVERRIDES[:TERRAFORM]
         end

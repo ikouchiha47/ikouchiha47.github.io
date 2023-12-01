@@ -3,7 +3,7 @@ layout: post
 title: "Hosting with AWS"
 subtitle: "utilizing AWS free tier host your server on EC2 instances"
 description: "How to utilize AWS Free tier to host webserver"
-date: 2023-11-29 00:00:00
+date: 2023-11-30 00:00:00
 background_color: '#ec7211'
 ---
 
@@ -349,6 +349,7 @@ aws ssm get-parameters-by-path --path /aws/service/ecs/optimized-ami/amazon-linu
 
 Let's create a basic ec2 instance running our docker image.
 
+*aws_deploy.tf*
 
 ```terraform
 provider "aws" {
@@ -381,6 +382,8 @@ sudo docker run -p 80:9090 -d "${IMAGE}"
 <p>&nbsp;</p>
 
 ### Setup to facilitate SSH
+
+*aws_deploy.tf*
 
 ```terraform
 resource "aws_key_pair" "tf-key-pair" {
@@ -418,11 +421,13 @@ For inbound rules, we will allow traffic from ports: 80 (http), 443 (https), 22 
 
 In AWS terms its called [Security Group](https://docs.aws.amazon.com/vpc/latest/userguide/security-group-rules.html) . You can find example implementation with [terraform](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/security_group) 
 
-<img src="{{ site.baseurl}}/img/security-group-overview.png" style="width: 100%"></img>
+<img src="{{ site.baseurl}}/img/security-group-overview.png" style="width: 100%"/>
 
 
 _client's computer, connects to the vpc, via an internet gateway (in purple). the security group, firewalling the access_
 
+
+*aws_deploy.tf*
 
 ```terraform
 
@@ -466,7 +471,7 @@ Now, in this case, we will be using the default vpc. and add attach the security
 
 resource "aws_instance" "konoha_server" {
   // add this line to the definition above.
-  vpc_security_group_ids = [aws_security_group.talon_api_sg.id]
+  vpc_security_group_ids = [aws_security_group.konoha_api_sg.id]
 }
 ```
 
@@ -519,6 +524,12 @@ function show() {
     terraform show
 }
 
+function output() {
+  TF_VAR_AWS_ACCOUNT=${AWS_ACCOUNT} \
+    TF_VAR_DOCKER_IMAGE="${AWS_ACCOUNT}.dkr.ecr.${AWS_REGION}.amazonaws.com/${DOCKER_BUILD_TAG}" \
+    terraform output
+}
+
 __ACTIONS__=":apply:show:destroy:"
 ACTION="show"
 
@@ -549,6 +560,8 @@ elif [[ "$ACTION" == "apply" ]]; then
   apply
 elif [[ "$ACTION" == "destroy" ]]; then
   destroy
+elif [[ "$ACTION" == "output" ]]; then
+  output
 fi
 ```
 
@@ -558,6 +571,39 @@ $ AWS_REGION=${AWS_REGION} AWS_ACCOUNT=${AWS_ACCOUNT} DOCKER_BUILD_TAG=${DOCKER_
 ```
 
 where `DOCKER_BUILD_TAG=konoha-server:latest` in our case. We can chose something like `konoha-server:$(git commit -1 --oneline | cut -d' ' -f1)` or even manual versioning with `git tag` works too.
+
+<p>&nbsp;</p>
+
+### How to access
+
+There are two ways you can access this.
+
+__First__ from your [AWS ui console](https://console.aws.amazon.com/), search for `EC2`> `Instances` > `Public DNS` or `Public IP` should be there, on the right hand side.
+
+__Second__ programatically using `terraform`. You need to create an output.tf file, with an output resource block.
+
+_output.tf_
+
+```terraform
+output "instance_id" {
+  description = "ID of the EC2 instance"
+  value       = aws_instance.konoha_server.id
+}
+
+output "instance_public_ip" {
+  description = "Public IP address of the EC2 instance"
+  value       = aws_instance.konoha_server.public_ip
+}
+```
+
+`aws_instance` and `konoha_server` refers to the `resource "aws_instance" "konoha_server" {}` block, above. and run
+
+```shell
+$ AWS_REGION=${AWS_REGION} AWS_ACCOUNT=${AWS_ACCOUNT} DOCKER_BUILD_TAG=${DOCKER_BUILD_TAG} bash scripts/tcl.sh -a output
+```
+
+Incase you have this file already present, `terraform apply` should show you the output in the end without having to call `terraform output` in the end.
+
 
 <p>&nbsp;</p>
 

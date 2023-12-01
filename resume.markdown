@@ -102,7 +102,7 @@ Worked across more than **5 projects.**
 - **Analyzing TCP dumps** for properly configuring timeouts and keepalives, for the above, and **establishing a template** for configuration of apis for the same.
 - **Optimizing&#39; API for CSV upload** and record creation with **4 million records** every **3-4 hours.**
 
-- Using **Kafka** to handle **high amounts of load** , **state machines** to ensure **casualty** and **ordering** of events in distributed systems
+- Using **Kafka** to handle handle populate various topics, on product updates, which would then be pushed to elastic search, to enable **global search** across the platform.
 - Using **caching** to speed up systems and reduce database loads.
 - Building UI to upload static data for product search
 - Setting up metrics and alerting for better visibility of systems and their failures
