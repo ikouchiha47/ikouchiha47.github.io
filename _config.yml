@@ -1,9 +1,10 @@
-title:              iko's blog
+title:              iko's logs
 email:              amitava.dev@proton.me
 author:             ikouchiha47
 domain:             ikouchiha47.github.io
 baseurl:            ""
 url:                ""
+remote_url:         "ikouchiha47.github.io"
 description: >- # this means to ignore newlines until "baseurl:"
   Yet another platform enginner, with a love for designing systems, writing tools, and hating third-party api integrations.
 

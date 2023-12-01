@@ -10,9 +10,9 @@
 
 .preview-content {
   display: flex;
+  flex-wrap: wrap;
   gap: 1em;
   align-items: center;
-  min-height: 100px;
   overflow: hidden;
   margin-bottom: 10px;
 }
@@ -27,7 +27,8 @@
 }
 
 .preview-image img {
-  height: 96px;
+  max-width: 100%;
+  height: auto;
   object-fit: cover;
 }
 

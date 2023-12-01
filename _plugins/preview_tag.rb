@@ -17,8 +17,25 @@ require 'faraday-cookie_jar'
 
 require "metainspector"
 
+IMAGE_OVERRIDES = {
+  "AWS": "https://upload.wikimedia.org/wikipedia/commons/5/5c/AWS_Simple_Icons_AWS_Cloud.svg",
+  "TERRAFORM": "https://raw.githubusercontent.com/github/explore/80688e429a7d4ef2fca1e82350fe8e3517d3494d/topics/terraform/terraform.png"
+}
+
 module Jekyll
   module Preview
+    class OverrideImage
+      def self.overrides(url, image_src)
+        if url.include?("://docs.aws.amazon.") && image_src.include?("warning")
+          return IMAGE_OVERRIDES[:AWS]
+        elsif url.include?("://www.terraform.io")
+          return IMAGE_OVERRIDES[:TERRAFORM]
+        end
+
+        return image_src
+      end
+    end
+
     class Properties
       def initialize(properties, template_file)
         @properties = properties
@@ -53,19 +70,30 @@ module Jekyll
 
       def from_page(page)
         properties = page.meta_tags['property']
+        image = convert_to_absolute_url(get_property(properties, 'og:image'), page.root_url)
+        image = OverrideImage.overrides(page.url, image)
+
         og_properties = {
           # basic metadata (https://ogp.me/#metadata)
           'title' => get_property(properties, 'og:title'),
           'type' => get_property(properties, 'og:type'),
           'url' => get_property(properties, 'og:url'),
-          'image' => convert_to_absolute_url(get_property(properties, 'og:image'), page.root_url),
+          'image' => image,
+          'description' => get_property(properties, 'og:description'),
+          'determiner' => get_property(properties, 'og:determiner'),
+          'locale' => get_property(properties, 'og:locale'),
+          'locale_alternate' => get_property(properties, 'og:locale:alternate'),
+          'site_name' => get_property(properties, 'og:site_name'),
+
+          'domain' => page.host,
+
           # optional metadata (https://ogp.me/#optional)
           ## image
-          'image_secure_url' => convert_to_absolute_url(get_property(properties, 'og:image:secure_url'), page.root_url),
-          'image_type' => get_property(properties, 'og:image:type'),
-          'image_width' => get_property(properties, 'og:image:width'),
-          'image_height' => get_property(properties, 'og:image:height'),
-          'image_alt' => get_property(properties, 'og:image:alt'),
+          # 'image_secure_url' => convert_to_absolute_url(get_property(properties, 'og:image:secure_url'), page.root_url),
+          # 'image_type' => get_property(properties, 'og:image:type'),
+          # 'image_width' => get_property(properties, 'og:image:width'),
+          # 'image_height' => get_property(properties, 'og:image:height'),
+          # 'image_alt' => get_property(properties, 'og:image:alt'),
           ## video
           # 'video' => convert_to_absolute_url(get_property(properties, 'og:video'), page.root_url),
           # 'video_secure_url' => convert_to_absolute_url(get_property(properties, 'og:video:secure_url'), page.root_url),
@@ -77,14 +105,9 @@ module Jekyll
           # 'audio_secure_url' => convert_to_absolute_url(get_property(properties, 'og:audio:secure_url'), page.root_url),
           # 'audio_type' => get_property(properties, 'og:audio:type'),
           ## other optional metadata
-          'description' => get_property(properties, 'og:description'),
-          'determiner' => get_property(properties, 'og:determiner'),
-          'locale' => get_property(properties, 'og:locale'),
-          'locale_alternate' => get_property(properties, 'og:locale:alternate'),
-          'site_name' => get_property(properties, 'og:site_name'),
-          # not defined in OGP
-          'domain' => page.host,
+          
         }
+
         Properties.new(og_properties, @@template_file)
       end
 
@@ -126,12 +149,12 @@ module Jekyll
           'url' => page.url,
           'description' => page.best_description,
           'domain' => page.host,
-          'image' => best_image(page),
+          'image' => OverrideImage.overrides(page.url, best_image(page)),
         }, @@template_file)
       end
 
       def best_image(page)
-        img = page.images.best 
+        img = page.images.best
         return img unless img&.empty?
 
         h = Nokogiri::HTML(page.to_s)
@@ -158,6 +181,7 @@ module Jekyll
 
       def render(context)
         url = get_url_from(context)
+        
         properties = get_properties(url)
         render_linkpreview context, properties
       end
