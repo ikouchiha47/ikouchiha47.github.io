@@ -101,6 +101,10 @@ func main() {
 		w.Write([]byte("pong"))
 	})
 
+	r.HandleFunc("/konoha/api/ping", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("pong"))
+	})
 	pgconn := dbconnector.NewPostgresConnector(cfg.SupabaseConfig.DBURL)
 
 	r.HandleFunc(

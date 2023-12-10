@@ -191,8 +191,10 @@ resource "aws_ecs_cluster" "app_server_cluster" {
 
 resource "aws_ecs_task_definition" "app_task_definition" {
     family            = "konoha-server"
-    task_role_arn      = format("arn:aws:iam::%s:role/ecsEcrTaskExecutionRole", var.AWS_ACCOUNT)
-    execution_role_arn = format("arn:aws:iam::%s:role/ecsEcrTaskExecutionRole", var.AWS_ACCOUNT)
+
+    // We dont need this for EC2 instances.
+    // task_role_arn      = format("arn:aws:iam::%s:role/ecsEcrTaskExecutionRole", var.AWS_ACCOUNT)
+    // execution_role_arn = format("arn:aws:iam::%s:role/ecsEcrTaskExecutionRole", var.AWS_ACCOUNT)
 
     container_definitions = templatefile("${path.module}/templates/ecs/ecs-task-definition.json", { IMAGE: var.DOCKER_IMAGE })
 }
@@ -231,6 +233,8 @@ An ASG would use the `aws_launch_template` in order to provison the machine for 
 The way the `ASG` and the `ECS` communicate is via a `config` file which is expected to be present each of the `EC2` instances. That file contains the `cluster` name.
 
 Previously in the `aws_ecs_service` we had joined the `cluster` to the `task_definition`. And with the `cluster` name present in the `EC2` instance, `ECS` knows which machine to run the `task` on. Phew!!
+
+{% preview "https://aws.amazon.com/blogs/containers/deep-dive-on-amazon-ecs-cluster-auto-scaling/" %}
 
 *ecs.sh*
 
@@ -280,7 +284,7 @@ resource "aws_launch_template" "app_server_launch_configuration" {
 resource "aws_autoscaling_group" "app_server_ecs_asg" {
   name                = "AppServerAsg"
   vpc_zone_identifier = [aws_subnet.app_server_subnet.id, aws_subnet.app_server_subnet2.id]
-  target_group_arns = [aws_lb_target_group.app_lb_tg.arn]
+  target_group_arns = [aws_lb_target_group.app_lb_tg.arn] // linking to the LB
 
   launch_template {
     id = aws_launch_template.app_server_launch_configuration.id
