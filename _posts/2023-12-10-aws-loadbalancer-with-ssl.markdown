@@ -25,6 +25,7 @@ we will expose port `:443`, so that we can handle encrypted requests to our webs
 - Publicly registered domain name. Here we are using [GoDaddy](https://godaddy.com/en-in)
 - Money, because AWS charges on traffic coming from the outside world into aws servers.
 
+<p>&nbsp;</p>
 
 ### Building Blocks
 
