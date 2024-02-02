@@ -179,7 +179,13 @@ func (nf *NewsFetcher) Fetch(source Source) (response string, err error) {
 	return response, nil
 }
 
+```
 
+### `ParseModifier` Function
+
+The `ParseModifier` function in the `NewsParser` struct is responsible for parsing the modifier provided in the YAML configuration. This function splits the modifier into different parts and identifies the functions that need to be applied during the data transformation.
+
+```go
 type NewsParser struct {
 	fetcher Fetcher
 }
@@ -189,50 +195,6 @@ func NewNewsParser(fetcher Fetcher) *NewsParser {
 		fetcher: fetcher,
 	}
 }
-
-func (np *NewsParser) ParseModifier(str string) ([]interface{}, error) {
-	parts := strings.Split(str, "|>")
-	functions := make([]interface{}, 0, len(parts))
-
-	tFuncs := NewTemplateFuncs().Funcs()
-
-	log.Println(tFuncs)
-
-	for _, part := range parts {
-		part = strings.TrimSpace(part)
-
-		match := regexp.MustCompile(`^(\w+)\((.*?)\)`).FindStringSubmatch(part)
-		if match == nil {
-			log.Println("1 airty function")
-
-			f, ok := tFuncs[part]
-			if !ok {
-				return nil, fmt.Errorf("unknown function: %s", part)
-			}
-
-			functions = append(functions, f)
-
-			continue
-		}
-
-		log.Println("2 airty function ", match[1], match[2])
-		f := tFuncs[match[1]]
-		if curryable, ok := f.(func(string) StrSliceable); ok {
-			functions = append(functions, curryable(match[2]))
-		} else {
-			return nil, fmt.Errorf("function %s is not curryable", match[1])
-		}
-	}
-
-	return functions, nil
-}
-```
-
-### `ParseModifier` Function
-
-The `ParseModifier` function in the `NewsParser` struct is responsible for parsing the modifier provided in the YAML configuration. This function splits the modifier into different parts and identifies the functions that need to be applied during the data transformation.
-
-```go
 func (np *NewsParser) ParseModifier(str string) ([]interface{}, error) {
     parts := strings.Split(str, "|>")
 	functions := make([]interface{}, 0, len(parts))
@@ -366,7 +328,7 @@ func (np *NewsParser) ParseSource(source Source) (ns NewsResponseData, err error
 }
 ```
 
-### `FetchNewsFromConfig`
+### `FetchNewsFromConfig` function to get news
 
 This fetches the news from multiple sources in parallel. Although we could have had a list of workers 
 
