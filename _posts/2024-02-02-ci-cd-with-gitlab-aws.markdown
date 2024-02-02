@@ -15,13 +15,13 @@ Our IaC Journey with Terraform
 
 We recently embarked on an IaC journey to streamline our deployment processes for multiple services within the Newsaggregator ecosystem. Here's a breakdown of our approach:
 
-# Repositories for Code and Infrastructure:
+## Repositories for Code and Infrastructure:
 
 - `app-server`: Houses the server code.
 - `app-base-infra`: Contains code for setting up IAM, networking, and other foundational infrastructure.
 - `app-metals-infra`: Manages services using ASGs, EC2 instances, S3, Lambda, and more.
 
-# Terraform for Infrastructure Definition:
+## Terraform for Infrastructure Definition:
 
 We chose [Terraform](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/launch_template#network-interfaces) as our IaC tool for its ease of use, comprehensive AWS support, and strong community. Terraform scripts define our infrastructure components, including:
 
@@ -33,7 +33,7 @@ We chose [Terraform](https://registry.terraform.io/providers/hashicorp/aws/lates
 - S3 buckets
 - Lambda functions
 
-# GitLab CI for Automated Pipelines:
+## GitLab CI for Automated Pipelines:
 
 GitLab CI orchestrates our pipeline processes:
 
@@ -55,13 +55,14 @@ For gitlab, you can chose the *Protected* and *Mask* checkboxes, to make those v
 only in *protected* branches. (Check Branch protection rules in your gitlab ci setting)
 
 
-# Benefits of Our IaC Implementation:
+## Benefits of Our IaC Implementation:
 
 - Automation: Eliminates manual configuration and provisioning.
 - Consistency: Ensures identical environments across deployments.
 - Version control: Tracks changes and enables rollbacks.
 - Auditability: Provides clear history of infrastructure changes.
 - Scalability: Facilitates easy infrastructure expansion.
+
 
 Next Steps:
 
@@ -323,7 +324,7 @@ key    = "prod/app/infra/terraform.tfstate"
 region = "ap-south-1"
 ```
 
-# User Role Creation with ChatGPT:
+## User Role Creation with ChatGPT:
 
 In order to execute all these commands, we need proper `Roles` setup. Now we could do this, by I don't know, "reading".
 
