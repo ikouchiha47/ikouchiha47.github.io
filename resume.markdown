@@ -25,7 +25,6 @@ For work I have a strong passion for reducing stress on people and systems.
 
 <p>&nbsp;</p>
 
-## EXPERIENCE
 - Experienced in code reviews, deployment planning, and building metric monitoring systems and performance enhancement. 
 - Delivering scalable software which are easy to contribute to, have an ecosystem around them for better integration and obviously create less chances of introducing bugs
 
@@ -54,10 +53,21 @@ Determining performance bottleneck, by benchmarking and profiling and
 <p>&nbsp;</p>
 
 #### Senior Software Engineer
-
-- Lead code reviews and orchestrate deployments for multiple services in the platform team.
-- Added support to logging library to handle PII data scrambling.
-- Solved a couple of SSO authentication issues, which helped retain clients.
+- 
+Engineering notification system, building and maintaining sdk for golang services, url shortners for
+encrypting and decrypting resource urls
+- Understanding requirements, designing solutions and preparing design docs.
+- Building cli tools to generate language specific deployment files, structured logging, request tracing across services and integration metric monitoring
+- Solving Solving production and performance issues like slow queries, db locks causing slow logins.
+- Improve overall application performance. Also co-ordinated to solve SSO login issues for clients and improve company docs.
+- Planning data and api migration, deployment, encryption and decryption of client files, deletion of requested resource. DB resolver to choose the proper db connection for read and write queries.
+- Come up with a new approach to writing APIs and generating documentation faster, leveraging protos and [grpc gateway](https://grpc-ecosystem.github.io/grpc-gateway/docs/tutorials/adding_annotations/), helping with generating proper versioned models across languages and services.
+- Writing RCAs, using AWS insights, cloudwatch logs, golang perf testing tools for debugging. Generating
+documentation and code using protos. Introducing simple YAML based DSLs to avoid repetitive work
+and standarisation.
+- Worked on improving user data sync from CRMs using airflow and MWAA API based triggers, reducing the sync rate to reduce load on system.
+- Worked with devops and devs to introduce redis cache and solving connection issue between redis and server in AWS, improving login time.
+- Worked on other smaller services, like insurance and doctor aggregator using GraphQL, building Oauth2 like authentication system with permission grant and ABAC capabilites. (RBAC on API routes)
 - Solved and helped other teams to migrate client's file to encrypted storage and planned a backward compatible release
   - As a part of the above step, also build a url shortner service to server encrypted files and figure cache invalidation policy
   - Build executable to be used by other languages due to a limitation of AWS library, and helped others integrate it
@@ -68,14 +78,17 @@ help us resolve an issue with notification service in proper time limit.
 
 #### SDE-II
 
+- Lead code reviews and orchestrate deployments for multiple services in the platform team.
 - Build and maintain notification service to deliver `emails` and `push`. It helped track delievery, prevent re-delivery. 
 - Analyzing and imporving db queries and system architecture to prevent db lockup along with datadog APM integration
+- Built a CSV manager to handle upload of multiple types of user info. Benchmarking APIs and functions
 - Build and maintain the golang sdk for the organisation
 - Establish proper logging practices,introduced tracing api calls and time taken. This helped debug slow user logins due to problems in other system.
 - Worked with Devops on fixing server-redis connection problems using strace. This eventually would enable people to use redis and cache user info.
 - Integrating logs using opensearch and a makeshift tracing library to trace api calls across services
 - Introducing migration standards and instrumentaion of existing codebases
 - Introduced caching and removing cross db connection and other fixing other problems with system design
+- Added support to logging library to handle PII data scrambling.
 
 <p>&nbsp;</p>
 ---
