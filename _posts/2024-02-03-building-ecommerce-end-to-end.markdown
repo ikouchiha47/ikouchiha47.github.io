@@ -4,7 +4,7 @@ title: "Building an ecommerce website end to end"
 subtitle: "career breaks doesn't mean end of work"
 description: "Going for a productive career break"
 date: 2024-01-11 00:00:00
-background_color: '#da46ff'
+background_color: '#dc461d'
 ---
 
 ## From Career Break to E-commerce Product: Relearning Rails and Build ecommerce platform
@@ -15,72 +15,147 @@ Taking a career break can be daunting, but I used mine to embark on an ambitious
 
 My initial excitement turned into nervous trepidation. Where do I even begin? Documentation became my bible, and countless hours were spent deciphering new patterns and paradigms. The biggest hurdle? **js.erb**. This new way of working with JavaScript felt alien, demanding a complete rethink of my front-end approach.
 
-Gone were the days of fat models and skinny controllers. Rails 7 embraced a more modular approach, separating concerns and encouraging component-based development. Handling JavaScript requests in controllers meant understanding Stimulus Reflex and Turbo, paradigms that streamlined communication between front-end and back-end. It was a steep learning curve, but with perseverance, I scaled it, embracing the modularity and efficiency js.erb offered.
+Handling JavaScript requests in controllers meant understanding:
+
+= [Stimulus](https://stimulus.hotwired.dev/handbook/hello-stimulus)
+- Getting comfortable with [Turbo Frame & Stream](https://turbo.hotwired.dev/handbook/streams)
+
+that streamlined communication between front-end and back-end. It was a steep learning curve, requires a complete day to get hold of it.
 
 
 ### Handling JavaScript Requests: A Tale of Two Rails
 
 **Rails 4: The UJS Era**
 
-In Rails 4, handling JavaScript requests was often a blend of Unobtrusive JavaScript (UJS) and manual DOM manipulation:
+In Rails 4,5,6, handling JavaScript requests was often a blend of Unobtrusive JavaScript (UJS) and manual DOM manipulation.
 
-**Controller Code:**
+__Using turbo links (which was enabled by default) meant getting to understand the specific events__
 
-```ruby
-class ProductsController < ApplicationController
-  def add_to_cart
-    @product = Product.find(params[:id])
-    # ... cart logic ...
-    respond_to do |format|
-      format.html { redirect_to cart_path }
-      format.js   # Renders 'add_to_cart.js.erb'
-    end
-  end
-end
+```html
+<head>
+  <%= tag :meta, name: :psj, action: action_name, controller: controller_name %>
+</head>
 ```
-
-**View Template (add_to_cart.js.erb):**
 
 ```javascript
-// Update cart count using UJS
-$('.cart-count').text('<%= current_cart.item_count %>');
-// Show a success message
-$('#flash-messages').html('<%= j render 'shared/flash_messages' %>');
+function Page() {
+  this.action = this.action.bind(this)
+  this.controller = this.action.bind(this)
+}
+
+Page.prototype.controller = function() {
+    return $('meta[name=psj]').attr('controller');
+}
+
+Page.prototype.action = function() {
+  return $('meta[name=psj]').attr('action');
+};
+
+let page = new Page()
+
+$(document).on('turbolinks:load', function() {
+  if (!(page.controller() === 'visitors' && page.action() === 'index')) { return; }
+  return $('main').append('<li>Hello from visitors</li>');
+});
 ```
 
-**Rails 7: Embracing Stimulus Reflex and Turbo**
 
-Rails 7 takes a more streamlined approach, leveraging Stimulus Reflex and Turbo:
+__Using content_for with `yield` for page specific javascript__
 
-**Controller Code:**
-
-```ruby
-class ProductsController < ApplicationController
-  def add_to_cart
-    @product = Product.find(params[:id])
-    # ... cart logic ...
-    head :ok  # Signal success to Turbo
-  end
-end
+```html
+<head>
+  <%= yield(:head) %>
+</head>
 ```
 
-**Stimulus Controller:**
+```html
+<!-- payment.html.erb -->
+<% content_for :head do %>
+  <!-- header content specific to this payment page -->
+  <script src="https://js.stripe.com/v3/"></script>
+  <!-- do document.on('DOMContentLoaded') here -->
+<% end %>
+```
+
+
+__Rise of bundlers like brunch/webpack__ which is a rather painful way of hiding putting everything inside `application.js` . Basically use webpack like tool, to convert all your modular js to a single js file, and that will be served as `application.js`.
+
+
+__Usage of fetch/XMLHttpRequest and handling the dom updates manually in js.erb file__ with `respond_do { |format| format.js }`
+
+
+**Rails 7: Embracing Stimulus and Turbo**
+
+Rails 7 takes a more streamlined approach, leveraging Stimulus and Turbo. Initially this will really feel a lot like the `React` way of doing things.`
+
+
+So `turbo_frame` and `turbo_stream` takes care of your ajax requests. And `Stimulus` is your javascript dom framework to target dom elements. 
+
+These frameworks/libraries makes use of certain conventions, and relies on `data` attributes for their functionality. Stimulus monitors rails views for these `data` attributes to change, specifically the `data-controller` attribute.
+
+
+The `javascripts/` directory has moved to `app/javascripts/`. The `app/javascripts` has a directory called `controllers/`. __(These stimulus controllers have nothing to do with application controller)__
+
+
+> When you add a data-controller attribute to an element, Stimulus reads the identifier from the attribute’s value and creates a new instance of the corresponding controller class.
+> Stimulus invokes the connect() method anytime the controller connects to the DOM.
+
+[From the docs](https://stimulus.hotwired.dev/reference/controllers)
+
+
+```html
+<p data-controller="hello">
+  This text will change!
+</p>
+```
+
 
 ```javascript
-// app/javascript/controllers/add_to_cart_controller.js
-import { Controller } from "stimulus";
-import { Reflex } from "stimulus_reflex";
+// app/javascripts/hello_controller.js
+
+import { Controller } from '@hotwired/stimulus'
 
 export default class extends Controller {
-  static targets = ['count', 'flash'];
-
-  add() {
-    Reflex.fromElement(this.element).addProductToCart();
+  connect() {
+    console.log('hello_controller.js: ', this.element)
+    this.element.textContent = 'Hello World!'
   }
+}
+```
 
-  afterReflex() {
-    this.countTarget.textContent = this.data.get('cart-count');
-    this.flashTarget.innerHTML = this.data.get('flash-messages');
+This should yield.
+
+```html
+<p>Hello World</p>
+```
+
+when the page with the html load. We can do a slightly more complex example.
+
+```html
+<div data-controller="toggle">
+  <a href="#" data-action="click->toggle#toggle">Show</a>
+  <p data-toggle-target="content">Hello World</p>
+</div>
+```
+
+Where:
+- `click` is action
+- `toggle#toggle` means `toggle_controller.js#toggle`
+- `data-toggle-target`, where `toggle` is `controller` name.
+
+So for `search_controller.js` it would be `data-search-target`. Read more at the [docs](https://stimulus.hotwired.dev/reference/targets)
+
+```javascript
+// app/javasctips/toggle_controller.js
+
+import {Controller} from "@hotwired/stimulus"
+
+export default class extends Controller {
+  static targets = ["content"];
+
+  toggle() {
+    let hiddenClass = "hidden"
+    this.contentTarget.classList.toggle(hiddenClass); 
   }
 }
 ```
@@ -89,43 +164,52 @@ export default class extends Controller {
 
 In Rails 7, two key libraries, Stimulus and Turbo, work together to create faster, more dynamic, and engaging web applications. Let's delve into their individual roles and how they contribute to Rails 7's efficiency:
 
-**Stimulus: Simplifying Interactivity**
+[Turbo](https://turbo.hotwired.dev/handbook/streams), on the other hand, deals with serving js requests, used mostly for form submissions, delete items without reloading page, updating cart etc.And avoid doing `fetch`, and rendering on client side with js.
 
-- **What it is:** A lightweight JavaScript library promoting modularity and separation of concerns.
-- **What it does:**
-    - Binds JavaScript behavior to specific HTML elements using data attributes.
-    - Creates reusable Stimulus controllers that manage specific UI interactions.
-    - Handles user events like clicks, forms, and DOM changes.
-    - Communicates with the server using Stimulus Reflex (covered later).
-- **Benefits:**
-    - Clean and organized code for JavaScript logic.
-    - Easier testing and maintenance of interactive elements.
-    - Encourages component-based development.
+Since this thing is integrated with rails, we can render html partials. Leveraging server side rendering, and response type.
 
-**Turbo: Boosting Navigation Performance**
 
-- **What it is:** A JavaScript library facilitating seamless page updates without full reloads.
-- **What it does:**
-    - Intercepts link clicks and form submissions to prevent default behavior.
-    - Makes partial requests to the server for specific HTML updates (Turbo Frames).
-    - Updates only the necessary parts of the DOM, preserving state and avoiding full page reloads.
-    - Integrates with Stimulus Reflex for server-side actions and data fetching.
-- **Benefits:**
-    - Significantly faster page transitions and user interactions.
-    - Improved user experience, making the app feel more responsive.
-    - Reduced page weight and bandwidth usage.
+```html
+<!-- app/views/messages/_message.html.erb -->
+<div id="<%= dom_id message %>">
+  <%= message.content %>
+</div>
+```
 
-**Stimulus Reflex: Bridging the Gap**
+```html
+<!-- app/views/messages/index.html.erb -->
+<h1>All the messages</h1>
+<%= render partial: "messages/message", collection: @messages %>
+```
 
-- **What it is:** An extension of Stimulus that facilitates communication between client-side interactions and server-side actions.
-- **What it does:**
-    - Stimulus controllers can trigger Reflex actions on the server.
-    - Reflex actions handle server-side logic, update data, and return partial HTML responses.
-    - Turbo then integrates the updated HTML into the page seamlessly.
-- **Benefits:**
-    - Efficient server-side data fetching and updates triggered by user interactions.
-    - Enables real-time updates and dynamic interactions without full page reloads.
-    - Simplifies complex interactions by separating concerns between client and server.
+```ruby
+class MessagesController < ApplicationController
+  def create
+    @message= Message.create()
+
+    respond_to do |format|
+      format.turbo_stream do
+        render turbo_stream: turbo_stream.append(:messages, partial: "messages/message",
+          locals: { message: message })
+      end
+
+      format.html { redirect_to messages_url }
+    end
+  end
+```
+
+You can also use `destroy.turbo_stream.erb` if you want to do multiple things like.
+
+```html
+<%= turbo_stream.replace 'cart-items-count' do %>
+  <%= render partial: 'layouts/cart_items_count', locals: { cart_items_count: @cart_items_count - 1 } %>
+<% end %>
+
+
+<%= turbo_stream.remove "product_item_#{@item_id}" %>
+```
+
+You can read about it on the [docs](https://turbo.hotwired.dev/handbook/streams).
 
 
 If you're starting a new Rails 7 project, embracing Stimulus and Turbo is highly recommended. They offer a modern and efficient approach to building interactive and performant web applications, improving development experience, however weird.
