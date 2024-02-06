@@ -591,16 +591,16 @@ alreay has a great explanation. Also there are different kinds of networks that 
 
 ## References:
 
-- https://www.redhat.com/sysadmin/building-container-namespaces
-- https://www.man7.org/linux/man-pages/man7/mount_namespaces.7.html
-- https://www.man7.org/linux/man-pages/man7/user_namespaces.7.html
-- https://www.man7.org/linux/man-pages/man7/pid_namespaces.7.html
-- https://www.man7.org/linux/man-pages/man7/namespaces.7.html
-- https://www.redhat.com/sysadmin/net-namespaces
-- https://akashrajpurohit.com/blog/build-your-own-docker-with-linux-namespaces-cgroups-and-chroot-handson-guide/
-- https://www.alanjohn.dev/blog/Deep-dive-into-Containerization-Creating-containers-from-scratch
-- https://www.youtube.com/watch?v=0kJPa-1FuoI
-- https://www.youtube.com/watch?v=EFOA2nCZ0gg&list=RDCMUCPO2QgTCReBAThZca6MB9jg&start_radio=1&rv=EFOA2nCZ0gg&t=4
+- [https://www.redhat.com/sysadmin/building-container-namespaces](https://www.redhat.com/sysadmin/building-container-namespaces)
+- [https://www.man7.org/linux/man-pages/man7/namespaces.7.html](https://www.man7.org/linux/man-pages/man7/namespaces.7.html)
+- [https://www.man7.org/linux/man-pages/man7/mount_namespaces.7.html](https://www.man7.org/linux/man-pages/man7/mount_namespaces.7.html)
+- [https://www.man7.org/linux/man-pages/man7/user_namespaces.7.html](https://www.man7.org/linux/man-pages/man7/user_namespaces.7.html)
+- [https://www.man7.org/linux/man-pages/man7/pid_namespaces.7.html](https://www.man7.org/linux/man-pages/man7/pid_namespaces.7.html)
+- [https://www.redhat.com/sysadmin/net-namespaces](https://www.redhat.com/sysadmin/net-namespaces)
+- [https://akashrajpurohit.com/blog/build-your-own-docker-with-linux-namespaces-cgroups-and-chroot-handson-guide/](https://akashrajpurohit.com/blog/build-your-own-docker-with-linux-namespaces-cgroups-and-chroot-handson-guide/)
+- [https://www.alanjohn.dev/blog/Deep-dive-into-Containerization-Creating-containers-from-scratch](https://www.alanjohn.dev/blog/Deep-dive-into-Containerization-Creating-containers-from-scratch)
+- [https://www.youtube.com/watch?v=0kJPa-1FuoI](https://www.youtube.com/watch?v=0kJPa-1FuoI)
+- [https://www.youtube.com/watch?v=EFOA2nCZ0gg&list=RDCMUCPO2QgTCReBAThZca6MB9jg&start_radio=1&rv=EFOA2nCZ0gg&t=4](https://www.youtube.com/watch?v=EFOA2nCZ0gg&list=RDCMUCPO2QgTCReBAThZca6MB9jg&start_radio=1&rv=EFOA2nCZ0)
 
 
 `Thank you.`
