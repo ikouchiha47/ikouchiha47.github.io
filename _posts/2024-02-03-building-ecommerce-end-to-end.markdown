@@ -3,7 +3,7 @@ layout: post
 title: "Building an ecommerce website end to end"
 subtitle: "career breaks doesn't mean end of work"
 description: "Going for a productive career break"
-date: 2024-01-11 00:00:00
+date: 2024-02-03 00:00:00
 background_color: '#dc461d'
 ---
 
