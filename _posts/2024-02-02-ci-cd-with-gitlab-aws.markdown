@@ -423,3 +423,6 @@ fi
 ## Backword
 
 IaC has proven to be a valuable tool for streamlining our deployment processes and improving infrastructure management. I'm excited to continue refining our approach and sharing our experiences with the community.
+
+
+`Thank you.`

@@ -403,3 +403,4 @@ This News Aggregator provides a flexible and scalable solution for fetching and 
 
 By centralizing news from different sources into a unified format, users can effortlessly access a curated stream of information. This News Aggregator serves as a foundation for creating more sophisticated news aggregation services tailored to specific needs and preferences.
 
+`Thank you`

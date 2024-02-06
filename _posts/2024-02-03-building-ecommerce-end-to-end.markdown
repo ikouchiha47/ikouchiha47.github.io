@@ -86,7 +86,7 @@ __Usage of fetch/XMLHttpRequest and handling the dom updates manually in js.erb 
 
 **Rails 7: Embracing Stimulus and Turbo**
 
-Rails 7 takes a more streamlined approach, leveraging Stimulus and Turbo. Initially this will really feel a lot like the `React` way of doing things.`
+Rails 7 takes a more streamlined approach, leveraging Stimulus and Turbo. Initially this will really feel a lot like the `React` way of doing things.
 
 
 So `turbo_frame` and `turbo_stream` takes care of your ajax requests. And `Stimulus` is your javascript dom framework to target dom elements. 
