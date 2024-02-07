@@ -8,7 +8,7 @@ background_color: '#1c90ed'
 ---
 
 
-## Understanding containerization and improve debugging
+# Understanding containerization and improve debugging
 
 As I delve more into kubernetes, the more I get distracted by side quests. This is one of those. In this `DLC`,
 I try to understand `containerization`, how it works, and essentially learn how to debug a running docker container.
@@ -33,7 +33,6 @@ Building a container for a process like docker requires taking care of a couple 
 
 
 ### Linux filesystem
-
 The Linux, rather The Unix philosophy says `On a UNIX system, everything is a file; if something is not a file, it is a process.`.
 
 So, during the bootup process, the boot loader, loads the selected kernel and the small filesystem (files and folders) called `initrd`.
@@ -92,15 +91,15 @@ sudo chroot rootfs /bin/sh
 This should drop you to a shell. And you can run `ps -ef` in it.
 
 ```shell
-/ # ps -ef
+sh1#/ ps -ef
 PID   USER     TIME  COMMAND
-/ #
+sh1#/ 
 ```
 
 You can now mount the host OS's proc into `/proc` of the chrooted directory. And check the processes running on the host os.
 
 ```shell
-#/ mount -t proc proc /proc
+sh1#/ mount -t proc proc /proc
 ```
 
 Now if we have a process running in host, we can `pkill $HOST_PROCESS_ID` from the child. Overall, **chroot doesn't give you access protection**.
@@ -128,10 +127,11 @@ This isolation comes in the process of `namespaces` and `cgroups`.
 
 
 _We won't be discussing cgroups here, because they are simple to understand_. **Cgroups** are found inside `/sys/fs/cgroups`, but since most modern day OS has systemd, and in systemd these are called slices.
+
 Here is a reference to how you can use cgroups to control the amount of resources used by a program: [cgroups example](https://itnext.io/chroot-cgroups-and-namespaces-an-overview-37124d995e3d). Imma more interested in namespaces.
 
 
-### Prior knowledge
+## Prior knowledge
 
 We need to understand `users` and `capabilities`.
 
@@ -139,37 +139,44 @@ The primary way Linux handles file permissions is through the implementation of 
 
 Linux `capabilities` were created to provide a more granular application of the security model. Instead of running the binary as root, you can apply only the specific capabilities an application requires to be effective.
 
-**User namespaces** isolate security-related identifiers and attributes, in particular, user IDs and group IDs, keys, root directory and capabilities. Consider a namespace called `constrained`.
-The namespace `constrained` will only inherit the permissions/capabilities of the creating process. If the creating process didn't have full capabilites enabled, the `constrained` namespace wouldn't either.
+**User namespaces** isolate security-related identifiers and attributes, in particular, user IDs and group IDs, keys, root directory and capabilities.
+
+Consider a namespace called `constrained`.The namespace `constrained` will only inherit the permissions/capabilities of the creating process.
+
+If the creating process didn't have full capabilites enabled, the `constrained` namespace wouldn't either.
+
 
 `Linux containers` uses capabilities to determine what processes can run inside a namespace. For example, lets take the executable `ping`.
 
-```shell
-#/ which ping
-# /usr/bin/ping
-#/ cp /usr/bin/ping myping
-#/ myping 8.8.8.8
-
-# ./myping: socktype: SOCK_RAW
-# ./myping: socket: Operation not permitted
-# ./myping: => missing cap_net_raw+p capability or setuid?
-
-#/ # ping needs root privielges to open network socket
-#/ sudo chown root myping
-#/ sudo myping 8.8.8.8
-
-#/ # but we want to invoke it without sudo. we set the setuid bit. with +s
-# sudo chmod +s myping
-
-#/ myping 8.8.8.8
-# PING 8.8.8.8 (8.8.8.8) 56(84) bytes of data.
-# 64 bytes from 8.8.8.8: icmp_seq=1 ttl=63 time=45.7 ms
+```console
+sh1#/ which ping
+sh1# /usr/bin/ping
+sh1#/ cp /usr/bin/ping myping
+sh1#/ myping 8.8.8.8
+sh1#/
+sh1#/
+sh1# ./myping: socktype: SOCK_RAW
+sh1# ./myping: socket: Operation not permitted
+sh1# ./myping: => missing cap_net_raw+p capability or setuid?
+sh1#/
+sh1#/
+sh1#/ # ping needs root privielges to open network socket
+sh1#/ sudo chown root myping
+sh1#/ sudo myping 8.8.8.8
+sh1#/
+sh1#/ # but we want to invoke it without sudo. we set the setuid bit. with +s
+h1#/
+sh1# sudo chmod +s myping
+sh1#/
+sh1#/ myping 8.8.8.8
+sh1# PING 8.8.8.8 (8.8.8.8) 56(84) bytes of data.
+sh1# 64 bytes from 8.8.8.8: icmp_seq=1 ttl=63 time=45.7 ms
 ```
 
 So preventing this by carefully crafting capabilities become important.
 
 
-### Namespaces
+## Namespaces
 
 A [namespace](https://www.man7.org/linux/man-pages/man7/namespaces.7.html) wraps a global system resource in an abstraction that makes it appear to the processes 
 within the namespace that they have their own isolated instanceof the global resource.
@@ -199,19 +206,29 @@ us debug containers from outside, by mounting containers with debug tools in the
 
 ### user_namespaces
 
-As described above user namespace is a collection of capabilities, user ids etc. In addition they can be nested. There can be multiple nestations. The parent namespace will see the child namespaces having the same `user ID`.
-And hence have access to all the files. However the child namespaces cannot interract with the parent namespaces. Because to the child namepsace, the child namespaces perceives itself as PID: 1. So its world starts from itself.
+As described above user namespace is a collection of capabilities, user ids etc. In addition they can be nested.
+
+There can be multiple nestations. The parent namespace will see the child namespaces having the same `user ID`.And hence have access to all the files.
+
+
+However the child namespaces cannot interract with the parent namespaces. Because to the child namepsace, the child namespaces perceives itself as PID: 1. So its world starts from itself.
 
 
 ### mount_namespaces
 
 This are a bit complicated. Mount namespaces provide isolation of the list of mounts seen by the processes in each namespace instance.
-Thus, the processes in each of the mount namespace instances will see distinct single-directory hierarchies. This lets us mount and unmount filesystems, without affecting the whole system. So in case of `docker`,
+Thus, the processes in each of the mount namespace instances will see distinct single-directory hierarchies. 
+
+This lets us mount and unmount filesystems, without affecting the whole system. So in case of `docker`,
 each container can have its own root file system, in isolation, and also not affect any other containers or host filesystem.
 
-Mount namespace can also be nested, but the visibility of the mounted or unmounted filesystem depends on the `propagation_type` configuration. This configuration is provided during the `mount` phase.
+Mount namespace can also be nested, but the visibility of the mounted or unmounted filesystem depends on the `propagation_type` configuration.
+
+
+This configuration is provided during the `mount` phase.
 
 The [docs](https://www.man7.org/linux/man-pages/man7/mount_namespaces.7.html) provide examples into how mount and visibility works. But here are the key details.
+
 
 Depending on the propagation_type type for each mount, the mount and unmount events are propagated to peers. Why do we need peers? In order to be able to automatically mount filesystems into all mount namespaces (depedning
 on scenario), linux needed something called `shared subtrees`.
@@ -224,7 +241,7 @@ Once mounted, these devices are marked with a `mount state`. like `shared:*`, `m
 When creating a less privileged mount namespace, shared mounts are reduced to slave mounts. This ensures that mappings performed in less privileged mount namespaces will 
 not propagate to more privileged mount namespaces.
 
-```shell
+```console
 PS1='sh1#'
 
 sh1#/ mount --make-shared /mntX
@@ -238,7 +255,7 @@ sh1#/ mount --make-private /mntY
 
 We can see, `/mntX` has `shared:1`, while `/mntY` is private. Creating nampespace and mounting in sub directories should make them inherit this `mount state`
 
-```shell
+```console
 #/ PS1='sh2# ' sudo unshare -m --propagation unchanged sh
 sh2#/ mkdir /mntX/a && mount /dev/sdb6 /mntX/a
 sh2#/ mkdir /mntY/b && mount /dev/sdb7 /mntY/b
@@ -313,7 +330,7 @@ sh2#/ cat /proc/self/mountinfo
 This is mostly used to isolate the hostname. So lets create a uts namespace in the `rootfs` alipne image.
 
 
-#### pid_namespaces
+### pid_namespaces
 
 When a process is created on most Unix-like operating systems, it is given a specific numeric identifier called a `process ID(PID)`.
 All of these processes are tracked in a special file system called `procfs`. and is mounted under `/proc`.
@@ -326,30 +343,19 @@ the container to a new host while the processes inside the container maintain th
 A `/proc` virtual filesystem shows (in the /proc/pid directories) only processes visible in the PID namespace of the process that 
 performed the mount, even if the `/proc` filesystem is viewed from processes in other namespaces. As shown before.
 
-A caveat of the creating the pid_namespace is, the process that initiates the creation of a new PID namespace with `unshare` does not enter the new namespace; only its child processes do.
+> A caveat of the creating the pid_namespace is, the process that initiates the creation of a new PID namespace with `unshare` does not enter the new namespace; only its child processes do.
 In our system
 - for kernel the PID is 0
 - PID = 1 is the assigned to init, which is the first process in the `user space`.
 
 There are some special stuff that goes on while handling `PID = 1`. You can find them [here](https://medium.com/hackernoon/the-curious-case-of-pid-namespaces-1ce86b6bc900):
 
-Inside a namespace, init (pid 1) has three unique features when compared to other processes:
 
-- It does not automatically get default signal handers, so a signal sent to it is ignored unless it registers a signal hander for that signal.
-(This is why many dockerized processes fail to respond to ctrl-c and you are forced to kill them with something like `docker kill`).
-- If another process in the namespace dies before its children, its children will be `re-parented` to `pid 1`. This allows `init` to collect the exit status of the child processes so that the kernel can remove it from the process table.
-- If it dies, every other process in the pid namespace will be forcibly terminated and the namespace will be cleaned up.
+First lets check the contents of `/`
 
+```console
+vagrant@vagrant:~/containerization$ ls /
 
-This prevents us from doing `unshare --pid --mount-proc /bin/bash`. This will cause an error: `Error: bash: fork: Cannot allocate memory`, because,
-`unshare` will exectue `/bin/bash`, which will load some `shell modules`. The first process in that becomes `PID = 1`. When the process `exit`s, it causes `re-paranting`, and then `terminating all other processes in namespace`.
-
-This eventually causes `init` of the host process, and the state change, and `creation of process` fails because PID cannot be allocated, resulting in the error, `Cannot allocate memory`
-
-
-First lets check the contents of `ls /`
-
-```
 bin  boot  dev  etc  home  lib  lib32  lib64  libx32  lost+found  media  mnt  opt  proc  root  run  sbin  srv  sys  tmp  usr  vagrant  var
 ```
 
@@ -421,7 +427,7 @@ cat: /tmp/sometext: No such file or directory
 
 In order to see this, lets start a `docker container` with a `nginx` server running. And inspect the directories from there.
 
-```
+```console
 root@vagrant:~# docker run --name webserver -d nginx
 root@vagrant:~# sudo lsns
 
@@ -588,6 +594,27 @@ Both of these are ways to allow isolation in the container. I think we have enou
 alreay has a great explanation. Also there are different kinds of networks that docker allows, and it needs a separate post.
 
 
+## Notes
+
+
+### PID = 1 
+
+Inside a namespace, init (pid 1) has three unique features when compared to other processes:
+
+- It does not automatically get default signal handers, so a signal sent to it is ignored unless it registers a signal hander for that signal.
+(This is why many dockerized processes fail to respond to ctrl-c and you are forced to kill them with something like `docker kill`).
+- If another process in the namespace dies before its children, its children will be `re-parented` to `pid 1`. This allows `init` to collect the exit status of the child processes so that the kernel can remove it from the process table.
+- If it dies, every other process in the pid namespace will be forcibly terminated and the namespace will be cleaned up.
+
+
+This prevents us from doing `unshare --pid --mount-proc /bin/bash`. This will cause an error: `Error: bash: fork: Cannot allocate memory`, because,
+`unshare` will exectue `/bin/bash`, which will load some `shell modules`. 
+
+The first process in that becomes `PID = 1`. When the process `exit`s, it causes `re-paranting`, and then `terminating all other processes in namespace`.
+
+This eventually causes `init` of the host process, and the state change, and `creation of process` fails because PID cannot be allocated, resulting in the error, `Cannot allocate memory`
+
+
 
 ## References:
 
@@ -600,7 +627,7 @@ alreay has a great explanation. Also there are different kinds of networks that 
 - [https://akashrajpurohit.com/blog/build-your-own-docker-with-linux-namespaces-cgroups-and-chroot-handson-guide/](https://akashrajpurohit.com/blog/build-your-own-docker-with-linux-namespaces-cgroups-and-chroot-handson-guide/)
 - [https://www.alanjohn.dev/blog/Deep-dive-into-Containerization-Creating-containers-from-scratch](https://www.alanjohn.dev/blog/Deep-dive-into-Containerization-Creating-containers-from-scratch)
 - [https://www.youtube.com/watch?v=0kJPa-1FuoI](https://www.youtube.com/watch?v=0kJPa-1FuoI)
-- [https://www.youtube.com/watch?v=EFOA2nCZ0gg&list=RDCMUCPO2QgTCReBAThZca6MB9jg&start_radio=1&rv=EFOA2nCZ0gg&t=4](https://www.youtube.com/watch?v=EFOA2nCZ0gg&list=RDCMUCPO2QgTCReBAThZca6MB9jg&start_radio=1&rv=EFOA2nCZ0)
+- [https://www.youtube.com/watch?list=RDCMUCPO2QgTCReBAThZca6MB9jg](https://www.youtube.com/watch?v=EFOA2nCZ0gg&list=RDCMUCPO2QgTCReBAThZca6MB9jg&start_radio=1&rv=EFOA2nCZ0)
 
 
 `Thank you.`
