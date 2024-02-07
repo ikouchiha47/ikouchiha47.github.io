@@ -13,10 +13,16 @@ background_color: '#1c90ed'
 As I delve more into kubernetes, the more I get distracted by side quests. This is one of those. In this `DLC`,
 I try to understand `containerization`, how it works, and essentially learn how to debug a running docker container.
 
-I had first encountered `chroot` while installing [ArchLinux](https://wiki.archlinux.org/title/installation_guide#Chroot). Basically while installation,
-the `/mnt` directory is mounted on your chosen partition, and then after you change root, you are able to access already installed user-space utilities
-to setup basic networking, timezones, etc. Maybe install some software.
-But there is more to that, the general idea around isolation and how linux kernel works.
+I had first encountered `chroot` while installing [ArchLinux](https://wiki.archlinux.org/title/installation_guide#Chroot). 
+
+Basically while installation, you mount the chose partition to the `/mnt` directory. This creates a mount point. A `mount point` is a directory within an existing file system that acts as an access point for another file system or storage device.
+[Pacstrap](https://github.com/archlinux/arch-install-scripts/blob/master/pacstrap.in) is then responsible for installing the base system, creating additional mounts, 
+[setting up](https://github.com/archlinux/arch-install-scripts/blob/22493153c753806e3ba64b74741b019a63a86270/common#L24) required namespaces and mountpoints, the base system, installing packages etc.
+
+After mounting you change root (chroot) to set the new `/mnt` mount point as the root of the filesystem. As a result you are able to access already installed user-space utilities
+to setup basic networking, timezones, etc. Maybe install some software, reset root password, recover system without affecting other partitions.
+
+There is more to that, the general idea around isolation and how linux kernel works.
 
 
 Building a container for a process like docker requires taking care of a couple of things:
@@ -597,7 +603,7 @@ alreay has a great explanation. Also there are different kinds of networks that 
 ## Notes
 
 
-### PID = 1 
+**PID = 1**
 
 Inside a namespace, init (pid 1) has three unique features when compared to other processes:
 
@@ -615,6 +621,14 @@ The first process in that becomes `PID = 1`. When the process `exit`s, it causes
 This eventually causes `init` of the host process, and the state change, and `creation of process` fails because PID cannot be allocated, resulting in the error, `Cannot allocate memory`
 
 
+**setuid** or set user id
+
+The Unix and Linux access rights flags setuid and setgid allow users to run an executable with the file system permissions of the executable's owner or group respectively and to change behaviour in directories.
+
+When the setuid or setgid attributes are set on an executable file, then any users able to execute the file will automatically execute the file with the privileges of the file's owner (commonly root) and/or the file's group, depending upon the flags set.
+
+This allows the system designer to permit trusted programs to be run which a user would otherwise not be allowed to execute. 
+
 
 ## References:
 
@@ -625,6 +639,7 @@ This eventually causes `init` of the host process, and the state change, and `cr
 - [https://www.man7.org/linux/man-pages/man7/pid_namespaces.7.html](https://www.man7.org/linux/man-pages/man7/pid_namespaces.7.html)
 - [https://www.redhat.com/sysadmin/net-namespaces](https://www.redhat.com/sysadmin/net-namespaces)
 - [https://akashrajpurohit.com/blog/build-your-own-docker-with-linux-namespaces-cgroups-and-chroot-handson-guide/](https://akashrajpurohit.com/blog/build-your-own-docker-with-linux-namespaces-cgroups-and-chroot-handson-guide/)
+- [https://manpages.ubuntu.com/manpages/jammy/man2/setegid.2freebsd.html](https://manpages.ubuntu.com/manpages/jammy/man2/setegid.2freebsd.html)
 - [https://www.alanjohn.dev/blog/Deep-dive-into-Containerization-Creating-containers-from-scratch](https://www.alanjohn.dev/blog/Deep-dive-into-Containerization-Creating-containers-from-scratch)
 - [https://www.youtube.com/watch?v=0kJPa-1FuoI](https://www.youtube.com/watch?v=0kJPa-1FuoI)
 - [https://www.youtube.com/watch?list=RDCMUCPO2QgTCReBAThZca6MB9jg](https://www.youtube.com/watch?v=EFOA2nCZ0gg&list=RDCMUCPO2QgTCReBAThZca6MB9jg&start_radio=1&rv=EFOA2nCZ0)
