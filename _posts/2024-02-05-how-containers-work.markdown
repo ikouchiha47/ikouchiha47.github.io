@@ -154,7 +154,7 @@ If the creating process didn't have full capabilites enabled, the `constrained` 
 
 `Linux containers` uses capabilities to determine what processes can run inside a namespace. For example, lets take the executable `ping`.
 
-```console
+```shell
 sh1#/ which ping
 sh1# /usr/bin/ping
 sh1#/ cp /usr/bin/ping myping
@@ -178,6 +178,13 @@ sh1#/ myping 8.8.8.8
 sh1# PING 8.8.8.8 (8.8.8.8) 56(84) bytes of data.
 sh1# 64 bytes from 8.8.8.8: icmp_seq=1 ttl=63 time=45.7 ms
 ```
+
+Or you could also do:
+
+```shell
+setcap cap_net_raw+ep ./myping
+```
+
 
 So preventing this by carefully crafting capabilities become important.
 
@@ -374,37 +381,44 @@ vagrant@vagrant:~/containerization$ unshare -Urfpm --mount-proc
 vagrant@vagrant:~/containerization$ mkdir -p rootfs/.oldroot
 
 root@vagrant:~/containerization# ls /
-bin  boot  dev  etc  home  lib  lib32  lib64  libx32  lost+found  media  mnt  opt  proc  root  run  sbin  srv  sys  tmp  usr  vagrant  var
+# bin  boot  dev  etc  home  lib  lib32  lib64  libx32  lost+found  media  mnt  opt  proc  root  run  sbin  srv  sys  tmp  usr  vagrant  var
 
 
 root@vagrant:~/containerization# mount
-/dev/sda1 on / type ext4 (rw,relatime,discard,errors=remount-ro)
-cgroup2 on /sys/fs/cgroup type cgroup2 (rw,nosuid,nodev,noexec,relatime,nsdelegate,memory_recursiveprot)
-pstore on /sys/fs/pstore type pstore (rw,nosuid,nodev,noexec,relatime)
-bpf on /sys/fs/bpf type bpf (rw,nosuid,nodev,noexec,relatime,mode=700)
-debugfs on /sys/kernel/debug type debugfs (rw,nosuid,nodev,noexec,relatime)
-tracefs on /sys/kernel/tracing type tracefs (rw,nosuid,nodev,noexec,relatime)
-fusectl on /sys/fs/fuse/connections type fusectl (rw,nosuid,nodev,noexec,relatime)
-configfs on /sys/kernel/config type configfs (rw,nosuid,nodev,noexec,relatime)
-... etc
+
+# /dev/sda1 on / type ext4 (rw,relatime,discard,errors=remount-ro)
+# cgroup2 on /sys/fs/cgroup type cgroup2 (rw,nosuid,nodev,noexec,relatime,nsdelegate,memory_recursiveprot)
+# pstore on /sys/fs/pstore type pstore (rw,nosuid,nodev,noexec,relatime)
+# bpf on /sys/fs/bpf type bpf (rw,nosuid,nodev,noexec,relatime,mode=700)
+# debugfs on /sys/kernel/debug type debugfs (rw,nosuid,nodev,noexec,relatime)
+# tracefs on /sys/kernel/tracing type tracefs (rw,nosuid,nodev,noexec,relatime)
+# fusectl on /sys/fs/fuse/connections type fusectl (rw,nosuid,nodev,noexec,relatime)
+# configfs on /sys/kernel/config type configfs (rw,nosuid,nodev,noexec,relatime)
+# ... etc
+
 
 # we need to bind the rootfs folder to a folder in the new namespace
 root@vagrant:~/containerization# mount --rbind rootfs rootfs
 root@vagrant:~/containerization# mount
-
 /dev/sda1 on / type ext4 (rw,relatime,discard,errors=remount-ro)
 proc on /proc type proc (rw,nosuid,nodev,noexec,relatime)
 /dev/sda1 on /home/vagrant/containerization/rootfs type ext4 (rw,relatime,discard,errors=remount-ro)
 none on /home/vagrant/containerization/rootfs/proc type proc (rw,relatime)
 
+
+root@vagrant:~/containerization# pivot_root rootfs rootfs/.oldroot
 root@vagrant:~/containerization# PATH=/bin:/sbin:$PATH # because apline's PATH doesn't have sbin
 root@vagrant:~/containerization# mount
 
-/dev/sda1 on /.oldroot2 type ext4 (rw,relatime,discard,errors=remount-ro)
-none on /.oldroot2/home/vagrant/containerization/rootfs/proc type proc (rw,relatime)
-proc on /.oldroot2/proc type proc (rw,nosuid,nodev,noexec,relatime)
-/dev/sda1 on / type ext4 (rw,relatime,discard,errors=remount-ro)
-none on /proc type proc (rw,relatime)
+# /dev/sda1 on /.oldroot type ext4 (rw,relatime,discard,errors=remount-ro)
+# none on /.oldroot/home/vagrant/containerization/rootfs/proc type proc (rw,relatime)
+# proc on /.oldroot/proc type proc (rw,nosuid,nodev,noexec,relatime)
+# /dev/sda1 on / type ext4 (rw,relatime,discard,errors=remount-ro)
+# none on /proc type proc (rw,relatime)
+#
+# here you can see, the initial filesystem /dev/sda1 is now pointing to the /.oldroot directory
+# so we can unmount it. thereby removing the 
+
 
 # we could mount the proc and tmpfs file system.
 
@@ -625,7 +639,13 @@ This eventually causes `init` of the host process, and the state change, and `cr
 
 The Unix and Linux access rights flags setuid and setgid allow users to run an executable with the file system permissions of the executable's owner or group respectively and to change behaviour in directories.
 
-When the setuid or setgid attributes are set on an executable file, then any users able to execute the file will automatically execute the file with the privileges of the file's owner (commonly root) and/or the file's group, depending upon the flags set.
+When the setuid or setgid attributes are set on an executable file, it means when running the executable it will set its permissions to that of the owner of file, instead of the uuser who launched it. For using this in code, once this bit is set, dropping privileges doesn't prevent the uniprivileged user from accessing the file descriptor.
+
+Hence careful consideration must be taken to replace the effective userid of the executable/program to that of the owner of the program, and closing filedesriptors on complete.
+Read [execve](https://manpages.ubuntu.com/manpages/jammy/man2/execve.2.html).
+
+> If the set-user-ID bit is set on the program  file  referred  to  by pathname, thenthe 
+effective  user  ID  of the calling process is changed to that of the owner of the program file. 
 
 This allows the system designer to permit trusted programs to be run which a user would otherwise not be allowed to execute. 
 
