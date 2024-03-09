@@ -1,0 +1,29 @@
+{
+    "title": "ikos blog",
+    "name": "ikos-blog",
+    "version": "4.0.12",
+    "description": "personal blog from  Bootstrap.",
+    "keywords": [
+        "css",
+        "sass",
+        "html",
+        "responsive",
+        "theme",
+        "template"
+    ],
+    "homepage": "",
+    "license": "MIT",
+    "author": "Start Bootstrap",
+    "contributors": [
+        "David Miller (http://davidmiller.io/)"
+    ],
+    "dependencies": {
+        "bootstrap": "4.6.0",
+        "font-awesome": "4.7.0",
+        "jquery": "3.6.0",
+        "startbootstrap-clean-blog": "5.1.0"
+    },
+    "devDependencies": {
+        "browser-sync": "2.26.14"
+    }
+}
