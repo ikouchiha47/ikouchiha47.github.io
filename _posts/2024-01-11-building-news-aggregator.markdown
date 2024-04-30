@@ -1,4 +1,5 @@
 ---
+active: true
 layout: post
 title: "News aggregator"
 subtitle: "Building a news aggregator"

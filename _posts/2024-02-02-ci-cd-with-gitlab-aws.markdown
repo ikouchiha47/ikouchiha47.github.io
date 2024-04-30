@@ -1,4 +1,5 @@
 ---
+active: true
 layout: post
 title: "Automate deployment with CI/CD"
 subtitle: "Simple setup using gitlab, aws and terraform"

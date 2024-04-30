@@ -1,4 +1,5 @@
 ---
+active: true
 layout: post
 title: "Hosting with AWS (Part 3)"
 subtitle: "enrypting traffic and add a domain name for serving your website"

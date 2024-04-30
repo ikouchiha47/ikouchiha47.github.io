@@ -1,4 +1,5 @@
 ---
+active: true
 layout: post
 title: "Hosting with AWS"
 subtitle: "utilizing AWS free tier host your server on EC2 instances"

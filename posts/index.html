@@ -5,6 +5,9 @@ background_color: '#000'
 ---
 
 {% for post in paginator.posts %}
+  {% if post.active != true %}
+    {% continue %}
+  {% endif %}
 
 <article class="post-preview">
   <a href="{{ post.url | prepend: site.baseurl | replace: '//', '/' }}">

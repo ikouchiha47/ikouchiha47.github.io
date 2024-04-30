@@ -1,6 +1,9 @@
 // Import variables
 @import "./variables";
 
+// Import Fonts
+@import "./fonts/fonts";
+
 // Import Bootstrap
 @import "../../bootstrap/scss/bootstrap";
 
@@ -27,4 +30,8 @@
 
 ol, ul, dl {
     padding-left: 20px;
+}
+
+a {
+    font-family: "Jersey 25", sans serif;
 }

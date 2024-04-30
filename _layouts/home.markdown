@@ -25,7 +25,7 @@ layout: default
   </div>
 </header>
 
-<div class="container">
+<div class="container space-grotesk">
   <div class="row">
     <div class="col-lg-8 col-md-10 mx-auto">
       <i>Personal blog to keep a tack of my work, experiments, findings and thoughts.</i>
@@ -43,6 +43,9 @@ inline-block">Github</a>
 
       <!-- Home Post List -->
       {% for post in site.posts limit : 5 %}
+        {% if post.active != true %}
+          {% continue %}
+        {% endif %}
 
       <article class="post-preview">
         <a href="{{ post.url | prepend: site.baseurl | replace: '//', '/' }}">

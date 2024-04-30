@@ -1,4 +1,5 @@
 ---
+active: true
 layout: post
 title: "Generate Link Preview"
 subtitle: "jekyll plugin to generate link preview from open graph"

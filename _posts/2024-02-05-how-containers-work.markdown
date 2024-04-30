@@ -1,4 +1,5 @@
 ---
+active: true
 layout: post
 title: "Troubleshooting containers"
 subtitle: "understanding containers inside out"
