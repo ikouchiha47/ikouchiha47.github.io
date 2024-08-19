@@ -278,6 +278,301 @@ The language of choice is [Zig](https://learnxinyminutes.com/docs/zig/). And the
 - Try to use LSM tree, as a part of a pluggable storage engine
 - Try to implement a geo-database storage engine.
 
+## SkipList
+
+Well after much thought I realized, instead of going for a btree first, lets try saving a skiplist to file. A skiplist, is an in memory data format, a sorted linked list
+containing levels, So starting at the highest level, imagine playing snake and ladder. Travel horizontally to find an element greater than the target value,
+and then move one level down, for finer grained. Since we are skipping some elements, from finding the next greater node at the higer levels. So instead of going
+through this list [1,2,3,4,5], to find 4, lets say the max_level, has 3, in its list, so you have skipped, 1 and 2.
+
+At the base level, the probability of any node to be found is 1. And it decreases up the level. The insert implementation goes, like:
+- traversing the levels to find the place where the value needs to be inserted (target node).
+- finding a new level for the new node to be inserted, and pointer them to head node
+- treating it like a linked list, insert the node infront of the target node.
+
+Below is a brief implementation in python:
+
+```python
+from typing import List, Self
+import random
+import struct
+
+
+class SkipNode:
+    def __init__(self, name, value=None, max_level=16):
+        self.name = name
+        self.value = value
+        self.level = max_level + 1
+        self.forwards: List[Self | None] = [None] * (max_level + 1)
+
+    def to_bytes(self):
+        result = bytearray()
+        name_encoded = self.name.encode("utf-8")
+        value_encoded = 0xFFFF if self.value is None else self.value
+
+        # I has a standard size of 4bytes , so maybe to_bytes of 4 is not needed
+        result.extend(struct.pack("<I", len(self.name)))  # key length
+        result.extend(name_encoded)  # key
+        result.extend(struct.pack("<I", value_encoded))  # value
+        result.extend(struct.pack("<I", self.level))  # level
+
+        return result
+
+    @classmethod
+    def from_bytes(cls, b, offset=0):
+        key_len = struct.unpack_from("<I", b, offset)[0]  # or <4b
+        offset += 4
+        key = b[offset : offset + key_len].tobytes().decode("utf-8")
+        offset += key_len
+        value = struct.unpack_from("<I", b, offset)[0]
+        offset += 4
+        lvl = struct.unpack_from("<I", b, offset)[0]
+
+        return SkipNode(
+            name=key, value=value if value != 0xFFFF else None, max_level=lvl - 1
+        )
+
+
+class SkipList:
+    def __init__(self, max_level, probab) -> None:
+        self.max_level = max_level
+        self.probab = probab
+        self.head = SkipNode("head", max_level=max_level)
+        self.level = 0
+        self.size = 0
+
+    def _random_level(self):
+        if self.size % 2 == 0:
+            level = random.randint(0, self.max_level // 2)
+        else:
+            level = random.randint(self.max_level // 2, self.max_level)
+        return level
+        # level = 0
+        # while random.random() < self.probab and level < self.max_level:
+        #     level += 1
+        # return level
+
+    def insert(self, key, value):
+        # starting from max level
+        # find the position for update
+        curr = self.head
+        if curr is None:
+            raise Exception("Empty")
+
+        updates: List[SkipNode | None] = [None] * (self.max_level + 1)
+
+        # iterate the head to find the levels
+        # to insert the node at
+        for i in range(self.level, -1, -1):
+            while curr and curr.forwards[i] and curr.forwards[i].value < value:
+                curr = curr.forwards[i]
+
+            updates[i] = curr
+
+        new_lvl = self._random_level()
+
+        # check if lvl > self.max_levels
+        # then track new lanes to create for head
+        if new_lvl > self.level:
+            for i in range(self.level + 1, new_lvl + 1, 1):
+                updates[i] = self.head
+            self.level = new_lvl
+
+
+        node = SkipNode(key, value=value, max_level=new_lvl)
+        # add the nodes at all levels, starting from 0
+        # add the new nodes to the head node as well
+        for lvl in range(new_lvl + 1):
+            replacing = updates[lvl]
+            if replacing is None:
+                print("warning: no entry found in updates")
+                continue
+
+            node.forwards[lvl] = replacing.forwards[lvl]
+            replacing.forwards[lvl] = node
+
+        self.size += 1
+
+        return self
+
+    def search(self, value):
+        # check at each level starting from the maximum
+        curr = self.head
+        for i in range(self.level, -1, -1):
+            while curr and curr.forwards[i] and curr.forwards[i].value < value:
+                curr = curr.forwards[i]
+
+        if curr is None:
+            return False
+
+        # precautionary
+        curr = curr.forwards[0]
+        return curr is not None and curr.value == value
+
+    def remove(self, value):
+        curr = self.head
+        updates: List[SkipNode | None] = [None] * (self.max_level + 1)
+
+        for i in range(self.level, -1, -1):
+            while curr and curr.forwards[i] and curr.forwards[i].value < value:
+                curr = curr.forwards[i]
+            updates[i] = curr
+
+        if curr is None or (curr and curr.forwards[0]) is None:
+            return False
+
+        curr = curr.forwards[0]
+        if curr and curr.value != value:
+            return False
+
+        for i in range(self.max_level, -1, -1):
+            replacement = updates[i]
+            if not replacement:
+                continue
+            if replacement.forwards[i] != curr:
+                raise Exception("node_mismatch")
+            replacement.forwards[i] = curr.forwards[i]
+
+        while self.level > 0 and self.head.forwards[self.max_level] is None:
+            self.level -= 1
+        self.size -= 1
+
+    def print_list(self):
+        from collections import defaultdict
+        import json
+
+        result = defaultdict(list)
+
+        for level in range(self.level, -1, -1):
+            curr = self.head
+            level_repr = []
+            while curr:
+                level_repr.append(f"{curr.name}({curr.value})")
+                curr = curr.forwards[level]
+            result[f"Level {level}"] = level_repr
+
+        print(json.dumps(result))
+
+    def first(self):
+        pass
+
+
+if __name__ == "__main__":
+    skipnode = SkipNode(name="a", value=10)
+    data = skipnode.to_bytes()
+
+    SkipNode.from_bytes(memoryview(data))
+    skplist = SkipList(max_level=5, probab=0.5)
+    skplist.insert("a", 10).insert("b", 20).insert("c", 15).insert("d", 6)
+    skplist.print_list()
+    
+    nodes: Set[SkipNode] = set()
+    queue: List[SkipNode] = [skplist.head]
+    
+    while len(queue) > 0:
+        n = queue.pop(0)
+        nodes.add(n)
+    
+        queue.extend([fwd for fwd in n.forwards if fwd])
+    
+    print(skplist.level, len(nodes))
+    print(skplist.search(15), skplist.search(40))
+```
+
+## How data is written in the btree in sqlite.
+
+In `btree.c#L4267` and `btree.c#L4339`, From the comments, (operating in rollback journal mode I assume). Has 2 phases of commit:
+
+- Journal file creation with original state of db, and saving on disk, holding locks (indicating changes not yet done)
+- The paging unit gets involved in this writing to disk.
+- After, flushed to disk, zero out the journal headers indicating data is succesfully written, before droping the lock
+
+The b+tree talks to the paging layer. And the paging unit to disk.
+
+The database has commited, only when the state on disk and in memory is the same, otherwise its dirty. 
+
+### Data Oriented Design
+
+Alignment and Size of a struct matters in case of struct packing. Why is u32 4bytes? Well because that 64bit processor can do efficiently,
+A 64bit cpu can load 64bits of data in memory at a time. So u64 is 8bytes, and so u32 is 4bytes. Or 1 WORD.
+
+### Why Alignment matters
+
+- CPUs are designed to read data from memory in chunks that are aligned to their size. 
+  For example, a u32 (4 bytes) is most efficiently accessed when it starts at a memory address that is a multiple of 4.
+- A u64 (8 bytes) is most efficiently accessed when it starts at a memory address that is a multiple of 8.
+- If data is misaligned (not on these boundaries), the CPU might need multiple memory operations to read or write the data, which can significantly slow down performance.
+
+So, when the struct has an alignment of u32, u64, u32., with alignment as 8 bytes.
+
+- u32, so multiples of 4. but __alignment__ needs to be 8 bytes. so, 4 extra bytes needed to pad.
+- so processor can load the memory is 8byte chunks, to avoid sequential access, to figure out boundaries.
+
+compared to a, u32, u32, u64. The processor can load 8, bytes of memory twice, to get all the data.
+
+```zig
+struct Enemies {
+  color: u32,
+  power: u64,
+  boost: u32,
+};
+```
+
+So, the above has an alignment of 8, but a size of 8x3 = 24. 
+
+```zig
+struct Enemies {
+  color: u32,
+  boost: u32,
+  power: u64,
+};
+```
+
+This way, Alignment satisfies. It's still 8, But since, the two u32s are packed together,
+The procesor can read, 64bits only twice. And hence, a size `16`.
+
+This gets worse, when we use bool to represent stuff.
+
+```zig
+struct Enemies {
+  color: u32,
+  boost: u32,
+  power: u64,
+  dead: boolean,
+};
+```
+
+We have 7bytes wasted, for each object. For 100 objects, 700Bytes Wasted. Compared to:
+
+```zig
+struct Enemies {
+  color: u32,
+  boost: u32,
+  power: u64,
+};
+
+let alive = ArrayList<Enemies>();
+let dead = ArrayList<Enemies>()
+```
+
+__Why this matters?__
+
+Because we wan't to reduce the amount of wasted bytes, so that we can fit as much data in the cache lines.
+
+```bash
+$> lscpu
+
+Caches (sum of all):      
+  L1d:                    128 KiB (4 instances)
+  L1i:                    128 KiB (4 instances)
+  L2:                     1 MiB (4 instances)
+  L3:                     8 MiB (1 instance)
+```
+
+So if we can fit more data in that `128KiB` cache line, we have more speed.
+
+
+
 ### Other work
 
 This are the list of other places to look at:
