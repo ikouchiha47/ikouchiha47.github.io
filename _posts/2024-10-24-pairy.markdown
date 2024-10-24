@@ -8,13 +8,15 @@ date: 2024-10-24 00:00:00
 background: '#000'
 ---
 
-# Pairy
+[github](https://github.com/ikouchiha47/pairy)
+
+# [Pairy]
 
 The problem of sharing just code always remained. There has been
 multiple solutions over the years, infact [Zed](https://zed.dev/) comes with an
 inbuilt click to pair option.
 
-The problem however, you have to sign-in. So *fuck _|_ that*.
+The problem however, you have to sign-in. So **fuck that**.
 
 ## Base idea
 
@@ -50,7 +52,6 @@ are however a set of things that I will do.
 
 ## Internals
 
-[github](https://github.com/ikouchiha47/pairy)
 
 The golang server is rn a dumb operator forwarding the received data to lua.
 There is no concept of EOF here, so the buffer is read until '\n'.
