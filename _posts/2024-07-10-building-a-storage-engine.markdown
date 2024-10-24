@@ -479,7 +479,7 @@ if __name__ == "__main__":
     print(skplist.search(15), skplist.search(40))
 ```
 
-## How data is written in the btree in sqlite.
+#### How data is written in the btree in sqlite.
 
 In `btree.c#L4267` and `btree.c#L4339`, From the comments, (operating in rollback journal mode I assume). Has 2 phases of commit:
 
@@ -491,12 +491,12 @@ The b+tree talks to the paging layer. And the paging unit to disk.
 
 The database has commited, only when the state on disk and in memory is the same, otherwise its dirty. 
 
-### Data Oriented Design
+## Data Oriented Design
 
 Alignment and Size of a struct matters in case of struct packing. Why is u32 4bytes? Well because that 64bit processor can do efficiently,
 A 64bit cpu can load 64bits of data in memory at a time. So u64 is 8bytes, and so u32 is 4bytes. Or 1 WORD.
 
-### Why Alignment matters
+#### Why Alignment matters
 
 - CPUs are designed to read data from memory in chunks that are aligned to their size. 
   For example, a u32 (4 bytes) is most efficiently accessed when it starts at a memory address that is a multiple of 4.

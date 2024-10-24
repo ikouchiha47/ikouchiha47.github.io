@@ -12,7 +12,8 @@ serve:
 
 gen.file:
 	echo $(FILE)
-	touch _posts/$(FILE).markdown
+	cp templates/_post.markdown _posts/$(FILE).markdown
+	nvim _posts/$(FILE).markdown
 
 clear.cache:
 	rm _cache/**

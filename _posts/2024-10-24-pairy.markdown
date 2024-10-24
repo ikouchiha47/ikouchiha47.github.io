@@ -1,0 +1,130 @@
+---
+active: true
+layout: post
+title: "Pairy"
+subtitle: "pair programming remotely in neovim"
+description: "simple enough two person remote pair programing setup"
+date: 2024-10-24 00:00:00
+background: '#000'
+---
+
+# Pairy
+
+The problem of sharing just code always remained. There has been
+multiple solutions over the years, infact [Zed](https://zed.dev/) comes with an
+inbuilt click to pair option.
+
+The problem however, you have to sign-in. So *fuck _|_ that*.
+
+## Base idea
+
+Implementing a full fledged real time collaboration is tough. `CRDT` is the go-to
+solution in most cases. `Operational Transform` is another option, but one needs
+to define those transforms. Open up any open source library, and you can find filessss. `_|_`
+
+However, I was more interested in a simpler working solution. The idea is simple:
+
+- Have a server to handle clients, (and future extensions on features like auth, discover-ability and stuff)
+- Have both the participants on the same network, achieved with `zerotier`.
+- Communicate the `mode` and `input` between the participants, and update the whole buffer.
+
+Right now, the system works like so:
+
+- One has to provide the remote ip address, for lua to connect.
+- This is where lua sends the data to.
+- Connect with the local hosted server
+- This is where the golang receives the data from.
+- Upon receiving the data update the current file/buffer.
+- Before sending or re-rendering, it does a hash comparison to detect changes.
+
+## Improvements
+
+Although I am not looking to make huge improvements anytime soon, with CRDTs, there
+are however a set of things that I will do.
+
+- Handle the states, `receiving`, `sending`, `typing`, to manage the sync better.
+- Anytime someone is `typing`, prevent, any `updates`.
+- Start the sync process only when in `receiving` or `sending` mode
+- Show mismatch with options, like a `three way merge`
+- Rn participants need to be on the same network, would add a hosted service as well.
+
+## Internals
+
+[github](https://github.com/ikouchiha47/pairy)
+
+The golang server is rn a dumb operator forwarding the received data to lua.
+There is no concept of EOF here, so the buffer is read until '\n'.
+The lua end is where some hacky things happen.
+
+Now in a text a new-line `\n` can occur, between sentences, so while sending
+the data we need to do some hacky shit. With a `crdt`, we would be sending
+the data wrapped in some other data, so this problem won't arise.
+
+But fear not, the answer right now is simple.
+`Replace the \n with \xn and then add a \n in the end`.
+
+The data is sent using a line protocol, cause `_|_ json parsing`.
+
+The format is: `mode|whatever`
+
+```go
+for {
+  message, err := reader.ReadString('\n')
+  if err != nil {
+    break
+  }
+
+  log.Print("Received:", message)
+
+  slicendice.Map(filteredClients, func(client net.Conn) {
+    client.Write([]byte(message))
+  })
+}
+```
+
+```lua
+function M.parse(data)
+  -- compare hashes
+  local currHash = md5.sum(data)
+  if M.prevHash == currHash then
+    return
+  end
+
+  M.prevHash = currHash
+
+  -- get the mode and data
+  local mode, line = data:match("^(%a)|(.+)$")
+
+  -- replace the \\xn with new-lines, for the in-text line breaks
+  line = line:gsub("\\xn", "\n")
+
+  -- handle the modes
+  if mode == "i" then
+    vim.schedule(function()
+      local lines = vim.split(line, "\n", { trimempty = true })
+      local buf = vim.api.nvim_get_current_buf()
+
+      vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+    end)
+
+    -- other modes
+  end
+end
+
+function M.currentBuffer()
+  local buffer = vim.api.nvim_buf_get_lines(0, 0, -1, false)
+  local buffer_string = table.concat(buffer, "\\xn") -- as discussed above
+
+  if buffer_string == "" then
+    return ""
+  end
+
+  return "i|" .. buffer_string
+end
+```
+
+-- vim: ts=2 sts=2 sw=2 et
+
+### thanks
+
+until next time, ladies.
