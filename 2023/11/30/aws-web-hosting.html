@@ -1,0 +1,923 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+  <title>
+    Hosting with AWS - iko&#39;s logs
+    
+  </title>
+
+  <meta name="description" content="How to utilize AWS Free tier to host webserver">
+  <meta property="og:description" content="How to utilize AWS Free tier to host webserver">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Hosting with AWS">
+  <meta property="og:url" content="https://ikouchiha47.github.io/2023/11/30/aws-web-hosting.html">
+
+  
+
+  <link href='https://fonts.googleapis.com/css?family=Lora:400,700,400italic,700italic' rel='stylesheet' type='text/css'>
+  <link href='https://fonts.googleapis.com/css?family=Open+Sans:300italic,400italic,600italic,700italic,800italic,400,300,600,700,800' rel='stylesheet' type='text/css'>
+
+  <!-- <script src="https://use.fontawesome.com/releases/v5.15.3/js/all.js" crossorigin="anonymous"></script> -->
+  <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.15.4/css/all.css" integrity="sha384-DyZ88mC6Up2uqS4h/KRgHuoeGwBcD4Ng9SiP4dIRy0EXTlnuz47vAwmeGwVChigm" crossorigin="anonymous"/>
+
+  <link rel="stylesheet" href="/assets/main.css">
+  <link rel="canonical" href="https://ikouchiha47.github.io/2023/11/30/aws-web-hosting.html">
+  <link rel="alternate" type="application/rss+xml" title="iko&#39;s logs" href="/feed.xml">
+
+  <meta name="google-site-verification" content="lWkg6gIxJgzEKX_5XnhcxCtPE9QknaimFWWos_dTvPM" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fira+Sans:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Inconsolata:wght@200..900&family=Jersey+25&family=Kanit:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Merriweather+Sans:ital,wght@0,300..800;1,300..800&family=Nanum+Gothic+Coding&family=Space+Grotesk:wght@300..700&family=Titillium+Web:ital,wght@0,200;0,300;0,400;0,600;0,700;0,900;1,200;1,300;1,400;1,600;1,700&display=swap" rel="stylesheet">
+
+</head>
+
+
+<body>
+
+  <!-- Navigation -->
+<nav class="navbar navbar-expand-lg navbar-light fixed-top" id="mainNav">
+  <div class="container">
+    <a class="navbar-brand" href="/">iko&#39;s logs</a>
+    <button class="navbar-toggler navbar-toggler-right" type="button" data-toggle="collapse" data-target="#navbarResponsive" aria-controls="navbarResponsive" aria-expanded="false" aria-label="Toggle navigation">
+      Menu
+      <i class="fa fa-bars"></i>
+    </button>
+    <div class="collapse navbar-collapse" id="navbarResponsive">
+      <ul class="navbar-nav ml-auto">
+        <li class="nav-item">
+          <a class="nav-link" href="/">Home</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/about">About</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/posts">Posts</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/contact">Contact</a>
+        </li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+
+  <!-- Page Header -->
+
+<header class="masthead" style="background: #ec7211">
+
+  <div class="overlay"></div>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <div class="post-heading">
+          <h1>Hosting with AWS</h1>
+          
+          <h2 class="subheading">utilizing AWS free tier host your server on EC2 instances</h2>
+          
+          <span class="meta">Posted by
+            <a href="#">ikouchiha47</a>
+            on November 30, 2023 &middot; <span class="reading-time" title="Estimated read time">
+  
+   26 mins  read </span>
+
+          </span>
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="container space-grotesk">
+  <div class="row">
+    <div class="col-lg-8 col-md-10 mx-auto">
+
+      <p>We have <a href="/2023/11/27/self-hosted-website.html">seen previously</a> on how to host your public website from your local machine.</p>
+
+<p>In this article we will see how to use <a href="https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/launch_template#network-interfaces">Terraform</a> and
+<a href="https://aws.amazon.com/">AWS</a> to host your website.</p>
+
+<div class="preview-wrapper">
+  <div class="preview-wrapper-inner">
+    <div class="preview-content">
+      <div class="preview-image">
+        <a href="https://www.terraform.io/use-cases/infrastructure-as-code" target="_blank" class="preview-img-wrapper">
+          <img src="https://raw.githubusercontent.com/github/explore/80688e429a7d4ef2fca1e82350fe8e3517d3494d/topics/terraform/terraform.png" />
+        </a>
+      </div>
+
+      <div class="preview-body">
+        <h2 class="preview-title">
+          <a href="https://www.terraform.io/use-cases/infrastructure-as-code" target="_blank">Infrastructure as code</a>
+        </h2>
+        <div class="preview-description">Use infrastructure as code to automate the provisioning of your infrastructure including servers, databases, firewall policies, and almost any other resource.</div>
+        <div class="preview-footer">
+          <a href="//www.terraform.io" target="_blank">www.terraform.io</a>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<p>We will do these incrementally</p>
+
+<ul>
+  <li>Make a simple server</li>
+  <li>Build a docker image, and push to ECR</li>
+  <li>Use a firewall to allow traffic from certain ports</li>
+  <li>Setup a simple server on an EC2 instance and deploy the image</li>
+  <li>Manage EC2 instances with ECS, using launch templates</li>
+  <li>Using a load-balancer and a vpc network instead of accessing public ip for ec2</li>
+</ul>
+
+<p>&nbsp;</p>
+
+<h3 id="aws-free-tier">AWS Free Tier</h3>
+
+<p>AWS Free Tier, allows you to run an ec2 instance for an year, 750 hours a month.</p>
+
+<p>It allows to have a t2.micro or t3.micro machine, which basically describes how many cpus you can have. And support for EBS. 
+The availability also depends on the region.</p>
+
+<ul>
+  <li>ECS is always free,</li>
+  <li>Auto Scaling Group which ECS can use to scale, is always free.</li>
+  <li>Load balancing is free for 12 months or 750 hours. and <em>luck runs out slower</em></li>
+</ul>
+
+<p>We do however need to pay if we want to our services to access the internet, like serving a page, downlading packages, Lol <em>Jokes on capitalism</em>.</p>
+
+<p>End of the day, pay your internet bill.</p>
+
+<p>&nbsp;</p>
+<h3 id="pre-requisite">Pre-requisite</h3>
+
+<ul>
+  <li>AWS account and AWSCLI</li>
+  <li>Terraform</li>
+  <li>Docker</li>
+  <li>Unix machine</li>
+  <li>A running webserver to serve requests</li>
+</ul>
+
+<p>&nbsp;</p>
+
+<h3 id="preparation">Preparation</h3>
+
+<p>We are going to use a simple golang server for then example.I am not going to present a full fledged working code, just the <code class="language-plaintext highlighter-rouge">main.go</code></p>
+
+<div class="language-go highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">package</span> <span class="n">main</span>
+
+<span class="k">import</span> <span class="p">(</span>
+	<span class="s">"flag"</span>
+	<span class="s">"log"</span>
+	<span class="s">"net/http"</span>
+	<span class="s">"konoha/app/authentication"</span>
+	<span class="s">"konoha/app/bookdetails"</span>
+	<span class="s">"konoha/app/login"</span>
+	<span class="s">"konoha/conf"</span>
+	<span class="s">"konoha/db/dbconnector"</span>
+	<span class="s">"time"</span>
+
+	<span class="s">"github.com/gorilla/mux"</span>
+<span class="p">)</span>
+
+<span class="k">var</span> <span class="n">cfg</span> <span class="n">conf</span><span class="o">.</span><span class="n">Config</span>
+
+<span class="k">func</span> <span class="n">main</span><span class="p">()</span> <span class="p">{</span>
+	<span class="k">var</span> <span class="n">envFile</span> <span class="kt">string</span>
+	<span class="n">flag</span><span class="o">.</span><span class="n">StringVar</span><span class="p">(</span><span class="o">&amp;</span><span class="n">envFile</span><span class="p">,</span> <span class="s">"e"</span><span class="p">,</span> <span class="s">"./conf/.env"</span><span class="p">,</span> <span class="s">"pass env file"</span><span class="p">)</span>
+
+	<span class="n">flag</span><span class="o">.</span><span class="n">Parse</span><span class="p">()</span>
+
+	<span class="n">log</span><span class="o">.</span><span class="n">Println</span><span class="p">(</span><span class="n">envFile</span><span class="p">)</span>
+	<span class="n">cfg</span> <span class="o">=</span> <span class="n">conf</span><span class="o">.</span><span class="n">LoadConfig</span><span class="p">(</span><span class="n">envFile</span><span class="p">)</span>
+
+	<span class="n">log</span><span class="o">.</span><span class="n">SetFlags</span><span class="p">(</span><span class="n">log</span><span class="o">.</span><span class="n">LstdFlags</span> <span class="o">|</span> <span class="n">log</span><span class="o">.</span><span class="n">Llongfile</span><span class="p">)</span>
+
+	<span class="n">r</span> <span class="o">:=</span> <span class="n">mux</span><span class="o">.</span><span class="n">NewRouter</span><span class="p">()</span>
+	<span class="n">srv</span> <span class="o">:=</span> <span class="o">&amp;</span><span class="n">http</span><span class="o">.</span><span class="n">Server</span><span class="p">{</span>
+		<span class="n">Handler</span><span class="o">:</span>      <span class="n">r</span><span class="p">,</span>
+		<span class="n">Addr</span><span class="o">:</span>         <span class="s">":9090"</span><span class="p">,</span>
+		<span class="n">WriteTimeout</span><span class="o">:</span> <span class="m">15</span> <span class="o">*</span> <span class="n">time</span><span class="o">.</span><span class="n">Second</span><span class="p">,</span>
+		<span class="n">ReadTimeout</span><span class="o">:</span>  <span class="m">15</span> <span class="o">*</span> <span class="n">time</span><span class="o">.</span><span class="n">Second</span><span class="p">,</span>
+	<span class="p">}</span>
+
+	<span class="n">r</span><span class="o">.</span><span class="n">Use</span><span class="p">(</span><span class="n">JSONMiddleware</span><span class="p">)</span>
+
+	<span class="n">r</span><span class="o">.</span><span class="n">HandleFunc</span><span class="p">(</span><span class="s">"/ping"</span><span class="p">,</span> <span class="k">func</span><span class="p">(</span><span class="n">w</span> <span class="n">http</span><span class="o">.</span><span class="n">ResponseWriter</span><span class="p">,</span> <span class="n">r</span> <span class="o">*</span><span class="n">http</span><span class="o">.</span><span class="n">Request</span><span class="p">)</span> <span class="p">{</span>
+		<span class="n">w</span><span class="o">.</span><span class="n">WriteHeader</span><span class="p">(</span><span class="n">http</span><span class="o">.</span><span class="n">StatusOK</span><span class="p">)</span>
+		<span class="n">w</span><span class="o">.</span><span class="n">Write</span><span class="p">([]</span><span class="kt">byte</span><span class="p">(</span><span class="s">"pong"</span><span class="p">))</span>
+	<span class="p">})</span>
+
+	<span class="n">r</span><span class="o">.</span><span class="n">HandleFunc</span><span class="p">(</span><span class="s">"/konoha/api/ping"</span><span class="p">,</span> <span class="k">func</span><span class="p">(</span><span class="n">w</span> <span class="n">http</span><span class="o">.</span><span class="n">ResponseWriter</span><span class="p">,</span> <span class="n">r</span> <span class="o">*</span><span class="n">http</span><span class="o">.</span><span class="n">Request</span><span class="p">)</span> <span class="p">{</span>
+		<span class="n">w</span><span class="o">.</span><span class="n">WriteHeader</span><span class="p">(</span><span class="n">http</span><span class="o">.</span><span class="n">StatusOK</span><span class="p">)</span>
+		<span class="n">w</span><span class="o">.</span><span class="n">Write</span><span class="p">([]</span><span class="kt">byte</span><span class="p">(</span><span class="s">"pong"</span><span class="p">))</span>
+	<span class="p">})</span>
+	<span class="n">pgconn</span> <span class="o">:=</span> <span class="n">dbconnector</span><span class="o">.</span><span class="n">NewPostgresConnector</span><span class="p">(</span><span class="n">cfg</span><span class="o">.</span><span class="n">SupabaseConfig</span><span class="o">.</span><span class="n">DBURL</span><span class="p">)</span>
+
+	<span class="n">r</span><span class="o">.</span><span class="n">HandleFunc</span><span class="p">(</span>
+		<span class="s">"/konoha/api/v1/login"</span><span class="p">,</span>
+		<span class="n">login</span><span class="o">.</span><span class="n">LoginHandlerInject</span><span class="p">(</span><span class="n">cfg</span><span class="p">,</span> <span class="o">&amp;</span><span class="n">login</span><span class="o">.</span><span class="n">AppContext</span><span class="p">{</span><span class="n">Dbconn</span><span class="o">:</span> <span class="n">pgconn</span><span class="p">}),</span>
+	<span class="p">)</span><span class="o">.</span><span class="n">Methods</span><span class="p">(</span><span class="s">"POST"</span><span class="p">)</span>
+
+	<span class="n">authRouter</span><span class="o">.</span><span class="n">HandleFunc</span><span class="p">(</span>
+		<span class="s">"/konoha/api/books/all"</span><span class="p">,</span>
+        <span class="n">bookdetails</span><span class="o">.</span><span class="n">BookDetailsFetcherInjector</span><span class="p">(</span><span class="n">cfg</span><span class="p">),</span>
+	<span class="p">)</span><span class="o">.</span><span class="n">Methods</span><span class="p">(</span><span class="s">"GET"</span><span class="p">)</span>
+
+	<span class="n">log</span><span class="o">.</span><span class="n">Println</span><span class="p">(</span><span class="s">"Listening to server on PORT 9090"</span><span class="p">)</span>
+	<span class="n">log</span><span class="o">.</span><span class="n">Fatal</span><span class="p">(</span><span class="n">srv</span><span class="o">.</span><span class="n">ListenAndServe</span><span class="p">())</span>
+<span class="p">}</span>
+
+<span class="k">func</span> <span class="n">JSONMiddleware</span><span class="p">(</span><span class="n">next</span> <span class="n">http</span><span class="o">.</span><span class="n">Handler</span><span class="p">)</span> <span class="n">http</span><span class="o">.</span><span class="n">Handler</span> <span class="p">{</span>
+	<span class="k">return</span> <span class="n">http</span><span class="o">.</span><span class="n">HandlerFunc</span><span class="p">(</span><span class="k">func</span><span class="p">(</span><span class="n">w</span> <span class="n">http</span><span class="o">.</span><span class="n">ResponseWriter</span><span class="p">,</span> <span class="n">r</span> <span class="o">*</span><span class="n">http</span><span class="o">.</span><span class="n">Request</span><span class="p">)</span> <span class="p">{</span>
+		<span class="n">w</span><span class="o">.</span><span class="n">Header</span><span class="p">()</span><span class="o">.</span><span class="n">Add</span><span class="p">(</span><span class="s">"Content-Type"</span><span class="p">,</span> <span class="s">"application/json"</span><span class="p">)</span>
+		<span class="n">next</span><span class="o">.</span><span class="n">ServeHTTP</span><span class="p">(</span><span class="n">w</span><span class="p">,</span> <span class="n">r</span><span class="p">)</span>
+	<span class="p">})</span>
+<span class="p">}</span>
+
+</code></pre></div></div>
+
+<p>Now lets make a <em>docker image</em> from this.</p>
+
+<div class="language-docker highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">FROM</span><span class="w"> </span><span class="s">golang:1.21</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="s">builder</span>
+
+<span class="k">WORKDIR</span><span class="s"> /src</span>
+<span class="k">COPY</span><span class="s"> go.mod go.sum ./</span>
+<span class="k">RUN </span>go mod download
+<span class="k">COPY</span><span class="s"> . .</span>
+<span class="k">RUN </span><span class="nv">CGO_ENABLED</span><span class="o">=</span>0 <span class="nv">GOOS</span><span class="o">=</span>linux <span class="nv">GOARCH</span><span class="o">=</span>amd64 go build <span class="nt">-o</span> /opt/server cmd/server/main.go
+
+<span class="k">FROM</span><span class="s"> alpine:3.14</span>
+
+<span class="k">ENV</span><span class="s"> ENV=prod</span>
+
+<span class="k">WORKDIR</span><span class="s"> /opt/app</span>
+<span class="k">COPY</span><span class="s"> --from=builder /opt/server /opt/app/server</span>
+<span class="k">COPY</span><span class="s"> --from=builder /src/conf/.env /opt/app/conf/.env</span>
+
+<span class="k">RUN </span><span class="nb">chmod</span> +x <span class="s2">"/opt/app/server"</span>
+
+<span class="k">EXPOSE</span><span class="s"> 9090</span>
+<span class="k">CMD</span><span class="s"> ["/opt/app/server"]</span>
+</code></pre></div></div>
+
+<p>And build it with</p>
+
+<div class="language-shell highlighter-rouge"><div class="highlight"><pre class="highlight"><code>docker build <span class="nt">-t</span> konoha-server:latest <span class="nb">.</span>
+docker run <span class="nt">--publish</span> 9090:9090 konoha-server:latest
+</code></pre></div></div>
+
+<p>&nbsp;</p>
+
+<h3 id="setup-awscli">Setup AWSCLI</h3>
+
+<div class="preview-wrapper">
+  <div class="preview-wrapper-inner">
+    <div class="preview-content">
+      <div class="preview-image">
+        <a href="https://docs.aws.amazon.com/streams/latest/dev/setting-up.html" target="_blank" class="preview-img-wrapper">
+          <img src="https://upload.wikimedia.org/wikipedia/commons/5/5c/AWS_Simple_Icons_AWS_Cloud.svg" />
+        </a>
+      </div>
+
+      <div class="preview-body">
+        <h2 class="preview-title">
+          <a href="https://docs.aws.amazon.com/streams/latest/dev/setting-up.html" target="_blank">Step 1: Set Up an AWS Account and Create an Administrator User - Amazon Kinesis Data Streams</a>
+        </h2>
+        <div class="preview-description">Before you use Amazon Managed Service for Apache Flink for Flink Applications for the first time, complete the following tasks:</div>
+        <div class="preview-footer">
+          <a href="//docs.aws.amazon.com" target="_blank">docs.aws.amazon.com</a>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<p>Before setting up <code class="language-plaintext highlighter-rouge">awscli</code>, we need to create an IAM role with <code class="language-plaintext highlighter-rouge">AdministratorAccess</code> policy.</p>
+
+<ul>
+  <li>Goto IAM and Create User</li>
+  <li>Choose both Programmatic access and AWS Management Console access.</li>
+  <li>Choose attach policies directly and add <code class="language-plaintext highlighter-rouge">AdministratorAccess</code></li>
+  <li>Upon successfull creation, you will see a nnumber like <code class="language-plaintext highlighter-rouge">909***</code>, which is your AWS Account ID.</li>
+  <li>Go to the user detail page <code class="language-plaintext highlighter-rouge">IAM &gt; Users &gt; {Your created user}, and </code>Create Access Key`</li>
+</ul>
+
+<p>After completing this you should have the <code class="language-plaintext highlighter-rouge">AWS_ACCESS_KEY</code> and <code class="language-plaintext highlighter-rouge">AWS_SECRET</code> which you will use to configure the cli. Using</p>
+
+<div class="language-shell highlighter-rouge"><div class="highlight"><pre class="highlight"><code>aws configure
+</code></pre></div></div>
+
+<p>Make sure to choose the proper region during configuring. <a href="https://www.techtarget.com/searchcloudcomputing/tutorial/Step-by-step-guide-on-how-to-create-an-IAM-user-in-AWS">Here</a> is an
+article with images.</p>
+
+<p>&nbsp;</p>
+
+<h3 id="configure-iam-roles">Configure IAM roles</h3>
+
+<p>In the previous step we have seen configured a <code class="language-plaintext highlighter-rouge">Role</code> with admin access. But that’s for our cli access. We need to create roles so that certain AWS services can
+perform actions on our behalf with limited access. For example,</p>
+
+<ul>
+  <li>pulling and pushing from ecr</li>
+  <li>getting auth tokens for ecr login command</li>
+  <li>creating and putting logs to log stream etc,</li>
+</ul>
+
+<p>For now we will create two roles, one for the EC2 instance and the other for the ECS task later on. You can either create them with terraform, or cli or UI.</p>
+
+<p>The two policies we need are:</p>
+<ul>
+  <li><a href="https://docs.aws.amazon.com/AmazonECS/latest/developerguide/task_execution_IAM_role.html">AmazonECSTaskExecutionRolePolicy</a></li>
+  <li><a href="https://docs.aws.amazon.com/AmazonECS/latest/developerguide/security-iam-awsmanpol.html">AmazonEC2ContainerServiceforEC2Role</a></li>
+</ul>
+
+<p>I have created two roles manually with the aws cli. But it can be done with terraform while running the job.</p>
+
+<div class="language-json highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="p">{</span><span class="w">
+  </span><span class="nl">"Version"</span><span class="p">:</span><span class="w"> </span><span class="s2">"2012-10-17"</span><span class="p">,</span><span class="w">
+  </span><span class="nl">"Statement"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="w">
+    </span><span class="p">{</span><span class="w">
+      </span><span class="nl">"Sid"</span><span class="p">:</span><span class="w"> </span><span class="s2">""</span><span class="p">,</span><span class="w">
+      </span><span class="nl">"Effect"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Allow"</span><span class="p">,</span><span class="w">
+      </span><span class="nl">"Principal"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
+        </span><span class="nl">"Service"</span><span class="p">:</span><span class="w"> </span><span class="s2">"ecs-tasks.amazonaws.com"</span><span class="w">
+      </span><span class="p">},</span><span class="w">
+      </span><span class="nl">"Action"</span><span class="p">:</span><span class="w"> </span><span class="s2">"sts:AssumeRole"</span><span class="w">
+    </span><span class="p">}</span><span class="w">
+  </span><span class="p">]</span><span class="w">
+</span><span class="p">}</span><span class="w">
+</span></code></pre></div></div>
+<p><em>ecs_execution_role.json</em></p>
+
+<div class="language-shell highlighter-rouge"><div class="highlight"><pre class="highlight"><code>aws iam create-role <span class="se">\</span>
+      <span class="nt">--role-name</span> ecsInstanceRole  <span class="se">\</span>
+      <span class="nt">--assume-role-policy-document</span> file://./infrafiles/ecs_execution_role.json
+
+
+aws iam attach-role-policy <span class="se">\</span>
+      <span class="nt">--role-name</span> ecsInstanceRole  <span class="se">\</span>
+      <span class="nt">--policy-arn</span> arn:aws:iam::aws:policy/service-role/AmazonEC2ContainerServiceforEC2Role
+
+
+
+aws iam create-role <span class="se">\</span>
+      <span class="nt">--role-name</span> ecsTaskExecutionRole <span class="se">\</span>
+      <span class="nt">--assume-role-policy-document</span> file://./infrafiles/ecs_execution_role.json
+
+aws iam attach-role-policy <span class="se">\</span>
+      <span class="nt">--role-name</span> ecsTaskExecutionRole  <span class="se">\</span>
+      <span class="nt">--policy-arn</span> arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+</code></pre></div></div>
+
+<p>&nbsp;</p>
+
+<h3 id="hosting-your-docker-build">Hosting your docker build</h3>
+
+<p>Next we are going to take the docker executable and host it in ECR so that we can pull it into our EC2 instance.</p>
+
+<p>In order to do that, you need the url to push to. The nature of the url is documented <a href="https://docs.aws.amazon.com/AmazonECR/latest/userguide/getting-started-cli.html">here</a>. This script will come in handy.</p>
+
+<div class="preview-wrapper">
+  <div class="preview-wrapper-inner">
+    <div class="preview-content">
+      <div class="preview-image">
+        <a href="https://docs.aws.amazon.com/AmazonECR/latest/userguide/getting-started-cli.html" target="_blank" class="preview-img-wrapper">
+          <img src="https://upload.wikimedia.org/wikipedia/commons/5/5c/AWS_Simple_Icons_AWS_Cloud.svg" />
+        </a>
+      </div>
+
+      <div class="preview-body">
+        <h2 class="preview-title">
+          <a href="https://docs.aws.amazon.com/AmazonECR/latest/userguide/getting-started-cli.html" target="_blank">Using Amazon ECR with the AWS CLI - Amazon ECR</a>
+        </h2>
+        <div class="preview-description">The following steps walk you through the steps needed to push a container image to a private Amazon ECR repository for the first time using the Docker CLI and the AWS CLI.</div>
+        <div class="preview-footer">
+          <a href="//docs.aws.amazon.com" target="_blank">docs.aws.amazon.com</a>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="language-bash highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="c">#!/bin/bash</span>
+<span class="c">#</span>
+<span class="c"># Upload image to ecr</span>
+<span class="c"># requires AWS_ACCOUNT, AWS_REGION, VERSION</span>
+aws ecr get-login-password <span class="nt">--region</span> ap-south-1 | docker login <span class="nt">--username</span> AWS <span class="nt">--password-stdin</span> <span class="s2">"</span><span class="k">${</span><span class="nv">AWS_ACCOUNT</span><span class="k">}</span><span class="s2">.dkr.ecr.</span><span class="k">${</span><span class="nv">AWS_REGION</span><span class="k">}</span><span class="s2">.amazonaws.com"</span>
+
+<span class="nv">VERSION</span><span class="o">=</span><span class="si">$(</span>git rev-parse <span class="nt">--short</span> HEAD<span class="si">)</span>
+<span class="nv">DOCKER_BUILD_TAG</span><span class="o">=</span><span class="s2">"konoha-server:</span><span class="k">${</span><span class="nv">VERSION</span><span class="k">}</span><span class="s2">"</span>
+
+<span class="nb">echo</span> <span class="s2">"Building docker image with tag </span><span class="nv">$DOCKER_BUILD_TAG</span><span class="s2">"</span>
+
+docker build <span class="nt">--platform</span> linux/amd64  <span class="nt">-t</span> <span class="s2">"</span><span class="k">${</span><span class="nv">DOCKER_BUILD_TAG</span><span class="k">}</span><span class="s2">"</span> <span class="nb">.</span>
+
+docker tag <span class="s2">"</span><span class="k">${</span><span class="nv">DOCKER_BUILD_TAG</span><span class="k">}</span><span class="s2">"</span> <span class="s2">"</span><span class="k">${</span><span class="nv">AWS_ACCOUNT</span><span class="k">}</span><span class="s2">.dkr.ecr.</span><span class="k">${</span><span class="nv">AWS_REGION</span><span class="k">}</span><span class="s2">.amazonaws.com/</span><span class="k">${</span><span class="nv">DOCKER_BUILD_TAG</span><span class="k">}</span><span class="s2">"</span>
+docker push <span class="s2">"</span><span class="k">${</span><span class="nv">AWS_ACCOUNT</span><span class="k">}</span><span class="s2">.dkr.ecr.</span><span class="k">${</span><span class="nv">AWS_REGION</span><span class="k">}</span><span class="s2">.amazonaws.com/</span><span class="k">${</span><span class="nv">DOCKER_BUILD_TAG</span><span class="k">}</span><span class="s2">"</span>
+</code></pre></div></div>
+
+<h3 id="terraform-to-deploy">Terraform to deploy</h3>
+
+<p>Before terraform, we need to be aware of <strong>What is EC2</strong>. Basically EC2 (technically ECC) provides you a mechanaism to boot up a machine of your choice
+and then run applications inside it.</p>
+
+<p>There are features build around it, like the ability to make an EC2 instance available in a particular zone/network, attach firewall rules, manage resources consumed etc.</p>
+
+<div class="preview-wrapper">
+  <div class="preview-wrapper-inner">
+    <div class="preview-content">
+      <div class="preview-image">
+        <a href="https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/concepts.html" target="_blank" class="preview-img-wrapper">
+          <img src="https://docs.aws.amazon.com/images/AWSEC2/latest/UserGuide/images/ec2-basic-arch.png" />
+        </a>
+      </div>
+
+      <div class="preview-body">
+        <h2 class="preview-title">
+          <a href="https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/concepts.html" target="_blank">What is Amazon EC2? - Amazon Elastic Compute Cloud</a>
+        </h2>
+        <div class="preview-description">Use Amazon EC2 for scalable computing capacity in the AWS Cloud so you can develop and deploy applications without hardware constraints.</div>
+        <div class="preview-footer">
+          <a href="//docs.aws.amazon.com" target="_blank">docs.aws.amazon.com</a>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<p>A firewall in AWS is called a <a href="https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/ec2-security-groups.html">Security Group</a>.</p>
+
+<p>Now, as to <strong>Terraform</strong>, its a way to automate deployments. Like other tools ansible, chef etc. Its a new hot thing, comes with support for cloud providers,
+maintains state and makes deployment scaling easier.</p>
+
+<p>Our terraform project will have three files for time being:</p>
+<ul>
+  <li>providers.tf</li>
+  <li>aws_ecs.tf</li>
+  <li>variables.tf</li>
+</ul>
+
+<p><code class="language-plaintext highlighter-rouge">terraform apply</code> would work on the files in the root directory as a whole, incase you want a seperate directory, you need to pass the root dir to <code class="language-plaintext highlighter-rouge">terraform apply</code> command.</p>
+
+<p>First we need to choose an image to install</p>
+
+<p>First we need to specify the provider we need to use in a <code class="language-plaintext highlighter-rouge">providers.tf</code>.</p>
+
+<div class="language-terraform highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">terraform</span> <span class="p">{</span>
+  <span class="nx">required_providers</span> <span class="p">{</span>
+    <span class="nx">aws</span> <span class="p">=</span> <span class="p">{</span>
+      <span class="nx">source</span>  <span class="p">=</span> <span class="s2">"hashicorp/aws"</span>
+      <span class="nx">version</span> <span class="p">=</span> <span class="s2">"~&gt; 4.16"</span>
+    <span class="p">}</span>
+  <span class="p">}</span>
+
+  <span class="nx">required_version</span> <span class="p">=</span> <span class="s2">"&gt;= 1.2.0"</span>
+<span class="p">}</span>
+</code></pre></div></div>
+
+<p>And some variables:</p>
+
+<div class="language-terraform highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">variable</span> <span class="s2">"DOCKER_IMAGE"</span> <span class="p">{</span>
+  <span class="nx">type</span> <span class="p">=</span> <span class="nx">string</span>
+<span class="p">}</span>
+
+<span class="k">variable</span> <span class="s2">"AWS_ACCOUNT"</span> <span class="p">{</span>
+  <span class="nx">type</span> <span class="p">=</span> <span class="nx">string</span>
+<span class="p">}</span>
+
+<span class="k">variable</span> <span class="s2">"ENVIRONMENT"</span> <span class="p">{</span>
+  <span class="nx">type</span> <span class="p">=</span> <span class="nx">string</span>
+  <span class="nx">default</span> <span class="p">=</span> <span class="s2">"beta"</span>
+<span class="p">}</span>
+</code></pre></div></div>
+
+<p>&nbsp;</p>
+
+<h3 id="chosing-the-right-imageos-for-the-ec2-instace">Chosing the right Image/OS for the EC2 instace.</h3>
+
+<p>AWS Free Tier only gives you a limited set of images in a given region which are allowed under free tier. And your level of frustration depends on finding the right image.</p>
+
+<p>Some Linux images come with nothing but just an os, with no ecs-agent or docker installed. And some images maintained by community which come with basic things preinstalled. These are called <code class="language-plaintext highlighter-rouge">Amazon Linux Image</code> (AMI)s.</p>
+
+<p>Also, you need to be mindful of the underlying os architecture of your docker build and the target OS of the AMI. Docker images build with arm64 are best hosted on arm64 machines. Most AMI’s support both versions of an image.</p>
+
+<p>I have used the amazon-linux-20203 os. You can search for these <code class="language-plaintext highlighter-rouge">AMI</code> in your region from the AWS UI. Or you can use this command.</p>
+
+<div class="language-shell highlighter-rouge"><div class="highlight"><pre class="highlight"><code>aws ssm get-parameters-by-path <span class="nt">--path</span> /aws/service/ecs/optimized-ami/amazon-linux-2023/ <span class="nt">--region</span> <span class="k">${</span><span class="nv">AWS_REGION</span><span class="k">}</span>
+</code></pre></div></div>
+
+<div class="preview-wrapper">
+  <div class="preview-wrapper-inner">
+    <div class="preview-content">
+      <div class="preview-image">
+        <a href="https://docs.aws.amazon.com/AmazonECS/latest/developerguide/retrieve-ecs-optimized_AMI.html" target="_blank" class="preview-img-wrapper">
+          <img src="https://upload.wikimedia.org/wikipedia/commons/5/5c/AWS_Simple_Icons_AWS_Cloud.svg" />
+        </a>
+      </div>
+
+      <div class="preview-body">
+        <h2 class="preview-title">
+          <a href="https://docs.aws.amazon.com/AmazonECS/latest/developerguide/retrieve-ecs-optimized_AMI.html" target="_blank">Retrieving Amazon ECS-Optimized AMI metadata - Amazon Elastic Container Service</a>
+        </h2>
+        <div class="preview-description">Use the AWS CLI to retrieve the Amazon ECS-optimized AMI metadata.</div>
+        <div class="preview-footer">
+          <a href="//docs.aws.amazon.com" target="_blank">docs.aws.amazon.com</a>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<h3 id="basic-building-block">Basic building block</h3>
+
+<p>Let’s create a basic ec2 instance running our docker image.</p>
+
+<p><em>aws_deploy.tf</em></p>
+
+<div class="language-terraform highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">provider</span> <span class="s2">"aws"</span> <span class="p">{</span>
+  <span class="nx">region</span> <span class="p">=</span> <span class="s2">"ap-south-1"</span>
+<span class="p">}</span>
+
+<span class="k">resource</span> <span class="s2">"aws_instance"</span> <span class="s2">"konoha_server"</span> <span class="p">{</span>
+  <span class="nx">ami</span> <span class="p">=</span> <span class="s2">"ami-027a0367928d05f3e"</span>
+  <span class="nx">instance_type</span> <span class="p">=</span> <span class="s2">"t2.micro"</span>
+  <span class="nx">associate_public_ip_address</span> <span class="p">=</span> <span class="kc">true</span>
+
+  <span class="nx">iam_instance_profile</span> <span class="p">=</span> <span class="s2">"ecsInstanceRole"</span>
+
+  <span class="nx">user_data</span> <span class="p">=</span> <span class="nx">base64encode</span><span class="p">(</span><span class="nx">templatefile</span><span class="p">(</span><span class="s2">"</span><span class="k">${</span><span class="nx">path</span><span class="p">.</span><span class="k">module}</span><span class="s2">/templates/ecs/setup.sh"</span><span class="p">,</span> <span class="p">{</span> <span class="nx">IMAGE</span> <span class="p">=</span> <span class="kd">var</span><span class="p">.</span><span class="nx">DOCKER_IMAGE</span><span class="p">,</span> <span class="nx">AWS_ACCOUNT</span> <span class="p">=</span> <span class="kd">var</span><span class="p">.</span><span class="nx">AWS_ACCOUNT</span> <span class="p">}))</span>
+
+  <span class="nx">tags</span> <span class="p">=</span> <span class="p">{</span>
+      <span class="nx">Name</span> <span class="p">=</span> <span class="s2">"konoha-api-instance"</span>
+  <span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div></div>
+
+<p>ecs/setup.sh</p>
+
+<div class="language-shell highlighter-rouge"><div class="highlight"><pre class="highlight"><code>aws ecr get-login-password <span class="nt">--region</span> ap-south-1 | docker login <span class="nt">--username</span> AWS <span class="nt">--password-stdin</span> <span class="s2">"</span><span class="k">${</span><span class="nv">AWS_ACCOUNT</span><span class="k">}</span><span class="s2">.dkr.ecr.</span><span class="k">${</span><span class="nv">AWS_REGION</span><span class="k">}</span><span class="s2">.amazonaws.com"</span>
+<span class="nb">sudo </span>docker pull <span class="s2">"</span><span class="k">${</span><span class="nv">IMAGE</span><span class="k">}</span><span class="s2">"</span>
+<span class="nb">sudo </span>docker run <span class="nt">-p</span> 80:9090 <span class="nt">-d</span> <span class="s2">"</span><span class="k">${</span><span class="nv">IMAGE</span><span class="k">}</span><span class="s2">"</span>
+</code></pre></div></div>
+
+<p>&nbsp;</p>
+
+<h3 id="setup-to-facilitate-ssh">Setup to facilitate SSH</h3>
+
+<p><em>aws_deploy.tf</em></p>
+
+<div class="language-terraform highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">resource</span> <span class="s2">"aws_key_pair"</span> <span class="s2">"tf-key-pair"</span> <span class="p">{</span>
+  <span class="nx">key_name</span> <span class="p">=</span> <span class="s2">"tf-key-pair"</span>
+  <span class="nx">public_key</span> <span class="p">=</span> <span class="nx">tls_private_key</span><span class="p">.</span><span class="nx">rsa</span><span class="p">.</span><span class="nx">public_key_openssh</span>
+<span class="p">}</span>
+
+<span class="k">resource</span> <span class="s2">"tls_private_key"</span> <span class="s2">"rsa"</span> <span class="p">{</span>
+  <span class="nx">algorithm</span> <span class="p">=</span> <span class="s2">"RSA"</span>
+  <span class="nx">rsa_bits</span>  <span class="p">=</span> <span class="mi">4096</span>
+<span class="p">}</span>
+
+<span class="k">resource</span> <span class="s2">"local_file"</span> <span class="s2">"tf-key"</span> <span class="p">{</span>
+  <span class="nx">content</span>  <span class="p">=</span> <span class="nx">tls_private_key</span><span class="p">.</span><span class="nx">rsa</span><span class="p">.</span><span class="nx">private_key_pem</span>
+  <span class="nx">filename</span> <span class="p">=</span> <span class="s2">"tf-key-pair.pem"</span>
+<span class="p">}</span>
+</code></pre></div></div>
+
+<p>And we need to attach the aws_instance to the key. To do that, add a line to the <code class="language-plaintext highlighter-rouge">aws_instance</code> block.</p>
+
+<div class="language-terraform highlighter-rouge"><div class="highlight"><pre class="highlight"><code>
+<span class="k">resource</span> <span class="s2">"aws_instance"</span> <span class="s2">"konoha_server"</span> <span class="p">{</span>
+  <span class="nx">key_name</span> <span class="p">=</span> <span class="s2">"tf-key-pair"</span>
+<span class="p">}</span>
+</code></pre></div></div>
+
+<p>&nbsp;</p>
+
+<h3 id="attach-firewall">Attach firewall</h3>
+
+<p>We need to allow access to certain inbound port and outbound port. For outbound we will now all allow traffic from the ec2 instances.</p>
+
+<p>For inbound rules, we will allow traffic from ports: 80 (http), 443 (https), 22 (ssh) . We won’t enable 9090, because our docker image is exposing on port 80 with <code class="language-plaintext highlighter-rouge">-p 80:9090</code>.</p>
+
+<p>In AWS terms its called <a href="https://docs.aws.amazon.com/vpc/latest/userguide/security-group-rules.html">Security Group</a> . You can find example implementation with <a href="https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/security_group">terraform</a></p>
+
+<p><img src="/img/security-group-overview.png" style="width: 100%" /></p>
+
+<p><em>client’s computer, connects to the vpc, via an internet gateway (in purple). the security group, firewalling the access</em></p>
+
+<p><em>aws_deploy.tf</em></p>
+
+<div class="language-terraform highlighter-rouge"><div class="highlight"><pre class="highlight"><code>
+<span class="k">resource</span> <span class="s2">"aws_security_group"</span> <span class="s2">"demo_api_sg"</span> <span class="p">{</span>
+  <span class="nx">name</span> <span class="p">=</span> <span class="s2">"DemoAPISg"</span>
+
+  <span class="nx">ingress</span> <span class="p">{</span>
+    <span class="nx">protocol</span>    <span class="p">=</span> <span class="s2">"tcp"</span>
+    <span class="nx">from_port</span>   <span class="p">=</span> <span class="mi">80</span>
+    <span class="nx">to_port</span>     <span class="p">=</span> <span class="mi">80</span>
+    <span class="nx">cidr_blocks</span> <span class="p">=</span> <span class="p">[</span><span class="s2">"0.0.0.0/0"</span><span class="p">]</span>
+  <span class="p">}</span>
+
+  <span class="nx">ingress</span> <span class="p">{</span>
+    <span class="nx">from_port</span>   <span class="p">=</span> <span class="mi">22</span>
+    <span class="nx">to_port</span>     <span class="p">=</span> <span class="mi">22</span>
+    <span class="nx">protocol</span>    <span class="p">=</span> <span class="s2">"tcp"</span>
+    <span class="nx">cidr_blocks</span> <span class="p">=</span> <span class="p">[</span><span class="s2">"0.0.0.0/0"</span><span class="p">]</span>
+  <span class="p">}</span>
+
+  <span class="nx">ingress</span> <span class="p">{</span>
+    <span class="nx">from_port</span>       <span class="p">=</span> <span class="mi">443</span>
+    <span class="nx">to_port</span>         <span class="p">=</span> <span class="mi">443</span>
+    <span class="nx">protocol</span>        <span class="p">=</span> <span class="s2">"tcp"</span>
+    <span class="nx">cidr_blocks</span>     <span class="p">=</span> <span class="p">[</span><span class="s2">"0.0.0.0/0"</span><span class="p">]</span>
+  <span class="p">}</span>
+
+  <span class="nx">egress</span> <span class="p">{</span>
+    <span class="nx">from_port</span> <span class="p">=</span> <span class="mi">0</span>
+    <span class="nx">to_port</span>   <span class="p">=</span> <span class="mi">0</span>
+    <span class="nx">protocol</span>  <span class="p">=</span> <span class="s2">"-1"</span>
+    <span class="nx">cidr_blocks</span> <span class="p">=</span> <span class="p">[</span><span class="s2">"0.0.0.0/0"</span><span class="p">]</span>
+  <span class="p">}</span>
+<span class="p">}</span>
+
+</code></pre></div></div>
+
+<p>Now, in this case, we will be using the default vpc. and add attach the security group to the <code class="language-plaintext highlighter-rouge">aws_instance</code> definition.</p>
+
+<div class="language-terraform highlighter-rouge"><div class="highlight"><pre class="highlight"><code>
+<span class="k">resource</span> <span class="s2">"aws_instance"</span> <span class="s2">"konoha_server"</span> <span class="p">{</span>
+  <span class="c1">// add this line to the definition above.</span>
+  <span class="nx">vpc_security_group_ids</span> <span class="p">=</span> <span class="p">[</span><span class="nx">aws_security_group</span><span class="p">.</span><span class="nx">konoha_api_sg</span><span class="p">.</span><span class="nx">id</span><span class="p">]</span>
+<span class="p">}</span>
+</code></pre></div></div>
+
+<p>We will also need to generate a ssh keys for us to login to the ec2 instance.</p>
+
+<p>This will generate you a ssh key, called <code class="language-plaintext highlighter-rouge">tf-key-pair.pem</code> which will allow you to login to the ec2 instance.</p>
+
+<p>And you are ready for your first deploy <strong>IaaC</strong> .</p>
+
+<p>Here is a small shell wrapper over <code class="language-plaintext highlighter-rouge">terraform</code> cli commands. Because we need to pass some <code class="language-plaintext highlighter-rouge">var</code> as environment variables.</p>
+
+<div class="language-shell highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="c">#!/bin/bash</span>
+<span class="c">#</span>
+<span class="c"># Wrapper over terraform commands and helpers</span>
+<span class="c">#</span>
+<span class="c">#</span>
+<span class="k">function </span>apply<span class="o">()</span> <span class="o">{</span>
+  <span class="nb">echo</span> <span class="s2">"aws account </span><span class="k">${</span><span class="nv">AWS_ACCOUNT</span><span class="k">}</span><span class="s2"> </span><span class="k">${</span><span class="nv">DOCKER_BUILD_TAG</span><span class="k">}</span><span class="s2">"</span>
+  terraform init
+
+  <span class="nv">TF_VAR_AWS_ACCOUNT</span><span class="o">=</span><span class="k">${</span><span class="nv">AWS_ACCOUNT</span><span class="k">}</span> <span class="se">\</span>
+    <span class="nv">TF_VAR_DOCKER_IMAGE</span><span class="o">=</span><span class="s2">"</span><span class="k">${</span><span class="nv">AWS_ACCOUNT</span><span class="k">}</span><span class="s2">.dkr.ecr.</span><span class="k">${</span><span class="nv">AWS_REGION</span><span class="k">}</span><span class="s2">.amazonaws.com/</span><span class="k">${</span><span class="nv">DOCKER_BUILD_TAG</span><span class="k">}</span><span class="s2">"</span> <span class="se">\</span>
+    terraform validate
+
+  <span class="nv">TF_VAR_AWS_ACCOUNT</span><span class="o">=</span><span class="k">${</span><span class="nv">AWS_ACCOUNT</span><span class="k">}</span> <span class="se">\</span>
+    <span class="nv">TF_VAR_DOCKER_IMAGE</span><span class="o">=</span><span class="s2">"</span><span class="k">${</span><span class="nv">AWS_ACCOUNT</span><span class="k">}</span><span class="s2">.dkr.ecr.</span><span class="k">${</span><span class="nv">AWS_REGION</span><span class="k">}</span><span class="s2">.amazonaws.com/</span><span class="k">${</span><span class="nv">DOCKER_BUILD_TAG</span><span class="k">}</span><span class="s2">"</span> <span class="se">\</span>
+    terraform plan <span class="nt">-out</span><span class="o">=</span>tfplan
+
+  <span class="nv">TF_VAR_AWS_ACCOUNT</span><span class="o">=</span><span class="k">${</span><span class="nv">AWS_ACCOUNT</span><span class="k">}</span> <span class="se">\</span>
+    <span class="nv">TF_VAR_DOCKER_IMAGE</span><span class="o">=</span><span class="s2">"</span><span class="k">${</span><span class="nv">AWS_ACCOUNT</span><span class="k">}</span><span class="s2">.dkr.ecr.</span><span class="k">${</span><span class="nv">AWS_REGION</span><span class="k">}</span><span class="s2">.amazonaws.com/</span><span class="k">${</span><span class="nv">DOCKER_BUILD_TAG</span><span class="k">}</span><span class="s2">"</span> <span class="se">\</span>
+    terraform apply <span class="s2">"tfplan"</span>
+<span class="o">}</span>
+
+<span class="k">function </span>destroy<span class="o">()</span> <span class="o">{</span>
+  <span class="nv">TF_VAR_AWS_ACCOUNT</span><span class="o">=</span><span class="k">${</span><span class="nv">AWS_ACCOUNT</span><span class="k">}</span> <span class="se">\</span>
+    <span class="nv">TF_VAR_DOCKER_IMAGE</span><span class="o">=</span><span class="s2">"</span><span class="k">${</span><span class="nv">AWS_ACCOUNT</span><span class="k">}</span><span class="s2">.dkr.ecr.</span><span class="k">${</span><span class="nv">AWS_REGION</span><span class="k">}</span><span class="s2">.amazonaws.com/</span><span class="k">${</span><span class="nv">DOCKER_BUILD_TAG</span><span class="k">}</span><span class="s2">"</span> <span class="se">\</span>
+    terraform destroy
+<span class="o">}</span>
+
+
+<span class="k">function </span>show<span class="o">()</span> <span class="o">{</span>
+  <span class="nv">TF_VAR_AWS_ACCOUNT</span><span class="o">=</span><span class="k">${</span><span class="nv">AWS_ACCOUNT</span><span class="k">}</span> <span class="se">\</span>
+    <span class="nv">TF_VAR_DOCKER_IMAGE</span><span class="o">=</span><span class="s2">"</span><span class="k">${</span><span class="nv">AWS_ACCOUNT</span><span class="k">}</span><span class="s2">.dkr.ecr.</span><span class="k">${</span><span class="nv">AWS_REGION</span><span class="k">}</span><span class="s2">.amazonaws.com/</span><span class="k">${</span><span class="nv">DOCKER_BUILD_TAG</span><span class="k">}</span><span class="s2">"</span> <span class="se">\</span>
+    terraform show
+<span class="o">}</span>
+
+<span class="k">function </span>output<span class="o">()</span> <span class="o">{</span>
+  <span class="nv">TF_VAR_AWS_ACCOUNT</span><span class="o">=</span><span class="k">${</span><span class="nv">AWS_ACCOUNT</span><span class="k">}</span> <span class="se">\</span>
+    <span class="nv">TF_VAR_DOCKER_IMAGE</span><span class="o">=</span><span class="s2">"</span><span class="k">${</span><span class="nv">AWS_ACCOUNT</span><span class="k">}</span><span class="s2">.dkr.ecr.</span><span class="k">${</span><span class="nv">AWS_REGION</span><span class="k">}</span><span class="s2">.amazonaws.com/</span><span class="k">${</span><span class="nv">DOCKER_BUILD_TAG</span><span class="k">}</span><span class="s2">"</span> <span class="se">\</span>
+    terraform output
+<span class="o">}</span>
+
+<span class="nv">__ACTIONS__</span><span class="o">=</span><span class="s2">":apply:show:destroy:"</span>
+<span class="nv">ACTION</span><span class="o">=</span><span class="s2">"show"</span>
+
+usage<span class="o">()</span> <span class="o">{</span> <span class="nb">echo</span> <span class="s2">"Usage: </span><span class="nv">$0</span><span class="s2"> [-a &lt;show|apply|destroy&gt;]"</span> 1&gt;&amp;2<span class="p">;</span> <span class="nb">exit </span>1<span class="p">;</span> <span class="o">}</span>
+
+<span class="k">while </span><span class="nb">getopts</span> <span class="s2">":a:"</span> arg<span class="p">;</span> <span class="k">do
+  case</span> <span class="s2">"</span><span class="k">${</span><span class="nv">arg</span><span class="k">}</span><span class="s2">"</span> <span class="k">in
+    </span>a<span class="p">)</span>
+      <span class="nv">ACTION</span><span class="o">=</span><span class="s2">"</span><span class="k">${</span><span class="nv">OPTARG</span><span class="k">}</span><span class="s2">"</span>
+      <span class="p">;;</span>
+    <span class="k">*</span><span class="p">)</span>
+      usage
+      <span class="nb">exit </span>1
+      <span class="p">;;</span>
+  <span class="k">esac</span>
+<span class="k">done
+
+if</span> <span class="o">[[</span> <span class="o">!</span> <span class="s2">"</span><span class="k">${</span><span class="nv">__ACTIONS__</span><span class="k">}</span><span class="s2">"</span> <span class="o">=</span>~ <span class="s2">":</span><span class="k">${</span><span class="nv">ACTION</span><span class="k">}</span><span class="s2">:"</span> <span class="o">]]</span><span class="p">;</span> <span class="k">then
+  </span><span class="nb">echo</span> <span class="s2">"invalid actions"</span>
+  usage
+  <span class="nb">exit </span>1
+<span class="k">fi
+
+</span><span class="nb">echo</span> <span class="s2">"Running terraform </span><span class="k">${</span><span class="nv">ACTION</span><span class="k">}</span><span class="s2">"</span>
+<span class="k">if</span> <span class="o">[[</span> <span class="s2">"</span><span class="nv">$ACTION</span><span class="s2">"</span> <span class="o">==</span> <span class="s2">"show"</span> <span class="o">]]</span><span class="p">;</span> <span class="k">then
+  </span>show
+<span class="k">elif</span> <span class="o">[[</span> <span class="s2">"</span><span class="nv">$ACTION</span><span class="s2">"</span> <span class="o">==</span> <span class="s2">"apply"</span> <span class="o">]]</span><span class="p">;</span> <span class="k">then
+  </span>apply
+<span class="k">elif</span> <span class="o">[[</span> <span class="s2">"</span><span class="nv">$ACTION</span><span class="s2">"</span> <span class="o">==</span> <span class="s2">"destroy"</span> <span class="o">]]</span><span class="p">;</span> <span class="k">then
+  </span>destroy
+<span class="k">elif</span> <span class="o">[[</span> <span class="s2">"</span><span class="nv">$ACTION</span><span class="s2">"</span> <span class="o">==</span> <span class="s2">"output"</span> <span class="o">]]</span><span class="p">;</span> <span class="k">then
+  </span>output
+<span class="k">fi</span>
+</code></pre></div></div>
+
+<div class="language-shell highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="nv">$ AWS_REGION</span><span class="o">=</span><span class="k">${</span><span class="nv">AWS_REGION</span><span class="k">}</span> <span class="nv">AWS_ACCOUNT</span><span class="o">=</span><span class="k">${</span><span class="nv">AWS_ACCOUNT</span><span class="k">}</span> <span class="nv">DOCKER_BUILD_TAG</span><span class="o">=</span><span class="k">${</span><span class="nv">DOCKER_BUILD_TAG</span><span class="k">}</span> bash scripts/tcl.sh <span class="nt">-a</span> apply
+</code></pre></div></div>
+
+<p>where <code class="language-plaintext highlighter-rouge">DOCKER_BUILD_TAG=konoha-server:latest</code> in our case. We can chose something like <code class="language-plaintext highlighter-rouge">konoha-server:$(git commit -1 --oneline | cut -d' ' -f1)</code> or even manual versioning with <code class="language-plaintext highlighter-rouge">git tag</code> works too.</p>
+
+<p>&nbsp;</p>
+
+<h3 id="how-to-access">How to access</h3>
+
+<p>There are two ways you can access this.</p>
+
+<p><strong>First</strong> from your <a href="https://console.aws.amazon.com/">AWS ui console</a>, search for <code class="language-plaintext highlighter-rouge">EC2</code>&gt; <code class="language-plaintext highlighter-rouge">Instances</code> &gt; <code class="language-plaintext highlighter-rouge">Public DNS</code> or <code class="language-plaintext highlighter-rouge">Public IP</code> should be there, on the right hand side.</p>
+
+<p><strong>Second</strong> programatically using <code class="language-plaintext highlighter-rouge">terraform</code>. You need to create an output.tf file, with an output resource block.</p>
+
+<p><em>output.tf</em></p>
+
+<div class="language-terraform highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">output</span> <span class="s2">"instance_id"</span> <span class="p">{</span>
+  <span class="nx">description</span> <span class="p">=</span> <span class="s2">"ID of the EC2 instance"</span>
+  <span class="nx">value</span>       <span class="p">=</span> <span class="nx">aws_instance</span><span class="p">.</span><span class="nx">konoha_server</span><span class="p">.</span><span class="nx">id</span>
+<span class="p">}</span>
+
+<span class="k">output</span> <span class="s2">"instance_public_ip"</span> <span class="p">{</span>
+  <span class="nx">description</span> <span class="p">=</span> <span class="s2">"Public IP address of the EC2 instance"</span>
+  <span class="nx">value</span>       <span class="p">=</span> <span class="nx">aws_instance</span><span class="p">.</span><span class="nx">konoha_server</span><span class="p">.</span><span class="nx">public_ip</span>
+<span class="p">}</span>
+</code></pre></div></div>
+
+<p><code class="language-plaintext highlighter-rouge">aws_instance</code> and <code class="language-plaintext highlighter-rouge">konoha_server</code> refers to the <code class="language-plaintext highlighter-rouge">resource "aws_instance" "konoha_server" {}</code> block, above. and run</p>
+
+<div class="language-shell highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="nv">$ AWS_REGION</span><span class="o">=</span><span class="k">${</span><span class="nv">AWS_REGION</span><span class="k">}</span> <span class="nv">AWS_ACCOUNT</span><span class="o">=</span><span class="k">${</span><span class="nv">AWS_ACCOUNT</span><span class="k">}</span> <span class="nv">DOCKER_BUILD_TAG</span><span class="o">=</span><span class="k">${</span><span class="nv">DOCKER_BUILD_TAG</span><span class="k">}</span> bash scripts/tcl.sh <span class="nt">-a</span> output
+</code></pre></div></div>
+
+<p>Incase you have this file already present, <code class="language-plaintext highlighter-rouge">terraform apply</code> should show you the output in the end without having to call <code class="language-plaintext highlighter-rouge">terraform output</code> in the end.</p>
+
+<p>&nbsp;</p>
+
+<h3 id="next-steps">Next steps</h3>
+
+<p>Next post we will discuss how to use an create an <code class="language-plaintext highlighter-rouge">ECS cluster</code> with <code class="language-plaintext highlighter-rouge">AutoScalling Groups</code> to launch <code class="language-plaintext highlighter-rouge">EC2 instances</code> within the cluster. Attach the cluster to a <code class="language-plaintext highlighter-rouge">vpc</code> and <code class="language-plaintext highlighter-rouge">serve internet traffic</code> with a <code class="language-plaintext highlighter-rouge">Loadbalancer</code>.</p>
+
+
+
+      <hr>
+      <div class="row mb-5 mt-5">
+  <div class="col-md-6 d-flex align-items-end ">
+    <span>Thanks. <i>mind sharing?</i></span>
+  </div>
+
+  <!-- Right Column with Social Media Icons (on the right for larger screens, on bottom for smaller screens) -->
+  <div class="col-md-6 order-md-2 order-1 text-md-right text-center mt-3 mt-md-0">
+    <div>
+
+      <a
+          href="https://www.linkedin.com/sharing/share-offsite?url=ikouchiha47.github.io/2023/11/30/aws-web-hosting.html"
+          onclick="window.open(this.href, 'pop-up', 'left=20,top=20,width=500,height=500,toolbar=1,resizable=0'); return false;"
+          class="d-inline-block mr-2"
+       >
+        <span class="fa-stack fa-lg" style="color: #0077b5;">
+          <i class="fas fa-square fa-stack-2x"></i>
+          <i class="fab fa-linkedin fa-stack-1x fa-inverse"></i>
+        </span>
+      </a>
+
+      <a
+          href="https://twitter.com/intent/tweet?text=Hosting with AWS&url=ikouchiha47.github.io/2023/11/30/aws-web-hosting.html"
+          onclick="window.open(this.href, 'pop-up', 'left=20,top=20,width=500,height=500,toolbar=1,resizable=0'); return false;"
+          class="d-inline-block mr-2">
+        <span class="fa-stack fa-lg" style="color: #1DA1F2;">
+          <i class="fas fa-square fa-stack-2x"></i>
+          <i class="fab fa-twitter fa-stack-1x fa-inverse"></i>
+        </span>
+      </a>
+
+      <a
+          href="http://www.reddit.com/submit?url=ikouchiha47.github.io/2023/11/30/aws-web-hosting.html"
+          onclick="window.open(this.href, 'pop-up', 'left=20,top=20,width=500,height=500,toolbar=1,resizable=0'); return false;"
+          class="d-inline-block mr-2">
+        <span class="fa-stack fa-lg" style="color: #FF4500;">
+          <i class="fas fa-square fa-stack-2x"></i>
+          <i class="fab fa-reddit fa-stack-1x fa-inverse"></i>
+        </span>
+      </a>
+    </div>
+  </div>
+</div>
+
+<hr/>
+
+
+      <div class="clearfix">
+
+        
+        <a class="btn btn-primary float-left" href="/2023/11/29/generating-link-preview.html" data-toggle="tooltip" data-placement="top" title="Generate Link Preview">&larr; Previous<span class="d-none d-md-inline">
+            Post</span></a>
+        
+        
+        <a class="btn btn-primary float-right" href="/2023/12/01/aws-web-hosting.html" data-toggle="tooltip" data-placement="top" title="Hosting with AWS (Part 2)">Next<span class="d-none d-md-inline">
+            Post</span> &rarr;</a>
+        
+
+      </div>
+
+    </div>
+  </div>
+</div>
+
+
+  <!-- Footer -->
+
+<hr>
+
+<footer>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <ul class="list-inline text-center">
+          
+          <li class="list-inline-item">
+            <a href="mailto:amitava.dev@proton.me" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="far fa-envelope fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          
+          
+          <li class="list-inline-item">
+            <a href="https://www.linkedin.com/in/amitavaag" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-linkedin fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          <li class="list-inline-item">
+            <a href="https://github.com/ikouchiha47" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-github fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+        </ul>
+
+        <p class="copyright text-muted">
+          Build with: 
+          <a 
+            href="https://github.com/StartBootstrap/startbootstrap-clean-blog-jekyll"
+            class="text-gray"
+            target="_blank">startbootstrap-clean-blog-jekyll</a></p>
+      </div>
+    </div>
+  </div>
+</footer>
+
+
+  <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="/assets/vendor/blog/js/scripts.js"></script>
+
+<script src="/assets/scripts.js"></script>
+
+
+
+
+  
+
+</body>
+
+</html>

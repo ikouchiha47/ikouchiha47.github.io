@@ -1,0 +1,829 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+  <title>
+    beetledb - iko&#39;s logs
+    
+  </title>
+
+  <meta name="description" content="Building a simple ondisk storage engine">
+  <meta property="og:description" content="Building a simple ondisk storage engine">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="beetledb">
+  <meta property="og:url" content="https://ikouchiha47.github.io/2024/07/10/building-a-storage-engine.html">
+
+  
+    <meta property="og:image" content="https://ikouchiha47.github.io/img/beetledb.jpg"/>
+  
+
+  <link href='https://fonts.googleapis.com/css?family=Lora:400,700,400italic,700italic' rel='stylesheet' type='text/css'>
+  <link href='https://fonts.googleapis.com/css?family=Open+Sans:300italic,400italic,600italic,700italic,800italic,400,300,600,700,800' rel='stylesheet' type='text/css'>
+
+  <!-- <script src="https://use.fontawesome.com/releases/v5.15.3/js/all.js" crossorigin="anonymous"></script> -->
+  <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.15.4/css/all.css" integrity="sha384-DyZ88mC6Up2uqS4h/KRgHuoeGwBcD4Ng9SiP4dIRy0EXTlnuz47vAwmeGwVChigm" crossorigin="anonymous"/>
+
+  <link rel="stylesheet" href="/assets/main.css">
+  <link rel="canonical" href="https://ikouchiha47.github.io/2024/07/10/building-a-storage-engine.html">
+  <link rel="alternate" type="application/rss+xml" title="iko&#39;s logs" href="/feed.xml">
+
+  <meta name="google-site-verification" content="lWkg6gIxJgzEKX_5XnhcxCtPE9QknaimFWWos_dTvPM" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fira+Sans:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Inconsolata:wght@200..900&family=Jersey+25&family=Kanit:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Merriweather+Sans:ital,wght@0,300..800;1,300..800&family=Nanum+Gothic+Coding&family=Space+Grotesk:wght@300..700&family=Titillium+Web:ital,wght@0,200;0,300;0,400;0,600;0,700;0,900;1,200;1,300;1,400;1,600;1,700&display=swap" rel="stylesheet">
+
+</head>
+
+
+<body>
+
+  <!-- Navigation -->
+<nav class="navbar navbar-expand-lg navbar-light fixed-top" id="mainNav">
+  <div class="container">
+    <a class="navbar-brand" href="/">iko&#39;s logs</a>
+    <button class="navbar-toggler navbar-toggler-right" type="button" data-toggle="collapse" data-target="#navbarResponsive" aria-controls="navbarResponsive" aria-expanded="false" aria-label="Toggle navigation">
+      Menu
+      <i class="fa fa-bars"></i>
+    </button>
+    <div class="collapse navbar-collapse" id="navbarResponsive">
+      <ul class="navbar-nav ml-auto">
+        <li class="nav-item">
+          <a class="nav-link" href="/">Home</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/about">About</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/posts">Posts</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/contact">Contact</a>
+        </li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+
+  <!-- Page Header -->
+
+<header class="masthead" style="background-image: url('/img/beetledb.jpg')">
+
+  <div class="overlay"></div>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <div class="post-heading">
+          <h1>beetledb</h1>
+          
+          <h2 class="subheading">A storage engine</h2>
+          
+          <span class="meta">Posted by
+            <a href="#">ikouchiha47</a>
+            on July 10, 2024 &middot; <span class="reading-time" title="Estimated read time">
+  
+   34 mins  read </span>
+
+          </span>
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="container space-grotesk">
+  <div class="row">
+    <div class="col-lg-8 col-md-10 mx-auto">
+
+      <h1 id="wassap">Wassap</h1>
+
+<p>Why build another database? Well, to learn a bit more on databases, and it’s pretty daunting.
+I reckon <strong>it would be fun</strong>.</p>
+
+<h1 id="sqlite-love">Sqlite Love</h1>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="cm">/*
+**    May you do good and not evil.
+**    May you find forgiveness for yourself and forgive others.
+**    May you share freely, never taking more than you give.
+*/</span>
+</code></pre></div></div>
+
+<p>– form <a href="https://github.com/sqlite/sqlite/blob/master/src/btreeInt.h">btreeInt.h</a></p>
+
+<p>The initial inspiration comes from <a href="https://www.sqlite.org/whentouse.html">sqlite3</a>. There is more to the database.</p>
+
+<ul>
+  <li><a href="https://www.sqlite.org/wal.html">WAL</a> mode.</li>
+  <li>BEGIN vs BEGIN IMMEDIATE</li>
+  <li><a href="https://www.sqlite.org/pragma.html#pragma_synchronous">Durability Tradeoff</a></li>
+  <li>Other <code class="language-plaintext highlighter-rouge">PRAGMA</code> directives:
+    <ul>
+      <li>Capping log file size</li>
+      <li>Increasing page cache size</li>
+      <li>Enabling memory mapping</li>
+    </ul>
+  </li>
+</ul>
+
+<p>fly.io has a good <a href="https://fly.io/blog/sqlite-internals-wal/">article</a> on efficiently using WAL mode.</p>
+
+<p><em>We have seen memory mapping before in our emulator as well. Instead of copying the data from disk to application memory space, only the address is passed along.</em></p>
+
+<p><strong>This blog is a work in progress. Additions would be made as I progress further</strong></p>
+
+<h2 id="seeding">Seeding</h2>
+
+<p>First steps:</p>
+
+<div class="language-shell highlighter-rouge"><div class="highlight"><pre class="highlight"><code>git clone https://github.com/sqlite/sqlite.git
+
+sqlite test.sqlite3
+</code></pre></div></div>
+
+<div class="language-sql highlighter-rouge"><div class="highlight"><pre class="highlight"><code>
+<span class="k">CREATE</span> <span class="k">TABLE</span> <span class="n">IF</span> <span class="k">NOT</span> <span class="k">EXISTS</span> <span class="n">users</span> <span class="p">(</span>
+        <span class="n">id</span> <span class="nb">INTEGER</span> <span class="k">PRIMARY</span> <span class="k">KEY</span> <span class="n">AUTOINCREMENT</span><span class="p">,</span>
+        <span class="n">username</span> <span class="nb">VARCHAR</span><span class="p">(</span><span class="mi">32</span><span class="p">),</span>
+        <span class="n">email</span> <span class="nb">VARCHAR</span><span class="p">(</span><span class="mi">255</span><span class="p">)</span>
+    <span class="p">);</span>
+</code></pre></div></div>
+
+<p><code class="language-plaintext highlighter-rouge">_populate.py</code></p>
+
+<div class="language-python highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="kn">import</span> <span class="n">sqlite3</span>
+<span class="kn">import</span> <span class="n">random</span>
+<span class="kn">import</span> <span class="n">string</span>
+
+
+<span class="c1"># Function to generate random usernames and emails
+</span><span class="k">def</span> <span class="nf">generate_random_user</span><span class="p">():</span>
+    <span class="n">username</span> <span class="o">=</span> <span class="sh">""</span><span class="p">.</span><span class="nf">join</span><span class="p">(</span><span class="n">random</span><span class="p">.</span><span class="nf">choices</span><span class="p">(</span><span class="n">string</span><span class="p">.</span><span class="n">ascii_lowercase</span><span class="p">,</span> <span class="n">k</span><span class="o">=</span><span class="mi">8</span><span class="p">))</span>
+    <span class="n">email</span> <span class="o">=</span> <span class="n">username</span> <span class="o">+</span> <span class="sh">"</span><span class="s">@mail.com</span><span class="sh">"</span>
+    <span class="nf">return </span><span class="p">(</span><span class="n">username</span><span class="p">,</span> <span class="n">email</span><span class="p">)</span>
+
+
+<span class="n">conn</span> <span class="o">=</span> <span class="n">sqlite3</span><span class="p">.</span><span class="nf">connect</span><span class="p">(</span><span class="sh">"</span><span class="s">test.sqlite3</span><span class="sh">"</span><span class="p">)</span>
+<span class="n">cursor</span> <span class="o">=</span> <span class="n">conn</span><span class="p">.</span><span class="nf">cursor</span><span class="p">()</span>
+
+<span class="n">N</span> <span class="o">=</span> <span class="mi">100000</span>
+
+<span class="n">users_to_insert</span> <span class="o">=</span> <span class="p">[</span><span class="nf">generate_random_user</span><span class="p">()</span> <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nf">range</span><span class="p">(</span><span class="n">N</span><span class="p">)]</span>
+
+<span class="c1"># Use executemany for batch insertion
+</span><span class="n">cursor</span><span class="p">.</span><span class="nf">executemany</span><span class="p">(</span><span class="sh">"</span><span class="s">INSERT INTO users (username, email) VALUES (?, ?)</span><span class="sh">"</span><span class="p">,</span> <span class="n">users_to_insert</span><span class="p">)</span>
+
+<span class="c1"># Commit the changes and close the connection
+</span><span class="n">conn</span><span class="p">.</span><span class="nf">commit</span><span class="p">()</span>
+<span class="n">conn</span><span class="p">.</span><span class="nf">close</span><span class="p">()</span>
+
+<span class="nf">print</span><span class="p">(</span><span class="sa">f</span><span class="sh">"</span><span class="s">Inserted </span><span class="si">{</span><span class="n">N</span><span class="si">}</span><span class="s"> user records successfully.</span><span class="sh">"</span><span class="p">)</span>
+</code></pre></div></div>
+
+<p>We run this, and then open the file with any <code class="language-plaintext highlighter-rouge">hex editor</code>. (VScode has an extension to read it).</p>
+
+<p>Head over to the <a href="https://fly.io/blog/sqlite-internals-btree/">sqlite’s btree internals</a>. This and the WAL mode article above by fly.io, would give a pretty high level idea of what to deal with.</p>
+
+<p>Database engines generally generate bytecode, which is then translated to equivalent machine instructions.
+But my idea is to see, if we can eliminate that.</p>
+
+<h2 id="detour">Detour</h2>
+
+<p>Aaaaannyyyyeeewhooo. On other news. I recently got diagonised with the cliced <code class="language-plaintext highlighter-rouge">ADD</code> and <code class="language-plaintext highlighter-rouge">Social Anxiety Disorder</code>. I mean, at this point I am not really surprised, anyone who knows me, can pretty much vouch for my anxiety. The anxiety mostly comes from knowing what’s the other person is grade me on what I say. I am also quite self-critical.</p>
+
+<p>There is no shame in admitting that success pretty much defines who I am. So not only I am judging myself, I am also thinking of what I said, and how it didn’t go the way I wanted to, and hence I am a failure. I wish it was some other way.</p>
+
+<p>I got my <code class="language-plaintext highlighter-rouge">ADD</code> in control though, coz a man’s gotta live. I have things in place to keep me sane. Of late, writing has helped slow down the thinking, although drawing is faster than writing. Sometimes there are so many variables to an asked question, that I just freeze and stare stupidly. As to help, I can do that to myself, has always been there.</p>
+
+<p>The only good thing about all this. I got addicted to the computer and with its ups and down it has fed me and kept me alive, for me to do other stuff. (If you couldn’t tell my now, other stuff is a constant in my life.)</p>
+
+<p><a href="https://www.youtube.com/watch?v=FUj3-B4yI8U">Dr. K</a> videos have been helpful. But I already had some of them figured out.</p>
+
+<p><strong>Those who help themselves, end up helping themselves and some more.</strong></p>
+
+<h1 id="more-sqlite-love">More sqlite love</h1>
+
+<p>This exercise, atleast for me, requires a whole lot of reading. So here is the list:</p>
+
+<ul>
+  <li><a href="https://www.sqlite.org/arch.html">sqlite architecture</a></li>
+  <li><a href="https://www.compileralchemy.com/books/sqlite-internals/">a guy explaining the by example</a></li>
+  <li><a href="https://sqlite.org/src4/doc/trunk/www/bt.wiki">b-tree pages</a>
+There are index and data pages, and there is also a concept of overflow pages.</li>
+  <li><a href="https://www.oreilly.com/library/view/database-internals/9781492040330/">a good damn book</a>
+This is again a whole lot of reading, but then you understand different types of indexes.</li>
+</ul>
+
+<h3 id="a-bit-about-indexes">A bit about indexes</h3>
+
+<p><a href="https://en.wikipedia.org/wiki/B%2B_tree">Wikipedia</a> is the best source.</p>
+
+<div class="preview-wrapper">
+  <div class="preview-wrapper-inner">
+    <div class="preview-content">
+      <div class="preview-image">
+        <a href="https://en.wikipedia.org/wiki/File:Bplustree.png" target="_blank" class="preview-img-wrapper">
+          <img src="https://upload.wikimedia.org/wikipedia/commons/3/37/Bplustree.png" />
+        </a>
+      </div>
+
+      <div class="preview-body">
+        <h2 class="preview-title">
+          <a href="https://en.wikipedia.org/wiki/File:Bplustree.png" target="_blank">File:Bplustree.png - Wikipedia</a>
+        </h2>
+        <div class="preview-description"></div>
+        <div class="preview-footer">
+          <a href="//en.wikipedia.org" target="_blank">en.wikipedia.org</a>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<p>Well, uptil now this has been my understanding. There are two popular indexing strategies that are used.
+In terms of b+tree, the <code class="language-plaintext highlighter-rouge">intermediate nodes</code> are used to point to the child nodes.</p>
+
+<p><code class="language-plaintext highlighter-rouge">child nodes</code> are mostly like <code class="language-plaintext highlighter-rouge">router nodes</code>, used to keep the tree balanced, by ensuring each node has
+optimal amount of keys.</p>
+
+<p>A <code class="language-plaintext highlighter-rouge">leaf node</code> is where database generally stores its data, rest all are used for quick lookup, depending on
+indexes. In some databases, if you don’t have a <code class="language-plaintext highlighter-rouge">primary key</code> the database <code class="language-plaintext highlighter-rouge">internally</code> creates one.
+_How else, is it supposed to build the b+tree__</p>
+
+<p>So, basically, you have a <code class="language-plaintext highlighter-rouge">key</code>/<code class="language-plaintext highlighter-rouge">rowid</code> and then the <code class="language-plaintext highlighter-rouge">value</code>. And keys are ordered. Great job.</p>
+
+<h4 id="two-bits-on-fragmentation">two bits on fragmentation</h4>
+
+<p>Deletions involving strcutured data isn’t instanteneous. In an ideal would, insertion and deletion should
+retrigger some sort of rebalancing. But this rebalancings are time consuming. Hence most times, they are
+marked as deleted.</p>
+
+<p>Once we have a couple of deletions and updates, it’s fairly possible that we can end up with wasted space.
+During a DML, if the page size is full, or the size of the data doesn’t fit the available page width,
+the kernel has to now involve the MMU to get a page allocation.</p>
+
+<p>This new page, can be a different part of the memory bank/sector, and hence, will require page jumps/inderections. (Not contigiiiuuous).</p>
+
+<p>All this leads to what people called a <code class="language-plaintext highlighter-rouge">fragmented state</code>.</p>
+
+<h4 id="clustered-index">clustered index</h4>
+
+<p>Here, the values are stored along with keys. And the other secondary indexes point to the primary index.
+This means, lookups using <code class="language-plaintext highlighter-rouge">primary keys</code> are pretty fast.</p>
+
+<p>But for secondary indexes, it has to go via the primary key, so 2 lookups to get 1 data.</p>
+
+<p><a href="https://dev.mysql.com/doc/refman/8.4/en/storage-engines.html">Mysqueel’s InnoDB</a> is our warlord here.
+ISAM behaves more like sqlite in default/journal mode, where for inserts and updates,
+it locks the entire table.
+Secondary indexes will have their own b+ tree.</p>
+
+<p>My understanding roughly is, inside the leaf nodes, the data is kept in sorted order.</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>Primary B+ Tree:
+     [10]
+    /    \
+ [1-5]  [11-15]
+Leaf nodes contain: (1, row data), (2, row data), ..., (15, row data)
+</code></pre></div></div>
+
+<p>So, for insertion, first it needs to find the right page, in <code class="language-plaintext highlighter-rouge">log N</code> time.
+Depending on if the page is full or not, the page is split and hence across pages
+the ordering is maintained. So within a page,</p>
+
+<p><strong>RANGE Queries are pretty efficient, and so is Search</strong></p>
+
+<p>And somehow having ordered heap reduces fragmentation. Although MySQL advises you to run <code class="language-plaintext highlighter-rouge">OPTIMIZE ...</code>, to
+reclaim and re-organise the data pages, and bring them closer.</p>
+
+<p><strong>More contiguous than the last time</strong></p>
+
+<h4 id="non-clustered-index">non-clustered index</h4>
+
+<p>Rather called it secondary indexes, where there is always an <code class="language-plaintext highlighter-rouge">internal id</code>, and it points to a <code class="language-plaintext highlighter-rouge">tuple</code>.
+The <code class="language-plaintext highlighter-rouge">tuple</code> is a combination of the <code class="language-plaintext highlighter-rouge">(page_number, page_offset)</code> on disk, much like how it works with filesystems
+in general.
+The data is loaded in the buffer cache, at various stages of execution.</p>
+
+<p>The <code class="language-plaintext highlighter-rouge">secondary indexes</code> too, point to the same <code class="language-plaintext highlighter-rouge">tuple_id</code>. And <code class="language-plaintext highlighter-rouge">UPDATEs</code> and more like <code class="language-plaintext highlighter-rouge">INSERTs</code>.</p>
+
+<p><strong>Postgres</strong> is what does this.</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>Index B+ Tree:
+     [10]
+    /    \
+ [1, TID1-5, TID5]  [11, TID11-15, TID15]
+Leaf nodes contain: (1, TID1), (2, TID2), ..., (15, TID15)
+
+Heap:
+Page 1: {TID1: (1, row data), TID2: (2, row data), ..., TID5: (5, row data)}
+Page 2: {TID11: (11, row data), ..., TID15: (15, row data)}
+</code></pre></div></div>
+
+<p>Since the data in the leaf is not ordered like in case of Mysql or sqlite, the insertion process
+doesn’t need to find the proper data page.</p>
+
+<p><strong>SELECTs on secondar indexes are therefore faster</strong>,</p>
+
+<p>This however causes a problem, that the data on disk is not contigious. (Although I am not really sure, aside from using <code class="language-plaintext highlighter-rouge">bitmaps</code> are there any optimizations they use, this is just theoritical understanding from the book).
+And “theoritically” it makes __RANGE queries slower compared to clusted indexes.</p>
+
+<p>So, something, like using 8bit blocks to represent integer keys, so for a 32bit, divided in 4 blocks.</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>let block = num / 8;
+let offset = num % 8;
+
+file.seek(block, 0).read(&amp;byte)
+
+byte = byte | (1 &lt;&lt; offset)
+// 1 &lt;&lt; offset, would move the 1 to the left offset number of time
+// and the | would set it to 1, indicating its present.
+</code></pre></div></div>
+
+<p>The other problem is in case of <strong>UPDATES</strong> if there are secondary indexes, and the tuple_id changes, all those
+secondary indexes has to be updated.</p>
+
+<p>Overall, non-clustered indexes perform good for range based queries, and queries which rely more on <code class="language-plaintext highlighter-rouge">PRIMARY</code> keys. Updates are bad for either of them, in their own way, one can only benchmark to choose.</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>
+This is no way to choose a database. Over a handfull of database blogs and newsletters,
+I have realized this, if you don't have any specific requirement for a fancy database,
+these days, most SQL databases can scale properly, if you get the topology right. There
+are plethora of extensions and plugins available.
+
+Both of them will sometimes call you up at night. All databases suffer from replication issues,
+and everything is a work-around to keep the C-A-P on.
+Your qouroum can fail as much as a semi-synchronous replica going down.
+
+I think in the end it boils down to having the expertise or willingness to work the issues.
+
+Figma and Discord are two contrasting example, (although they are in different points of time).
+Discords speciality is database migration, they can create a cloud service to do that.
+Figma on the other hand scaled their SQL database and wrote some cool tools and built the ecosystem.
+
+Your data model means shit to me. At college we thought everything should be in 4NF.
+</code></pre></div></div>
+
+<h3 id="get-to-work">Get to work</h3>
+
+<p>There are a couple of things that needed to be done. And I will try to break them down. The code is on <a href="https://github.com/ikouchiha47/brainiac/tree/master/beetledb">github</a>.</p>
+
+<p>The language of choice is <a href="https://learnxinyminutes.com/docs/zig/">Zig</a>. And the fastest way to learn zig, is still, <code class="language-plaintext highlighter-rouge">writing an emulator</code>.</p>
+
+<ul>
+  <li>Write a parser for a subset of <code class="language-plaintext highlighter-rouge">CREATE</code>, <code class="language-plaintext highlighter-rouge">SELECT</code> and <code class="language-plaintext highlighter-rouge">INSERT</code> (done)</li>
+  <li>Try to just save a simple b+ tree in file.</li>
+  <li>Use the WAL log mode from start</li>
+  <li>Try to use LSM tree, as a part of a pluggable storage engine</li>
+  <li>Try to implement a geo-database storage engine.</li>
+</ul>
+
+<h2 id="skiplist">SkipList</h2>
+
+<p>Well after much thought I realized, instead of going for a btree first, lets try saving a skiplist to file. A skiplist, is an in memory data format, a sorted linked list
+containing levels, So starting at the highest level, imagine playing snake and ladder. Travel horizontally to find an element greater than the target value,
+and then move one level down, for finer grained. Since we are skipping some elements, from finding the next greater node at the higer levels. So instead of going
+through this list [1,2,3,4,5], to find 4, lets say the max_level, has 3, in its list, so you have skipped, 1 and 2.</p>
+
+<p>At the base level, the probability of any node to be found is 1. And it decreases up the level. The insert implementation goes, like:</p>
+<ul>
+  <li>traversing the levels to find the place where the value needs to be inserted (target node).</li>
+  <li>finding a new level for the new node to be inserted, and pointer them to head node</li>
+  <li>treating it like a linked list, insert the node infront of the target node.</li>
+</ul>
+
+<p>Below is a brief implementation in python:</p>
+
+<div class="language-python highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="kn">from</span> <span class="n">typing</span> <span class="kn">import</span> <span class="n">List</span><span class="p">,</span> <span class="n">Self</span>
+<span class="kn">import</span> <span class="n">random</span>
+<span class="kn">import</span> <span class="n">struct</span>
+
+
+<span class="k">class</span> <span class="nc">SkipNode</span><span class="p">:</span>
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="n">self</span><span class="p">,</span> <span class="n">name</span><span class="p">,</span> <span class="n">value</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">max_level</span><span class="o">=</span><span class="mi">16</span><span class="p">):</span>
+        <span class="n">self</span><span class="p">.</span><span class="n">name</span> <span class="o">=</span> <span class="n">name</span>
+        <span class="n">self</span><span class="p">.</span><span class="n">value</span> <span class="o">=</span> <span class="n">value</span>
+        <span class="n">self</span><span class="p">.</span><span class="n">level</span> <span class="o">=</span> <span class="n">max_level</span> <span class="o">+</span> <span class="mi">1</span>
+        <span class="n">self</span><span class="p">.</span><span class="n">forwards</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">Self</span> <span class="o">|</span> <span class="bp">None</span><span class="p">]</span> <span class="o">=</span> <span class="p">[</span><span class="bp">None</span><span class="p">]</span> <span class="o">*</span> <span class="p">(</span><span class="n">max_level</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">to_bytes</span><span class="p">(</span><span class="n">self</span><span class="p">):</span>
+        <span class="n">result</span> <span class="o">=</span> <span class="nf">bytearray</span><span class="p">()</span>
+        <span class="n">name_encoded</span> <span class="o">=</span> <span class="n">self</span><span class="p">.</span><span class="n">name</span><span class="p">.</span><span class="nf">encode</span><span class="p">(</span><span class="sh">"</span><span class="s">utf-8</span><span class="sh">"</span><span class="p">)</span>
+        <span class="n">value_encoded</span> <span class="o">=</span> <span class="mh">0xFFFF</span> <span class="k">if</span> <span class="n">self</span><span class="p">.</span><span class="n">value</span> <span class="ow">is</span> <span class="bp">None</span> <span class="k">else</span> <span class="n">self</span><span class="p">.</span><span class="n">value</span>
+
+        <span class="c1"># I has a standard size of 4bytes , so maybe to_bytes of 4 is not needed
+</span>        <span class="n">result</span><span class="p">.</span><span class="nf">extend</span><span class="p">(</span><span class="n">struct</span><span class="p">.</span><span class="nf">pack</span><span class="p">(</span><span class="sh">"</span><span class="s">&lt;I</span><span class="sh">"</span><span class="p">,</span> <span class="nf">len</span><span class="p">(</span><span class="n">self</span><span class="p">.</span><span class="n">name</span><span class="p">)))</span>  <span class="c1"># key length
+</span>        <span class="n">result</span><span class="p">.</span><span class="nf">extend</span><span class="p">(</span><span class="n">name_encoded</span><span class="p">)</span>  <span class="c1"># key
+</span>        <span class="n">result</span><span class="p">.</span><span class="nf">extend</span><span class="p">(</span><span class="n">struct</span><span class="p">.</span><span class="nf">pack</span><span class="p">(</span><span class="sh">"</span><span class="s">&lt;I</span><span class="sh">"</span><span class="p">,</span> <span class="n">value_encoded</span><span class="p">))</span>  <span class="c1"># value
+</span>        <span class="n">result</span><span class="p">.</span><span class="nf">extend</span><span class="p">(</span><span class="n">struct</span><span class="p">.</span><span class="nf">pack</span><span class="p">(</span><span class="sh">"</span><span class="s">&lt;I</span><span class="sh">"</span><span class="p">,</span> <span class="n">self</span><span class="p">.</span><span class="n">level</span><span class="p">))</span>  <span class="c1"># level
+</span>
+        <span class="k">return</span> <span class="n">result</span>
+
+    <span class="nd">@classmethod</span>
+    <span class="k">def</span> <span class="nf">from_bytes</span><span class="p">(</span><span class="n">cls</span><span class="p">,</span> <span class="n">b</span><span class="p">,</span> <span class="n">offset</span><span class="o">=</span><span class="mi">0</span><span class="p">):</span>
+        <span class="n">key_len</span> <span class="o">=</span> <span class="n">struct</span><span class="p">.</span><span class="nf">unpack_from</span><span class="p">(</span><span class="sh">"</span><span class="s">&lt;I</span><span class="sh">"</span><span class="p">,</span> <span class="n">b</span><span class="p">,</span> <span class="n">offset</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span>  <span class="c1"># or &lt;4b
+</span>        <span class="n">offset</span> <span class="o">+=</span> <span class="mi">4</span>
+        <span class="n">key</span> <span class="o">=</span> <span class="n">b</span><span class="p">[</span><span class="n">offset</span> <span class="p">:</span> <span class="n">offset</span> <span class="o">+</span> <span class="n">key_len</span><span class="p">].</span><span class="nf">tobytes</span><span class="p">().</span><span class="nf">decode</span><span class="p">(</span><span class="sh">"</span><span class="s">utf-8</span><span class="sh">"</span><span class="p">)</span>
+        <span class="n">offset</span> <span class="o">+=</span> <span class="n">key_len</span>
+        <span class="n">value</span> <span class="o">=</span> <span class="n">struct</span><span class="p">.</span><span class="nf">unpack_from</span><span class="p">(</span><span class="sh">"</span><span class="s">&lt;I</span><span class="sh">"</span><span class="p">,</span> <span class="n">b</span><span class="p">,</span> <span class="n">offset</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="n">offset</span> <span class="o">+=</span> <span class="mi">4</span>
+        <span class="n">lvl</span> <span class="o">=</span> <span class="n">struct</span><span class="p">.</span><span class="nf">unpack_from</span><span class="p">(</span><span class="sh">"</span><span class="s">&lt;I</span><span class="sh">"</span><span class="p">,</span> <span class="n">b</span><span class="p">,</span> <span class="n">offset</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span>
+
+        <span class="k">return</span> <span class="nc">SkipNode</span><span class="p">(</span>
+            <span class="n">name</span><span class="o">=</span><span class="n">key</span><span class="p">,</span> <span class="n">value</span><span class="o">=</span><span class="n">value</span> <span class="k">if</span> <span class="n">value</span> <span class="o">!=</span> <span class="mh">0xFFFF</span> <span class="k">else</span> <span class="bp">None</span><span class="p">,</span> <span class="n">max_level</span><span class="o">=</span><span class="n">lvl</span> <span class="o">-</span> <span class="mi">1</span>
+        <span class="p">)</span>
+
+
+<span class="k">class</span> <span class="nc">SkipList</span><span class="p">:</span>
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="n">self</span><span class="p">,</span> <span class="n">max_level</span><span class="p">,</span> <span class="n">probab</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="bp">None</span><span class="p">:</span>
+        <span class="n">self</span><span class="p">.</span><span class="n">max_level</span> <span class="o">=</span> <span class="n">max_level</span>
+        <span class="n">self</span><span class="p">.</span><span class="n">probab</span> <span class="o">=</span> <span class="n">probab</span>
+        <span class="n">self</span><span class="p">.</span><span class="n">head</span> <span class="o">=</span> <span class="nc">SkipNode</span><span class="p">(</span><span class="sh">"</span><span class="s">head</span><span class="sh">"</span><span class="p">,</span> <span class="n">max_level</span><span class="o">=</span><span class="n">max_level</span><span class="p">)</span>
+        <span class="n">self</span><span class="p">.</span><span class="n">level</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="n">self</span><span class="p">.</span><span class="n">size</span> <span class="o">=</span> <span class="mi">0</span>
+
+    <span class="k">def</span> <span class="nf">_random_level</span><span class="p">(</span><span class="n">self</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">self</span><span class="p">.</span><span class="n">size</span> <span class="o">%</span> <span class="mi">2</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="n">level</span> <span class="o">=</span> <span class="n">random</span><span class="p">.</span><span class="nf">randint</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">self</span><span class="p">.</span><span class="n">max_level</span> <span class="o">//</span> <span class="mi">2</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">level</span> <span class="o">=</span> <span class="n">random</span><span class="p">.</span><span class="nf">randint</span><span class="p">(</span><span class="n">self</span><span class="p">.</span><span class="n">max_level</span> <span class="o">//</span> <span class="mi">2</span><span class="p">,</span> <span class="n">self</span><span class="p">.</span><span class="n">max_level</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">level</span>
+        <span class="c1"># level = 0
+</span>        <span class="c1"># while random.random() &lt; self.probab and level &lt; self.max_level:
+</span>        <span class="c1">#     level += 1
+</span>        <span class="c1"># return level
+</span>
+    <span class="k">def</span> <span class="nf">insert</span><span class="p">(</span><span class="n">self</span><span class="p">,</span> <span class="n">key</span><span class="p">,</span> <span class="n">value</span><span class="p">):</span>
+        <span class="c1"># starting from max level
+</span>        <span class="c1"># find the position for update
+</span>        <span class="n">curr</span> <span class="o">=</span> <span class="n">self</span><span class="p">.</span><span class="n">head</span>
+        <span class="k">if</span> <span class="n">curr</span> <span class="ow">is</span> <span class="bp">None</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="nc">Exception</span><span class="p">(</span><span class="sh">"</span><span class="s">Empty</span><span class="sh">"</span><span class="p">)</span>
+
+        <span class="n">updates</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">SkipNode</span> <span class="o">|</span> <span class="bp">None</span><span class="p">]</span> <span class="o">=</span> <span class="p">[</span><span class="bp">None</span><span class="p">]</span> <span class="o">*</span> <span class="p">(</span><span class="n">self</span><span class="p">.</span><span class="n">max_level</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)</span>
+
+        <span class="c1"># iterate the head to find the levels
+</span>        <span class="c1"># to insert the node at
+</span>        <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nf">range</span><span class="p">(</span><span class="n">self</span><span class="p">.</span><span class="n">level</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">):</span>
+            <span class="k">while</span> <span class="n">curr</span> <span class="ow">and</span> <span class="n">curr</span><span class="p">.</span><span class="n">forwards</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="ow">and</span> <span class="n">curr</span><span class="p">.</span><span class="n">forwards</span><span class="p">[</span><span class="n">i</span><span class="p">].</span><span class="n">value</span> <span class="o">&lt;</span> <span class="n">value</span><span class="p">:</span>
+                <span class="n">curr</span> <span class="o">=</span> <span class="n">curr</span><span class="p">.</span><span class="n">forwards</span><span class="p">[</span><span class="n">i</span><span class="p">]</span>
+
+            <span class="n">updates</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">=</span> <span class="n">curr</span>
+
+        <span class="n">new_lvl</span> <span class="o">=</span> <span class="n">self</span><span class="p">.</span><span class="nf">_random_level</span><span class="p">()</span>
+
+        <span class="c1"># check if lvl &gt; self.max_levels
+</span>        <span class="c1"># then track new lanes to create for head
+</span>        <span class="k">if</span> <span class="n">new_lvl</span> <span class="o">&gt;</span> <span class="n">self</span><span class="p">.</span><span class="n">level</span><span class="p">:</span>
+            <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nf">range</span><span class="p">(</span><span class="n">self</span><span class="p">.</span><span class="n">level</span> <span class="o">+</span> <span class="mi">1</span><span class="p">,</span> <span class="n">new_lvl</span> <span class="o">+</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">):</span>
+                <span class="n">updates</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">=</span> <span class="n">self</span><span class="p">.</span><span class="n">head</span>
+            <span class="n">self</span><span class="p">.</span><span class="n">level</span> <span class="o">=</span> <span class="n">new_lvl</span>
+
+
+        <span class="n">node</span> <span class="o">=</span> <span class="nc">SkipNode</span><span class="p">(</span><span class="n">key</span><span class="p">,</span> <span class="n">value</span><span class="o">=</span><span class="n">value</span><span class="p">,</span> <span class="n">max_level</span><span class="o">=</span><span class="n">new_lvl</span><span class="p">)</span>
+        <span class="c1"># add the nodes at all levels, starting from 0
+</span>        <span class="c1"># add the new nodes to the head node as well
+</span>        <span class="k">for</span> <span class="n">lvl</span> <span class="ow">in</span> <span class="nf">range</span><span class="p">(</span><span class="n">new_lvl</span> <span class="o">+</span> <span class="mi">1</span><span class="p">):</span>
+            <span class="n">replacing</span> <span class="o">=</span> <span class="n">updates</span><span class="p">[</span><span class="n">lvl</span><span class="p">]</span>
+            <span class="k">if</span> <span class="n">replacing</span> <span class="ow">is</span> <span class="bp">None</span><span class="p">:</span>
+                <span class="nf">print</span><span class="p">(</span><span class="sh">"</span><span class="s">warning: no entry found in updates</span><span class="sh">"</span><span class="p">)</span>
+                <span class="k">continue</span>
+
+            <span class="n">node</span><span class="p">.</span><span class="n">forwards</span><span class="p">[</span><span class="n">lvl</span><span class="p">]</span> <span class="o">=</span> <span class="n">replacing</span><span class="p">.</span><span class="n">forwards</span><span class="p">[</span><span class="n">lvl</span><span class="p">]</span>
+            <span class="n">replacing</span><span class="p">.</span><span class="n">forwards</span><span class="p">[</span><span class="n">lvl</span><span class="p">]</span> <span class="o">=</span> <span class="n">node</span>
+
+        <span class="n">self</span><span class="p">.</span><span class="n">size</span> <span class="o">+=</span> <span class="mi">1</span>
+
+        <span class="k">return</span> <span class="n">self</span>
+
+    <span class="k">def</span> <span class="nf">search</span><span class="p">(</span><span class="n">self</span><span class="p">,</span> <span class="n">value</span><span class="p">):</span>
+        <span class="c1"># check at each level starting from the maximum
+</span>        <span class="n">curr</span> <span class="o">=</span> <span class="n">self</span><span class="p">.</span><span class="n">head</span>
+        <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nf">range</span><span class="p">(</span><span class="n">self</span><span class="p">.</span><span class="n">level</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">):</span>
+            <span class="k">while</span> <span class="n">curr</span> <span class="ow">and</span> <span class="n">curr</span><span class="p">.</span><span class="n">forwards</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="ow">and</span> <span class="n">curr</span><span class="p">.</span><span class="n">forwards</span><span class="p">[</span><span class="n">i</span><span class="p">].</span><span class="n">value</span> <span class="o">&lt;</span> <span class="n">value</span><span class="p">:</span>
+                <span class="n">curr</span> <span class="o">=</span> <span class="n">curr</span><span class="p">.</span><span class="n">forwards</span><span class="p">[</span><span class="n">i</span><span class="p">]</span>
+
+        <span class="k">if</span> <span class="n">curr</span> <span class="ow">is</span> <span class="bp">None</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">False</span>
+
+        <span class="c1"># precautionary
+</span>        <span class="n">curr</span> <span class="o">=</span> <span class="n">curr</span><span class="p">.</span><span class="n">forwards</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="k">return</span> <span class="n">curr</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">None</span> <span class="ow">and</span> <span class="n">curr</span><span class="p">.</span><span class="n">value</span> <span class="o">==</span> <span class="n">value</span>
+
+    <span class="k">def</span> <span class="nf">remove</span><span class="p">(</span><span class="n">self</span><span class="p">,</span> <span class="n">value</span><span class="p">):</span>
+        <span class="n">curr</span> <span class="o">=</span> <span class="n">self</span><span class="p">.</span><span class="n">head</span>
+        <span class="n">updates</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">SkipNode</span> <span class="o">|</span> <span class="bp">None</span><span class="p">]</span> <span class="o">=</span> <span class="p">[</span><span class="bp">None</span><span class="p">]</span> <span class="o">*</span> <span class="p">(</span><span class="n">self</span><span class="p">.</span><span class="n">max_level</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)</span>
+
+        <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nf">range</span><span class="p">(</span><span class="n">self</span><span class="p">.</span><span class="n">level</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">):</span>
+            <span class="k">while</span> <span class="n">curr</span> <span class="ow">and</span> <span class="n">curr</span><span class="p">.</span><span class="n">forwards</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="ow">and</span> <span class="n">curr</span><span class="p">.</span><span class="n">forwards</span><span class="p">[</span><span class="n">i</span><span class="p">].</span><span class="n">value</span> <span class="o">&lt;</span> <span class="n">value</span><span class="p">:</span>
+                <span class="n">curr</span> <span class="o">=</span> <span class="n">curr</span><span class="p">.</span><span class="n">forwards</span><span class="p">[</span><span class="n">i</span><span class="p">]</span>
+            <span class="n">updates</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">=</span> <span class="n">curr</span>
+
+        <span class="k">if</span> <span class="n">curr</span> <span class="ow">is</span> <span class="bp">None</span> <span class="ow">or</span> <span class="p">(</span><span class="n">curr</span> <span class="ow">and</span> <span class="n">curr</span><span class="p">.</span><span class="n">forwards</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span> <span class="ow">is</span> <span class="bp">None</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">False</span>
+
+        <span class="n">curr</span> <span class="o">=</span> <span class="n">curr</span><span class="p">.</span><span class="n">forwards</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="k">if</span> <span class="n">curr</span> <span class="ow">and</span> <span class="n">curr</span><span class="p">.</span><span class="n">value</span> <span class="o">!=</span> <span class="n">value</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">False</span>
+
+        <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nf">range</span><span class="p">(</span><span class="n">self</span><span class="p">.</span><span class="n">max_level</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">):</span>
+            <span class="n">replacement</span> <span class="o">=</span> <span class="n">updates</span><span class="p">[</span><span class="n">i</span><span class="p">]</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">replacement</span><span class="p">:</span>
+                <span class="k">continue</span>
+            <span class="k">if</span> <span class="n">replacement</span><span class="p">.</span><span class="n">forwards</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">!=</span> <span class="n">curr</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="nc">Exception</span><span class="p">(</span><span class="sh">"</span><span class="s">node_mismatch</span><span class="sh">"</span><span class="p">)</span>
+            <span class="n">replacement</span><span class="p">.</span><span class="n">forwards</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">=</span> <span class="n">curr</span><span class="p">.</span><span class="n">forwards</span><span class="p">[</span><span class="n">i</span><span class="p">]</span>
+
+        <span class="k">while</span> <span class="n">self</span><span class="p">.</span><span class="n">level</span> <span class="o">&gt;</span> <span class="mi">0</span> <span class="ow">and</span> <span class="n">self</span><span class="p">.</span><span class="n">head</span><span class="p">.</span><span class="n">forwards</span><span class="p">[</span><span class="n">self</span><span class="p">.</span><span class="n">max_level</span><span class="p">]</span> <span class="ow">is</span> <span class="bp">None</span><span class="p">:</span>
+            <span class="n">self</span><span class="p">.</span><span class="n">level</span> <span class="o">-=</span> <span class="mi">1</span>
+        <span class="n">self</span><span class="p">.</span><span class="n">size</span> <span class="o">-=</span> <span class="mi">1</span>
+
+    <span class="k">def</span> <span class="nf">print_list</span><span class="p">(</span><span class="n">self</span><span class="p">):</span>
+        <span class="kn">from</span> <span class="n">collections</span> <span class="kn">import</span> <span class="n">defaultdict</span>
+        <span class="kn">import</span> <span class="n">json</span>
+
+        <span class="n">result</span> <span class="o">=</span> <span class="nf">defaultdict</span><span class="p">(</span><span class="nb">list</span><span class="p">)</span>
+
+        <span class="k">for</span> <span class="n">level</span> <span class="ow">in</span> <span class="nf">range</span><span class="p">(</span><span class="n">self</span><span class="p">.</span><span class="n">level</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">):</span>
+            <span class="n">curr</span> <span class="o">=</span> <span class="n">self</span><span class="p">.</span><span class="n">head</span>
+            <span class="n">level_repr</span> <span class="o">=</span> <span class="p">[]</span>
+            <span class="k">while</span> <span class="n">curr</span><span class="p">:</span>
+                <span class="n">level_repr</span><span class="p">.</span><span class="nf">append</span><span class="p">(</span><span class="sa">f</span><span class="sh">"</span><span class="si">{</span><span class="n">curr</span><span class="p">.</span><span class="n">name</span><span class="si">}</span><span class="s">(</span><span class="si">{</span><span class="n">curr</span><span class="p">.</span><span class="n">value</span><span class="si">}</span><span class="s">)</span><span class="sh">"</span><span class="p">)</span>
+                <span class="n">curr</span> <span class="o">=</span> <span class="n">curr</span><span class="p">.</span><span class="n">forwards</span><span class="p">[</span><span class="n">level</span><span class="p">]</span>
+            <span class="n">result</span><span class="p">[</span><span class="sa">f</span><span class="sh">"</span><span class="s">Level </span><span class="si">{</span><span class="n">level</span><span class="si">}</span><span class="sh">"</span><span class="p">]</span> <span class="o">=</span> <span class="n">level_repr</span>
+
+        <span class="nf">print</span><span class="p">(</span><span class="n">json</span><span class="p">.</span><span class="nf">dumps</span><span class="p">(</span><span class="n">result</span><span class="p">))</span>
+
+    <span class="k">def</span> <span class="nf">first</span><span class="p">(</span><span class="n">self</span><span class="p">):</span>
+        <span class="k">pass</span>
+
+
+<span class="k">if</span> <span class="n">__name__</span> <span class="o">==</span> <span class="sh">"</span><span class="s">__main__</span><span class="sh">"</span><span class="p">:</span>
+    <span class="n">skipnode</span> <span class="o">=</span> <span class="nc">SkipNode</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="sh">"</span><span class="s">a</span><span class="sh">"</span><span class="p">,</span> <span class="n">value</span><span class="o">=</span><span class="mi">10</span><span class="p">)</span>
+    <span class="n">data</span> <span class="o">=</span> <span class="n">skipnode</span><span class="p">.</span><span class="nf">to_bytes</span><span class="p">()</span>
+
+    <span class="n">SkipNode</span><span class="p">.</span><span class="nf">from_bytes</span><span class="p">(</span><span class="nf">memoryview</span><span class="p">(</span><span class="n">data</span><span class="p">))</span>
+    <span class="n">skplist</span> <span class="o">=</span> <span class="nc">SkipList</span><span class="p">(</span><span class="n">max_level</span><span class="o">=</span><span class="mi">5</span><span class="p">,</span> <span class="n">probab</span><span class="o">=</span><span class="mf">0.5</span><span class="p">)</span>
+    <span class="n">skplist</span><span class="p">.</span><span class="nf">insert</span><span class="p">(</span><span class="sh">"</span><span class="s">a</span><span class="sh">"</span><span class="p">,</span> <span class="mi">10</span><span class="p">).</span><span class="nf">insert</span><span class="p">(</span><span class="sh">"</span><span class="s">b</span><span class="sh">"</span><span class="p">,</span> <span class="mi">20</span><span class="p">).</span><span class="nf">insert</span><span class="p">(</span><span class="sh">"</span><span class="s">c</span><span class="sh">"</span><span class="p">,</span> <span class="mi">15</span><span class="p">).</span><span class="nf">insert</span><span class="p">(</span><span class="sh">"</span><span class="s">d</span><span class="sh">"</span><span class="p">,</span> <span class="mi">6</span><span class="p">)</span>
+    <span class="n">skplist</span><span class="p">.</span><span class="nf">print_list</span><span class="p">()</span>
+    
+    <span class="n">nodes</span><span class="p">:</span> <span class="n">Set</span><span class="p">[</span><span class="n">SkipNode</span><span class="p">]</span> <span class="o">=</span> <span class="nf">set</span><span class="p">()</span>
+    <span class="n">queue</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">SkipNode</span><span class="p">]</span> <span class="o">=</span> <span class="p">[</span><span class="n">skplist</span><span class="p">.</span><span class="n">head</span><span class="p">]</span>
+    
+    <span class="k">while</span> <span class="nf">len</span><span class="p">(</span><span class="n">queue</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+        <span class="n">n</span> <span class="o">=</span> <span class="n">queue</span><span class="p">.</span><span class="nf">pop</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+        <span class="n">nodes</span><span class="p">.</span><span class="nf">add</span><span class="p">(</span><span class="n">n</span><span class="p">)</span>
+    
+        <span class="n">queue</span><span class="p">.</span><span class="nf">extend</span><span class="p">([</span><span class="n">fwd</span> <span class="k">for</span> <span class="n">fwd</span> <span class="ow">in</span> <span class="n">n</span><span class="p">.</span><span class="n">forwards</span> <span class="k">if</span> <span class="n">fwd</span><span class="p">])</span>
+    
+    <span class="nf">print</span><span class="p">(</span><span class="n">skplist</span><span class="p">.</span><span class="n">level</span><span class="p">,</span> <span class="nf">len</span><span class="p">(</span><span class="n">nodes</span><span class="p">))</span>
+    <span class="nf">print</span><span class="p">(</span><span class="n">skplist</span><span class="p">.</span><span class="nf">search</span><span class="p">(</span><span class="mi">15</span><span class="p">),</span> <span class="n">skplist</span><span class="p">.</span><span class="nf">search</span><span class="p">(</span><span class="mi">40</span><span class="p">))</span>
+</code></pre></div></div>
+
+<h4 id="how-data-is-written-in-the-btree-in-sqlite">How data is written in the btree in sqlite.</h4>
+
+<p>In <code class="language-plaintext highlighter-rouge">btree.c#L4267</code> and <code class="language-plaintext highlighter-rouge">btree.c#L4339</code>, From the comments, (operating in rollback journal mode I assume). Has 2 phases of commit:</p>
+
+<ul>
+  <li>Journal file creation with original state of db, and saving on disk, holding locks (indicating changes not yet done)</li>
+  <li>The paging unit gets involved in this writing to disk.</li>
+  <li>After, flushed to disk, zero out the journal headers indicating data is succesfully written, before droping the lock</li>
+</ul>
+
+<p>The b+tree talks to the paging layer. And the paging unit to disk.</p>
+
+<p>The database has commited, only when the state on disk and in memory is the same, otherwise its dirty.</p>
+
+<h2 id="data-oriented-design">Data Oriented Design</h2>
+
+<p>Alignment and Size of a struct matters in case of struct packing. Why is u32 4bytes? Well because that 64bit processor can do efficiently,
+A 64bit cpu can load 64bits of data in memory at a time. So u64 is 8bytes, and so u32 is 4bytes. Or 1 WORD.</p>
+
+<h4 id="why-alignment-matters">Why Alignment matters</h4>
+
+<ul>
+  <li>CPUs are designed to read data from memory in chunks that are aligned to their size. 
+For example, a u32 (4 bytes) is most efficiently accessed when it starts at a memory address that is a multiple of 4.</li>
+  <li>A u64 (8 bytes) is most efficiently accessed when it starts at a memory address that is a multiple of 8.</li>
+  <li>If data is misaligned (not on these boundaries), the CPU might need multiple memory operations to read or write the data, which can significantly slow down performance.</li>
+</ul>
+
+<p>So, when the struct has an alignment of u32, u64, u32., with alignment as 8 bytes.</p>
+
+<ul>
+  <li>u32, so multiples of 4. but <strong>alignment</strong> needs to be 8 bytes. so, 4 extra bytes needed to pad.</li>
+  <li>so processor can load the memory is 8byte chunks, to avoid sequential access, to figure out boundaries.</li>
+</ul>
+
+<p>compared to a, u32, u32, u64. The processor can load 8, bytes of memory twice, to get all the data.</p>
+
+<div class="language-zig highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">struct</span> <span class="n">Enemies</span> <span class="p">{</span>
+  <span class="n">color</span><span class="p">:</span> <span class="kt">u32</span><span class="p">,</span>
+  <span class="n">power</span><span class="p">:</span> <span class="kt">u64</span><span class="p">,</span>
+  <span class="n">boost</span><span class="p">:</span> <span class="kt">u32</span><span class="p">,</span>
+<span class="p">};</span>
+</code></pre></div></div>
+
+<p>So, the above has an alignment of 8, but a size of 8x3 = 24.</p>
+
+<div class="language-zig highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">struct</span> <span class="n">Enemies</span> <span class="p">{</span>
+  <span class="n">color</span><span class="p">:</span> <span class="kt">u32</span><span class="p">,</span>
+  <span class="n">boost</span><span class="p">:</span> <span class="kt">u32</span><span class="p">,</span>
+  <span class="n">power</span><span class="p">:</span> <span class="kt">u64</span><span class="p">,</span>
+<span class="p">};</span>
+</code></pre></div></div>
+
+<p>This way, Alignment satisfies. It’s still 8, But since, the two u32s are packed together,
+The procesor can read, 64bits only twice. And hence, a size <code class="language-plaintext highlighter-rouge">16</code>.</p>
+
+<p>This gets worse, when we use bool to represent stuff.</p>
+
+<div class="language-zig highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">struct</span> <span class="n">Enemies</span> <span class="p">{</span>
+  <span class="n">color</span><span class="p">:</span> <span class="kt">u32</span><span class="p">,</span>
+  <span class="n">boost</span><span class="p">:</span> <span class="kt">u32</span><span class="p">,</span>
+  <span class="n">power</span><span class="p">:</span> <span class="kt">u64</span><span class="p">,</span>
+  <span class="n">dead</span><span class="p">:</span> <span class="n">boolean</span><span class="p">,</span>
+<span class="p">};</span>
+</code></pre></div></div>
+
+<p>We have 7bytes wasted, for each object. For 100 objects, 700Bytes Wasted. Compared to:</p>
+
+<div class="language-zig highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">struct</span> <span class="n">Enemies</span> <span class="p">{</span>
+  <span class="n">color</span><span class="p">:</span> <span class="kt">u32</span><span class="p">,</span>
+  <span class="n">boost</span><span class="p">:</span> <span class="kt">u32</span><span class="p">,</span>
+  <span class="n">power</span><span class="p">:</span> <span class="kt">u64</span><span class="p">,</span>
+<span class="p">};</span>
+
+<span class="n">let</span> <span class="n">alive</span> <span class="o">=</span> <span class="n">ArrayList</span><span class="o">&lt;</span><span class="n">Enemies</span><span class="o">&gt;</span><span class="p">();</span>
+<span class="n">let</span> <span class="n">dead</span> <span class="o">=</span> <span class="n">ArrayList</span><span class="o">&lt;</span><span class="n">Enemies</span><span class="o">&gt;</span><span class="p">()</span>
+</code></pre></div></div>
+
+<p><strong>Why this matters?</strong></p>
+
+<p>Because we wan’t to reduce the amount of wasted bytes, so that we can fit as much data in the cache lines.</p>
+
+<div class="language-bash highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="nv">$&gt;</span> lscpu
+
+Caches <span class="o">(</span><span class="nb">sum </span>of all<span class="o">)</span>:      
+  L1d:                    128 KiB <span class="o">(</span>4 instances<span class="o">)</span>
+  L1i:                    128 KiB <span class="o">(</span>4 instances<span class="o">)</span>
+  L2:                     1 MiB <span class="o">(</span>4 instances<span class="o">)</span>
+  L3:                     8 MiB <span class="o">(</span>1 instance<span class="o">)</span>
+</code></pre></div></div>
+
+<p>So if we can fit more data in that <code class="language-plaintext highlighter-rouge">128KiB</code> cache line, we have more speed.</p>
+
+<h3 id="other-work">Other work</h3>
+
+<p>This are the list of other places to look at:</p>
+
+<ul>
+  <li><a href="https://github.com/rqlite/rqlite">rqlite</a></li>
+  <li><a href="https://github.com/cockroachdb/cockroach/tree/master/pkg/geo">cockroach db</a></li>
+  <li><a href="https://github.com/facebook/rocksdb/blob/main/db/memtable.cc">rocksdb</a> (too much c, written like my mom’s grocery list)</li>
+  <li><a href="https://github.com/google/leveldb/blob/main/db/memtable.cc">leveldb’s</a> implementation of above memtable</li>
+  <li><a href="https://dev.to/justinethier/log-structured-merge-trees-1jha">some person’s code on building sst table</a></li>
+  <li><a href="https://github.com/facebook/rocksdb/wiki/MemTable">some comparison list for god knows what</a></li>
+</ul>
+
+
+      <hr>
+      <div class="row mb-5 mt-5">
+  <div class="col-md-6 d-flex align-items-end ">
+    <span>Thanks. <i>mind sharing?</i></span>
+  </div>
+
+  <!-- Right Column with Social Media Icons (on the right for larger screens, on bottom for smaller screens) -->
+  <div class="col-md-6 order-md-2 order-1 text-md-right text-center mt-3 mt-md-0">
+    <div>
+
+      <a
+          href="https://www.linkedin.com/sharing/share-offsite?url=ikouchiha47.github.io/2024/07/10/building-a-storage-engine.html"
+          onclick="window.open(this.href, 'pop-up', 'left=20,top=20,width=500,height=500,toolbar=1,resizable=0'); return false;"
+          class="d-inline-block mr-2"
+       >
+        <span class="fa-stack fa-lg" style="color: #0077b5;">
+          <i class="fas fa-square fa-stack-2x"></i>
+          <i class="fab fa-linkedin fa-stack-1x fa-inverse"></i>
+        </span>
+      </a>
+
+      <a
+          href="https://twitter.com/intent/tweet?text=beetledb&url=ikouchiha47.github.io/2024/07/10/building-a-storage-engine.html"
+          onclick="window.open(this.href, 'pop-up', 'left=20,top=20,width=500,height=500,toolbar=1,resizable=0'); return false;"
+          class="d-inline-block mr-2">
+        <span class="fa-stack fa-lg" style="color: #1DA1F2;">
+          <i class="fas fa-square fa-stack-2x"></i>
+          <i class="fab fa-twitter fa-stack-1x fa-inverse"></i>
+        </span>
+      </a>
+
+      <a
+          href="http://www.reddit.com/submit?url=ikouchiha47.github.io/2024/07/10/building-a-storage-engine.html"
+          onclick="window.open(this.href, 'pop-up', 'left=20,top=20,width=500,height=500,toolbar=1,resizable=0'); return false;"
+          class="d-inline-block mr-2">
+        <span class="fa-stack fa-lg" style="color: #FF4500;">
+          <i class="fas fa-square fa-stack-2x"></i>
+          <i class="fab fa-reddit fa-stack-1x fa-inverse"></i>
+        </span>
+      </a>
+    </div>
+  </div>
+</div>
+
+<hr/>
+
+
+      <div class="clearfix">
+
+        
+        <a class="btn btn-primary float-left" href="/2024/04/20/interview_overview.html" data-toggle="tooltip" data-placement="top" title="">&larr; Previous<span class="d-none d-md-inline">
+            Post</span></a>
+        
+        
+        <a class="btn btn-primary float-right" href="/2024/10/24/pairy.html" data-toggle="tooltip" data-placement="top" title="Pairy">Next<span class="d-none d-md-inline">
+            Post</span> &rarr;</a>
+        
+
+      </div>
+
+    </div>
+  </div>
+</div>
+
+
+  <!-- Footer -->
+
+<hr>
+
+<footer>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <ul class="list-inline text-center">
+          
+          <li class="list-inline-item">
+            <a href="mailto:amitava.dev@proton.me" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="far fa-envelope fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          
+          
+          <li class="list-inline-item">
+            <a href="https://www.linkedin.com/in/amitavaag" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-linkedin fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          <li class="list-inline-item">
+            <a href="https://github.com/ikouchiha47" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-github fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+        </ul>
+
+        <p class="copyright text-muted">
+          Build with: 
+          <a 
+            href="https://github.com/StartBootstrap/startbootstrap-clean-blog-jekyll"
+            class="text-gray"
+            target="_blank">startbootstrap-clean-blog-jekyll</a></p>
+      </div>
+    </div>
+  </div>
+</footer>
+
+
+  <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="/assets/vendor/blog/js/scripts.js"></script>
+
+<script src="/assets/scripts.js"></script>
+
+
+
+
+  
+
+</body>
+
+</html>

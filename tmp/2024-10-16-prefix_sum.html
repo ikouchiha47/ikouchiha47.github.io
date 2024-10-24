@@ -1,0 +1,1010 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+  <title>
+     - iko&#39;s logs
+    
+  </title>
+
+  <meta name="description" content="">
+  <meta property="og:description" content="">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="">
+  <meta property="og:url" content="https://ikouchiha47.github.io/tmp/2024-10-16-prefix_sum.html">
+
+  
+    <meta property="og:image" content="https://ikouchiha47.github.io"/>
+  
+
+  <link href='https://fonts.googleapis.com/css?family=Lora:400,700,400italic,700italic' rel='stylesheet' type='text/css'>
+  <link href='https://fonts.googleapis.com/css?family=Open+Sans:300italic,400italic,600italic,700italic,800italic,400,300,600,700,800' rel='stylesheet' type='text/css'>
+
+  <!-- <script src="https://use.fontawesome.com/releases/v5.15.3/js/all.js" crossorigin="anonymous"></script> -->
+  <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.15.4/css/all.css" integrity="sha384-DyZ88mC6Up2uqS4h/KRgHuoeGwBcD4Ng9SiP4dIRy0EXTlnuz47vAwmeGwVChigm" crossorigin="anonymous"/>
+
+  <link rel="stylesheet" href="/assets/main.css">
+  <link rel="canonical" href="https://ikouchiha47.github.io/tmp/2024-10-16-prefix_sum.html">
+  <link rel="alternate" type="application/rss+xml" title="iko&#39;s logs" href="/feed.xml">
+
+  <meta name="google-site-verification" content="lWkg6gIxJgzEKX_5XnhcxCtPE9QknaimFWWos_dTvPM" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fira+Sans:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Inconsolata:wght@200..900&family=Jersey+25&family=Kanit:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Merriweather+Sans:ital,wght@0,300..800;1,300..800&family=Nanum+Gothic+Coding&family=Space+Grotesk:wght@300..700&family=Titillium+Web:ital,wght@0,200;0,300;0,400;0,600;0,700;0,900;1,200;1,300;1,400;1,600;1,700&display=swap" rel="stylesheet">
+
+</head>
+
+
+<body>
+
+  <!-- Navigation -->
+<nav class="navbar navbar-expand-lg navbar-light fixed-top" id="mainNav">
+  <div class="container">
+    <a class="navbar-brand" href="/">iko&#39;s logs</a>
+    <button class="navbar-toggler navbar-toggler-right" type="button" data-toggle="collapse" data-target="#navbarResponsive" aria-controls="navbarResponsive" aria-expanded="false" aria-label="Toggle navigation">
+      Menu
+      <i class="fa fa-bars"></i>
+    </button>
+    <div class="collapse navbar-collapse" id="navbarResponsive">
+      <ul class="navbar-nav ml-auto">
+        <li class="nav-item">
+          <a class="nav-link" href="/">Home</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/about">About</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/posts">Posts</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/contact">Contact</a>
+        </li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+
+  <!-- Page Header -->
+
+<header class="masthead" style="background-image: url('')">
+
+  <div class="overlay"></div>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <div class="post-heading">
+          <h1></h1>
+          
+          <h2 class="subheading"></h2>
+          
+          <span class="meta">Posted by
+            <a href="#">ikouchiha47</a>
+            on April 20, 2024 &middot; <span class="reading-time" title="Estimated read time">
+  
+   30 mins  read </span>
+
+          </span>
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="container space-grotesk">
+  <div class="row">
+    <div class="col-lg-8 col-md-10 mx-auto">
+
+      <h1 id="prefix-sum">Prefix Sum</h1>
+
+<h2 id="categories">Categories</h2>
+
+<p>Prefix sum problems can be further categorized into several subcategories based on their unique problem structure, such as <strong>Subarray/Subset Sum Problems</strong>, <strong>Range Query Problems</strong>, <strong>2D Grid or Matrix Problems</strong>, <strong>Counting Problems</strong>, <strong>Random Access or Probability Problems</strong>, and <strong>Dynamic Programming (DP) Related Problems</strong>. Below is a detailed breakdown of these categories, along with 3-5 examples per subcategory.</p>
+
+<h3 id="1-subarraysubset-sum-problems">1. <strong>Subarray/Subset Sum Problems</strong></h3>
+<p>These problems focus on finding or manipulating subarrays with a specific sum or property using prefix sums or their variations.</p>
+
+<ul>
+  <li><strong>209. Minimum Size Subarray Sum</strong>: Find the smallest subarray with a sum greater than or equal to a given value.</li>
+  <li><strong>325. Maximum Size Subarray Sum Equals k</strong>: Find the maximum length of a subarray that sums to a specific value.</li>
+  <li><strong>560. Subarray Sum Equals K</strong>: Count the number of subarrays that sum to a given value.</li>
+  <li><strong>713. Subarray Product Less Than K</strong>: Count the number of subarrays whose product is less than a given number.</li>
+  <li><strong>862. Shortest Subarray with Sum at Least K</strong>: Find the shortest subarray with a sum of at least a given value.</li>
+</ul>
+
+<h3 id="2-range-query-problems">2. <strong>Range Query Problems</strong></h3>
+<p>These problems typically involve querying sums or other properties within a specific range of an array.</p>
+
+<ul>
+  <li><strong>303. Range Sum Query - Immutable</strong>: Given an array, find the sum of elements between two indices efficiently.</li>
+  <li><strong>370. Range Addition</strong>: Perform range updates and return the final modified array.</li>
+  <li><strong>410. Split Array Largest Sum</strong>: Split the array into subarrays such that the largest subarray sum is minimized.</li>
+  <li><strong>1310. XOR Queries of a Subarray</strong>: Answer XOR queries on a subarray efficiently using prefix XOR.</li>
+  <li><strong>1109. Corporate Flight Bookings</strong>: Apply multiple range updates and return the final bookings for each flight.</li>
+</ul>
+
+<h3 id="3-2d-grid-or-matrix-problems">3. <strong>2D Grid or Matrix Problems</strong></h3>
+<p>These problems focus on summing or manipulating values in 2D matrices or grids using prefix sums.</p>
+
+<ul>
+  <li><strong>304. Range Sum Query 2D - Immutable</strong>: Given a 2D matrix, compute the sum of elements in any subrectangle efficiently.</li>
+  <li><strong>363. Max Sum of Rectangle No Larger Than K</strong>: Find the largest sum of a rectangle that does not exceed a specific value.</li>
+  <li><strong>1074. Number of Submatrices That Sum to Target</strong>: Count how many submatrices in a 2D matrix sum up to a target.</li>
+  <li><strong>1314. Matrix Block Sum</strong>: For each cell in the matrix, calculate the sum of all elements in a surrounding block.</li>
+  <li><strong>1895. Largest Magic Square</strong>: Find the largest magic square subgrid within a given matrix.</li>
+</ul>
+
+<h3 id="4-counting-and-frequency-problems">4. <strong>Counting and Frequency Problems</strong></h3>
+<p>These problems involve counting specific subarrays, substrings, or patterns based on their properties using prefix sums.</p>
+
+<ul>
+  <li><strong>930. Binary Subarrays With Sum</strong>: Count subarrays in a binary array that sum up to a specific value.</li>
+  <li><strong>974. Subarray Sums Divisible by K</strong>: Count subarrays whose sums are divisible by a given number.</li>
+  <li><strong>1124. Longest Well-Performing Interval</strong>: Find the longest subarray where more than half of the elements are greater than a threshold.</li>
+  <li><strong>1248. Count Number of Nice Subarrays</strong>: Count the subarrays with an odd number of odd integers.</li>
+  <li><strong>1915. Number of Wonderful Substrings</strong>: Count the number of substrings where vowels appear in even counts.</li>
+</ul>
+
+<h3 id="5-random-access-or-probability-problems">5. <strong>Random Access or Probability Problems</strong></h3>
+<p>These problems involve selecting elements or making probabilistic decisions based on prefix sums or cumulative frequency.</p>
+
+<ul>
+  <li><strong>497. Random Point in Non-overlapping Rectangles</strong>: Randomly pick a point inside non-overlapping rectangles with different areas.</li>
+  <li><strong>528. Random Pick with Weight</strong>: Pick an index randomly, with probability proportional to the element’s weight.</li>
+  <li><strong>1894. Find the Student that Will Replace the Chalk</strong>: Determine which student will replace the chalk based on their consumption rate and a total amount of chalk.</li>
+  <li><strong>1744. Can You Eat Your Favorite Candy on Your Favorite Day?</strong>: Query whether you can eat a specific type of candy on a certain day based on cumulative candy intake.</li>
+</ul>
+
+<h3 id="6-dynamic-programming-dp-related-problems">6. <strong>Dynamic Programming (DP) Related Problems</strong></h3>
+<p>These problems combine prefix sums with dynamic programming strategies for optimization and efficient solutions.</p>
+
+<ul>
+  <li><strong>644. Maximum Average Subarray II</strong>: Find the subarray with the maximum average that is greater than or equal to a given value.</li>
+  <li><strong>813. Largest Sum of Averages</strong>: Partition the array into at most <code class="language-plaintext highlighter-rouge">K</code> groups such that the sum of averages is maximized.</li>
+  <li><strong>1000. Minimum Cost to Merge Stones</strong>: Merge stones with the least cost using dynamic programming and prefix sums.</li>
+  <li><strong>1423. Maximum Points You Can Obtain from Cards</strong>: Pick cards from either end of an array to maximize points.</li>
+  <li><strong>1712. Ways to Split Array Into Three Subarrays</strong>: Split the array into three contiguous subarrays such that each subarray’s sum is non-decreasing.</li>
+</ul>
+
+<h3 id="7-special-data-structures--interval-management">7. <strong>Special Data Structures / Interval Management</strong></h3>
+<p>These problems rely on maintaining or querying intervals, often using calendars or segment trees.</p>
+
+<ul>
+  <li><strong>253. Meeting Rooms II</strong>: Find the minimum number of meeting rooms required for a set of intervals.</li>
+  <li><strong>731. My Calendar II</strong>: Implement a data structure to manage a calendar with double booking allowed.</li>
+  <li><strong>732. My Calendar III</strong>: Implement a data structure that returns the maximum number of overlapping bookings.</li>
+  <li><strong>1943. Describe the Painting</strong>: Given intervals representing colors, merge and output the final painting.</li>
+  <li><strong>2145. Count the Hidden Sequences</strong>: Count possible sequences based on given differences and bounds.</li>
+</ul>
+
+<p>This categorization can help tackle similar types of problems using common strategies, like prefix sums combined with sliding windows, binary search, or dynamic programming.</p>
+
+<h2 id="templates">Templates</h2>
+
+<h3 id="1-1d-range-queries">1. <strong>1D Range Queries</strong></h3>
+<p>These problems involve computing range sums or other range-based queries on a 1D array. Prefix sums are precomputed to handle multiple range queries efficiently.</p>
+
+<p><strong>Problems</strong>:</p>
+<ul>
+  <li><strong>303. Range Sum Query - Immutable</strong></li>
+  <li><strong>325. Maximum Size Subarray Sum Equals k</strong></li>
+  <li><strong>560. Subarray Sum Equals K</strong></li>
+</ul>
+
+<p><strong>Template</strong>:</p>
+<div class="language-javascript highlighter-rouge"><div class="highlight"><pre class="highlight"><code>   <span class="c1">// Precompute prefix sums</span>
+   <span class="kd">let</span> <span class="nx">prefixSum</span> <span class="o">=</span> <span class="k">new</span> <span class="nc">Array</span><span class="p">(</span><span class="nx">nums</span><span class="p">.</span><span class="nx">length</span> <span class="o">+</span> <span class="mi">1</span><span class="p">).</span><span class="nf">fill</span><span class="p">(</span><span class="mi">0</span><span class="p">);</span>
+   <span class="k">for </span><span class="p">(</span><span class="kd">let</span> <span class="nx">i</span> <span class="o">=</span> <span class="mi">1</span><span class="p">;</span> <span class="nx">i</span> <span class="o">&lt;=</span> <span class="nx">nums</span><span class="p">.</span><span class="nx">length</span><span class="p">;</span> <span class="nx">i</span><span class="o">++</span><span class="p">)</span> <span class="p">{</span>
+       <span class="nx">prefixSum</span><span class="p">[</span><span class="nx">i</span><span class="p">]</span> <span class="o">=</span> <span class="nx">prefixSum</span><span class="p">[</span><span class="nx">i</span> <span class="o">-</span> <span class="mi">1</span><span class="p">]</span> <span class="o">+</span> <span class="nx">nums</span><span class="p">[</span><span class="nx">i</span> <span class="o">-</span> <span class="mi">1</span><span class="p">];</span>
+   <span class="p">}</span>
+
+   <span class="c1">// Query example: sum from index i to j</span>
+   <span class="kd">let</span> <span class="nx">rangeSum</span> <span class="o">=</span> <span class="p">(</span><span class="nx">i</span><span class="p">,</span> <span class="nx">j</span><span class="p">)</span> <span class="o">=&gt;</span> <span class="nx">prefixSum</span><span class="p">[</span><span class="nx">j</span> <span class="o">+</span> <span class="mi">1</span><span class="p">]</span> <span class="o">-</span> <span class="nx">prefixSum</span><span class="p">[</span><span class="nx">i</span><span class="p">];</span>
+</code></pre></div></div>
+
+<p><strong>Key Points</strong>:</p>
+<ul>
+  <li>Precompute prefix sums for O(n) and use it for O(1) range queries.</li>
+</ul>
+
+<hr />
+
+<h3 id="2-2d-range-queries">2. <strong>2D Range Queries</strong></h3>
+<p>Similar to 1D range queries but extended to two dimensions.</p>
+
+<p><strong>Problems</strong>:</p>
+<ul>
+  <li><strong>304. Range Sum Query 2D - Immutable</strong></li>
+  <li><strong>1314. Matrix Block Sum</strong></li>
+  <li><strong>1738. Find Kth Largest XOR Coordinate Value</strong></li>
+</ul>
+
+<p><strong>Template</strong>:</p>
+<div class="language-javascript highlighter-rouge"><div class="highlight"><pre class="highlight"><code>   <span class="c1">// Precompute prefix sums for a 2D matrix</span>
+   <span class="kd">let</span> <span class="nx">rows</span> <span class="o">=</span> <span class="nx">matrix</span><span class="p">.</span><span class="nx">length</span><span class="p">,</span> <span class="nx">cols</span> <span class="o">=</span> <span class="nx">matrix</span><span class="p">[</span><span class="mi">0</span><span class="p">].</span><span class="nx">length</span><span class="p">;</span>
+   <span class="kd">let</span> <span class="nx">prefixSum</span> <span class="o">=</span> <span class="nb">Array</span><span class="p">.</span><span class="k">from</span><span class="p">({</span> <span class="na">length</span><span class="p">:</span> <span class="nx">rows</span> <span class="o">+</span> <span class="mi">1</span> <span class="p">},</span> <span class="p">()</span> <span class="o">=&gt;</span> <span class="k">new</span> <span class="nc">Array</span><span class="p">(</span><span class="nx">cols</span> <span class="o">+</span> <span class="mi">1</span><span class="p">).</span><span class="nf">fill</span><span class="p">(</span><span class="mi">0</span><span class="p">));</span>
+
+   <span class="k">for </span><span class="p">(</span><span class="kd">let</span> <span class="nx">r</span> <span class="o">=</span> <span class="mi">1</span><span class="p">;</span> <span class="nx">r</span> <span class="o">&lt;=</span> <span class="nx">rows</span><span class="p">;</span> <span class="nx">r</span><span class="o">++</span><span class="p">)</span> <span class="p">{</span>
+       <span class="k">for </span><span class="p">(</span><span class="kd">let</span> <span class="nx">c</span> <span class="o">=</span> <span class="mi">1</span><span class="p">;</span> <span class="nx">c</span> <span class="o">&lt;=</span> <span class="nx">cols</span><span class="p">;</span> <span class="nx">c</span><span class="o">++</span><span class="p">)</span> <span class="p">{</span>
+           <span class="nx">prefixSum</span><span class="p">[</span><span class="nx">r</span><span class="p">][</span><span class="nx">c</span><span class="p">]</span> <span class="o">=</span> <span class="nx">matrix</span><span class="p">[</span><span class="nx">r</span> <span class="o">-</span> <span class="mi">1</span><span class="p">][</span><span class="nx">c</span> <span class="o">-</span> <span class="mi">1</span><span class="p">]</span> 
+                             <span class="o">+</span> <span class="nx">prefixSum</span><span class="p">[</span><span class="nx">r</span> <span class="o">-</span> <span class="mi">1</span><span class="p">][</span><span class="nx">c</span><span class="p">]</span> 
+                             <span class="o">+</span> <span class="nx">prefixSum</span><span class="p">[</span><span class="nx">r</span><span class="p">][</span><span class="nx">c</span> <span class="o">-</span> <span class="mi">1</span><span class="p">]</span> 
+                             <span class="o">-</span> <span class="nx">prefixSum</span><span class="p">[</span><span class="nx">r</span> <span class="o">-</span> <span class="mi">1</span><span class="p">][</span><span class="nx">c</span> <span class="o">-</span> <span class="mi">1</span><span class="p">];</span>
+       <span class="p">}</span>
+   <span class="p">}</span>
+
+   <span class="c1">// Query example: sum of submatrix (r1, c1) to (r2, c2)</span>
+   <span class="kd">let</span> <span class="nx">rangeSum2D</span> <span class="o">=</span> <span class="p">(</span><span class="nx">r1</span><span class="p">,</span> <span class="nx">c1</span><span class="p">,</span> <span class="nx">r2</span><span class="p">,</span> <span class="nx">c2</span><span class="p">)</span> <span class="o">=&gt;</span> <span class="p">{</span>
+       <span class="k">return</span> <span class="nx">prefixSum</span><span class="p">[</span><span class="nx">r2</span> <span class="o">+</span> <span class="mi">1</span><span class="p">][</span><span class="nx">c2</span> <span class="o">+</span> <span class="mi">1</span><span class="p">]</span> 
+              <span class="o">-</span> <span class="nx">prefixSum</span><span class="p">[</span><span class="nx">r1</span><span class="p">][</span><span class="nx">c2</span> <span class="o">+</span> <span class="mi">1</span><span class="p">]</span> 
+              <span class="o">-</span> <span class="nx">prefixSum</span><span class="p">[</span><span class="nx">r2</span> <span class="o">+</span> <span class="mi">1</span><span class="p">][</span><span class="nx">c1</span><span class="p">]</span> 
+              <span class="o">+</span> <span class="nx">prefixSum</span><span class="p">[</span><span class="nx">r1</span><span class="p">][</span><span class="nx">c1</span><span class="p">];</span>
+   <span class="p">};</span>
+</code></pre></div></div>
+
+<p><strong>Key Points</strong>:</p>
+<ul>
+  <li>Precompute prefix sums for the entire matrix.</li>
+  <li>Use inclusion-exclusion principle to query submatrices.</li>
+</ul>
+
+<hr />
+
+<h3 id="3-subarraysubstring-problems-with-target-conditions">3. <strong>Subarray/Substring Problems with Target Conditions</strong></h3>
+<p>These problems require finding subarrays/substrings that satisfy a certain condition using prefix sums.</p>
+
+<p><strong>Problems</strong>:</p>
+<ul>
+  <li><strong>209. Minimum Size Subarray Sum</strong></li>
+  <li><strong>325. Maximum Size Subarray Sum Equals k</strong></li>
+  <li><strong>560. Subarray Sum Equals K</strong></li>
+  <li><strong>930. Binary Subarrays With Sum</strong></li>
+</ul>
+
+<p><strong>Template</strong>:</p>
+<div class="language-javascript highlighter-rouge"><div class="highlight"><pre class="highlight"><code>   <span class="kd">let</span> <span class="nx">prefixSum</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span>
+   <span class="kd">let</span> <span class="nx">prefixMap</span> <span class="o">=</span> <span class="k">new</span> <span class="nc">Map</span><span class="p">();</span>  <span class="c1">// to store prefix sum frequencies</span>
+   <span class="nx">prefixMap</span><span class="p">.</span><span class="nf">set</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">);</span>  <span class="c1">// To handle cases where subarray starts at index 0</span>
+
+   <span class="kd">let</span> <span class="nx">count</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span>
+
+   <span class="k">for </span><span class="p">(</span><span class="kd">let</span> <span class="nx">i</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span> <span class="nx">i</span> <span class="o">&lt;</span> <span class="nx">nums</span><span class="p">.</span><span class="nx">length</span><span class="p">;</span> <span class="nx">i</span><span class="o">++</span><span class="p">)</span> <span class="p">{</span>
+       <span class="nx">prefixSum</span> <span class="o">+=</span> <span class="nx">nums</span><span class="p">[</span><span class="nx">i</span><span class="p">];</span>
+       
+       <span class="c1">// Check if there's a subarray sum that equals target</span>
+       <span class="k">if </span><span class="p">(</span><span class="nx">prefixMap</span><span class="p">.</span><span class="nf">has</span><span class="p">(</span><span class="nx">prefixSum</span> <span class="o">-</span> <span class="nx">target</span><span class="p">))</span> <span class="p">{</span>
+           <span class="nx">count</span> <span class="o">+=</span> <span class="nx">prefixMap</span><span class="p">.</span><span class="nf">get</span><span class="p">(</span><span class="nx">prefixSum</span> <span class="o">-</span> <span class="nx">target</span><span class="p">);</span>
+       <span class="p">}</span>
+       
+       <span class="c1">// Update the map with the current prefix sum</span>
+       <span class="nx">prefixMap</span><span class="p">.</span><span class="nf">set</span><span class="p">(</span><span class="nx">prefixSum</span><span class="p">,</span> <span class="p">(</span><span class="nx">prefixMap</span><span class="p">.</span><span class="nf">get</span><span class="p">(</span><span class="nx">prefixSum</span><span class="p">)</span> <span class="o">||</span> <span class="mi">0</span><span class="p">)</span> <span class="o">+</span> <span class="mi">1</span><span class="p">);</span>
+   <span class="p">}</span>
+
+   <span class="k">return</span> <span class="nx">count</span><span class="p">;</span>
+</code></pre></div></div>
+
+<p><strong>Key Points</strong>:</p>
+<ul>
+  <li>Use a hashmap to track the frequency of prefix sums.</li>
+  <li>Look for subarrays that satisfy the given condition by subtracting the target from the current prefix sum.</li>
+</ul>
+
+<hr />
+
+<h3 id="4-sliding-window--prefix-sum-combination">4. <strong>Sliding Window + Prefix Sum Combination</strong></h3>
+<p>These problems involve optimizing subarray or substring searches using both sliding window and prefix sum techniques.</p>
+
+<p><strong>Problems</strong>:</p>
+<ul>
+  <li><strong>713. Subarray Product Less Than K</strong></li>
+  <li><strong>862. Shortest Subarray with Sum at Least K</strong></li>
+  <li><strong>1004. Max Consecutive Ones III</strong></li>
+</ul>
+
+<p><strong>Template</strong>:</p>
+<div class="language-javascript highlighter-rouge"><div class="highlight"><pre class="highlight"><code>   <span class="kd">let</span> <span class="nx">prefixSum</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span>
+   <span class="kd">let</span> <span class="nx">left</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span>
+   <span class="kd">let</span> <span class="nx">result</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span>
+
+   <span class="k">for </span><span class="p">(</span><span class="kd">let</span> <span class="nx">right</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span> <span class="nx">right</span> <span class="o">&lt;</span> <span class="nx">nums</span><span class="p">.</span><span class="nx">length</span><span class="p">;</span> <span class="nx">right</span><span class="o">++</span><span class="p">)</span> <span class="p">{</span>
+       <span class="nx">prefixSum</span> <span class="o">+=</span> <span class="nx">nums</span><span class="p">[</span><span class="nx">right</span><span class="p">];</span>
+
+       <span class="c1">// Adjust the left pointer when condition is violated</span>
+       <span class="k">while </span><span class="p">(</span><span class="nx">prefixSum</span> <span class="o">&gt;=</span> <span class="nx">target</span><span class="p">)</span> <span class="p">{</span>
+           <span class="nx">prefixSum</span> <span class="o">-=</span> <span class="nx">nums</span><span class="p">[</span><span class="nx">left</span><span class="p">];</span>
+           <span class="nx">left</span><span class="o">++</span><span class="p">;</span>
+       <span class="p">}</span>
+
+       <span class="c1">// Number of subarrays ending at 'right'</span>
+       <span class="nx">result</span> <span class="o">+=</span> <span class="nx">right</span> <span class="o">-</span> <span class="nx">left</span> <span class="o">+</span> <span class="mi">1</span><span class="p">;</span>
+   <span class="p">}</span>
+
+   <span class="k">return</span> <span class="nx">result</span><span class="p">;</span>
+</code></pre></div></div>
+
+<p><strong>Key Points</strong>:</p>
+<ul>
+  <li>Use a sliding window to maintain a valid subarray.</li>
+  <li>Adjust the window by shrinking from the left when the condition is violated.</li>
+</ul>
+
+<hr />
+
+<h3 id="5-partitioning-arraysstrings-with-prefix-sum">5. <strong>Partitioning Arrays/Strings with Prefix Sum</strong></h3>
+<p>These problems involve partitioning the array into subarrays based on certain conditions.</p>
+
+<p><strong>Problems</strong>:</p>
+<ul>
+  <li><strong>410. Split Array Largest Sum</strong></li>
+  <li><strong>548. Split Array with Equal Sum</strong></li>
+  <li><strong>1712. Ways to Split Array Into Three Subarrays</strong></li>
+</ul>
+
+<p><strong>Template</strong>:</p>
+<div class="language-javascript highlighter-rouge"><div class="highlight"><pre class="highlight"><code>   <span class="kd">let</span> <span class="nx">prefixSum</span> <span class="o">=</span> <span class="k">new</span> <span class="nc">Array</span><span class="p">(</span><span class="nx">nums</span><span class="p">.</span><span class="nx">length</span> <span class="o">+</span> <span class="mi">1</span><span class="p">).</span><span class="nf">fill</span><span class="p">(</span><span class="mi">0</span><span class="p">);</span>
+   <span class="k">for </span><span class="p">(</span><span class="kd">let</span> <span class="nx">i</span> <span class="o">=</span> <span class="mi">1</span><span class="p">;</span> <span class="nx">i</span> <span class="o">&lt;=</span> <span class="nx">nums</span><span class="p">.</span><span class="nx">length</span><span class="p">;</span> <span class="nx">i</span><span class="o">++</span><span class="p">)</span> <span class="p">{</span>
+       <span class="nx">prefixSum</span><span class="p">[</span><span class="nx">i</span><span class="p">]</span> <span class="o">=</span> <span class="nx">prefixSum</span><span class="p">[</span><span class="nx">i</span> <span class="o">-</span> <span class="mi">1</span><span class="p">]</span> <span class="o">+</span> <span class="nx">nums</span><span class="p">[</span><span class="nx">i</span> <span class="o">-</span> <span class="mi">1</span><span class="p">];</span>
+   <span class="p">}</span>
+
+   <span class="c1">// Now, partition the array based on the given condition</span>
+   <span class="c1">// Example: split into 3 parts where the sum of all parts are equal.</span>
+   <span class="kd">let</span> <span class="nx">count</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span>
+   <span class="k">for </span><span class="p">(</span><span class="kd">let</span> <span class="nx">i</span> <span class="o">=</span> <span class="mi">1</span><span class="p">;</span> <span class="nx">i</span> <span class="o">&lt;</span> <span class="nx">nums</span><span class="p">.</span><span class="nx">length</span> <span class="o">-</span> <span class="mi">1</span><span class="p">;</span> <span class="nx">i</span><span class="o">++</span><span class="p">)</span> <span class="p">{</span>
+       <span class="kd">let</span> <span class="nx">leftSum</span> <span class="o">=</span> <span class="nx">prefixSum</span><span class="p">[</span><span class="nx">i</span><span class="p">];</span>
+       <span class="k">for </span><span class="p">(</span><span class="kd">let</span> <span class="nx">j</span> <span class="o">=</span> <span class="nx">i</span> <span class="o">+</span> <span class="mi">1</span><span class="p">;</span> <span class="nx">j</span> <span class="o">&lt;</span> <span class="nx">nums</span><span class="p">.</span><span class="nx">length</span><span class="p">;</span> <span class="nx">j</span><span class="o">++</span><span class="p">)</span> <span class="p">{</span>
+           <span class="kd">let</span> <span class="nx">midSum</span> <span class="o">=</span> <span class="nx">prefixSum</span><span class="p">[</span><span class="nx">j</span><span class="p">]</span> <span class="o">-</span> <span class="nx">prefixSum</span><span class="p">[</span><span class="nx">i</span><span class="p">];</span>
+           <span class="kd">let</span> <span class="nx">rightSum</span> <span class="o">=</span> <span class="nx">prefixSum</span><span class="p">[</span><span class="nx">nums</span><span class="p">.</span><span class="nx">length</span><span class="p">]</span> <span class="o">-</span> <span class="nx">prefixSum</span><span class="p">[</span><span class="nx">j</span><span class="p">];</span>
+           <span class="k">if </span><span class="p">(</span><span class="nx">leftSum</span> <span class="o">===</span> <span class="nx">midSum</span> <span class="o">&amp;&amp;</span> <span class="nx">midSum</span> <span class="o">===</span> <span class="nx">rightSum</span><span class="p">)</span> <span class="p">{</span>
+               <span class="nx">count</span><span class="o">++</span><span class="p">;</span>
+           <span class="p">}</span>
+       <span class="p">}</span>
+   <span class="p">}</span>
+
+   <span class="k">return</span> <span class="nx">count</span><span class="p">;</span>
+</code></pre></div></div>
+
+<p><strong>Key Points</strong>:</p>
+<ul>
+  <li>Use prefix sums to precompute the cumulative sum.</li>
+  <li>Use nested loops or binary search to find valid partitions.</li>
+</ul>
+
+<hr />
+
+<h3 id="6-xor-based-problems">6. <strong>XOR-based Problems</strong></h3>
+<p>These problems are based on XOR operations, often using prefix XOR sums.</p>
+
+<p><strong>Problems</strong>:</p>
+<ul>
+  <li><strong>1310. XOR Queries of a Subarray</strong></li>
+  <li><strong>1442. Count Triplets That Can Form Two Arrays of Equal XOR</strong></li>
+  <li><strong>1738. Find Kth Largest XOR Coordinate Value</strong></li>
+</ul>
+
+<p><strong>Template</strong>:</p>
+<div class="language-javascript highlighter-rouge"><div class="highlight"><pre class="highlight"><code>   <span class="c1">// Compute prefix XOR</span>
+   <span class="kd">let</span> <span class="nx">prefixXor</span> <span class="o">=</span> <span class="k">new</span> <span class="nc">Array</span><span class="p">(</span><span class="nx">nums</span><span class="p">.</span><span class="nx">length</span> <span class="o">+</span> <span class="mi">1</span><span class="p">).</span><span class="nf">fill</span><span class="p">(</span><span class="mi">0</span><span class="p">);</span>
+   <span class="k">for </span><span class="p">(</span><span class="kd">let</span> <span class="nx">i</span> <span class="o">=</span> <span class="mi">1</span><span class="p">;</span> <span class="nx">i</span> <span class="o">&lt;=</span> <span class="nx">nums</span><span class="p">.</span><span class="nx">length</span><span class="p">;</span> <span class="nx">i</span><span class="o">++</span><span class="p">)</span> <span class="p">{</span>
+       <span class="nx">prefixXor</span><span class="p">[</span><span class="nx">i</span><span class="p">]</span> <span class="o">=</span> <span class="nx">prefixXor</span><span class="p">[</span><span class="nx">i</span> <span class="o">-</span> <span class="mi">1</span><span class="p">]</span> <span class="o">^</span> <span class="nx">nums</span><span class="p">[</span><span class="nx">i</span> <span class="o">-</span> <span class="mi">1</span><span class="p">];</span>
+   <span class="p">}</span>
+
+   <span class="c1">// Example query: XOR from index i to j</span>
+   <span class="kd">let</span> <span class="nx">xorQuery</span> <span class="o">=</span> <span class="p">(</span><span class="nx">i</span><span class="p">,</span> <span class="nx">j</span><span class="p">)</span> <span class="o">=&gt;</span> <span class="nx">prefixXor</span><span class="p">[</span><span class="nx">j</span> <span class="o">+</span> <span class="mi">1</span><span class="p">]</span> <span class="o">^</span> <span class="nx">prefixXor</span><span class="p">[</span><span class="nx">i</span><span class="p">];</span>
+</code></pre></div></div>
+
+<p><strong>Key Points</strong>:</p>
+<ul>
+  <li>Precompute prefix XOR to efficiently answer XOR-based queries.</li>
+  <li>XOR properties: <code class="language-plaintext highlighter-rouge">a ^ a = 0</code>, <code class="language-plaintext highlighter-rouge">a ^ 0 = a</code>, and <code class="language-plaintext highlighter-rouge">a ^ b = c</code> where <code class="language-plaintext highlighter-rouge">c ^ b = a</code>.</li>
+</ul>
+
+<hr />
+
+<h3 id="7-miscellaneous-non-standard-prefix-sum">7. <strong>Miscellaneous (Non-Standard Prefix Sum)</strong></h3>
+<p>These are more complex or less common uses of prefix sums, such as in probability, counting, or combination problems.</p>
+
+<p><strong>Problems</strong>:</p>
+<ul>
+  <li><strong>528. Random Pick with Weight</strong></li>
+  <li><strong>1480. Running Sum of 1d Array</strong></li>
+  <li><strong>2025. Maximum Number of Ways to Partition an Array</strong></li>
+</ul>
+
+<p><strong>Template</strong>:</p>
+<div class="language-javascript highlighter-rouge"><div class="highlight"><pre class="highlight"><code>   <span class="c1">// Example: Weighted random pick</span>
+   <span class="kd">let</span> <span class="nx">prefixSum</span> <span class="o">=</span> <span class="k">new</span> <span class="nc">Array</span><span class="p">(</span><span class="nx">weights</span><span class="p">.</span><span class="nx">length</span><span class="p">).</span><span class="nf">fill</span><span class="p">(</span><span class="mi">0</span><span class="p">);</span>
+   <span class="nx">prefixSum</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">=</span> <span class="nx">weights</span><span class="p">[</span><span class="mi">0</span><span class="p">];</span>
+   <span class="k">for </span><span class="p">(</span><span class="kd">let</span> <span class="nx">i</span> <span class="o">=</span> <span class="mi">1</span><span class="p">;</span> <span class="nx">i</span> <span class="o">&lt;</span> <span class="nx">weights</span><span class="p">.</span><span class="nx">length</span><span class="p">;</span> <span class="nx">i</span><span class="o">++</span><span class="p">)</span> <span class="p">{</span>
+       <span class="nx">prefixSum</span><span class="p">[</span><span class="nx">i</span><span class="p">]</span> <span class="o">=</span> <span class="nx">prefixSum</span><span class="p">[</span><span class="nx">i</span> <span class="o">-</span> <span class="mi">1</span><span class="p">]</span> <span class="o">+</span> <span class="nx">weights</span><span class="p">[</span><span class="nx">i</span><span class="p">];</span>
+   <span class="p">}</span>
+
+   <span class="kd">let</span> <span class="nx">pickIndex</span> <span class="o">=</span> <span class="p">()</span> <span class="o">=&gt;</span> <span class="p">{</span>
+       <span class="kd">let</span> <span class="nx">target</span> <span class="o">=</span> <span class="nb">Math</span><span class="p">.</span><span class="nf">random</span><span class="p">()</span> <span class="o">*</span> <span class="nx">prefixSum</span><span class="p">[</span><span class="nx">prefixSum</span><span class="p">.</span><span class="nx">length</span> <span class="o">-</span> <span class="mi">1</span><span class="p">];</span>
+       <span class="kd">let</span> <span class="nx">left</span> <span class="o">=</span> <span class="mi">0</span><span class="p">,</span> <span class="nx">right</span> <span class="o">=</span> <span class="nx">prefixSum</span><span class="p">.</span><span class="nx">length</span> <span class="o">-</span> <span class="mi">1</span><span class="p">;</span>
+       <span class="k">while </span><span class="p">(</span><span class="nx">left</span> <span class="o">&lt;</span> <span class="nx">right</span><span class="p">)</span> <span class="p">{</span>
+           <span class="kd">let</span> <span class="nx">mid</span> <span class="o">=</span> <span class="nb">Math</span><span class="p">.</span><span class="nf">floor</span><span class="p">((</span><span class="nx">left</span> <span class="o">+</span> <span class="nx">right</span><span class="p">)</span> <span class="o">/</span> <span class="mi">2</span><span class="p">);</span>
+           <span class="k">if </span><span class="p">(</span><span class="nx">prefixSum</span><span class="p">[</span><span class="nx">mid</span><span class="p">]</span> <span class="o">&lt;=</span> <span class="nx">target</span><span class="p">)</span> <span class="p">{</span>
+               <span class="nx">left</span> <span class="o">=</span> <span class="nx">mid</span> <span class="o">+</span> <span class="mi">1</span><span class="p">;</span>
+           <span class="p">}</span> <span class="k">else</span> <span class="p">{</span>
+               <span class="nx">right</span> <span class="o">=</span> <span class="nx">mid</span><span class="p">;</span>
+           <span class="p">}</span>
+       <span class="p">}</span>
+       <span class="k">return</span> <span class="nx">left</span><span class="p">;</span>
+   <span class="p">};</span>
+</code></pre></div></div>
+
+<p><strong>Key Points</strong>:</p>
+<ul>
+  <li>Use prefix sums to handle weighted probabilities.</li>
+  <li>Use binary search to find the target index efficiently.</li>
+</ul>
+
+<hr />
+
+<p>Each of these templates follows a similar logic but is tailored to the specific structure and constraints of the problem. Prefix sums are a powerful tool for efficiently solving a wide range of problems where cumulative sums or other range-based operations are needed.</p>
+
+<h2 id="typical-solutions">Typical Solutions</h2>
+
+<p>To effectively use the prefix sum templates for an <strong>easy</strong>, <strong>medium</strong>, and <strong>hard</strong> problem, here’s how you can approach them step-by-step. We’ll apply the templates to one problem from each difficulty level.</p>
+
+<h4 id="problem">Problem:</h4>
+<p>Given an array <code class="language-plaintext highlighter-rouge">nums</code>, return an array where each element is the running sum of the input array.</p>
+
+<h4 id="approach">Approach:</h4>
+<p>This is a classic prefix sum problem where you need to compute cumulative sums of the array.</p>
+
+<h4 id="steps">Steps:</h4>
+<ul>
+  <li><strong>Step 1</strong>: Start from the first element and for each subsequent element, add it to the sum of the previous elements.</li>
+  <li><strong>Step 2</strong>: Keep track of the running sum.</li>
+</ul>
+
+<h4 id="code-template">Code Template:</h4>
+<p>Here, we can modify the <strong>1D Range Queries</strong> template.</p>
+
+<div class="language-javascript highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="kd">var</span> <span class="nx">runningSum</span> <span class="o">=</span> <span class="kd">function</span><span class="p">(</span><span class="nx">nums</span><span class="p">)</span> <span class="p">{</span>
+    <span class="kd">let</span> <span class="nx">result</span> <span class="o">=</span> <span class="k">new</span> <span class="nc">Array</span><span class="p">(</span><span class="nx">nums</span><span class="p">.</span><span class="nx">length</span><span class="p">);</span>
+    <span class="nx">result</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">=</span> <span class="nx">nums</span><span class="p">[</span><span class="mi">0</span><span class="p">];</span>
+    
+    <span class="k">for </span><span class="p">(</span><span class="kd">let</span> <span class="nx">i</span> <span class="o">=</span> <span class="mi">1</span><span class="p">;</span> <span class="nx">i</span> <span class="o">&lt;</span> <span class="nx">nums</span><span class="p">.</span><span class="nx">length</span><span class="p">;</span> <span class="nx">i</span><span class="o">++</span><span class="p">)</span> <span class="p">{</span>
+        <span class="nx">result</span><span class="p">[</span><span class="nx">i</span><span class="p">]</span> <span class="o">=</span> <span class="nx">result</span><span class="p">[</span><span class="nx">i</span> <span class="o">-</span> <span class="mi">1</span><span class="p">]</span> <span class="o">+</span> <span class="nx">nums</span><span class="p">[</span><span class="nx">i</span><span class="p">];</span>
+    <span class="p">}</span>
+    
+    <span class="k">return</span> <span class="nx">result</span><span class="p">;</span>
+<span class="p">};</span>
+</code></pre></div></div>
+
+<h4 id="key-points">Key Points:</h4>
+<ul>
+  <li>This uses a simple cumulative addition approach.</li>
+  <li>Running time complexity is <strong>O(n)</strong>, and space complexity is <strong>O(1)</strong> if you modify <code class="language-plaintext highlighter-rouge">nums</code> in place.</li>
+</ul>
+
+<h4 id="problem-1">Problem:</h4>
+<p>Given an array of integers <code class="language-plaintext highlighter-rouge">nums</code> and an integer <code class="language-plaintext highlighter-rouge">k</code>, return the total number of continuous subarrays whose sum equals to <code class="language-plaintext highlighter-rouge">k</code>.</p>
+
+<h4 id="approach-1">Approach:</h4>
+<p>This problem can be solved using the <strong>Subarray/Substring Problems with Target Conditions</strong> template. We can use a prefix sum and a hashmap to track the number of subarrays that sum to <code class="language-plaintext highlighter-rouge">k</code>.</p>
+
+<h4 id="steps-1">Steps:</h4>
+<ul>
+  <li><strong>Step 1</strong>: Traverse the array, compute the prefix sum at each step.</li>
+  <li><strong>Step 2</strong>: For each prefix sum, check if the difference <code class="language-plaintext highlighter-rouge">prefixSum - k</code> exists in the hashmap.</li>
+  <li><strong>Step 3</strong>: If the difference exists, it means there is a subarray whose sum is <code class="language-plaintext highlighter-rouge">k</code>, and we increment the count.</li>
+</ul>
+
+<h4 id="code-template-1">Code Template:</h4>
+<p>Using the <strong>Subarray Sum Equals K</strong> template:</p>
+
+<div class="language-javascript highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="kd">var</span> <span class="nx">subarraySum</span> <span class="o">=</span> <span class="kd">function</span><span class="p">(</span><span class="nx">nums</span><span class="p">,</span> <span class="nx">k</span><span class="p">)</span> <span class="p">{</span>
+    <span class="kd">let</span> <span class="nx">prefixSum</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span>
+    <span class="kd">let</span> <span class="nx">count</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span>
+    <span class="kd">let</span> <span class="nx">prefixMap</span> <span class="o">=</span> <span class="k">new</span> <span class="nc">Map</span><span class="p">();</span>
+    <span class="nx">prefixMap</span><span class="p">.</span><span class="nf">set</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">);</span> <span class="c1">// Initialize with sum 0 to handle cases when subarray starts at index 0.</span>
+
+    <span class="k">for </span><span class="p">(</span><span class="kd">let</span> <span class="nx">i</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span> <span class="nx">i</span> <span class="o">&lt;</span> <span class="nx">nums</span><span class="p">.</span><span class="nx">length</span><span class="p">;</span> <span class="nx">i</span><span class="o">++</span><span class="p">)</span> <span class="p">{</span>
+        <span class="nx">prefixSum</span> <span class="o">+=</span> <span class="nx">nums</span><span class="p">[</span><span class="nx">i</span><span class="p">];</span>
+
+        <span class="c1">// Check if the prefix sum minus target exists in the map</span>
+        <span class="k">if </span><span class="p">(</span><span class="nx">prefixMap</span><span class="p">.</span><span class="nf">has</span><span class="p">(</span><span class="nx">prefixSum</span> <span class="o">-</span> <span class="nx">k</span><span class="p">))</span> <span class="p">{</span>
+            <span class="nx">count</span> <span class="o">+=</span> <span class="nx">prefixMap</span><span class="p">.</span><span class="nf">get</span><span class="p">(</span><span class="nx">prefixSum</span> <span class="o">-</span> <span class="nx">k</span><span class="p">);</span>
+        <span class="p">}</span>
+
+        <span class="c1">// Update the map with the current prefix sum</span>
+        <span class="nx">prefixMap</span><span class="p">.</span><span class="nf">set</span><span class="p">(</span><span class="nx">prefixSum</span><span class="p">,</span> <span class="p">(</span><span class="nx">prefixMap</span><span class="p">.</span><span class="nf">get</span><span class="p">(</span><span class="nx">prefixSum</span><span class="p">)</span> <span class="o">||</span> <span class="mi">0</span><span class="p">)</span> <span class="o">+</span> <span class="mi">1</span><span class="p">);</span>
+    <span class="p">}</span>
+
+    <span class="k">return</span> <span class="nx">count</span><span class="p">;</span>
+<span class="p">};</span>
+</code></pre></div></div>
+
+<h4 id="key-points-1">Key Points:</h4>
+<ul>
+  <li>This approach uses a hashmap to store the frequencies of prefix sums for quick lookup.</li>
+  <li>The overall time complexity is <strong>O(n)</strong> because each element is processed once.</li>
+</ul>
+
+<h4 id="problem-2">Problem:</h4>
+<p>Given a matrix and a target, find the number of submatrices that sum to the target.</p>
+
+<h4 id="approach-2">Approach:</h4>
+<p>This problem extends the idea of 1D subarray sum problems to 2D matrices. We can solve this by:</p>
+<ul>
+  <li>Fixing two rows and reducing the problem to a 1D array (sum of columns between two rows).</li>
+  <li>Then, apply the <strong>Subarray Sum Equals K</strong> approach on this reduced 1D array.</li>
+</ul>
+
+<h4 id="steps-2">Steps:</h4>
+<ul>
+  <li><strong>Step 1</strong>: Precompute prefix sums for each row.</li>
+  <li><strong>Step 2</strong>: Fix two rows and compute column sums between these rows.</li>
+  <li><strong>Step 3</strong>: Use the prefix sum approach to count subarrays that sum to the target within the column sums.</li>
+</ul>
+
+<h4 id="code-template-2">Code Template:</h4>
+<p>This uses the <strong>2D Range Queries</strong> and <strong>Subarray/Substring Problems with Target Conditions</strong> templates:</p>
+
+<div class="language-javascript highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="kd">var</span> <span class="nx">numSubmatrixSumTarget</span> <span class="o">=</span> <span class="kd">function</span><span class="p">(</span><span class="nx">matrix</span><span class="p">,</span> <span class="nx">target</span><span class="p">)</span> <span class="p">{</span>
+    <span class="kd">let</span> <span class="nx">rows</span> <span class="o">=</span> <span class="nx">matrix</span><span class="p">.</span><span class="nx">length</span><span class="p">,</span> <span class="nx">cols</span> <span class="o">=</span> <span class="nx">matrix</span><span class="p">[</span><span class="mi">0</span><span class="p">].</span><span class="nx">length</span><span class="p">;</span>
+    <span class="kd">let</span> <span class="nx">result</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span>
+
+    <span class="c1">// Precompute prefix sums for each row</span>
+    <span class="k">for </span><span class="p">(</span><span class="kd">let</span> <span class="nx">r</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span> <span class="nx">r</span> <span class="o">&lt;</span> <span class="nx">rows</span><span class="p">;</span> <span class="nx">r</span><span class="o">++</span><span class="p">)</span> <span class="p">{</span>
+        <span class="k">for </span><span class="p">(</span><span class="kd">let</span> <span class="nx">c</span> <span class="o">=</span> <span class="mi">1</span><span class="p">;</span> <span class="nx">c</span> <span class="o">&lt;</span> <span class="nx">cols</span><span class="p">;</span> <span class="nx">c</span><span class="o">++</span><span class="p">)</span> <span class="p">{</span>
+            <span class="nx">matrix</span><span class="p">[</span><span class="nx">r</span><span class="p">][</span><span class="nx">c</span><span class="p">]</span> <span class="o">+=</span> <span class="nx">matrix</span><span class="p">[</span><span class="nx">r</span><span class="p">][</span><span class="nx">c</span> <span class="o">-</span> <span class="mi">1</span><span class="p">];</span>
+        <span class="p">}</span>
+    <span class="p">}</span>
+
+    <span class="c1">// Now, fix two rows and reduce the problem to 1D</span>
+    <span class="k">for </span><span class="p">(</span><span class="kd">let</span> <span class="nx">startCol</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span> <span class="nx">startCol</span> <span class="o">&lt;</span> <span class="nx">cols</span><span class="p">;</span> <span class="nx">startCol</span><span class="o">++</span><span class="p">)</span> <span class="p">{</span>
+        <span class="k">for </span><span class="p">(</span><span class="kd">let</span> <span class="nx">endCol</span> <span class="o">=</span> <span class="nx">startCol</span><span class="p">;</span> <span class="nx">endCol</span> <span class="o">&lt;</span> <span class="nx">cols</span><span class="p">;</span> <span class="nx">endCol</span><span class="o">++</span><span class="p">)</span> <span class="p">{</span>
+            <span class="kd">let</span> <span class="nx">prefixMap</span> <span class="o">=</span> <span class="k">new</span> <span class="nc">Map</span><span class="p">();</span>
+            <span class="nx">prefixMap</span><span class="p">.</span><span class="nf">set</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">);</span>  <span class="c1">// To handle cases when subarray starts at index 0</span>
+            <span class="kd">let</span> <span class="nx">currentSum</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span>
+
+            <span class="k">for </span><span class="p">(</span><span class="kd">let</span> <span class="nx">r</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span> <span class="nx">r</span> <span class="o">&lt;</span> <span class="nx">rows</span><span class="p">;</span> <span class="nx">r</span><span class="o">++</span><span class="p">)</span> <span class="p">{</span>
+                <span class="c1">// Calculate sum of elements between startCol and endCol for row r</span>
+                <span class="nx">currentSum</span> <span class="o">+=</span> <span class="nx">matrix</span><span class="p">[</span><span class="nx">r</span><span class="p">][</span><span class="nx">endCol</span><span class="p">]</span> <span class="o">-</span> <span class="p">(</span><span class="nx">startCol</span> <span class="o">&gt;</span> <span class="mi">0</span> <span class="p">?</span> <span class="nx">matrix</span><span class="p">[</span><span class="nx">r</span><span class="p">][</span><span class="nx">startCol</span> <span class="o">-</span> <span class="mi">1</span><span class="p">]</span> <span class="p">:</span> <span class="mi">0</span><span class="p">);</span>
+
+                <span class="c1">// Check if currentSum - target exists in the map</span>
+                <span class="k">if </span><span class="p">(</span><span class="nx">prefixMap</span><span class="p">.</span><span class="nf">has</span><span class="p">(</span><span class="nx">currentSum</span> <span class="o">-</span> <span class="nx">target</span><span class="p">))</span> <span class="p">{</span>
+                    <span class="nx">result</span> <span class="o">+=</span> <span class="nx">prefixMap</span><span class="p">.</span><span class="nf">get</span><span class="p">(</span><span class="nx">currentSum</span> <span class="o">-</span> <span class="nx">target</span><span class="p">);</span>
+                <span class="p">}</span>
+
+                <span class="c1">// Update the map with the current sum</span>
+                <span class="nx">prefixMap</span><span class="p">.</span><span class="nf">set</span><span class="p">(</span><span class="nx">currentSum</span><span class="p">,</span> <span class="p">(</span><span class="nx">prefixMap</span><span class="p">.</span><span class="nf">get</span><span class="p">(</span><span class="nx">currentSum</span><span class="p">)</span> <span class="o">||</span> <span class="mi">0</span><span class="p">)</span> <span class="o">+</span> <span class="mi">1</span><span class="p">);</span>
+            <span class="p">}</span>
+        <span class="p">}</span>
+    <span class="p">}</span>
+
+    <span class="k">return</span> <span class="nx">result</span><span class="p">;</span>
+<span class="p">};</span>
+</code></pre></div></div>
+
+<h4 id="key-points-2">Key Points:</h4>
+<ul>
+  <li>We reduce the problem to multiple 1D subarray sum problems by fixing two rows at a time.</li>
+  <li>The time complexity is <strong>O(n² * m)</strong>, where <code class="language-plaintext highlighter-rouge">n</code> is the number of rows and <code class="language-plaintext highlighter-rouge">m</code> is the number of columns, since we are iterating over all possible pairs of rows and for each pair, we are computing column sums.</li>
+</ul>
+
+<hr />
+
+<h3 id="4-subarrayproduct-problems-with-target-conditions">4. <strong>Subarray/Product Problems with Target Conditions</strong></h3>
+
+<h4 id="problem-type">Problem Type:</h4>
+<p>Problems involving subarrays where the product of elements must meet a certain condition, like being less than or equal to a target.</p>
+
+<h4 id="example">Example:</h4>
+<p><strong>713. Subarray Product Less Than K</strong></p>
+
+<h4 id="approach-3">Approach:</h4>
+<p>Use a sliding window technique and track the product of elements within the window. Shrink the window whenever the product exceeds the target.</p>
+
+<h4 id="code-template-3">Code Template:</h4>
+<div class="language-javascript highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="kd">var</span> <span class="nx">numSubarrayProductLessThanK</span> <span class="o">=</span> <span class="kd">function</span><span class="p">(</span><span class="nx">nums</span><span class="p">,</span> <span class="nx">k</span><span class="p">)</span> <span class="p">{</span>
+    <span class="k">if </span><span class="p">(</span><span class="nx">k</span> <span class="o">&lt;=</span> <span class="mi">1</span><span class="p">)</span> <span class="k">return</span> <span class="mi">0</span><span class="p">;</span>
+    
+    <span class="kd">let</span> <span class="nx">left</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span>
+    <span class="kd">let</span> <span class="nx">product</span> <span class="o">=</span> <span class="mi">1</span><span class="p">;</span>
+    <span class="kd">let</span> <span class="nx">count</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span>
+
+    <span class="k">for </span><span class="p">(</span><span class="kd">let</span> <span class="nx">right</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span> <span class="nx">right</span> <span class="o">&lt;</span> <span class="nx">nums</span><span class="p">.</span><span class="nx">length</span><span class="p">;</span> <span class="nx">right</span><span class="o">++</span><span class="p">)</span> <span class="p">{</span>
+        <span class="nx">product</span> <span class="o">*=</span> <span class="nx">nums</span><span class="p">[</span><span class="nx">right</span><span class="p">];</span>
+
+        <span class="k">while </span><span class="p">(</span><span class="nx">product</span> <span class="o">&gt;=</span> <span class="nx">k</span><span class="p">)</span> <span class="p">{</span>
+            <span class="nx">product</span> <span class="o">/=</span> <span class="nx">nums</span><span class="p">[</span><span class="nx">left</span><span class="p">];</span>
+            <span class="nx">left</span><span class="o">++</span><span class="p">;</span>
+        <span class="p">}</span>
+
+        <span class="c1">// All subarrays between `left` and `right` have product &lt; k</span>
+        <span class="nx">count</span> <span class="o">+=</span> <span class="nx">right</span> <span class="o">-</span> <span class="nx">left</span> <span class="o">+</span> <span class="mi">1</span><span class="p">;</span>
+    <span class="p">}</span>
+
+    <span class="k">return</span> <span class="nx">count</span><span class="p">;</span>
+<span class="p">};</span>
+</code></pre></div></div>
+
+<h4 id="key-points-3">Key Points:</h4>
+<ul>
+  <li>Sliding window approach is used instead of prefix sum.</li>
+  <li>Shrinking the window when the product is no longer valid.</li>
+  <li>Time complexity is <strong>O(n)</strong>, where <code class="language-plaintext highlighter-rouge">n</code> is the number of elements in the array.</li>
+</ul>
+
+<hr />
+
+<h3 id="5-prefix-xor-problems">5. <strong>Prefix XOR Problems</strong></h3>
+
+<h4 id="problem-type-1">Problem Type:</h4>
+<p>These problems involve XOR operations over a subarray or range.</p>
+
+<h4 id="example-1">Example:</h4>
+<p><strong>1442. Count Triplets That Can Form Two Arrays of Equal XOR</strong></p>
+
+<h4 id="approach-4">Approach:</h4>
+<p>We use the XOR property: <code class="language-plaintext highlighter-rouge">a ^ a = 0</code>. We can solve the problem using prefix XOR, where we check for conditions where <code class="language-plaintext highlighter-rouge">prefixXor[i] == prefixXor[j]</code>, which implies the XOR of elements between <code class="language-plaintext highlighter-rouge">i</code> and <code class="language-plaintext highlighter-rouge">j</code> is <code class="language-plaintext highlighter-rouge">0</code>.</p>
+
+<h4 id="code-template-4">Code Template:</h4>
+<div class="language-javascript highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="kd">var</span> <span class="nx">countTriplets</span> <span class="o">=</span> <span class="kd">function</span><span class="p">(</span><span class="nx">arr</span><span class="p">)</span> <span class="p">{</span>
+    <span class="kd">let</span> <span class="nx">count</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span>
+    <span class="kd">let</span> <span class="nx">prefixXor</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span>
+    <span class="kd">let</span> <span class="nx">prefixXorMap</span> <span class="o">=</span> <span class="k">new</span> <span class="nc">Map</span><span class="p">();</span>
+    <span class="kd">let</span> <span class="nx">prefixXorSumMap</span> <span class="o">=</span> <span class="k">new</span> <span class="nc">Map</span><span class="p">();</span>
+    
+    <span class="k">for </span><span class="p">(</span><span class="kd">let</span> <span class="nx">i</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span> <span class="nx">i</span> <span class="o">&lt;</span> <span class="nx">arr</span><span class="p">.</span><span class="nx">length</span><span class="p">;</span> <span class="nx">i</span><span class="o">++</span><span class="p">)</span> <span class="p">{</span>
+        <span class="kd">let</span> <span class="nx">currXor</span> <span class="o">=</span> <span class="nx">prefixXor</span> <span class="o">^</span> <span class="nx">arr</span><span class="p">[</span><span class="nx">i</span><span class="p">];</span>
+        
+        <span class="k">if </span><span class="p">(</span><span class="nx">prefixXorMap</span><span class="p">.</span><span class="nf">has</span><span class="p">(</span><span class="nx">currXor</span><span class="p">))</span> <span class="p">{</span>
+            <span class="nx">count</span> <span class="o">+=</span> <span class="nx">prefixXorMap</span><span class="p">.</span><span class="nf">get</span><span class="p">(</span><span class="nx">currXor</span><span class="p">)</span> <span class="o">*</span> <span class="nx">i</span> <span class="o">-</span> <span class="nx">prefixXorSumMap</span><span class="p">.</span><span class="nf">get</span><span class="p">(</span><span class="nx">currXor</span><span class="p">);</span>
+        <span class="p">}</span>
+
+        <span class="c1">// Update maps</span>
+        <span class="nx">prefixXorMap</span><span class="p">.</span><span class="nf">set</span><span class="p">(</span><span class="nx">prefixXor</span><span class="p">,</span> <span class="p">(</span><span class="nx">prefixXorMap</span><span class="p">.</span><span class="nf">get</span><span class="p">(</span><span class="nx">prefixXor</span><span class="p">)</span> <span class="o">||</span> <span class="mi">0</span><span class="p">)</span> <span class="o">+</span> <span class="mi">1</span><span class="p">);</span>
+        <span class="nx">prefixXorSumMap</span><span class="p">.</span><span class="nf">set</span><span class="p">(</span><span class="nx">prefixXor</span><span class="p">,</span> <span class="p">(</span><span class="nx">prefixXorSumMap</span><span class="p">.</span><span class="nf">get</span><span class="p">(</span><span class="nx">prefixXor</span><span class="p">)</span> <span class="o">||</span> <span class="mi">0</span><span class="p">)</span> <span class="o">+</span> <span class="nx">i</span><span class="p">);</span>
+        
+        <span class="nx">prefixXor</span> <span class="o">=</span> <span class="nx">currXor</span><span class="p">;</span>
+    <span class="p">}</span>
+
+    <span class="k">return</span> <span class="nx">count</span><span class="p">;</span>
+<span class="p">};</span>
+</code></pre></div></div>
+
+<h4 id="key-points-4">Key Points:</h4>
+<ul>
+  <li>Use XOR to track subarrays that satisfy the condition.</li>
+  <li>Map stores counts of prefix XOR values and their sums to handle multiple ranges efficiently.</li>
+  <li>Time complexity is <strong>O(n)</strong> with extra space for the map.</li>
+</ul>
+
+<hr />
+
+<h3 id="6-2d-matrix-prefix-sum-problems">6. <strong>2D Matrix Prefix Sum Problems</strong></h3>
+
+<h4 id="problem-type-2">Problem Type:</h4>
+<p>Prefix sum problems applied to matrices, often requiring computing the sum of submatrices or handling range sum queries on 2D grids.</p>
+
+<h4 id="example-2">Example:</h4>
+<p><strong>1314. Matrix Block Sum</strong></p>
+
+<h4 id="approach-5">Approach:</h4>
+<p>Precompute the 2D prefix sum matrix where each entry holds the sum of the submatrix starting from <code class="language-plaintext highlighter-rouge">(0,0)</code> to <code class="language-plaintext highlighter-rouge">(i,j)</code>. Use this precomputed matrix to efficiently calculate sums of submatrices.</p>
+
+<h4 id="code-template-5">Code Template:</h4>
+<div class="language-javascript highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="kd">var</span> <span class="nx">matrixBlockSum</span> <span class="o">=</span> <span class="kd">function</span><span class="p">(</span><span class="nx">mat</span><span class="p">,</span> <span class="nx">k</span><span class="p">)</span> <span class="p">{</span>
+    <span class="kd">let</span> <span class="nx">m</span> <span class="o">=</span> <span class="nx">mat</span><span class="p">.</span><span class="nx">length</span><span class="p">,</span> <span class="nx">n</span> <span class="o">=</span> <span class="nx">mat</span><span class="p">[</span><span class="mi">0</span><span class="p">].</span><span class="nx">length</span><span class="p">;</span>
+    <span class="kd">let</span> <span class="nx">prefixSum</span> <span class="o">=</span> <span class="nb">Array</span><span class="p">.</span><span class="k">from</span><span class="p">({</span> <span class="na">length</span><span class="p">:</span> <span class="nx">m</span> <span class="o">+</span> <span class="mi">1</span> <span class="p">},</span> <span class="p">()</span> <span class="o">=&gt;</span> <span class="nc">Array</span><span class="p">(</span><span class="nx">n</span> <span class="o">+</span> <span class="mi">1</span><span class="p">).</span><span class="nf">fill</span><span class="p">(</span><span class="mi">0</span><span class="p">));</span>
+    <span class="kd">let</span> <span class="nx">result</span> <span class="o">=</span> <span class="nb">Array</span><span class="p">.</span><span class="k">from</span><span class="p">({</span> <span class="na">length</span><span class="p">:</span> <span class="nx">m</span> <span class="p">},</span> <span class="p">()</span> <span class="o">=&gt;</span> <span class="nc">Array</span><span class="p">(</span><span class="nx">n</span><span class="p">).</span><span class="nf">fill</span><span class="p">(</span><span class="mi">0</span><span class="p">));</span>
+
+    <span class="c1">// Step 1: Compute the prefix sum matrix</span>
+    <span class="k">for </span><span class="p">(</span><span class="kd">let</span> <span class="nx">i</span> <span class="o">=</span> <span class="mi">1</span><span class="p">;</span> <span class="nx">i</span> <span class="o">&lt;=</span> <span class="nx">m</span><span class="p">;</span> <span class="nx">i</span><span class="o">++</span><span class="p">)</span> <span class="p">{</span>
+        <span class="k">for </span><span class="p">(</span><span class="kd">let</span> <span class="nx">j</span> <span class="o">=</span> <span class="mi">1</span><span class="p">;</span> <span class="nx">j</span> <span class="o">&lt;=</span> <span class="nx">n</span><span class="p">;</span> <span class="nx">j</span><span class="o">++</span><span class="p">)</span> <span class="p">{</span>
+            <span class="nx">prefixSum</span><span class="p">[</span><span class="nx">i</span><span class="p">][</span><span class="nx">j</span><span class="p">]</span> <span class="o">=</span> <span class="nx">mat</span><span class="p">[</span><span class="nx">i</span> <span class="o">-</span> <span class="mi">1</span><span class="p">][</span><span class="nx">j</span> <span class="o">-</span> <span class="mi">1</span><span class="p">]</span>
+                            <span class="o">+</span> <span class="nx">prefixSum</span><span class="p">[</span><span class="nx">i</span> <span class="o">-</span> <span class="mi">1</span><span class="p">][</span><span class="nx">j</span><span class="p">]</span>
+                            <span class="o">+</span> <span class="nx">prefixSum</span><span class="p">[</span><span class="nx">i</span><span class="p">][</span><span class="nx">j</span> <span class="o">-</span> <span class="mi">1</span><span class="p">]</span>
+                            <span class="o">-</span> <span class="nx">prefixSum</span><span class="p">[</span><span class="nx">i</span> <span class="o">-</span> <span class="mi">1</span><span class="p">][</span><span class="nx">j</span> <span class="o">-</span> <span class="mi">1</span><span class="p">];</span>
+        <span class="p">}</span>
+    <span class="p">}</span>
+
+    <span class="c1">// Step 2: Use the prefix sum matrix to calculate the block sums</span>
+    <span class="k">for </span><span class="p">(</span><span class="kd">let</span> <span class="nx">i</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span> <span class="nx">i</span> <span class="o">&lt;</span> <span class="nx">m</span><span class="p">;</span> <span class="nx">i</span><span class="o">++</span><span class="p">)</span> <span class="p">{</span>
+        <span class="k">for </span><span class="p">(</span><span class="kd">let</span> <span class="nx">j</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span> <span class="nx">j</span> <span class="o">&lt;</span> <span class="nx">n</span><span class="p">;</span> <span class="nx">j</span><span class="o">++</span><span class="p">)</span> <span class="p">{</span>
+            <span class="kd">let</span> <span class="nx">r1</span> <span class="o">=</span> <span class="nb">Math</span><span class="p">.</span><span class="nf">max</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="nx">i</span> <span class="o">-</span> <span class="nx">k</span><span class="p">),</span> <span class="nx">c1</span> <span class="o">=</span> <span class="nb">Math</span><span class="p">.</span><span class="nf">max</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="nx">j</span> <span class="o">-</span> <span class="nx">k</span><span class="p">);</span>
+            <span class="kd">let</span> <span class="nx">r2</span> <span class="o">=</span> <span class="nb">Math</span><span class="p">.</span><span class="nf">min</span><span class="p">(</span><span class="nx">m</span> <span class="o">-</span> <span class="mi">1</span><span class="p">,</span> <span class="nx">i</span> <span class="o">+</span> <span class="nx">k</span><span class="p">),</span> <span class="nx">c2</span> <span class="o">=</span> <span class="nb">Math</span><span class="p">.</span><span class="nf">min</span><span class="p">(</span><span class="nx">n</span> <span class="o">-</span> <span class="mi">1</span><span class="p">,</span> <span class="nx">j</span> <span class="o">+</span> <span class="nx">k</span><span class="p">);</span>
+            <span class="nx">result</span><span class="p">[</span><span class="nx">i</span><span class="p">][</span><span class="nx">j</span><span class="p">]</span> <span class="o">=</span> <span class="nx">prefixSum</span><span class="p">[</span><span class="nx">r2</span> <span class="o">+</span> <span class="mi">1</span><span class="p">][</span><span class="nx">c2</span> <span class="o">+</span> <span class="mi">1</span><span class="p">]</span>
+                         <span class="o">-</span> <span class="p">(</span><span class="nx">r1</span> <span class="o">&gt;</span> <span class="mi">0</span> <span class="p">?</span> <span class="nx">prefixSum</span><span class="p">[</span><span class="nx">r1</span><span class="p">][</span><span class="nx">c2</span> <span class="o">+</span> <span class="mi">1</span><span class="p">]</span> <span class="p">:</span> <span class="mi">0</span><span class="p">)</span>
+                         <span class="o">-</span> <span class="p">(</span><span class="nx">c1</span> <span class="o">&gt;</span> <span class="mi">0</span> <span class="p">?</span> <span class="nx">prefixSum</span><span class="p">[</span><span class="nx">r2</span> <span class="o">+</span> <span class="mi">1</span><span class="p">][</span><span class="nx">c1</span><span class="p">]</span> <span class="p">:</span> <span class="mi">0</span><span class="p">)</span>
+                         <span class="o">+</span> <span class="p">(</span><span class="nx">r1</span> <span class="o">&gt;</span> <span class="mi">0</span> <span class="o">&amp;&amp;</span> <span class="nx">c1</span> <span class="o">&gt;</span> <span class="mi">0</span> <span class="p">?</span> <span class="nx">prefixSum</span><span class="p">[</span><span class="nx">r1</span><span class="p">][</span><span class="nx">c1</span><span class="p">]</span> <span class="p">:</span> <span class="mi">0</span><span class="p">);</span>
+        <span class="p">}</span>
+    <span class="p">}</span>
+
+    <span class="k">return</span> <span class="nx">result</span><span class="p">;</span>
+<span class="p">};</span>
+</code></pre></div></div>
+
+<h4 id="key-points-5">Key Points:</h4>
+<ul>
+  <li>Precompute a 2D prefix sum matrix to answer sum queries in <strong>O(1)</strong> time for submatrices.</li>
+  <li>Efficient range sum queries in <strong>O(m * n)</strong> overall time complexity.</li>
+</ul>
+
+<hr />
+
+<h3 id="7-prefix-sum-with-modulo-condition">7. <strong>Prefix Sum with Modulo Condition</strong></h3>
+
+<h4 id="problem-type-3">Problem Type:</h4>
+<p>These problems involve prefix sums that need to satisfy certain modulo conditions, such as divisibility by a given value.</p>
+
+<h4 id="example-3">Example:</h4>
+<p><strong>974. Subarray Sums Divisible by K</strong></p>
+
+<h4 id="approach-6">Approach:</h4>
+<p>Use a hashmap to store the remainders of prefix sums modulo <code class="language-plaintext highlighter-rouge">k</code>. If two prefix sums have the same remainder, the subarray between them is divisible by <code class="language-plaintext highlighter-rouge">k</code>.</p>
+
+<h4 id="code-template-6">Code Template:</h4>
+<div class="language-javascript highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="kd">var</span> <span class="nx">subarraysDivByK</span> <span class="o">=</span> <span class="kd">function</span><span class="p">(</span><span class="nx">nums</span><span class="p">,</span> <span class="nx">k</span><span class="p">)</span> <span class="p">{</span>
+    <span class="kd">let</span> <span class="nx">prefixSum</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span>
+    <span class="kd">let</span> <span class="nx">remainderMap</span> <span class="o">=</span> <span class="k">new</span> <span class="nc">Map</span><span class="p">();</span>
+    <span class="nx">remainderMap</span><span class="p">.</span><span class="nf">set</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">);</span>  <span class="c1">// To handle cases where the subarray starts at index 0.</span>
+    <span class="kd">let</span> <span class="nx">count</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span>
+
+    <span class="k">for </span><span class="p">(</span><span class="kd">let</span> <span class="nx">num</span> <span class="k">of</span> <span class="nx">nums</span><span class="p">)</span> <span class="p">{</span>
+        <span class="nx">prefixSum</span> <span class="o">+=</span> <span class="nx">num</span><span class="p">;</span>
+        <span class="kd">let</span> <span class="nx">remainder</span> <span class="o">=</span> <span class="p">((</span><span class="nx">prefixSum</span> <span class="o">%</span> <span class="nx">k</span><span class="p">)</span> <span class="o">+</span> <span class="nx">k</span><span class="p">)</span> <span class="o">%</span> <span class="nx">k</span><span class="p">;</span>  <span class="c1">// Normalize to handle negative remainders</span>
+
+        <span class="k">if </span><span class="p">(</span><span class="nx">remainderMap</span><span class="p">.</span><span class="nf">has</span><span class="p">(</span><span class="nx">remainder</span><span class="p">))</span> <span class="p">{</span>
+            <span class="nx">count</span> <span class="o">+=</span> <span class="nx">remainderMap</span><span class="p">.</span><span class="nf">get</span><span class="p">(</span><span class="nx">remainder</span><span class="p">);</span>
+        <span class="p">}</span>
+
+        <span class="nx">remainderMap</span><span class="p">.</span><span class="nf">set</span><span class="p">(</span><span class="nx">remainder</span><span class="p">,</span> <span class="p">(</span><span class="nx">remainderMap</span><span class="p">.</span><span class="nf">get</span><span class="p">(</span><span class="nx">remainder</span><span class="p">)</span> <span class="o">||</span> <span class="mi">0</span><span class="p">)</span> <span class="o">+</span> <span class="mi">1</span><span class="p">);</span>
+    <span class="p">}</span>
+
+    <span class="k">return</span> <span class="nx">count</span><span class="p">;</span>
+<span class="p">};</span>
+</code></pre></div></div>
+
+<h4 id="key-points-6">Key Points:</h4>
+<ul>
+  <li>Use a hashmap to track occurrences of remainders of the prefix sum modulo <code class="language-plaintext highlighter-rouge">k</code>.</li>
+  <li>Time complexity is <strong>O(n)</strong> since each element is processed once.</li>
+</ul>
+
+<hr />
+
+<h3 id="8-prefix-sum-for-splittingpartitioning-problems">8. <strong>Prefix Sum for Splitting/Partitioning Problems</strong></h3>
+
+<h4 id="problem-type-4">Problem Type:</h4>
+<p>Problems where you need to partition the array into parts that satisfy some conditions.</p>
+
+<h4 id="example-4">Example:</h4>
+<p><strong>1712. Ways to Split Array Into Three Subarrays</strong></p>
+
+<h4 id="approach-7">Approach:</h4>
+<p>Calculate the prefix sum and then find all possible ways to split the array into three non-empty subarrays where the sum of the left subarray is less than or equal to the middle subarray, and the middle subarray is less than or equal to the right subarray.</p>
+
+<h4 id="code-template-7">Code Template:</h4>
+<div class="language-javascript highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="kd">var</span> <span class="nx">waysToSplit</span> <span class="o">=</span> <span class="kd">function</span><span class="p">(</span><span class="nx">nums</span><span class="p">)</span> <span class="p">{</span>
+    <span class="kd">let</span> <span class="nx">n</span> <span class="o">=</span> <span class="nx">nums</span><span class="p">.</span><span class="nx">length</span><span class="p">;</span>
+    <span class="kd">let</span> <span class="nx">prefixSum</span> <span class="o">=</span> <span class="k">new</span> <span class="nc">Array</span><span class="p">(</span><span class="nx">n</span> <span class="o">+</span> <span class="mi">1</span><span class="p">).</span><span class="nf">fill</span><span class="p">(</span><span class="mi">0</span><span class="p">);</span>
+
+    <span class="c1">// Step 1: Compute the prefix sum</span>
+    <span class="k">for </span><span class="p">(</span><span class="kd">let</span> <span class="nx">i</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span> <span class="nx">i</span> <span class="o">&lt;</span> <span class="nx">n</span><span class="p">;</span> <span class="nx">i</span><span class="o">++</span><span class="p">)</span> <span class="p">{</span>
+        <span class="nx">prefixSum</span><span class="p">[</span><span class="nx">i</span> <span class="o">+</span> <span class="mi">1</span><span class="p">]</span> <span class="o">=</span> <span class="nx">prefixSum</span><span class="p">[</span><span class="nx">i</span><span class="p">]</span> <span class="o">+</span> <span class="nx">nums</span><span class="p">[</span><span class="nx">i</span><span class="p">];</span>
+    <span class="p">}</span>
+
+    <span class="kd">let</span> <span class="nx">count</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span>
+
+    <span class="c1">// Step 2: Find valid splits</span>
+    <span class="k">for </span><span class="p">(</span><span class="kd">let</span> <span class="nx">i</span> <span class="o">=</span> <span class="mi">1</span><span class="p">;</span> <span class="nx">i</span> <span class="o">&lt;</span> <span class="nx">n</span> <span class="o">-</span> <span class="mi">1</span><span class="p">;</span> <span class="nx">i</span><span class="o">++</span><span class="p">)</span> <span class="p">{</span>
+        <span class="kd">let</span> <span class="nx">left</span> <span class="o">=</span> <span class="nx">prefixSum</span><span class="p">[</span><span class="nx">i</span><span class="p">];</span>
+
+        <span class="kd">let</span> <span class="nx">jLow</span> <span class="o">=</span> <span class="nf">binarySearch</span><span class="p">(</span><span class="nx">i</span> <span class="o">+</span> <span class="mi">1</span><span class="p">,</span> <span class="nx">n</span> <span class="o">-</span> <span class="mi">1</span><span class="p">,</span> <span class="p">(</span><span class="nx">j</span><span class="p">)</span> <span class="o">=&gt;</span> <span class="nx">prefixSum</span><span class="p">[</span><span class="nx">j</span><span class="p">]</span> <span class="o">-</span> <span class="nx">left</span> <span class="o">&gt;=</span> <span class="nx">left</span><span class="p">);</span>
+        <span class="kd">let</span> <span class="nx">jHigh</span> <span class="o">=</span> <span class="nf">binarySearch</span><span class="p">(</span><span class="nx">i</span> <span class="o">+</span> <span class="mi">1</span><span class="p">,</span> <span class="nx">n</span> <span class="o">-</span> <span class="mi">1</span><span class="p">,</span> <span class="p">(</span><span class="nx">j</span><span class="p">)</span> <span class="o">=&gt;</span> <span class="nx">prefixSum</span><span class="p">[</span><span class="nx">n</span><span class="p">]</span> <span class="o">-</span> <span class="nx">prefixSum</span><span class="p">[</span><span class="nx">j</span><span class="p">]</span> <span class="o">&gt;=</span> <span class="nx">prefixSum</span><span class="p">[</span><span class="nx">j</span><span class="p">]</span> <span class="o">-</span> <span class="nx">left</span><span class="p">,</span> <span class="kc">false</span><span class="p">);</span>
+
+        <span class="k">if </span><span class="p">(</span><span class="nx">jLow</span> <span class="o">&lt;=</span> <span class="nx">jHigh</span><span class="p">)</span> <span class="p">{</span>
+            <span class="nx">count</span> <span class="o">+=</span> <span class="nx">jHigh</span> <span class="o">-</span> <span class="nx">jLow</span> <span class="o">+</span> <span class="mi">1</span><span class="p">;</span>
+        <span class="p">}</span>
+    <span class="p">}</span>
+
+    <span class="k">return</span> <span class="nx">count</span><span class="p">;</span>
+
+    <span class="kd">function</span> <span class="nf">binarySearch</span><span class="p">(</span><span class="nx">low</span><span class="p">,</span> <span class="nx">high</span><span class="p">,</span> <span class="nx">condition</span><span class="p">,</span> <span class="nx">lowerBound</span> <span class="o">=</span> <span class="kc">true</span><span class="p">)</span> <span class="p">{</span>
+        <span class="k">while </span><span class="p">(</span><span class="nx">low</span> <span class="o">&lt;</span> <span class="nx">high</span><span class="p">)</span> <span class="p">{</span>
+            <span class="kd">let</span> <span class="nx">mid</span> <span class="o">=</span> <span class="nb">Math</span><span class="p">.</span><span class="nf">floor</span><span class="p">((</span><span class="nx">low</span> <span class="o">+</span> <span class="nx">high</span><span class="p">)</span> <span class="o">/</span> <span class="mi">2</span><span class="p">);</span>
+            <span class="k">if </span><span class="p">(</span><span class="nf">condition</span><span class="p">(</span><span class="nx">mid</span><span class="p">)</span> <span class="o">===</span> <span class="nx">lowerBound</span><span class="p">)</span> <span class="p">{</span>
+                <span class="nx">high</span> <span class="o">=</span> <span class="nx">mid</span><span class="p">;</span>
+            <span class="p">}</span> <span class="k">else</span> <span class="p">{</span>
+                <span class="nx">low</span> <span class="o">=</span> <span class="nx">mid</span> <span class="o">+</span> <span class="mi">1</span><span class="p">;</span>
+            <span class="p">}</span>
+        <span class="p">}</span>
+        <span class="k">return</span> <span class="nx">low</span><span class="p">;</span>
+    <span class="p">}</span>
+<span class="p">};</span>
+</code></pre></div></div>
+
+<h4 id="key-points-7">Key Points:</h4>
+<ul>
+  <li>Binary search helps in finding the range of valid split points.</li>
+  <li>Time complexity is <strong>O(n log n)</strong> due to binary search.</li>
+</ul>
+
+<hr />
+
+<h3 id="9-prefix-sum-with-budget-constraints">9. <strong>Prefix Sum with Budget Constraints</strong></h3>
+
+<h4 id="problem-type-5">Problem Type:</h4>
+<p>Problems where you must adjust the subarray or substring within a budget constraint (like limited modifications or swaps).</p>
+
+<h4 id="example-5">Example:</h4>
+<p><strong>1208. Get Equal Substrings Within Budget</strong></p>
+
+<h4 id="approach-8">Approach:</h4>
+<p>Use sliding window combined with prefix sums to keep track of the cost of operations needed to adjust the string within the given budget.</p>
+
+<h4 id="code-template-8">Code Template:</h4>
+<div class="language-javascript highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="kd">var</span> <span class="nx">equalSubstring</span>
+
+ <span class="o">=</span> <span class="kd">function</span><span class="p">(</span><span class="nx">s</span><span class="p">,</span> <span class="nx">t</span><span class="p">,</span> <span class="nx">maxCost</span><span class="p">)</span> <span class="p">{</span>
+    <span class="kd">let</span> <span class="nx">cost</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span>
+    <span class="kd">let</span> <span class="nx">maxLength</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span>
+    <span class="kd">let</span> <span class="nx">left</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span>
+
+    <span class="k">for </span><span class="p">(</span><span class="kd">let</span> <span class="nx">right</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span> <span class="nx">right</span> <span class="o">&lt;</span> <span class="nx">s</span><span class="p">.</span><span class="nx">length</span><span class="p">;</span> <span class="nx">right</span><span class="o">++</span><span class="p">)</span> <span class="p">{</span>
+        <span class="nx">cost</span> <span class="o">+=</span> <span class="nb">Math</span><span class="p">.</span><span class="nf">abs</span><span class="p">(</span><span class="nx">s</span><span class="p">[</span><span class="nx">right</span><span class="p">].</span><span class="nf">charCodeAt</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span> <span class="o">-</span> <span class="nx">t</span><span class="p">[</span><span class="nx">right</span><span class="p">].</span><span class="nf">charCodeAt</span><span class="p">(</span><span class="mi">0</span><span class="p">));</span>
+
+        <span class="k">while </span><span class="p">(</span><span class="nx">cost</span> <span class="o">&gt;</span> <span class="nx">maxCost</span><span class="p">)</span> <span class="p">{</span>
+            <span class="nx">cost</span> <span class="o">-=</span> <span class="nb">Math</span><span class="p">.</span><span class="nf">abs</span><span class="p">(</span><span class="nx">s</span><span class="p">[</span><span class="nx">left</span><span class="p">].</span><span class="nf">charCodeAt</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span> <span class="o">-</span> <span class="nx">t</span><span class="p">[</span><span class="nx">left</span><span class="p">].</span><span class="nf">charCodeAt</span><span class="p">(</span><span class="mi">0</span><span class="p">));</span>
+            <span class="nx">left</span><span class="o">++</span><span class="p">;</span>
+        <span class="p">}</span>
+
+        <span class="nx">maxLength</span> <span class="o">=</span> <span class="nb">Math</span><span class="p">.</span><span class="nf">max</span><span class="p">(</span><span class="nx">maxLength</span><span class="p">,</span> <span class="nx">right</span> <span class="o">-</span> <span class="nx">left</span> <span class="o">+</span> <span class="mi">1</span><span class="p">);</span>
+    <span class="p">}</span>
+
+    <span class="k">return</span> <span class="nx">maxLength</span><span class="p">;</span>
+<span class="p">};</span>
+</code></pre></div></div>
+
+<h4 id="key-points-8">Key Points:</h4>
+<ul>
+  <li>Sliding window technique keeps track of the valid subarray where the cost is within the budget.</li>
+  <li>Time complexity is <strong>O(n)</strong>, and space complexity is <strong>O(1)</strong>.</li>
+</ul>
+
+<hr />
+
+<p>By expanding the types of prefix sum problems and providing these templates, you can now tackle a wide variety of challenges, from simple cumulative sums to more complex tasks involving modulo conditions, partitions, products, and constraints. These templates give a structured approach to solving problems of different complexities in this domain.</p>
+
+
+      <hr>
+      <div class="row mb-5 mt-5">
+  <div class="col-md-6 d-flex align-items-end ">
+    <span>Thanks. <i>mind sharing?</i></span>
+  </div>
+
+  <!-- Right Column with Social Media Icons (on the right for larger screens, on bottom for smaller screens) -->
+  <div class="col-md-6 order-md-2 order-1 text-md-right text-center mt-3 mt-md-0">
+    <div>
+
+      <a
+          href="https://www.linkedin.com/sharing/share-offsite?url=ikouchiha47.github.io/tmp/2024-10-16-prefix_sum.html"
+          onclick="window.open(this.href, 'pop-up', 'left=20,top=20,width=500,height=500,toolbar=1,resizable=0'); return false;"
+          class="d-inline-block mr-2"
+       >
+        <span class="fa-stack fa-lg" style="color: #0077b5;">
+          <i class="fas fa-square fa-stack-2x"></i>
+          <i class="fab fa-linkedin fa-stack-1x fa-inverse"></i>
+        </span>
+      </a>
+
+      <a
+          href="https://twitter.com/intent/tweet?text=&url=ikouchiha47.github.io/tmp/2024-10-16-prefix_sum.html"
+          onclick="window.open(this.href, 'pop-up', 'left=20,top=20,width=500,height=500,toolbar=1,resizable=0'); return false;"
+          class="d-inline-block mr-2">
+        <span class="fa-stack fa-lg" style="color: #1DA1F2;">
+          <i class="fas fa-square fa-stack-2x"></i>
+          <i class="fab fa-twitter fa-stack-1x fa-inverse"></i>
+        </span>
+      </a>
+
+      <a
+          href="http://www.reddit.com/submit?url=ikouchiha47.github.io/tmp/2024-10-16-prefix_sum.html"
+          onclick="window.open(this.href, 'pop-up', 'left=20,top=20,width=500,height=500,toolbar=1,resizable=0'); return false;"
+          class="d-inline-block mr-2">
+        <span class="fa-stack fa-lg" style="color: #FF4500;">
+          <i class="fas fa-square fa-stack-2x"></i>
+          <i class="fab fa-reddit fa-stack-1x fa-inverse"></i>
+        </span>
+      </a>
+    </div>
+  </div>
+</div>
+
+<hr/>
+
+
+      <div class="clearfix">
+
+        
+        
+
+      </div>
+
+    </div>
+  </div>
+</div>
+
+
+  <!-- Footer -->
+
+<hr>
+
+<footer>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <ul class="list-inline text-center">
+          
+          <li class="list-inline-item">
+            <a href="mailto:amitava.dev@proton.me" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="far fa-envelope fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          
+          
+          <li class="list-inline-item">
+            <a href="https://www.linkedin.com/in/amitavaag" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-linkedin fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          <li class="list-inline-item">
+            <a href="https://github.com/ikouchiha47" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-github fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+        </ul>
+
+        <p class="copyright text-muted">
+          Build with: 
+          <a 
+            href="https://github.com/StartBootstrap/startbootstrap-clean-blog-jekyll"
+            class="text-gray"
+            target="_blank">startbootstrap-clean-blog-jekyll</a></p>
+      </div>
+    </div>
+  </div>
+</footer>
+
+
+  <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="/assets/vendor/blog/js/scripts.js"></script>
+
+<script src="/assets/scripts.js"></script>
+
+
+
+
+  
+
+</body>
+
+</html>

@@ -1,0 +1,516 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+  <title>
+    Go getters - iko&#39;s logs
+    
+  </title>
+
+  <meta name="description" content="Generating getters in go with go generate">
+  <meta property="og:description" content="Generating getters in go with go generate">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Go getters">
+  <meta property="og:url" content="https://ikouchiha47.github.io/2023/11/20/generating-getters-in-go.html">
+
+  
+
+  <link href='https://fonts.googleapis.com/css?family=Lora:400,700,400italic,700italic' rel='stylesheet' type='text/css'>
+  <link href='https://fonts.googleapis.com/css?family=Open+Sans:300italic,400italic,600italic,700italic,800italic,400,300,600,700,800' rel='stylesheet' type='text/css'>
+
+  <!-- <script src="https://use.fontawesome.com/releases/v5.15.3/js/all.js" crossorigin="anonymous"></script> -->
+  <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.15.4/css/all.css" integrity="sha384-DyZ88mC6Up2uqS4h/KRgHuoeGwBcD4Ng9SiP4dIRy0EXTlnuz47vAwmeGwVChigm" crossorigin="anonymous"/>
+
+  <link rel="stylesheet" href="/assets/main.css">
+  <link rel="canonical" href="https://ikouchiha47.github.io/2023/11/20/generating-getters-in-go.html">
+  <link rel="alternate" type="application/rss+xml" title="iko&#39;s logs" href="/feed.xml">
+
+  <meta name="google-site-verification" content="lWkg6gIxJgzEKX_5XnhcxCtPE9QknaimFWWos_dTvPM" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fira+Sans:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Inconsolata:wght@200..900&family=Jersey+25&family=Kanit:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Merriweather+Sans:ital,wght@0,300..800;1,300..800&family=Nanum+Gothic+Coding&family=Space+Grotesk:wght@300..700&family=Titillium+Web:ital,wght@0,200;0,300;0,400;0,600;0,700;0,900;1,200;1,300;1,400;1,600;1,700&display=swap" rel="stylesheet">
+
+</head>
+
+
+<body>
+
+  <!-- Navigation -->
+<nav class="navbar navbar-expand-lg navbar-light fixed-top" id="mainNav">
+  <div class="container">
+    <a class="navbar-brand" href="/">iko&#39;s logs</a>
+    <button class="navbar-toggler navbar-toggler-right" type="button" data-toggle="collapse" data-target="#navbarResponsive" aria-controls="navbarResponsive" aria-expanded="false" aria-label="Toggle navigation">
+      Menu
+      <i class="fa fa-bars"></i>
+    </button>
+    <div class="collapse navbar-collapse" id="navbarResponsive">
+      <ul class="navbar-nav ml-auto">
+        <li class="nav-item">
+          <a class="nav-link" href="/">Home</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/about">About</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/posts">Posts</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/contact">Contact</a>
+        </li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+
+  <!-- Page Header -->
+
+<header class="masthead" style="background: #000">
+
+  <div class="overlay"></div>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <div class="post-heading">
+          <h1>Go getters</h1>
+          
+          <h2 class="subheading">Generating getters in go with go generate</h2>
+          
+          <span class="meta">Posted by
+            <a href="#">ikouchiha47</a>
+            on November 20, 2023 &middot; <span class="reading-time" title="Estimated read time">
+  
+   12 mins  read </span>
+
+          </span>
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="container space-grotesk">
+  <div class="row">
+    <div class="col-lg-8 col-md-10 mx-auto">
+
+      <p>In this article we will explore how to beat Intellij.</p>
+
+<p>Not their trial version, but by trying to replicate the <code class="language-plaintext highlighter-rouge">Create Getters and Setters</code> functionality.</p>
+
+<p>This is going to be a fairly technical article, because I have a problem stitching words together to make a conversation.</p>
+
+<p>&nbsp;</p>
+
+<h3 id="backstory">Backstory:</h3>
+
+<p>What we are trying to do here is to generate <code class="language-plaintext highlighter-rouge">Get</code>-er method for the fields in a struct.</p>
+
+<p>Why you ask?</p>
+
+<p>For one, I wanted to use the golang’s ast package and i was quite impressed by the stringer package.</p>
+
+<p>And secondly, as I keep implementing the <code class="language-plaintext highlighter-rouge">config</code> loader. I find myself at odds with a couple of approaches:</p>
+
+<div class="language-go highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">package</span> <span class="n">config</span>
+
+<span class="k">type</span> <span class="n">Config</span> <span class="k">struct</span> <span class="p">{</span>
+  <span class="n">Env</span> <span class="kt">string</span> <span class="s">`mapstructure:"ENV"`</span>
+<span class="p">}</span>
+
+<span class="k">var</span> <span class="p">(</span>
+  <span class="n">once</span> <span class="n">sync</span><span class="o">.</span><span class="n">Once</span>
+  <span class="n">cfg</span> <span class="n">Config</span>
+<span class="p">)</span>
+
+<span class="k">func</span> <span class="n">Load</span><span class="p">(</span><span class="n">paths</span> <span class="o">..</span><span class="kt">string</span><span class="p">)</span> <span class="p">{</span>
+  <span class="n">once</span><span class="o">.</span><span class="n">Do</span><span class="p">(</span><span class="k">func</span><span class="p">()</span> <span class="p">{</span>
+    <span class="c">// config fetching code</span>
+    <span class="n">cfg</span> <span class="o">=</span> <span class="n">Config</span><span class="p">{}</span>
+  <span class="p">})</span>
+<span class="p">}</span>
+
+<span class="k">func</span> <span class="n">GetConfig</span><span class="p">()</span> <span class="n">Config</span> <span class="p">{</span>
+  <span class="k">return</span> <span class="n">cfg</span>
+<span class="p">}</span>
+</code></pre></div></div>
+
+<p>or</p>
+
+<div class="language-go highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">package</span> <span class="n">config</span>
+
+<span class="k">var</span> <span class="p">(</span>
+  <span class="n">mu</span> <span class="n">sync</span><span class="o">.</span><span class="n">Mutex</span>
+  <span class="n">cfg</span> <span class="n">Config</span>
+<span class="p">)</span>
+
+<span class="k">func</span> <span class="n">Load</span><span class="p">(</span><span class="n">paths</span> <span class="o">...</span><span class="kt">string</span><span class="p">)</span> <span class="p">{</span>
+  <span class="n">mu</span><span class="o">.</span><span class="n">Lock</span><span class="p">()</span>
+  <span class="k">defer</span> <span class="n">mu</span><span class="o">.</span><span class="n">Unlock</span><span class="p">()</span>
+  
+  <span class="n">cfg</span> <span class="o">=</span> <span class="n">Config</span><span class="p">{}</span>
+<span class="p">}</span>
+
+<span class="k">func</span> <span class="n">GetConfig</span><span class="p">()</span> <span class="n">Config</span> <span class="p">{</span>
+  <span class="n">mu</span><span class="o">.</span><span class="n">Lock</span><span class="p">()</span>
+  <span class="k">defer</span> <span class="n">mu</span><span class="o">.</span><span class="n">Unlock</span><span class="p">()</span>
+ 
+  <span class="k">return</span> <span class="n">cfg</span>
+<span class="p">}</span>
+</code></pre></div></div>
+
+<p>or,</p>
+
+<div class="language-go highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">package</span> <span class="n">config</span>
+
+<span class="k">var</span> <span class="n">Cfg</span> <span class="n">Config</span>
+</code></pre></div></div>
+
+<p>Apart from the last one, since the config loading happens only once at the start of app, these approaches work fine mostly.</p>
+
+<p>But whatif we wanted to truly and unnecessarily encapsulate the config params in the struct?</p>
+
+<p>One way that stuck out was using <code class="language-plaintext highlighter-rouge">private</code> fields in struct and <code class="language-plaintext highlighter-rouge">public</code> getter methods. But the problem was writing these methods.</p>
+
+<p>Intellij has an in editor functionality, and I thought this was a good opportunity to try to generate the methods on the field.</p>
+
+<p>In the end it would look like this</p>
+
+<div class="language-go highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="c">//go:generate geterator -type=Config -private</span>
+</code></pre></div></div>
+
+<p>&nbsp;</p>
+
+<h3 id="implementation-details">Implementation details:</h3>
+
+<p>We need to know a couple go libraries for this.</p>
+
+<ul>
+  <li><code class="language-plaintext highlighter-rouge">go/ast</code></li>
+  <li><code class="language-plaintext highlighter-rouge">go/format</code></li>
+  <li><code class="language-plaintext highlighter-rouge">go/parser</code></li>
+  <li><code class="language-plaintext highlighter-rouge">go/token</code></li>
+  <li><code class="language-plaintext highlighter-rouge">golang.org/x/tools/go/packages</code></li>
+</ul>
+
+<p>And <a href="https://go.dev/blog/generate">go generate</a></p>
+
+<p>In short, we want to iterate through the golang package, and find the struct which matches our provided struct name, and then iterate through the fields and write the Getter method to an output buffer.</p>
+
+<p>This probably isn’t the best approach, but works for my other projects for now.</p>
+
+<p>A quick glimpse into how the <code class="language-plaintext highlighter-rouge">go generate</code> works. We write a simple code to test</p>
+
+<figure class="highlight"><pre><code class="language-go" data-lang="go"><span class="k">package</span> <span class="n">main</span>
+
+<span class="c">//go:generate echo "hello world"</span>
+<span class="k">func</span> <span class="n">main</span><span class="p">()</span> <span class="p">{}</span></code></pre></figure>
+
+<p>If we run this like <code class="language-plaintext highlighter-rouge">go generate ./...</code> , this would give us hello world in the terminal.</p>
+
+<p>So given this, we can imagine that if we have an executable, then whatever comes after the go:generate gets executed like a normal executable would. (Approximately like that, but not exactly)</p>
+
+<p>Now we just need to build a golang library, that will take an input as such:</p>
+
+<figure class="highlight"><pre><code class="language-shell" data-lang="shell">./executable <span class="nt">-type</span><span class="o">=</span>StructName <span class="nt">-private</span> .</code></pre></figure>
+
+<ul>
+  <li>type takes the struct name as parameter</li>
+  <li>private indicates that we want to expose unexported fields</li>
+  <li>the <code class="language-plaintext highlighter-rouge">.</code> indicates the directory to search in.</li>
+</ul>
+
+<p><strong>Now for the main part.</strong></p>
+
+<p>Using the go <a href="https://pkg.go.dev/golang.org/x/tools/go/packages">packages library</a>, we will load the golang code from the directory for analysis.</p>
+
+<p>Each package object has couple of information, but the important ones are. Types, Syntax (containing parsed syntax tree), GoFiles.</p>
+
+<p>This is how we can load the packages and iterate over the exported <code class="language-plaintext highlighter-rouge">Types</code> to find the package name containing the <code class="language-plaintext highlighter-rouge">-type</code> parameter value</p>
+
+<div class="language-go highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">var</span> <span class="p">(</span>
+  <span class="n">typeName</span> <span class="o">=</span> <span class="n">flag</span><span class="o">.</span><span class="n">String</span><span class="p">(</span><span class="s">"type"</span><span class="p">,</span> <span class="s">""</span><span class="p">,</span> <span class="s">"struct names. must be present in go file. -type=Config"</span><span class="p">)</span> 
+<span class="p">)</span>
+
+<span class="n">flag</span><span class="o">.</span><span class="n">Parse</span><span class="p">()</span>
+<span class="n">dir</span> <span class="o">:=</span> <span class="n">flag</span><span class="o">.</span><span class="n">Arg</span><span class="p">(</span><span class="m">0</span><span class="p">)</span>
+
+<span class="n">pkgs</span><span class="p">,</span> <span class="n">err</span> <span class="o">:=</span> <span class="n">packages</span><span class="o">.</span><span class="n">Load</span><span class="p">(</span><span class="n">cfg</span><span class="p">,</span> <span class="n">dir</span><span class="p">)</span>
+<span class="k">if</span> <span class="n">err</span> <span class="o">!=</span> <span class="no">nil</span> <span class="p">{</span>
+  <span class="n">log</span><span class="o">.</span><span class="n">Fatal</span><span class="p">(</span><span class="n">err</span><span class="p">)</span>
+<span class="p">}</span>
+
+<span class="k">var</span> <span class="n">pkg</span> <span class="o">*</span><span class="n">packages</span><span class="o">.</span><span class="n">Package</span>
+
+<span class="k">for</span> <span class="n">_</span><span class="p">,</span> <span class="n">p</span> <span class="o">:=</span> <span class="k">range</span> <span class="n">pkgs</span> <span class="p">{</span>
+  <span class="k">if</span> <span class="n">p</span><span class="o">.</span><span class="n">Types</span> <span class="o">==</span> <span class="no">nil</span> <span class="p">{</span>
+    <span class="c">// if no exported symbols, leave it</span>
+    <span class="k">continue</span>
+  <span class="p">}</span>
+
+  <span class="k">for</span> <span class="n">_</span><span class="p">,</span> <span class="n">f</span> <span class="o">:=</span> <span class="k">range</span> <span class="n">p</span><span class="o">.</span><span class="n">Syntax</span> <span class="p">{</span>
+    <span class="n">ast</span><span class="o">.</span><span class="n">Inspect</span><span class="p">(</span><span class="n">f</span><span class="p">,</span> <span class="k">func</span><span class="p">(</span><span class="n">node</span> <span class="n">ast</span><span class="o">.</span><span class="n">Node</span><span class="p">)</span> <span class="kt">bool</span> <span class="p">{</span> <span class="c">// Look for a type definition with the given name. </span>
+      <span class="k">if</span> <span class="n">typeSpec</span><span class="p">,</span> <span class="n">ok</span> <span class="o">:=</span> <span class="n">node</span><span class="o">.</span><span class="p">(</span><span class="o">*</span><span class="n">ast</span><span class="o">.</span><span class="n">TypeSpec</span><span class="p">);</span> <span class="n">ok</span> <span class="p">{</span>
+        <span class="k">if</span> <span class="n">typeSpec</span><span class="o">.</span><span class="n">Name</span><span class="o">.</span><span class="n">Name</span> <span class="o">==</span> <span class="o">*</span><span class="n">typeName</span> <span class="p">{</span>
+          <span class="n">pkg</span> <span class="o">=</span> <span class="n">p</span>
+          <span class="k">return</span> <span class="no">false</span> <span class="c">// we found a match. so skipping rest.</span>
+        <span class="p">}</span>
+      <span class="p">}</span>
+      <span class="k">return</span> <span class="no">true</span>
+    <span class="p">})</span>
+
+    <span class="c">// we found the desired package of the struct.</span>
+    <span class="k">if</span> <span class="n">pkg</span> <span class="o">!=</span> <span class="no">nil</span> <span class="p">{</span>
+      <span class="k">break</span>
+    <span class="p">}</span>
+  <span class="p">}</span>
+<span class="p">}</span>
+
+<span class="k">if</span> <span class="n">pkg</span> <span class="o">==</span> <span class="no">nil</span> <span class="p">{</span>
+  <span class="n">log</span><span class="o">.</span><span class="n">Fatalf</span><span class="p">(</span><span class="s">"error: type %q not found</span><span class="se">\n</span><span class="s">"</span><span class="p">,</span> <span class="o">*</span><span class="n">typeName</span><span class="p">)</span>
+<span class="p">}</span>
+ <span class="c">// we found the desired package of the struct.</span>
+</code></pre></div></div>
+
+<p><code class="language-plaintext highlighter-rouge">ast.Inspect</code> iterates over each of these <code class="language-plaintext highlighter-rouge">ast.Node</code> and calls the <code class="language-plaintext highlighter-rouge">callback</code> function. If the callback function returns true, it invokes the callback function recursively on its children.</p>
+
+<p><em>Basically in javascript terms, returning false, stops the event propagation.</em></p>
+
+<p>Given that, we now need to modify the <code class="language-plaintext highlighter-rouge">callback function</code> to identify if the node is a struct, we can get each field and write the getter function as string to a buffer.</p>
+
+<div class="language-go highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">var</span> <span class="n">exportPrivate</span> <span class="o">=</span> <span class="n">flag</span><span class="o">.</span><span class="n">Bool</span><span class="p">(</span><span class="s">"private"</span><span class="p">,</span> <span class="no">false</span><span class="p">,</span> <span class="s">"should you want to include private fields in struct as well"</span><span class="p">)</span>
+<span class="k">var</span> <span class="n">buf</span> <span class="o">=</span> <span class="n">buffer</span><span class="o">.</span><span class="n">Bytes</span><span class="p">{}</span>
+
+<span class="k">if</span> <span class="n">structType</span><span class="p">,</span> <span class="n">ok</span> <span class="o">:=</span> <span class="n">typeSpec</span><span class="o">.</span><span class="n">Type</span><span class="o">.</span><span class="p">(</span><span class="o">*</span><span class="n">ast</span><span class="o">.</span><span class="n">StructType</span><span class="p">);</span> <span class="n">ok</span> <span class="p">{</span>
+  <span class="k">for</span> <span class="n">_</span><span class="p">,</span> <span class="n">field</span> <span class="o">:=</span> <span class="k">range</span> <span class="n">structType</span><span class="o">.</span><span class="n">Fields</span><span class="o">.</span><span class="n">List</span> <span class="p">{</span> 
+     <span class="k">if</span> <span class="n">field</span><span class="o">.</span><span class="n">Names</span> <span class="o">==</span> <span class="no">nil</span> <span class="p">{</span> <span class="c">// i know, but runtime check.</span>
+       <span class="k">continue</span>
+     <span class="p">}</span>
+ 
+     <span class="n">f</span> <span class="o">:=</span> <span class="n">field</span><span class="o">.</span><span class="n">Names</span><span class="p">[</span><span class="m">0</span><span class="p">]</span>
+
+     <span class="k">if</span> <span class="o">!</span><span class="p">(</span><span class="o">*</span><span class="n">exportPrivate</span><span class="p">)</span> <span class="o">&amp;&amp;</span> <span class="o">!</span><span class="n">f</span><span class="o">.</span><span class="n">IsExported</span><span class="p">()</span> <span class="p">{</span> <span class="k">continue</span> <span class="p">}</span> 
+
+     <span class="n">fieldType</span> <span class="o">:=</span> <span class="n">exprToString</span><span class="p">(</span><span class="n">field</span><span class="o">.</span><span class="n">Type</span><span class="p">)</span>
+
+     <span class="n">buf</span><span class="o">.</span><span class="n">WriteString</span><span class="p">(</span><span class="n">fmt</span><span class="o">.</span><span class="n">Sprintf</span><span class="p">(</span><span class="s">"func (c %s) Get%s() %s {</span><span class="se">\n</span><span class="s">"</span><span class="p">,</span> <span class="o">*</span><span class="n">typeName</span><span class="p">,</span> <span class="n">toUpperFirst</span><span class="p">(</span><span class="n">f</span><span class="o">.</span><span class="n">Name</span><span class="p">),</span> <span class="n">fieldType</span><span class="p">))</span>
+     <span class="n">buf</span><span class="o">.</span><span class="n">WriteString</span><span class="p">(</span><span class="n">fmt</span><span class="o">.</span><span class="n">Sprintf</span><span class="p">(</span><span class="s">"return c.%s</span><span class="se">\n</span><span class="s">"</span><span class="p">,</span> <span class="n">f</span><span class="o">.</span><span class="n">Name</span><span class="p">))</span>
+     <span class="n">buf</span><span class="o">.</span><span class="n">WriteString</span><span class="p">(</span><span class="s">"}</span><span class="se">\n</span><span class="s">"</span><span class="p">)</span>
+   <span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div></div>
+
+<p>And et volla. We now have the receipie for make an executable that we can use to generate some get methods.</p>
+
+<p>&nbsp;</p>
+
+<h3 id="usage-instructions">Usage instructions</h3>
+
+<p>Now to implement this. We will first create a directory and do a go mod init in it.</p>
+
+<p><img src="/img/posts/generating-getters-in-go_dirtree.png" /></p>
+
+<p>This is how your folder looks like. And in the <code class="language-plaintext highlighter-rouge">utils/util.go</code> we have</p>
+
+<figure class="highlight"><pre><code class="language-go" data-lang="go"><span class="k">package</span> <span class="n">util</span>
+
+
+<span class="c">//go:generate go run github.com/go-batteries/geterator -type=Foo</span>
+<span class="k">type</span> <span class="n">Foo</span> <span class="k">struct</span> <span class="p">{</span>
+    <span class="n">Name</span>   <span class="kt">string</span>
+    <span class="n">hidden</span> <span class="kt">bool</span>
+<span class="p">}</span>
+
+
+<span class="c">//go:generate go run github.com/go-batteries/geterator -type=Bar -private</span>
+<span class="k">type</span> <span class="n">Bar</span> <span class="k">struct</span> <span class="p">{</span>
+    <span class="n">Drinks</span> <span class="p">[]</span><span class="kt">int</span>
+    <span class="n">Namer</span>  <span class="n">Foo</span>
+    <span class="n">hidden</span> <span class="kt">bool</span>
+<span class="p">}</span>
+
+
+<span class="k">type</span> <span class="n">Nothing</span> <span class="k">struct</span> <span class="p">{</span>
+    <span class="n">Nothing</span> <span class="kt">string</span>
+<span class="p">}</span></code></pre></figure>
+
+<p>On running <code class="language-plaintext highlighter-rouge">go generate ./...</code> It gives us two files.</p>
+
+<p>// Code generated by “go generate”; DO NOT EDIT</p>
+
+<figure class="highlight"><pre><code class="language-go" data-lang="go"><span class="k">package</span> <span class="n">utils</span>
+
+
+<span class="k">func</span> <span class="p">(</span><span class="n">c</span> <span class="n">Bar</span><span class="p">)</span> <span class="n">GetDrinks</span><span class="p">()</span> <span class="p">[]</span><span class="kt">int</span> <span class="p">{</span>
+    <span class="k">return</span> <span class="n">c</span><span class="o">.</span><span class="n">Drinks</span>
+<span class="p">}</span>
+<span class="k">func</span> <span class="p">(</span><span class="n">c</span> <span class="n">Bar</span><span class="p">)</span> <span class="n">GetNamer</span><span class="p">()</span> <span class="n">Foo</span> <span class="p">{</span>
+    <span class="k">return</span> <span class="n">c</span><span class="o">.</span><span class="n">Namer</span>
+<span class="p">}</span>
+<span class="k">func</span> <span class="p">(</span><span class="n">c</span> <span class="n">Bar</span><span class="p">)</span> <span class="n">GetHidden</span><span class="p">()</span> <span class="kt">bool</span> <span class="p">{</span>
+    <span class="k">return</span> <span class="n">c</span><span class="o">.</span><span class="n">hidden</span>
+<span class="p">}</span>
+
+<span class="c">// utils/bar_gen.go </span>
+
+
+
+<span class="c">// Code generated by "go generate"; DO NOT EDIT</span>
+
+
+<span class="k">package</span> <span class="n">utils</span>
+
+
+<span class="k">func</span> <span class="p">(</span><span class="n">c</span> <span class="n">Foo</span><span class="p">)</span> <span class="n">GetName</span><span class="p">()</span> <span class="kt">string</span> <span class="p">{</span>
+    <span class="k">return</span> <span class="n">c</span><span class="o">.</span><span class="n">Name</span>
+<span class="p">}</span></code></pre></figure>
+
+<p>You can find the implementation here <a href="github.com/go-batteries/geterator">geterator</a></p>
+
+<p>&nbsp;</p>
+
+<h3 id="footnotes">Footnotes</h3>
+
+<p>For implementation examples of the ast please look at the <a href="https://go.dev/src/go/ast/example_test.go">test files</a>.</p>
+
+<p>While building this, I was stuck at figuring out how to parse the file properly. Writing a python script would mean re-implementing the whole parser for struct. So golang’s ast library was the best possible way.</p>
+
+<p>That lead me to looking into the source code for <a href="https://github.com/golang/tools/blob/master/cmd/stringer/stringer.go#L216">stringer</a> which automatically also solved my other problem of figuring out where to save the files and how to load them properly without having to deal with relative import paths. They are the worst.</p>
+
+
+      <hr>
+      <div class="row mb-5 mt-5">
+  <div class="col-md-6 d-flex align-items-end ">
+    <span>Thanks. <i>mind sharing?</i></span>
+  </div>
+
+  <!-- Right Column with Social Media Icons (on the right for larger screens, on bottom for smaller screens) -->
+  <div class="col-md-6 order-md-2 order-1 text-md-right text-center mt-3 mt-md-0">
+    <div>
+
+      <a
+          href="https://www.linkedin.com/sharing/share-offsite?url=ikouchiha47.github.io/2023/11/20/generating-getters-in-go.html"
+          onclick="window.open(this.href, 'pop-up', 'left=20,top=20,width=500,height=500,toolbar=1,resizable=0'); return false;"
+          class="d-inline-block mr-2"
+       >
+        <span class="fa-stack fa-lg" style="color: #0077b5;">
+          <i class="fas fa-square fa-stack-2x"></i>
+          <i class="fab fa-linkedin fa-stack-1x fa-inverse"></i>
+        </span>
+      </a>
+
+      <a
+          href="https://twitter.com/intent/tweet?text=Go getters&url=ikouchiha47.github.io/2023/11/20/generating-getters-in-go.html"
+          onclick="window.open(this.href, 'pop-up', 'left=20,top=20,width=500,height=500,toolbar=1,resizable=0'); return false;"
+          class="d-inline-block mr-2">
+        <span class="fa-stack fa-lg" style="color: #1DA1F2;">
+          <i class="fas fa-square fa-stack-2x"></i>
+          <i class="fab fa-twitter fa-stack-1x fa-inverse"></i>
+        </span>
+      </a>
+
+      <a
+          href="http://www.reddit.com/submit?url=ikouchiha47.github.io/2023/11/20/generating-getters-in-go.html"
+          onclick="window.open(this.href, 'pop-up', 'left=20,top=20,width=500,height=500,toolbar=1,resizable=0'); return false;"
+          class="d-inline-block mr-2">
+        <span class="fa-stack fa-lg" style="color: #FF4500;">
+          <i class="fas fa-square fa-stack-2x"></i>
+          <i class="fab fa-reddit fa-stack-1x fa-inverse"></i>
+        </span>
+      </a>
+    </div>
+  </div>
+</div>
+
+<hr/>
+
+
+      <div class="clearfix">
+
+        
+        
+        <a class="btn btn-primary float-right" href="/2023/11/27/self-hosted-website.html" data-toggle="tooltip" data-placement="top" title="Hosting Server on Bare Metals">Next<span class="d-none d-md-inline">
+            Post</span> &rarr;</a>
+        
+
+      </div>
+
+    </div>
+  </div>
+</div>
+
+
+  <!-- Footer -->
+
+<hr>
+
+<footer>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <ul class="list-inline text-center">
+          
+          <li class="list-inline-item">
+            <a href="mailto:amitava.dev@proton.me" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="far fa-envelope fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          
+          
+          <li class="list-inline-item">
+            <a href="https://www.linkedin.com/in/amitavaag" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-linkedin fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          <li class="list-inline-item">
+            <a href="https://github.com/ikouchiha47" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-github fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+        </ul>
+
+        <p class="copyright text-muted">
+          Build with: 
+          <a 
+            href="https://github.com/StartBootstrap/startbootstrap-clean-blog-jekyll"
+            class="text-gray"
+            target="_blank">startbootstrap-clean-blog-jekyll</a></p>
+      </div>
+    </div>
+  </div>
+</footer>
+
+
+  <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="/assets/vendor/blog/js/scripts.js"></script>
+
+<script src="/assets/scripts.js"></script>
+
+
+
+
+  
+
+</body>
+
+</html>

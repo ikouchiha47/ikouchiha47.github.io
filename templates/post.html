@@ -1,0 +1,453 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+  <title>
+    Hosting with AWS (Part 3) - iko&#39;s logs
+    
+  </title>
+
+  <meta name="description" content="Using route53 and aws certificate manager expose your service to the internet">
+  <meta property="og:description" content="Using route53 and aws certificate manager expose your service to the internet">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Hosting with AWS (Part 3)">
+  <meta property="og:url" content="https://ikouchiha47.github.io/templates/post.html">
+
+  
+
+  <link href='https://fonts.googleapis.com/css?family=Lora:400,700,400italic,700italic' rel='stylesheet' type='text/css'>
+  <link href='https://fonts.googleapis.com/css?family=Open+Sans:300italic,400italic,600italic,700italic,800italic,400,300,600,700,800' rel='stylesheet' type='text/css'>
+
+  <!-- <script src="https://use.fontawesome.com/releases/v5.15.3/js/all.js" crossorigin="anonymous"></script> -->
+  <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.15.4/css/all.css" integrity="sha384-DyZ88mC6Up2uqS4h/KRgHuoeGwBcD4Ng9SiP4dIRy0EXTlnuz47vAwmeGwVChigm" crossorigin="anonymous"/>
+
+  <link rel="stylesheet" href="/assets/main.css">
+  <link rel="canonical" href="https://ikouchiha47.github.io/templates/post.html">
+  <link rel="alternate" type="application/rss+xml" title="iko&#39;s logs" href="/feed.xml">
+
+  <meta name="google-site-verification" content="lWkg6gIxJgzEKX_5XnhcxCtPE9QknaimFWWos_dTvPM" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fira+Sans:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Inconsolata:wght@200..900&family=Jersey+25&family=Kanit:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Merriweather+Sans:ital,wght@0,300..800;1,300..800&family=Nanum+Gothic+Coding&family=Space+Grotesk:wght@300..700&family=Titillium+Web:ital,wght@0,200;0,300;0,400;0,600;0,700;0,900;1,200;1,300;1,400;1,600;1,700&display=swap" rel="stylesheet">
+
+</head>
+
+
+<body>
+
+  <!-- Navigation -->
+<nav class="navbar navbar-expand-lg navbar-light fixed-top" id="mainNav">
+  <div class="container">
+    <a class="navbar-brand" href="/">iko&#39;s logs</a>
+    <button class="navbar-toggler navbar-toggler-right" type="button" data-toggle="collapse" data-target="#navbarResponsive" aria-controls="navbarResponsive" aria-expanded="false" aria-label="Toggle navigation">
+      Menu
+      <i class="fa fa-bars"></i>
+    </button>
+    <div class="collapse navbar-collapse" id="navbarResponsive">
+      <ul class="navbar-nav ml-auto">
+        <li class="nav-item">
+          <a class="nav-link" href="/">Home</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/about">About</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/posts">Posts</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/contact">Contact</a>
+        </li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+
+  <!-- Page Header -->
+
+<header class="masthead" style="background: #ec7211">
+
+  <div class="overlay"></div>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <div class="post-heading">
+          <h1>Hosting with AWS (Part 3)</h1>
+          
+          <h2 class="subheading">setting up nameserver, enabling https capability and accessing public domain</h2>
+          
+          <span class="meta">Posted by
+            <a href="#">ikouchiha47</a>
+            on December 10, 2023 &middot; <span class="reading-time" title="Estimated read time">
+  
+   7 mins  read </span>
+
+          </span>
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="container space-grotesk">
+  <div class="row">
+    <div class="col-lg-8 col-md-10 mx-auto">
+
+      <p>In our <a href="/2023/12/01/aws-loadbalancer-with-ssl.html">previous post</a> we setup an AutoScaling and ECS task definition to spinup and manage EC2 instances (which is running our application server).
+We also created a separate <strong>VPC</strong> to handle incoming traffic and forward it to an <strong>ALB</strong>.</p>
+
+<p>We attached an <strong>Internet Gateway</strong> to the <code class="language-plaintext highlighter-rouge">VPC</code> to allow interraction with the outside internet. The <code class="language-plaintext highlighter-rouge">LB</code> takes care of forwarding the traffic to the proper VMs depending on the conditions, and which autoscaling groups are the target.</p>
+
+<p>&nbsp;</p>
+
+<p>In this article we are going to wrap up the simple setup, by allowing users to access our server via a domain name. And enabling AWS to receive HTTPS traffic, thereby enabling secure communication between client and server.</p>
+
+<h3 id="requirements">Requirements</h3>
+
+<ul>
+  <li>domain name registered publicly</li>
+  <li>aws route53 and acm (certificate manager)</li>
+  <li>money</li>
+</ul>
+
+<h4 id="domain-name">Domain Name</h4>
+
+<p>For this you will have to register a domain name. I prefer <a href="https://www.hostinger.in">hoistinger</a>, but we are goinf to have to bear with <a href="https://www.godaddy.com/en-in">GoDaddy</a> for now. <em>because of the project requirements</em>.</p>
+
+<p>AWS might be free but if you are serving requests via route53, which you have to for the HTTPS thing, AWS will charge you on internet traffic.</p>
+
+<p>Lets assume the domain name is <code class="language-plaintext highlighter-rouge">istope.in</code></p>
+
+<p>&nbsp;</p>
+
+<h3 id="aws-route53-and-aws-cm">AWS Route53 and AWS CM</h3>
+
+<p><code class="language-plaintext highlighter-rouge">Route53</code> is what you call a DNS service. DNS service has a bunch of records, like <code class="language-plaintext highlighter-rouge">CNAME</code>, <code class="language-plaintext highlighter-rouge">A</code> records. <code class="language-plaintext highlighter-rouge">ACM</code> is the certificate manager which is used to generate and renew <code class="language-plaintext highlighter-rouge">ssl certificates</code> for allowing HTTPS traffic.</p>
+
+<p><code class="language-plaintext highlighter-rouge">Godaddy</code> also provides us with its own DNS service, where one can provide DNS records, But we are going to use <code class="language-plaintext highlighter-rouge">AWS</code>s for now.</p>
+
+<p>DNS is broken up into multiple zones, which are responsible for maintaining a subset of domains. The subsetting is mostly done depending on various rules and scenarios. Each zone can be thought of as a file with dns records entries in the file.</p>
+
+<div class="preview-wrapper">
+  <div class="preview-wrapper-inner">
+    <div class="preview-content">
+      <div class="preview-image">
+        <a href="https://www.cloudflare.com/learning/dns/glossary/dns-zone/" target="_blank" class="preview-img-wrapper">
+          <img src="https://cf-assets.www.cloudflare.com/slt3lc6tev37/3FQ0nr0TWKiiXvr1sipYj5/df80437167ef2215bb09fc00ba0429fc/dns_og.jpeg" />
+        </a>
+      </div>
+
+      <div class="preview-body">
+        <h2 class="preview-title">
+          <a href="https://www.cloudflare.com/learning/dns/glossary/dns-zone/" target="_blank">What is a DNS zone? | Cloudflare</a>
+        </h2>
+        <div class="preview-description">A DNS zone is an administrative suvdivision of the DNS namespace.</div>
+        <div class="preview-footer">
+          <a href="//www.cloudflare.com" target="_blank">www.cloudflare.com</a>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<p>Similarly, <code class="language-plaintext highlighter-rouge">Route53</code> allows/requires us to create hosted zones for each of your root domains.</p>
+
+<blockquote>
+  <p>A hosted zone is an Amazon Route 53 concept. A hosted zone is analogous to a traditional DNS zone file; it represents a collection of records that can be managed together, belonging to a single parent domain name</p>
+</blockquote>
+
+<p>https://aws.amazon.com/route53/faqs/</p>
+
+<p>When you create a <code class="language-plaintext highlighter-rouge">hosted zone</code> you get a bunch of <strong>4 nameservers</strong>. These nameservers would be responsible for resolving domain and subdomain names.</p>
+
+<p>A <a href="https://docs.aws.amazon.com/acm/latest/userguide/acm-overview.html">Certificate Manager</a> is responsible for issuing public certificates for your public DNS. It does this, by creating a CNAME record which specifies a unique value which allows to identify your ownership of a domain.</p>
+
+<div class="preview-wrapper">
+  <div class="preview-wrapper-inner">
+    <div class="preview-content">
+      <div class="preview-image">
+        <a href="https://docs.aws.amazon.com/acm/latest/userguide/acm-overview.html" target="_blank" class="preview-img-wrapper">
+          <img src="https://upload.wikimedia.org/wikipedia/commons/5/5c/AWS_Simple_Icons_AWS_Cloud.svg" />
+        </a>
+      </div>
+
+      <div class="preview-body">
+        <h2 class="preview-title">
+          <a href="https://docs.aws.amazon.com/acm/latest/userguide/acm-overview.html" target="_blank">What Is AWS Certificate Manager? - AWS Certificate Manager</a>
+        </h2>
+        <div class="preview-description">Learn about the AWS Certificate Manager.</div>
+        <div class="preview-footer">
+          <a href="//docs.aws.amazon.com" target="_blank">docs.aws.amazon.com</a>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<p>The Certificate validation can be done either via DNS validation or Email validation. We are going to use DNS validation here. The manual setup is presented in <a href="https://aws.amazon.com/blogs/security/easier-certificate-validation-using-dns-with-aws-certificate-manager/">this blog on aws</a></p>
+
+<p>&nbsp;</p>
+
+<h3 id="subdomain-and-serving-requests-in-route53">Subdomain and Serving requests in Route53</h3>
+
+<p>Now that SSL certificate generation is done, we also need to serve our requests. These requires connecting/aliasing a domain name to the loadbalancer URL.</p>
+
+<p>We could also, point the parent domain, <code class="language-plaintext highlighter-rouge">isotope.in</code> to a cloudfront url for serving a static website, but we want something like <code class="language-plaintext highlighter-rouge">api.isotope.in</code> to point to our deployed application server.</p>
+
+<h3 id="implementation">Implementation</h3>
+
+<p>Since this in continuation with the previous article, I am going to show you the diff. The changes required are pretty self explanatory. Figuring out connection issues, certificate status not changing, dns not resolving are the main issues that need to be addressed.</p>
+
+<div class="language-diff highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="p">provider "aws" {
+</span>   region = "ap-south-1"
+<span class="gi">+  profile = var.AWS_PROFILE
+</span> }
+ 
+<span class="gi">+// create certificates
++
++resource "aws_acm_certificate" "isotope_in" {
++  domain_name               = "isotope.in"
++  subject_alternative_names = ["*.isotope.in"]
++  validation_method         = "DNS"
++
++  tags = {
++    Environment = "prod"
++  }
++
++  lifecycle {
++    create_before_destroy = true
++  }
++}
++
++resource "aws_route53_zone" "isotope_in" {
++  name = "isotope.in"
++}
++
++resource "aws_route53_record" "isotope_acm_validation" {
++  for_each = {
++    for dvo in aws_acm_certificate.isotope_in.domain_validation_options : dvo.domain_name =&gt; {
++      name   = dvo.resource_record_name
++      record = dvo.resource_record_value
++      type   = dvo.resource_record_type
++    }
++  }
++
++  zone_id = aws_route53_zone.isotope_in.zone_id
++  name    = each.value.name
++  type    = each.value.type
++  ttl     = 60
++  records = [
++    each.value.record,
++  ]
++
++  allow_overwrite = true
++}
++
++resource "aws_acm_certificate_validation" "isotope_in" {
++  certificate_arn         = aws_acm_certificate.isotope_in.arn
++  validation_record_fqdns = [for record in aws_route53_record.isotope_acm_validation : record.fqdn]
++}
++
++resource "aws_route53_record" "isotope_app_route_alias" {
++  zone_id = aws_route53_zone.isotope_in.zone_id
++  name    = "api.${aws_route53_zone.isotope_in.name}"
++  type    = "A"
++  alias {
++    name                   = aws_lb.isotope_lb.dns_name
++    zone_id                = aws_lb.isotope_lb.zone_id
++    evaluate_target_health = true
++  }
++}
++
+</span> resource "aws_lb_listener" "app_lb_listener" {
+     load_balancer_arn = aws_lb.app_lb.arn
+<span class="gd">-    port = "80"
+-    protocol = "HTTP"
+</span><span class="gi">+    port = "443"
++    protocol = "HTTPS"
++    certificate_arn   = aws_acm_certificate.isotope_in.arn
++    ssl_policy = "ELBSecurityPolicy-2016-08"
++
++    depends_on = [ aws_acm_certificate_validation.isotope_in ]
+</span>     default_action {
+      type = "fixed-response"
+<span class="err">
+</span>      fixed_response {
+       content_type = "text/plain"
+       message_body = "HEALTHY"
+       status_code  = "200"
+     }
+    }
+}
+</code></pre></div></div>
+<p><em>ecs_deply.tf</em></p>
+
+<p>In your output.tf file you can print this by adding an entry</p>
+
+<div class="language-terraform highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">output</span> <span class="s2">"dns_name"</span> <span class="p">{</span>
+  <span class="nx">description</span> <span class="p">=</span> <span class="s2">"The DNS name of the load balancer."</span>
+  <span class="nx">value</span>       <span class="p">=</span> <span class="nx">aws_lb</span><span class="p">.</span><span class="nx">app_lb</span><span class="p">.</span><span class="nx">dns_name</span>
+<span class="p">}</span>
+
+<span class="k">output</span> <span class="s2">"acm_setup"</span> <span class="p">{</span>
+  <span class="nx">value</span> <span class="p">=</span> <span class="s2">"Test this demo code by going to https://</span><span class="k">${</span><span class="nx">aws_route53_record</span><span class="p">.</span><span class="nx">isotope_app_route_alias</span><span class="p">.</span><span class="nx">fqdn</span><span class="k">}</span><span class="s2"> and checking your have a valid SSL cert"</span>
+<span class="p">}</span>
+</code></pre></div></div>
+
+<p>As you run <code class="language-plaintext highlighter-rouge">terraform apply</code> on it. You should see, 2 entries in your certificate manager you created, which will provide you the required CNAME entries, which ACM will use for certificate management.</p>
+
+<p>And in your <code class="language-plaintext highlighter-rouge">Route53</code> console, you should see 4 entries:</p>
+<ol>
+  <li>List of nameservers NS records</li>
+  <li>And SOA record</li>
+  <li>The CNAME record required by ACM (created automatically)</li>
+  <li>An entry api.isotope.in pointing to the loadbalncer domain name.</li>
+</ol>
+
+<p>In case the <code class="language-plaintext highlighter-rouge">terraform apply</code> fails due to timeout. You can still go to the <code class="language-plaintext highlighter-rouge">Route53</code> dashboard, and get the <code class="language-plaintext highlighter-rouge">NS</code> records for your hosted zone.</p>
+
+<p>You need to <strong>copy the NS records from AWS and put it in Godaddy’s Nameserver tab</strong>.</p>
+
+<h3 id="conclusion">Conclusion</h3>
+
+<p>You can wait for sometime and then run a curl on your healthcheck api to see the response getting returned.</p>
+
+<div class="language-shell highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="nv">$&gt;</span> curl https://isotope.in/konoha/api/ping
+pong%
+</code></pre></div></div>
+
+
+      <hr>
+      <div class="row mb-5 mt-5">
+  <div class="col-md-6 d-flex align-items-end ">
+    <span>Thanks. <i>mind sharing?</i></span>
+  </div>
+
+  <!-- Right Column with Social Media Icons (on the right for larger screens, on bottom for smaller screens) -->
+  <div class="col-md-6 order-md-2 order-1 text-md-right text-center mt-3 mt-md-0">
+    <div>
+
+      <a
+          href="https://www.linkedin.com/sharing/share-offsite?url=ikouchiha47.github.io/templates/post.html"
+          onclick="window.open(this.href, 'pop-up', 'left=20,top=20,width=500,height=500,toolbar=1,resizable=0'); return false;"
+          class="d-inline-block mr-2"
+       >
+        <span class="fa-stack fa-lg" style="color: #0077b5;">
+          <i class="fas fa-square fa-stack-2x"></i>
+          <i class="fab fa-linkedin fa-stack-1x fa-inverse"></i>
+        </span>
+      </a>
+
+      <a
+          href="https://twitter.com/intent/tweet?text=Hosting with AWS (Part 3)&url=ikouchiha47.github.io/templates/post.html"
+          onclick="window.open(this.href, 'pop-up', 'left=20,top=20,width=500,height=500,toolbar=1,resizable=0'); return false;"
+          class="d-inline-block mr-2">
+        <span class="fa-stack fa-lg" style="color: #1DA1F2;">
+          <i class="fas fa-square fa-stack-2x"></i>
+          <i class="fab fa-twitter fa-stack-1x fa-inverse"></i>
+        </span>
+      </a>
+
+      <a
+          href="http://www.reddit.com/submit?url=ikouchiha47.github.io/templates/post.html"
+          onclick="window.open(this.href, 'pop-up', 'left=20,top=20,width=500,height=500,toolbar=1,resizable=0'); return false;"
+          class="d-inline-block mr-2">
+        <span class="fa-stack fa-lg" style="color: #FF4500;">
+          <i class="fas fa-square fa-stack-2x"></i>
+          <i class="fab fa-reddit fa-stack-1x fa-inverse"></i>
+        </span>
+      </a>
+    </div>
+  </div>
+</div>
+
+<hr/>
+
+
+      <div class="clearfix">
+
+        
+        
+
+      </div>
+
+    </div>
+  </div>
+</div>
+
+
+  <!-- Footer -->
+
+<hr>
+
+<footer>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <ul class="list-inline text-center">
+          
+          <li class="list-inline-item">
+            <a href="mailto:amitava.dev@proton.me" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="far fa-envelope fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          
+          
+          <li class="list-inline-item">
+            <a href="https://www.linkedin.com/in/amitavaag" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-linkedin fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          <li class="list-inline-item">
+            <a href="https://github.com/ikouchiha47" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-github fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+        </ul>
+
+        <p class="copyright text-muted">
+          Build with: 
+          <a 
+            href="https://github.com/StartBootstrap/startbootstrap-clean-blog-jekyll"
+            class="text-gray"
+            target="_blank">startbootstrap-clean-blog-jekyll</a></p>
+      </div>
+    </div>
+  </div>
+</footer>
+
+
+  <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="/assets/vendor/blog/js/scripts.js"></script>
+
+<script src="/assets/scripts.js"></script>
+
+
+
+
+  
+
+</body>
+
+</html>

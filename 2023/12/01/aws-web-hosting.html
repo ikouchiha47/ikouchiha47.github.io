@@ -1,0 +1,718 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+  <title>
+    Hosting with AWS (Part 2) - iko&#39;s logs
+    
+  </title>
+
+  <meta name="description" content="How to utilize AWS Free tier to host webserver (with AutoScaling)">
+  <meta property="og:description" content="How to utilize AWS Free tier to host webserver (with AutoScaling)">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Hosting with AWS (Part 2)">
+  <meta property="og:url" content="https://ikouchiha47.github.io/2023/12/01/aws-web-hosting.html">
+
+  
+
+  <link href='https://fonts.googleapis.com/css?family=Lora:400,700,400italic,700italic' rel='stylesheet' type='text/css'>
+  <link href='https://fonts.googleapis.com/css?family=Open+Sans:300italic,400italic,600italic,700italic,800italic,400,300,600,700,800' rel='stylesheet' type='text/css'>
+
+  <!-- <script src="https://use.fontawesome.com/releases/v5.15.3/js/all.js" crossorigin="anonymous"></script> -->
+  <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.15.4/css/all.css" integrity="sha384-DyZ88mC6Up2uqS4h/KRgHuoeGwBcD4Ng9SiP4dIRy0EXTlnuz47vAwmeGwVChigm" crossorigin="anonymous"/>
+
+  <link rel="stylesheet" href="/assets/main.css">
+  <link rel="canonical" href="https://ikouchiha47.github.io/2023/12/01/aws-web-hosting.html">
+  <link rel="alternate" type="application/rss+xml" title="iko&#39;s logs" href="/feed.xml">
+
+  <meta name="google-site-verification" content="lWkg6gIxJgzEKX_5XnhcxCtPE9QknaimFWWos_dTvPM" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fira+Sans:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Inconsolata:wght@200..900&family=Jersey+25&family=Kanit:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Merriweather+Sans:ital,wght@0,300..800;1,300..800&family=Nanum+Gothic+Coding&family=Space+Grotesk:wght@300..700&family=Titillium+Web:ital,wght@0,200;0,300;0,400;0,600;0,700;0,900;1,200;1,300;1,400;1,600;1,700&display=swap" rel="stylesheet">
+
+</head>
+
+
+<body>
+
+  <!-- Navigation -->
+<nav class="navbar navbar-expand-lg navbar-light fixed-top" id="mainNav">
+  <div class="container">
+    <a class="navbar-brand" href="/">iko&#39;s logs</a>
+    <button class="navbar-toggler navbar-toggler-right" type="button" data-toggle="collapse" data-target="#navbarResponsive" aria-controls="navbarResponsive" aria-expanded="false" aria-label="Toggle navigation">
+      Menu
+      <i class="fa fa-bars"></i>
+    </button>
+    <div class="collapse navbar-collapse" id="navbarResponsive">
+      <ul class="navbar-nav ml-auto">
+        <li class="nav-item">
+          <a class="nav-link" href="/">Home</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/about">About</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/posts">Posts</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/contact">Contact</a>
+        </li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+
+  <!-- Page Header -->
+
+<header class="masthead" style="background: #ec7211">
+
+  <div class="overlay"></div>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <div class="post-heading">
+          <h1>Hosting with AWS (Part 2)</h1>
+          
+          <h2 class="subheading">using a free tier manage ec2 instances with auto-scaling</h2>
+          
+          <span class="meta">Posted by
+            <a href="#">ikouchiha47</a>
+            on December 01, 2023 &middot; <span class="reading-time" title="Estimated read time">
+  
+   21 mins  read </span>
+
+          </span>
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="container space-grotesk">
+  <div class="row">
+    <div class="col-lg-8 col-md-10 mx-auto">
+
+      <p>In our <a href="/2023/11/30/aws-web-hosting.html">previous post</a> we saw how to create a server on AWS and access.</p>
+
+<p>We have a brief idea of what <code class="language-plaintext highlighter-rouge">Amazon</code> charges for. In terms of webserver without a database, it depends on</p>
+<ul>
+  <li>Amount of resources consumed by your <code class="language-plaintext highlighter-rouge">EC2</code> instances</li>
+  <li>Amount of data transfer via the <code class="language-plaintext highlighter-rouge">Internet Gateway</code> to serve internet traffic outside AWS.</li>
+</ul>
+
+<p>This post, we will understand</p>
+<ul>
+  <li>What is a VPS?</li>
+  <li>what is an ECS? and a Cluster</li>
+  <li>what is an Auto Scaling Group (ASG)</li>
+  <li>how ECS uses ASG to manage cluster?, and lastly</li>
+  <li>how to use a Load Balancer? across multiple subnets.</li>
+</ul>
+
+<p>&nbsp;</p>
+
+<h3 id="boring-details">Boring details</h3>
+<p><br /></p>
+
+<h5 id="vpc">VPC</h5>
+
+<p>To understand a <strong>VPC</strong> (Virtual Private Cloud), we have to understand a <code class="language-plaintext highlighter-rouge">Public Cloud</code>.</p>
+
+<p><strong>Public Cloud</strong> is basically when you have a single infra (not a single instance, but the whole infra as a whole), shared between multiple people.</p>
+
+<p>For example a restaurant serving multiple dishes. Most SaaS appication.</p>
+
+<p>But a <strong>Private Cloud</strong> is when you want to set boundaries on the network, resources etc thats available to the clients. Such that one doesn’t access other’s information or resources.</p>
+
+<p>For example, many people can use <code class="language-plaintext highlighter-rouge">AWS</code> but the content served is different for different clients. But that doesn’t mean, each client/company gets its own set of servers. It might as well be shared with some other processes.</p>
+
+<p>So you get your own nameservers, (DNS servers) which help you translate <code class="language-plaintext highlighter-rouge">IP</code> or <code class="language-plaintext highlighter-rouge">DNS</code> and connect to the devies on that network. You can’t access them from your internet like you do for facebook or google.</p>
+
+<p>You can specify an IP address range for the VPC, add subnets, add gateways, and associate security groups. Although you have mostly <code class="language-plaintext highlighter-rouge">10.x.x.x</code> and <code class="language-plaintext highlighter-rouge">172.x.x.x</code> for amazon in ap-south-1</p>
+
+<h5 id="subnet">Subnet</h5>
+
+<p>Since you can assign IP address range, you can also borrow from this ip range to split traffic between multiple regions.
+Each subnet must be associated with a <code class="language-plaintext highlighter-rouge">route table</code>, which specifies the allowed routes for outbound traffic leaving the subnet.</p>
+
+<h5 id="internet-gateway">Internet Gateway</h5>
+
+<p>Now <code class="language-plaintext highlighter-rouge">AWS</code>’s way of exposing a VPC to receive external traffic is by using an <code class="language-plaintext highlighter-rouge">Internet Gateway</code>. An example will help understand it better.</p>
+
+<p>A router is a <em>gateway</em> between your local network (your VPC) and the ISP. It allows you to share internet using Wi-Fi of multiple devices and connect to your ISP.
+On the ISP’s end’ its a device that connects to the outside world to get the data and send it back to you.</p>
+
+<p>It is also a <code class="language-plaintext highlighter-rouge">protocol converter</code>, because <code class="language-plaintext highlighter-rouge">LAN</code> uses different protocol than rest of the Internet.</p>
+
+<blockquote>
+  <p>Before arriving at the router, packets go to the gateway channel first, and the gateway checks the header information at once. After checking for any kind of error in the destination IP address and packet. According to the needs of the destination network, it carries out data conversion and protocol conversion on the packet, which is also the most critical step. Finally, the processed packet is forwarded to the router to establish intelligent communication between the two different networks.</p>
+</blockquote>
+
+<p><a href="https://community.fs.com/article/router-vs-gateway-what-is-the-similarity-and-difference.html">Some Article</a></p>
+
+<p><img src="/img/aws-internet-gateway-2.webp" style="width: 100%" /></p>
+
+<p>Anyway, its a separate component, so that you can attach and deattach your <code class="language-plaintext highlighter-rouge">vpc</code> from the <code class="language-plaintext highlighter-rouge">internet</code> faster.</p>
+
+<p><strong>Route table</strong></p>
+
+<p>A route table contains a set of rules, called routes, that determine where network traffic from your subnet or gateway is directed.</p>
+
+<p><br /></p>
+
+<p><img src="/img/aws-internet-gateway.webp" style="width: 100%" /></p>
+
+<p>&nbsp;</p>
+
+<h3 id="code-bombs">Code bombs.</h3>
+
+<p>Basically we want to:</p>
+<ul>
+  <li>Create a VPC and assign a range of ip address. here we chose the range <code class="language-plaintext highlighter-rouge">/16</code></li>
+  <li>Create two <code class="language-plaintext highlighter-rouge">subnets</code> in two <code class="language-plaintext highlighter-rouge">regions</code>. Also called __A__vailability __Z__ones</li>
+  <li>Create an <code class="language-plaintext highlighter-rouge">Internet Gateway</code> and attach it to the <code class="language-plaintext highlighter-rouge">VPC</code> on one end</li>
+  <li>On the other end, create a <code class="language-plaintext highlighter-rouge">route table</code> that allows <code class="language-plaintext highlighter-rouge">traffic from internet</code> to this <code class="language-plaintext highlighter-rouge">subnet</code> via the <code class="language-plaintext highlighter-rouge">gateway</code></li>
+</ul>
+
+<div class="preview-wrapper">
+  <div class="preview-wrapper-inner">
+    <div class="preview-content">
+      <div class="preview-image">
+        <a href="https://docs.aws.amazon.com/vpc/latest/userguide/VPC_Internet_Gateway.html" target="_blank" class="preview-img-wrapper">
+          <img src="https://docs.aws.amazon.com/images/vpc/latest/userguide/images/internet-gateway-basics.png" />
+        </a>
+      </div>
+
+      <div class="preview-body">
+        <h2 class="preview-title">
+          <a href="https://docs.aws.amazon.com/vpc/latest/userguide/VPC_Internet_Gateway.html" target="_blank">Connect to the internet using an internet gateway - Amazon Virtual Private Cloud</a>
+        </h2>
+        <div class="preview-description">Enable access to the internet from your VPC by attaching an internet gateway.</div>
+        <div class="preview-footer">
+          <a href="//docs.aws.amazon.com" target="_blank">docs.aws.amazon.com</a>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<p><em>aws_deploy.tf</em></p>
+
+<div class="language-terraform highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">provider</span> <span class="s2">"aws"</span> <span class="p">{</span>
+  <span class="nx">region</span> <span class="p">=</span> <span class="s2">"ap-south-1"</span>
+<span class="p">}</span>
+
+<span class="c1">// Create vpc and add a subnet</span>
+<span class="c1">// Add a routing table and direct all traffic from internet</span>
+<span class="c1">// to the subnet</span>
+<span class="k">resource</span> <span class="s2">"aws_vpc"</span> <span class="s2">"app_vpc"</span> <span class="p">{</span>
+  <span class="nx">cidr_block</span> <span class="p">=</span> <span class="s2">"10.0.0.0/16"</span>
+  <span class="nx">enable_dns_support</span>   <span class="p">=</span> <span class="kc">true</span>
+  <span class="nx">enable_dns_hostnames</span> <span class="p">=</span> <span class="kc">true</span>
+  <span class="nx">tags</span>       <span class="p">=</span> <span class="p">{</span>
+      <span class="nx">Name</span> <span class="p">=</span> <span class="s2">"Konoha VPC"</span>
+  <span class="p">}</span>
+<span class="p">}</span>
+
+<span class="c1">// Create subnet 1</span>
+<span class="k">resource</span> <span class="s2">"aws_subnet"</span> <span class="s2">"app_server_subnet"</span> <span class="p">{</span>
+    <span class="nx">vpc_id</span> <span class="p">=</span> <span class="nx">aws_vpc</span><span class="p">.</span><span class="nx">app_vpc</span><span class="p">.</span><span class="nx">id</span>
+    <span class="nx">cidr_block</span>              <span class="p">=</span> <span class="nx">cidrsubnet</span><span class="p">(</span><span class="nx">aws_vpc</span><span class="p">.</span><span class="nx">app_vpc</span><span class="p">.</span><span class="nx">cidr_block</span><span class="p">,</span> <span class="mi">8</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
+    <span class="nx">map_public_ip_on_launch</span> <span class="p">=</span> <span class="kc">true</span>
+    <span class="nx">availability_zone</span> <span class="p">=</span> <span class="s2">"ap-south-1b"</span>
+<span class="p">}</span>
+
+<span class="c1">// Create subnet 2 and its routing table</span>
+<span class="k">resource</span> <span class="s2">"aws_subnet"</span> <span class="s2">"app_server_subnet2"</span> <span class="p">{</span>
+    <span class="nx">vpc_id</span> <span class="p">=</span> <span class="nx">aws_vpc</span><span class="p">.</span><span class="nx">app_vpc</span><span class="p">.</span><span class="nx">id</span>
+    <span class="nx">cidr_block</span>              <span class="p">=</span> <span class="nx">cidrsubnet</span><span class="p">(</span><span class="nx">aws_vpc</span><span class="p">.</span><span class="nx">app_vpc</span><span class="p">.</span><span class="nx">cidr_block</span><span class="p">,</span> <span class="mi">8</span><span class="p">,</span> <span class="mi">2</span><span class="p">)</span>
+    <span class="nx">map_public_ip_on_launch</span> <span class="p">=</span> <span class="kc">true</span>
+    <span class="nx">availability_zone</span> <span class="p">=</span> <span class="s2">"ap-south-1b"</span>
+<span class="p">}</span>
+
+<span class="c1">// Create an IG for the VPC</span>
+<span class="k">resource</span> <span class="s2">"aws_internet_gateway"</span> <span class="s2">"app_server_ig"</span> <span class="p">{</span>
+  <span class="nx">vpc_id</span> <span class="p">=</span> <span class="nx">aws_vpc</span><span class="p">.</span><span class="nx">app_vpc</span><span class="p">.</span><span class="nx">id</span>
+<span class="p">}</span>
+
+<span class="c1">// Routing table which allows traffic </span>
+<span class="c1">// from anywhere to the VPC via the IG</span>
+<span class="k">resource</span> <span class="s2">"aws_route_table"</span> <span class="s2">"app_sever_rt"</span> <span class="p">{</span>
+  <span class="nx">vpc_id</span> <span class="p">=</span>  <span class="nx">aws_vpc</span><span class="p">.</span><span class="nx">app_vpc</span><span class="p">.</span><span class="nx">id</span>
+
+  <span class="nx">route</span> <span class="p">{</span>
+      <span class="nx">cidr_block</span> <span class="p">=</span> <span class="s2">"0.0.0.0/0"</span>
+      <span class="nx">gateway_id</span> <span class="p">=</span> <span class="nx">aws_internet_gateway</span><span class="p">.</span><span class="nx">app_server_ig</span><span class="p">.</span><span class="nx">id</span>
+    <span class="p">}</span>
+<span class="p">}</span>
+
+<span class="c1">// Making subnets public by attaching them to the routing table</span>
+<span class="c1">// which is associated the the app_server_ig Internet Gateway</span>
+
+<span class="k">resource</span> <span class="s2">"aws_route_table_association"</span> <span class="s2">"app_server_route"</span> <span class="p">{</span>
+  <span class="nx">route_table_id</span> <span class="p">=</span> <span class="nx">aws_route_table</span><span class="p">.</span><span class="nx">app_sever_rt</span><span class="p">.</span><span class="nx">id</span>
+  <span class="nx">subnet_id</span> <span class="p">=</span> <span class="nx">aws_subnet</span><span class="p">.</span><span class="nx">app_server_subnet</span><span class="p">.</span><span class="nx">id</span>
+<span class="p">}</span>
+
+<span class="k">resource</span> <span class="s2">"aws_route_table_association"</span> <span class="s2">"app_server_route2"</span> <span class="p">{</span>
+  <span class="nx">route_table_id</span> <span class="p">=</span> <span class="nx">aws_route_table</span><span class="p">.</span><span class="nx">app_sever_rt</span><span class="p">.</span><span class="nx">id</span>
+  <span class="nx">subnet_id</span> <span class="p">=</span> <span class="nx">aws_subnet</span><span class="p">.</span><span class="nx">app_server_subnet2</span><span class="p">.</span><span class="nx">id</span>
+<span class="p">}</span>
+
+</code></pre></div></div>
+
+<h3 id="ecs">ECS</h3>
+
+<p><a href="https://aws.amazon.com/ecs/">Elastic Container orchestration Service</a>, as the name implies, deals with creating ec2/fargate instances <em>(forget fargate for now, this is fancy enough)</em>.</p>
+
+<p>Its used to manage a <code class="language-plaintext highlighter-rouge">cluster of ec2 instances</code>. Like a <code class="language-plaintext highlighter-rouge">swarm of bees</code>. <em>Teach that to your kids</em>.</p>
+
+<p>For this we need to provide a <code class="language-plaintext highlighter-rouge">task definition</code> file, which will tell what image to run, or what commands to run, resource allocation, ports to expose etc.</p>
+
+<p><em>ecs_task_definition.json</em></p>
+
+<div class="language-json highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="p">[</span><span class="w">
+  </span><span class="p">{</span><span class="w">
+    </span><span class="nl">"essential"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span><span class="w">
+    </span><span class="nl">"memory"</span><span class="p">:</span><span class="w"> </span><span class="mi">512</span><span class="p">,</span><span class="w">
+    </span><span class="nl">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"konoha-server"</span><span class="p">,</span><span class="w">
+    </span><span class="nl">"cpu"</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span><span class="p">,</span><span class="w">
+    </span><span class="nl">"image"</span><span class="p">:</span><span class="w"> </span><span class="s2">"${IMAGE}"</span><span class="p">,</span><span class="w">
+    </span><span class="nl">"environment"</span><span class="p">:</span><span class="w"> </span><span class="p">[],</span><span class="w">
+    </span><span class="nl">"portMappings"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="w">
+      </span><span class="p">{</span><span class="w">
+        </span><span class="nl">"containerPort"</span><span class="p">:</span><span class="w"> </span><span class="mi">9090</span><span class="p">,</span><span class="w">
+        </span><span class="nl">"hostPort"</span><span class="p">:</span><span class="w"> </span><span class="mi">9090</span><span class="w">
+      </span><span class="p">}</span><span class="w">
+    </span><span class="p">]</span><span class="w">
+  </span><span class="p">}</span><span class="w">
+</span><span class="p">]</span><span class="w">
+</span></code></pre></div></div>
+
+<p>You can read about it <a href="https://docs.aws.amazon.com/AmazonECS/latest/developerguide/task_definitions.html">here</a>.</p>
+
+<p><em>aws_deploy.tf</em></p>
+
+<div class="language-terraform highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">resource</span> <span class="s2">"aws_ecs_cluster"</span> <span class="s2">"app_server_cluster"</span> <span class="p">{</span>
+  <span class="nx">name</span> <span class="p">=</span> <span class="s2">"app-server-cluster"</span>
+<span class="p">}</span>
+
+<span class="k">resource</span> <span class="s2">"aws_ecs_task_definition"</span> <span class="s2">"app_task_definition"</span> <span class="p">{</span>
+    <span class="nx">family</span>            <span class="p">=</span> <span class="s2">"konoha-server"</span>
+
+    <span class="c1">// We dont need this for EC2 instances.</span>
+    <span class="c1">// task_role_arn      = format("arn:aws:iam::%s:role/ecsEcrTaskExecutionRole", var.AWS_ACCOUNT)</span>
+    <span class="c1">// execution_role_arn = format("arn:aws:iam::%s:role/ecsEcrTaskExecutionRole", var.AWS_ACCOUNT)</span>
+
+    <span class="nx">container_definitions</span> <span class="p">=</span> <span class="nx">templatefile</span><span class="p">(</span><span class="s2">"</span><span class="k">${</span><span class="nx">path</span><span class="p">.</span><span class="k">module}</span><span class="s2">/templates/ecs/ecs-task-definition.json"</span><span class="p">,</span> <span class="p">{</span> <span class="nx">IMAGE</span><span class="err">:</span> <span class="kd">var</span><span class="p">.</span><span class="nx">DOCKER_IMAGE</span> <span class="p">})</span>
+<span class="p">}</span>
+
+<span class="c1">// Assoicating the task deifintion to the cluster</span>
+<span class="k">resource</span> <span class="s2">"aws_ecs_service"</span> <span class="s2">"app_ecs_service"</span> <span class="p">{</span>
+    <span class="nx">name</span> <span class="p">=</span> <span class="s2">"konoha-server"</span> <span class="c1">// keep the name same here as the family</span>
+    <span class="nx">cluster</span> <span class="p">=</span> <span class="nx">aws_ecs_cluster</span><span class="p">.</span><span class="nx">app_server_cluster</span><span class="p">.</span><span class="nx">id</span>
+    <span class="nx">task_definition</span> <span class="p">=</span> <span class="nx">aws_ecs_task_definition</span><span class="p">.</span><span class="nx">app_task_definition</span><span class="p">.</span><span class="nx">arn</span>
+    <span class="nx">desired_count</span> <span class="p">=</span> <span class="mi">1</span>
+
+
+    <span class="nx">force_new_deployment</span> <span class="p">=</span> <span class="kc">true</span>
+    <span class="nx">triggers</span> <span class="p">=</span> <span class="p">{</span>
+      <span class="nx">redeployment</span> <span class="p">=</span> <span class="nx">timestamp</span><span class="p">()</span>
+  <span class="p">}</span>
+<span class="p">}</span>
+
+</code></pre></div></div>
+
+<p><em>Please make sure to the the directory structure to your resources match in the terraform file</em></p>
+
+<p><em>You can’t really have a different <code class="language-plaintext highlighter-rouge">host</code> and <code class="language-plaintext highlighter-rouge">container</code> port mapping, cause penny pincher <code class="language-plaintext highlighter-rouge">Amazon</code> doesn’t allow it. This will also cause us to open port <code class="language-plaintext highlighter-rouge">9090</code> on the security group. And therby requiring a <code class="language-plaintext highlighter-rouge">Load Balancer (:80)</code> to map traffic with a prefix or domain to the cluster on <code class="language-plaintext highlighter-rouge">9090</code>.</em>  <strong>Lol</strong></p>
+
+<p>&nbsp;</p>
+
+<h3 id="auto-scaling-group">Auto Scaling Group</h3>
+
+<p>Auto Scaling Groups allow you to increase, decrease or maintain the allocation of ec2 instances. There are different scaling providers.</p>
+
+<p>You can read about them <a href="https://docs.aws.amazon.com/autoscaling/ec2/userguide/scaling-overview.html">here</a></p>
+
+<p>An ASG would use the <code class="language-plaintext highlighter-rouge">aws_launch_template</code> in order to provison the machine for ECS to run its task.</p>
+
+<p>The way the <code class="language-plaintext highlighter-rouge">ASG</code> and the <code class="language-plaintext highlighter-rouge">ECS</code> communicate is via a <code class="language-plaintext highlighter-rouge">config</code> file which is expected to be present each of the <code class="language-plaintext highlighter-rouge">EC2</code> instances. That file contains the <code class="language-plaintext highlighter-rouge">cluster</code> name.</p>
+
+<p>Previously in the <code class="language-plaintext highlighter-rouge">aws_ecs_service</code> we had joined the <code class="language-plaintext highlighter-rouge">cluster</code> to the <code class="language-plaintext highlighter-rouge">task_definition</code>. And with the <code class="language-plaintext highlighter-rouge">cluster</code> name present in the <code class="language-plaintext highlighter-rouge">EC2</code> instance, <code class="language-plaintext highlighter-rouge">ECS</code> knows which machine to run the <code class="language-plaintext highlighter-rouge">task</code> on. Phew!!</p>
+
+<div class="preview-wrapper">
+  <div class="preview-wrapper-inner">
+    <div class="preview-content">
+      <div class="preview-image">
+        <a href="https://aws.amazon.com/blogs/containers/deep-dive-on-amazon-ecs-cluster-auto-scaling/" target="_blank" class="preview-img-wrapper">
+          <img src="https://d2908q01vomqb2.cloudfront.net/fe2ef495a1152561572949784c16bf23abb28057/2020/01/03/Figure11.png" />
+        </a>
+      </div>
+
+      <div class="preview-body">
+        <h2 class="preview-title">
+          <a href="https://aws.amazon.com/blogs/containers/deep-dive-on-amazon-ecs-cluster-auto-scaling/" target="_blank">Deep Dive on Amazon ECS Cluster Auto Scaling | Amazon Web Services</a>
+        </h2>
+        <div class="preview-description">Introduction Up until recently, ensuring that the number of EC2 instances in your ECS cluster would scale as needed to accommodate your tasks and services could be challenging.  ECS clusters could not always scale out when needed, and scaling in could impact availability unless handled carefully. Sometimes, customers would resort to custom tooling such as […]</div>
+        <div class="preview-footer">
+          <a href="//aws.amazon.com" target="_blank">aws.amazon.com</a>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<p><em>ecs.sh</em></p>
+
+<div class="language-bash highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="c">#!/bin/bash</span>
+
+<span class="nb">echo </span><span class="nv">ECS_CLUSTER</span><span class="o">=</span>app-server-cluster <span class="o">&gt;&gt;</span> /etc/ecs/ecs.config
+</code></pre></div></div>
+
+<p><em>ecs_deploy.tf</em></p>
+
+<div class="language-terraform highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="c1">// resource "aws_instance" "konoha_server" {</span>
+<span class="c1">//   ami = "ami-027a0367928d05f3e"</span>
+<span class="c1">//   instance_type = "t2.micro"</span>
+<span class="c1">//   associate_public_ip_address = true</span>
+<span class="c1">//   key_name = "tf-key-pair"</span>
+<span class="c1">// </span>
+<span class="c1">//   vpc_security_group_ids = [aws_security_group.konoha_api_sg.id]</span>
+<span class="c1">// </span>
+<span class="c1">//   iam_instance_profile = "ecsInstanceRole"</span>
+<span class="c1">// </span>
+<span class="c1">//   user_data = base64encode(templatefile("${path.module}/templates/ecs/setup.sh", { </span>
+<span class="c1">//        IMAGE = var.DOCKER_IMAGE,</span>
+<span class="c1">//        AWS_ACCOUNT = var.AWS_ACCOUNT</span>
+<span class="c1">//   }))</span>
+<span class="c1">// </span>
+<span class="c1">//   tags = {</span>
+<span class="c1">//       Name = "konoha-api-instance"</span>
+<span class="c1">//   }</span>
+<span class="c1">// }</span>
+
+<span class="k">resource</span> <span class="s2">"aws_launch_template"</span> <span class="s2">"app_server_launch_configuration"</span> <span class="p">{</span>
+  <span class="nx">name_prefix</span> <span class="p">=</span> <span class="s2">"konoha-server"</span>
+  <span class="nx">image_id</span>      <span class="p">=</span> <span class="s2">"ami-027a0367928d05f3e"</span>
+  <span class="nx">instance_type</span> <span class="p">=</span> <span class="s2">"t2.micro"</span>
+  <span class="nx">key_name</span>      <span class="p">=</span> <span class="s2">"tf-key-pair"</span>
+  <span class="nx">vpc_security_group_ids</span> <span class="p">=</span> <span class="p">[</span><span class="nx">aws_security_group</span><span class="p">.</span><span class="nx">konoha_api_sg</span><span class="p">.</span><span class="nx">id</span><span class="p">]</span>
+
+  <span class="nx">iam_instance_profile</span> <span class="p">{</span>
+    <span class="nx">name</span> <span class="p">=</span> <span class="s2">"ecsInstanceRole"</span>
+  <span class="p">}</span>
+
+  <span class="nx">user_data</span> <span class="p">=</span> <span class="nx">filebase64</span><span class="p">(</span><span class="s2">"</span><span class="k">${</span><span class="nx">path</span><span class="p">.</span><span class="k">module}</span><span class="s2">/templates/ecs/ecs.sh"</span><span class="p">)</span>
+<span class="p">}</span>
+
+<span class="k">resource</span> <span class="s2">"aws_autoscaling_group"</span> <span class="s2">"app_server_ecs_asg"</span> <span class="p">{</span>
+  <span class="nx">name</span>                <span class="p">=</span> <span class="s2">"AppServerAsg"</span>
+  <span class="nx">vpc_zone_identifier</span> <span class="p">=</span> <span class="p">[</span><span class="nx">aws_subnet</span><span class="p">.</span><span class="nx">app_server_subnet</span><span class="p">.</span><span class="nx">id</span><span class="p">,</span> <span class="nx">aws_subnet</span><span class="p">.</span><span class="nx">app_server_subnet2</span><span class="p">.</span><span class="nx">id</span><span class="p">]</span>
+  <span class="nx">target_group_arns</span> <span class="p">=</span> <span class="p">[</span><span class="nx">aws_lb_target_group</span><span class="p">.</span><span class="nx">app_lb_tg</span><span class="p">.</span><span class="nx">arn</span><span class="p">]</span> <span class="c1">// linking to the LB</span>
+
+  <span class="nx">launch_template</span> <span class="p">{</span>
+    <span class="nx">id</span> <span class="p">=</span> <span class="nx">aws_launch_template</span><span class="p">.</span><span class="nx">app_server_launch_configuration</span><span class="p">.</span><span class="nx">id</span>
+    <span class="nx">version</span> <span class="p">=</span> <span class="s2">"</span><span class="err">$</span><span class="s2">Latest"</span>
+  <span class="p">}</span>
+
+  <span class="nx">min_size</span>         <span class="p">=</span> <span class="mi">1</span>
+  <span class="nx">max_size</span>         <span class="p">=</span> <span class="mi">1</span>
+  <span class="nx">desired_capacity</span> <span class="p">=</span> <span class="mi">1</span>
+
+  <span class="nx">health_check_type</span>         <span class="p">=</span> <span class="s2">"EC2"</span>
+
+  <span class="nx">tag</span> <span class="p">{</span>
+    <span class="nx">key</span>                 <span class="p">=</span> <span class="s2">"Name"</span>
+    <span class="nx">value</span>               <span class="p">=</span> <span class="s2">"AppServerInstance"</span>
+    <span class="nx">propagate_at_launch</span> <span class="p">=</span> <span class="kc">true</span>
+  <span class="p">}</span>
+
+  <span class="nx">tag</span> <span class="p">{</span>
+   <span class="nx">key</span>                 <span class="p">=</span> <span class="s2">"AmazonECSManaged"</span>
+   <span class="nx">value</span>               <span class="p">=</span> <span class="kc">true</span>
+   <span class="nx">propagate_at_launch</span> <span class="p">=</span> <span class="kc">true</span>
+ <span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div></div>
+
+<p>We will use no Scaling Policy, which is manual scaling policy. All capacity is set to <code class="language-plaintext highlighter-rouge">1</code>, because <code class="language-plaintext highlighter-rouge">Free Tier</code> baby.</p>
+
+<p>You can checkout one of the examples of a <code class="language-plaintext highlighter-rouge">dynamic policy</code>, where it scales based on <code class="language-plaintext highlighter-rouge">cpu</code> utilization limit.</p>
+
+<div class="preview-wrapper">
+  <div class="preview-wrapper-inner">
+    <div class="preview-content">
+      <div class="preview-image">
+        <a href="https://jaffarshaik.medium.com/autoscaling-ec2-instances-based-on-cpu-usage-using-terraform-9c12edf6c1d5" target="_blank" class="preview-img-wrapper">
+          <img src="https://miro.medium.com/v2/resize:fit:552/1*uCz-kgvzQXekcRLjpsxz5Q.png" />
+        </a>
+      </div>
+
+      <div class="preview-body">
+        <h2 class="preview-title">
+          <a href="https://jaffarshaik.medium.com/autoscaling-ec2-instances-based-on-cpu-usage-using-terraform-9c12edf6c1d5" target="_blank">AutoScaling Ec2 Instances based on CPU usage using Terraform</a>
+        </h2>
+        <div class="preview-description">In this Article we will explore How to scale in and scale down EC2 instances based on there CPU utilization using Autoscaling and…</div>
+        <div class="preview-footer">
+          <a href="//jaffarshaik.medium.com" target="_blank">jaffarshaik.medium.com</a>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<hr />
+
+<p>You might as well take a break and stretch a leg.</p>
+<hr />
+
+<p><br /></p>
+
+<h3 id="load-balancer">Load Balancer</h3>
+
+<p>Its nearing the end of the setup. All we need is a load balancer. For a load balancer, we will forward all traffic on port <code class="language-plaintext highlighter-rouge">80</code> having a path <code class="language-plaintext highlighter-rouge">/konoha/api</code> to port <code class="language-plaintext highlighter-rouge">9090</code>. And the way to associate that is by using a <code class="language-plaintext highlighter-rouge">target group</code>.</p>
+
+<p>You can specify health check on your target group, which in our case is sending a <code class="language-plaintext highlighter-rouge">/ping</code> request on port <code class="language-plaintext highlighter-rouge">:9090</code>.</p>
+
+<p>From inside the <code class="language-plaintext highlighter-rouge">VPC</code> on only one server is running on that port, which is <code class="language-plaintext highlighter-rouge">our server</code>. You can go through the links below, but the setup is quite easy here.</p>
+
+<ul>
+  <li><a href="https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/lb">aws_lb</a> an <code class="language-plaintext highlighter-rouge">application load balancer</code> to manage traffic, like nginx.</li>
+  <li><a href="https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/lb_target_group">aws_lb_target_group</a> to specify the <code class="language-plaintext highlighter-rouge">VPC</code> and the <code class="language-plaintext highlighter-rouge">PORT</code> mapping.</li>
+  <li><a href="https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/lb_listener">aws_listener</a> and <a href="https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/lb_listener_rule">aws_listener_rules</a> which is like a router, which has rules on which <code class="language-plaintext highlighter-rouge">aws_lb_target_group</code> to forward traffic to.</li>
+  <li>aws resources on <a href="https://docs.aws.amazon.com/elasticloadbalancing/latest/application/load-balancer-target-groups.html">target-group</a> and <a href="https://docs.aws.amazon.com/elasticloadbalancing/latest/application/target-group-register-targets.html">how to register</a></li>
+</ul>
+
+<p><img src="/img/aws-alb.png" style="width: 100%" /></p>
+
+<div class="language-terraform highlighter-rouge"><div class="highlight"><pre class="highlight"><code>
+<span class="c1">// Create an application load balancer attached with</span>
+<span class="c1">// a security group and which zones to be present in.</span>
+
+<span class="k">resource</span> <span class="s2">"aws_lb"</span> <span class="s2">"app_lb"</span> <span class="p">{</span>
+  <span class="nx">name</span>               <span class="p">=</span> <span class="s2">"app-server-lb"</span>
+  <span class="nx">internal</span>           <span class="p">=</span> <span class="kc">false</span>
+  <span class="nx">load_balancer_type</span> <span class="p">=</span> <span class="s2">"application"</span>
+
+  <span class="nx">security_groups</span> <span class="p">=</span> <span class="p">[</span><span class="nx">aws_security_group</span><span class="p">.</span><span class="nx">konoha_api_sg</span><span class="p">.</span><span class="nx">id</span><span class="p">]</span>
+  <span class="nx">subnets</span>         <span class="p">=</span> <span class="p">[</span><span class="nx">aws_subnet</span><span class="p">.</span><span class="nx">app_server_subnet</span><span class="p">.</span><span class="nx">id</span><span class="p">,</span> <span class="nx">aws_subnet</span><span class="p">.</span><span class="nx">app_server_subnet2</span><span class="p">.</span><span class="nx">id</span><span class="p">]</span>
+
+  <span class="nx">enable_deletion_protection</span> <span class="p">=</span> <span class="kc">false</span>
+
+  <span class="nx">tags</span> <span class="p">=</span> <span class="p">{</span>
+      <span class="nx">Environment</span> <span class="p">=</span> <span class="kd">var</span><span class="p">.</span><span class="nx">ENVIRONMENT</span>
+      <span class="nx">Name</span> <span class="p">=</span> <span class="s2">"KonohaServerLoadBalancer"</span>
+    <span class="p">}</span>
+<span class="p">}</span>
+
+<span class="c1">// Load balancer target group which is resposible for</span>
+<span class="c1">// identifying which VPC to sent traffic and what port</span>
+<span class="c1">// Depending on the health check, the target groups are</span>
+<span class="c1">// registered or deregistered.</span>
+<span class="k">resource</span> <span class="s2">"aws_lb_target_group"</span> <span class="s2">"app_lb_tg"</span> <span class="p">{</span>
+    <span class="nx">name</span> <span class="p">=</span> <span class="s2">"KonohaServerTgHttp"</span>
+    <span class="nx">port</span> <span class="p">=</span> <span class="mi">9090</span>
+    <span class="nx">protocol</span> <span class="p">=</span> <span class="s2">"HTTP"</span>
+    <span class="nx">vpc_id</span> <span class="p">=</span> <span class="nx">aws_vpc</span><span class="p">.</span><span class="nx">app_vpc</span><span class="p">.</span><span class="nx">id</span>
+
+    <span class="nx">health_check</span> <span class="p">{</span>
+      <span class="nx">healthy_threshold</span>   <span class="p">=</span> <span class="mi">3</span>
+      <span class="nx">unhealthy_threshold</span> <span class="p">=</span> <span class="mi">10</span>
+      <span class="nx">timeout</span>             <span class="p">=</span> <span class="mi">5</span>
+      <span class="nx">interval</span>            <span class="p">=</span> <span class="mi">30</span>
+      <span class="nx">path</span>                <span class="p">=</span> <span class="s2">"/ping"</span>
+      <span class="nx">port</span>                <span class="p">=</span> <span class="s2">"9090"</span>
+      <span class="nx">matcher</span>             <span class="p">=</span> <span class="s2">"200-388"</span>
+  <span class="p">}</span>
+<span class="p">}</span>
+
+<span class="c1">// This here is the LB listening on port 80</span>
+<span class="k">resource</span> <span class="s2">"aws_lb_listener"</span> <span class="s2">"app_lb_listener"</span> <span class="p">{</span>
+    <span class="nx">load_balancer_arn</span> <span class="p">=</span> <span class="nx">aws_lb</span><span class="p">.</span><span class="nx">app_lb</span><span class="p">.</span><span class="nx">arn</span>
+    <span class="nx">port</span> <span class="p">=</span> <span class="s2">"80"</span>
+    <span class="nx">protocol</span> <span class="p">=</span> <span class="s2">"HTTP"</span>
+
+    <span class="nx">default_action</span> <span class="p">{</span>
+      <span class="nx">type</span> <span class="p">=</span> <span class="s2">"fixed-response"</span>
+
+      <span class="nx">fixed_response</span> <span class="p">{</span>
+       <span class="nx">content_type</span> <span class="p">=</span> <span class="s2">"text/plain"</span>
+       <span class="nx">message_body</span> <span class="p">=</span> <span class="s2">"HEALTHY"</span>
+       <span class="nx">status_code</span>  <span class="p">=</span> <span class="s2">"200"</span>
+     <span class="p">}</span>
+    <span class="p">}</span>
+<span class="p">}</span>
+
+<span class="c1">// This rule allows urls with /konoha/api/ prefix</span>
+<span class="c1">// on port 80, to be forwared to the KonohaServerTgHttp target group</span>
+<span class="c1">// which send the traffic to port 9090 in the VPC</span>
+<span class="k">resource</span> <span class="s2">"aws_lb_listener_rule"</span> <span class="s2">"app_server_lb"</span> <span class="p">{</span>
+  <span class="nx">listener_arn</span> <span class="p">=</span> <span class="nx">aws_lb_listener</span><span class="p">.</span><span class="nx">app_lb_listener</span><span class="p">.</span><span class="nx">arn</span>
+  <span class="nx">priority</span> <span class="p">=</span> <span class="mi">100</span>
+
+  <span class="nx">action</span> <span class="p">{</span>
+      <span class="nx">type</span> <span class="p">=</span> <span class="s2">"forward"</span>
+      <span class="nx">target_group_arn</span> <span class="p">=</span> <span class="nx">aws_lb_target_group</span><span class="p">.</span><span class="nx">app_lb_tg</span><span class="p">.</span><span class="nx">arn</span>
+    <span class="p">}</span>
+
+  <span class="nx">condition</span> <span class="p">{</span>
+    <span class="nx">path_pattern</span> <span class="p">{</span>
+      <span class="nx">values</span> <span class="p">=</span> <span class="p">[</span><span class="s2">"/konoha/api/*"</span><span class="p">]</span>
+    <span class="p">}</span>
+  <span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div></div>
+
+<p>Here is a <a href="https://gist.github.com/ikouchiha47/d24503d048cddfd56f86fd98be453442">Gist</a> of everything till now. Feel free to use it, modify it, or <strong>ask for help in comments</strong>.</p>
+
+<p>&nbsp;</p>
+
+<h3 id="next-steps">Next Steps:</h3>
+
+<p>Well, now everything over the network is unencrypted, cause we are not using <code class="language-plaintext highlighter-rouge">HTTPS</code> on port <code class="language-plaintext highlighter-rouge">:443</code>.</p>
+
+<p>For that we will need to have to create a <code class="language-plaintext highlighter-rouge">Route 53</code> thing, which will allow us to generate <code class="language-plaintext highlighter-rouge">certificates</code>, which we can attach. The auto renewal is done by <code class="language-plaintext highlighter-rouge">AWS</code>. <em>I pray</em>.</p>
+
+
+      <hr>
+      <div class="row mb-5 mt-5">
+  <div class="col-md-6 d-flex align-items-end ">
+    <span>Thanks. <i>mind sharing?</i></span>
+  </div>
+
+  <!-- Right Column with Social Media Icons (on the right for larger screens, on bottom for smaller screens) -->
+  <div class="col-md-6 order-md-2 order-1 text-md-right text-center mt-3 mt-md-0">
+    <div>
+
+      <a
+          href="https://www.linkedin.com/sharing/share-offsite?url=ikouchiha47.github.io/2023/12/01/aws-web-hosting.html"
+          onclick="window.open(this.href, 'pop-up', 'left=20,top=20,width=500,height=500,toolbar=1,resizable=0'); return false;"
+          class="d-inline-block mr-2"
+       >
+        <span class="fa-stack fa-lg" style="color: #0077b5;">
+          <i class="fas fa-square fa-stack-2x"></i>
+          <i class="fab fa-linkedin fa-stack-1x fa-inverse"></i>
+        </span>
+      </a>
+
+      <a
+          href="https://twitter.com/intent/tweet?text=Hosting with AWS (Part 2)&url=ikouchiha47.github.io/2023/12/01/aws-web-hosting.html"
+          onclick="window.open(this.href, 'pop-up', 'left=20,top=20,width=500,height=500,toolbar=1,resizable=0'); return false;"
+          class="d-inline-block mr-2">
+        <span class="fa-stack fa-lg" style="color: #1DA1F2;">
+          <i class="fas fa-square fa-stack-2x"></i>
+          <i class="fab fa-twitter fa-stack-1x fa-inverse"></i>
+        </span>
+      </a>
+
+      <a
+          href="http://www.reddit.com/submit?url=ikouchiha47.github.io/2023/12/01/aws-web-hosting.html"
+          onclick="window.open(this.href, 'pop-up', 'left=20,top=20,width=500,height=500,toolbar=1,resizable=0'); return false;"
+          class="d-inline-block mr-2">
+        <span class="fa-stack fa-lg" style="color: #FF4500;">
+          <i class="fas fa-square fa-stack-2x"></i>
+          <i class="fab fa-reddit fa-stack-1x fa-inverse"></i>
+        </span>
+      </a>
+    </div>
+  </div>
+</div>
+
+<hr/>
+
+
+      <div class="clearfix">
+
+        
+        <a class="btn btn-primary float-left" href="/2023/11/30/aws-web-hosting.html" data-toggle="tooltip" data-placement="top" title="Hosting with AWS">&larr; Previous<span class="d-none d-md-inline">
+            Post</span></a>
+        
+        
+        <a class="btn btn-primary float-right" href="/2023/12/01/aws-loadbalancer-with-ssl.html" data-toggle="tooltip" data-placement="top" title="Hosting with AWS (Part 3)">Next<span class="d-none d-md-inline">
+            Post</span> &rarr;</a>
+        
+
+      </div>
+
+    </div>
+  </div>
+</div>
+
+
+  <!-- Footer -->
+
+<hr>
+
+<footer>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <ul class="list-inline text-center">
+          
+          <li class="list-inline-item">
+            <a href="mailto:amitava.dev@proton.me" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="far fa-envelope fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          
+          
+          <li class="list-inline-item">
+            <a href="https://www.linkedin.com/in/amitavaag" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-linkedin fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          <li class="list-inline-item">
+            <a href="https://github.com/ikouchiha47" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-github fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+        </ul>
+
+        <p class="copyright text-muted">
+          Build with: 
+          <a 
+            href="https://github.com/StartBootstrap/startbootstrap-clean-blog-jekyll"
+            class="text-gray"
+            target="_blank">startbootstrap-clean-blog-jekyll</a></p>
+      </div>
+    </div>
+  </div>
+</footer>
+
+
+  <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="/assets/vendor/blog/js/scripts.js"></script>
+
+<script src="/assets/scripts.js"></script>
+
+
+
+
+  
+
+</body>
+
+</html>

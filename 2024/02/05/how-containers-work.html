@@ -1,0 +1,862 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+  <title>
+    Troubleshooting containers - iko&#39;s logs
+    
+  </title>
+
+  <meta name="description" content="Containers, processes, namespaces, security, troubleshooting">
+  <meta property="og:description" content="Containers, processes, namespaces, security, troubleshooting">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Troubleshooting containers">
+  <meta property="og:url" content="https://ikouchiha47.github.io/2024/02/05/how-containers-work.html">
+
+  
+
+  <link href='https://fonts.googleapis.com/css?family=Lora:400,700,400italic,700italic' rel='stylesheet' type='text/css'>
+  <link href='https://fonts.googleapis.com/css?family=Open+Sans:300italic,400italic,600italic,700italic,800italic,400,300,600,700,800' rel='stylesheet' type='text/css'>
+
+  <!-- <script src="https://use.fontawesome.com/releases/v5.15.3/js/all.js" crossorigin="anonymous"></script> -->
+  <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.15.4/css/all.css" integrity="sha384-DyZ88mC6Up2uqS4h/KRgHuoeGwBcD4Ng9SiP4dIRy0EXTlnuz47vAwmeGwVChigm" crossorigin="anonymous"/>
+
+  <link rel="stylesheet" href="/assets/main.css">
+  <link rel="canonical" href="https://ikouchiha47.github.io/2024/02/05/how-containers-work.html">
+  <link rel="alternate" type="application/rss+xml" title="iko&#39;s logs" href="/feed.xml">
+
+  <meta name="google-site-verification" content="lWkg6gIxJgzEKX_5XnhcxCtPE9QknaimFWWos_dTvPM" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fira+Sans:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Inconsolata:wght@200..900&family=Jersey+25&family=Kanit:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Merriweather+Sans:ital,wght@0,300..800;1,300..800&family=Nanum+Gothic+Coding&family=Space+Grotesk:wght@300..700&family=Titillium+Web:ital,wght@0,200;0,300;0,400;0,600;0,700;0,900;1,200;1,300;1,400;1,600;1,700&display=swap" rel="stylesheet">
+
+</head>
+
+
+<body>
+
+  <!-- Navigation -->
+<nav class="navbar navbar-expand-lg navbar-light fixed-top" id="mainNav">
+  <div class="container">
+    <a class="navbar-brand" href="/">iko&#39;s logs</a>
+    <button class="navbar-toggler navbar-toggler-right" type="button" data-toggle="collapse" data-target="#navbarResponsive" aria-controls="navbarResponsive" aria-expanded="false" aria-label="Toggle navigation">
+      Menu
+      <i class="fa fa-bars"></i>
+    </button>
+    <div class="collapse navbar-collapse" id="navbarResponsive">
+      <ul class="navbar-nav ml-auto">
+        <li class="nav-item">
+          <a class="nav-link" href="/">Home</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/about">About</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/posts">Posts</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/contact">Contact</a>
+        </li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+
+  <!-- Page Header -->
+
+<header class="masthead" style="background: #1c90ed">
+
+  <div class="overlay"></div>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <div class="post-heading">
+          <h1>Troubleshooting containers</h1>
+          
+          <h2 class="subheading">understanding containers inside out</h2>
+          
+          <span class="meta">Posted by
+            <a href="#">ikouchiha47</a>
+            on February 05, 2024 &middot; <span class="reading-time" title="Estimated read time">
+  
+   32 mins  read </span>
+
+          </span>
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="container space-grotesk">
+  <div class="row">
+    <div class="col-lg-8 col-md-10 mx-auto">
+
+      <h1 id="understanding-containerization-and-improve-debugging">Understanding containerization and improve debugging</h1>
+
+<p>As I delve more into kubernetes, the more I get distracted by side quests. This is one of those. In this <code class="language-plaintext highlighter-rouge">DLC</code>,
+I try to understand <code class="language-plaintext highlighter-rouge">containerization</code>, how it works, and essentially learn how to debug a running docker container.</p>
+
+<p>I had first encountered <code class="language-plaintext highlighter-rouge">chroot</code> while installing <a href="https://wiki.archlinux.org/title/installation_guide#Chroot">ArchLinux</a>.</p>
+
+<p>Basically while installation, you mount the chose partition to the <code class="language-plaintext highlighter-rouge">/mnt</code> directory. This creates a mount point. A <code class="language-plaintext highlighter-rouge">mount point</code> is a directory within an existing file system that acts as an access point for another file system or storage device.
+<a href="https://github.com/archlinux/arch-install-scripts/blob/master/pacstrap.in">Pacstrap</a> is then responsible for installing the base system, creating additional mounts, 
+<a href="https://github.com/archlinux/arch-install-scripts/blob/22493153c753806e3ba64b74741b019a63a86270/common#L24">setting up</a> required namespaces and mountpoints, the base system, installing packages etc.</p>
+
+<p>After mounting you change root (chroot) to set the new <code class="language-plaintext highlighter-rouge">/mnt</code> mount point as the root of the filesystem. As a result you are able to access already installed user-space utilities
+to setup basic networking, timezones, etc. Maybe install some software, reset root password, recover system without affecting other partitions.</p>
+
+<p>There is more to that, the general idea around isolation and how linux kernel works.</p>
+
+<p>Building a container for a process like docker requires taking care of a couple of things:</p>
+
+<ul>
+  <li><code class="language-plaintext highlighter-rouge">Namespace Isolation</code>: Utilizes various namespaces (network, PID, UTS, etc.) to isolate the child process from the host’s resources.</li>
+  <li><code class="language-plaintext highlighter-rouge">Resource Control</code>: Sets cgroups limitations for memory, CPU, and other resources for the container.</li>
+  <li><code class="language-plaintext highlighter-rouge">User Mapping</code>: Optionally uses a user namespace to provide a different UID/GID environment within the container.</li>
+  <li><code class="language-plaintext highlighter-rouge">Seccomp Filtering</code>: Restricts system calls allowed within the container for enhanced security.</li>
+  <li><code class="language-plaintext highlighter-rouge">Root Filesystem Mounting</code>: Mounts the specified directory as the container’s root filesystem.</li>
+  <li><code class="language-plaintext highlighter-rouge">Capability</code>: Drops unnecessary capabilities from the container process.</li>
+</ul>
+
+<p><a href="https://blog.lizzie.io/linux-containers-in-500-loc/contained.c">Linux containers in 500 lines of C</a></p>
+
+<h3 id="linux-filesystem">Linux filesystem</h3>
+<p>The Linux, rather The Unix philosophy says <code class="language-plaintext highlighter-rouge">On a UNIX system, everything is a file; if something is not a file, it is a process.</code>.</p>
+
+<p>So, during the bootup process, the boot loader, loads the selected kernel and the small filesystem (files and folders) called <code class="language-plaintext highlighter-rouge">initrd</code>.
+This contains some userspace code, which is responsible for mounting the <code class="language-plaintext highlighter-rouge">Linux File System</code>, set it as root, and then runs the boot sequence and 
+executing <code class="language-plaintext highlighter-rouge">SysV</code> initialization system.</p>
+
+<p>Nowadays we have <code class="language-plaintext highlighter-rouge">initramfs</code>, which is a compressed file. You can read more about this at the kernel docs:</p>
+
+<ul>
+  <li>https://docs.kernel.org/admin-guide/initrd.html</li>
+  <li>https://wiki.gentoo.org/wiki/Initramfs_-_make_your_own</li>
+  <li>https://man7.org/linux/man-pages/man7/bootup.7.html</li>
+</ul>
+
+<p><strong>Linux File System</strong></p>
+
+<p>Its a hierarchical file/folder structure, with a <code class="language-plaintext highlighter-rouge">/</code> root directory, followed by <code class="language-plaintext highlighter-rouge">/mnt</code>, <code class="language-plaintext highlighter-rouge">/net</code>, <code class="language-plaintext highlighter-rouge">/cpu</code>, <code class="language-plaintext highlighter-rouge">/proc</code>, <code class="language-plaintext highlighter-rouge">/sys</code>, etc.
+Some are real files, some are virtual representations.</p>
+
+<p>We can see that using a docker image, and inspecting the contents. And comparing with our linux system.</p>
+
+<div class="language-shell highlighter-rouge"><div class="highlight"><pre class="highlight"><code>docker run <span class="nt">-it</span> <span class="nt">--name</span> busyback alpine:latest <span class="nb">true
+</span>docker container <span class="nb">export </span>busybuck | <span class="nb">gzip</span> <span class="o">&gt;</span> busybuck.tar.gz
+<span class="nb">mkdir</span> <span class="nt">-p</span> rootfs <span class="o">&amp;&amp;</span> <span class="nb">tar</span> <span class="nt">-xvf</span> busybuck.tar.gz <span class="nt">--directory</span> rootfs
+</code></pre></div></div>
+
+<div class="language-shell highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="o">&gt;</span> <span class="nb">cd </span>rootfs <span class="o">&amp;&amp;</span> tree <span class="nt">-L</span> 1
+
+├── bin
+├── dev
+├── etc
+├── home
+├── lib
+├── media
+├── mnt
+├── opt
+├── proc
+├── root
+├── run
+├── sbin
+├── srv
+├── sys
+├── tmp
+├── usr
+└── var
+</code></pre></div></div>
+
+<p>This is also what the output of <code class="language-plaintext highlighter-rouge">ls -l /</code> looks like. So basically, the container has a similar directory structure, with similar user-space programs.</p>
+
+<div class="language-shell highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="nb">sudo chroot </span>rootfs /bin/sh
+</code></pre></div></div>
+
+<p>This should drop you to a shell. And you can run <code class="language-plaintext highlighter-rouge">ps -ef</code> in it.</p>
+
+<div class="language-shell highlighter-rouge"><div class="highlight"><pre class="highlight"><code>sh1#/ ps <span class="nt">-ef</span>
+PID   USER     TIME  COMMAND
+sh1#/ 
+</code></pre></div></div>
+
+<p>You can now mount the host OS’s proc into <code class="language-plaintext highlighter-rouge">/proc</code> of the chrooted directory. And check the processes running on the host os.</p>
+
+<div class="language-shell highlighter-rouge"><div class="highlight"><pre class="highlight"><code>sh1#/ mount <span class="nt">-t</span> proc proc /proc
+</code></pre></div></div>
+
+<p>Now if we have a process running in host, we can <code class="language-plaintext highlighter-rouge">pkill $HOST_PROCESS_ID</code> from the child. Overall, <strong>chroot doesn’t give you access protection</strong>.</p>
+
+<p>Since both the host and chrooted file systems are under the same namespace, its able to show all the processes from the parent namespace. So we need some form of isolation.
+This isolation comes in the process of <code class="language-plaintext highlighter-rouge">namespaces</code> and <code class="language-plaintext highlighter-rouge">cgroups</code>.</p>
+
+<p><strong>Cgroups</strong> help with limiting how much resources a bunch of applications in the same group can use.</p>
+
+<ul>
+  <li>Resouce limits (hard and soft)</li>
+  <li>CPU pinning</li>
+  <li>Freeze and unfreeze cgroups to stop and migrate processes.</li>
+  <li>IO, network bandwith,</li>
+  <li>Monitoring, etc</li>
+</ul>
+
+<p>These days systemd probably keeps a track of these, and the cgroups can be found in</p>
+<ul>
+  <li><code class="language-plaintext highlighter-rouge">ls /sys/fs/cgroup/system.slice/</code></li>
+  <li><code class="language-plaintext highlighter-rouge">ls /sys/fs/cgroup/user.slice/</code></li>
+</ul>
+
+<p><strong>Namespaces</strong> control what a process can see. Namespaces are like subtrees, so namespaces can be nested. The processes in child namespace, won’t be aware of the parent namespace.</p>
+
+<p><em>We won’t be discussing cgroups here, because they are simple to understand</em>. <strong>Cgroups</strong> are found inside <code class="language-plaintext highlighter-rouge">/sys/fs/cgroups</code>, but since most modern day OS has systemd, and in systemd these are called slices.</p>
+
+<p>Here is a reference to how you can use cgroups to control the amount of resources used by a program: <a href="https://itnext.io/chroot-cgroups-and-namespaces-an-overview-37124d995e3d">cgroups example</a>. Imma more interested in namespaces.</p>
+
+<h2 id="prior-knowledge">Prior knowledge</h2>
+
+<p>We need to understand <code class="language-plaintext highlighter-rouge">users</code> and <code class="language-plaintext highlighter-rouge">capabilities</code>.</p>
+
+<p>The primary way Linux handles file permissions is through the implementation of <code class="language-plaintext highlighter-rouge">users</code>. There are normal users, for which Linux applies privilege checking, and there is the superuser that bypasses most (if not all) checks.</p>
+
+<p>Linux <code class="language-plaintext highlighter-rouge">capabilities</code> were created to provide a more granular application of the security model. Instead of running the binary as root, you can apply only the specific capabilities an application requires to be effective.</p>
+
+<p><strong>User namespaces</strong> isolate security-related identifiers and attributes, in particular, user IDs and group IDs, keys, root directory and capabilities.</p>
+
+<p>Consider a namespace called <code class="language-plaintext highlighter-rouge">constrained</code>.The namespace <code class="language-plaintext highlighter-rouge">constrained</code> will only inherit the permissions/capabilities of the creating process.</p>
+
+<p>If the creating process didn’t have full capabilites enabled, the <code class="language-plaintext highlighter-rouge">constrained</code> namespace wouldn’t either.</p>
+
+<p><code class="language-plaintext highlighter-rouge">Linux containers</code> uses capabilities to determine what processes can run inside a namespace. For example, lets take the executable <code class="language-plaintext highlighter-rouge">ping</code>.</p>
+
+<div class="language-shell highlighter-rouge"><div class="highlight"><pre class="highlight"><code>sh1#/ which ping
+sh1# /usr/bin/ping
+sh1#/ <span class="nb">cp</span> /usr/bin/ping myping
+sh1#/ myping 8.8.8.8
+sh1#/
+sh1#/
+sh1# ./myping: socktype: SOCK_RAW
+sh1# ./myping: socket: Operation not permitted
+sh1# ./myping: <span class="o">=&gt;</span> missing cap_net_raw+p capability or setuid?
+sh1#/
+sh1#/
+sh1#/ <span class="c"># ping needs root privielges to open network socket</span>
+sh1#/ <span class="nb">sudo chown </span>root myping
+sh1#/ <span class="nb">sudo </span>myping 8.8.8.8
+sh1#/
+sh1#/ <span class="c"># but we want to invoke it without sudo. we set the setuid bit. with +s</span>
+h1#/
+sh1# <span class="nb">sudo chmod</span> +s myping
+sh1#/
+sh1#/ myping 8.8.8.8
+sh1# PING 8.8.8.8 <span class="o">(</span>8.8.8.8<span class="o">)</span> 56<span class="o">(</span>84<span class="o">)</span> bytes of data.
+sh1# 64 bytes from 8.8.8.8: <span class="nv">icmp_seq</span><span class="o">=</span>1 <span class="nv">ttl</span><span class="o">=</span>63 <span class="nb">time</span><span class="o">=</span>45.7 ms
+</code></pre></div></div>
+
+<p>Or you could also do:</p>
+
+<div class="language-shell highlighter-rouge"><div class="highlight"><pre class="highlight"><code>setcap cap_net_raw+ep ./myping
+</code></pre></div></div>
+
+<p>So preventing this by carefully crafting capabilities become important.</p>
+
+<h2 id="namespaces">Namespaces</h2>
+
+<p>A <a href="https://www.man7.org/linux/man-pages/man7/namespaces.7.html">namespace</a> wraps a global system resource in an abstraction that makes it appear to the processes 
+within the namespace that they have their own isolated instanceof the global resource.</p>
+
+<p>There are a few <a href="https://www.redhat.com/sysadmin/7-linux-namespaces">different kinds of namespaces</a> and further maybe added.</p>
+
+<ul>
+  <li>cgroup_namespaces</li>
+  <li>pid_namespaces</li>
+  <li>network_namespaces</li>
+  <li>mnt_namespaces</li>
+  <li>uts_namespaces</li>
+  <li>user_namespaces</li>
+</ul>
+
+<p><strong>Tools needed to improve understanding</strong>:</p>
+
+<ul>
+  <li><code class="language-plaintext highlighter-rouge">lsns</code>, to list namespaces</li>
+  <li><code class="language-plaintext highlighter-rouge">unshare</code>, to create namespace and move the calling process to the new namespace.</li>
+  <li><code class="language-plaintext highlighter-rouge">nsenter</code>, executes program in the namespace(s), specified as args.</li>
+  <li><code class="language-plaintext highlighter-rouge">clone</code>, to create new processes in a new namespace from parent process.</li>
+  <li><code class="language-plaintext highlighter-rouge">setns</code>, move the calling process to another existing namespace.</li>
+</ul>
+
+<p><code class="language-plaintext highlighter-rouge">Linux containers</code> or <code class="language-plaintext highlighter-rouge">docker</code> employs a bunch of these namespacing and cgroups to run processes which runs the program in isolation. It also sorts out network topology, using veth and switches. Understanding them will also help
+us debug containers from outside, by mounting containers with debug tools in the same namespaces.</p>
+
+<h3 id="user_namespaces">user_namespaces</h3>
+
+<p>As described above user namespace is a collection of capabilities, user ids etc. In addition they can be nested.</p>
+
+<p>There can be multiple nestations. The parent namespace will see the child namespaces having the same <code class="language-plaintext highlighter-rouge">user ID</code>.And hence have access to all the files.</p>
+
+<p>However the child namespaces cannot interract with the parent namespaces. Because to the child namepsace, the child namespaces perceives itself as PID: 1. So its world starts from itself.</p>
+
+<h3 id="mount_namespaces">mount_namespaces</h3>
+
+<p>This are a bit complicated. Mount namespaces provide isolation of the list of mounts seen by the processes in each namespace instance.
+Thus, the processes in each of the mount namespace instances will see distinct single-directory hierarchies.</p>
+
+<p>This lets us mount and unmount filesystems, without affecting the whole system. So in case of <code class="language-plaintext highlighter-rouge">docker</code>,
+each container can have its own root file system, in isolation, and also not affect any other containers or host filesystem.</p>
+
+<p>Mount namespace can also be nested, but the visibility of the mounted or unmounted filesystem depends on the <code class="language-plaintext highlighter-rouge">propagation_type</code> configuration.</p>
+
+<p>This configuration is provided during the <code class="language-plaintext highlighter-rouge">mount</code> phase.</p>
+
+<p>The <a href="https://www.man7.org/linux/man-pages/man7/mount_namespaces.7.html">docs</a> provide examples into how mount and visibility works. But here are the key details.</p>
+
+<p>Depending on the propagation_type type for each mount, the mount and unmount events are propagated to peers. Why do we need peers? In order to be able to automatically mount filesystems into all mount namespaces (depedning
+on scenario), linux needed something called <code class="language-plaintext highlighter-rouge">shared subtrees</code>.</p>
+
+<p>Once mounted, these devices are marked with a <code class="language-plaintext highlighter-rouge">mount state</code>. like <code class="language-plaintext highlighter-rouge">shared:*</code>, <code class="language-plaintext highlighter-rouge">master:*</code>, ‘<Nothing>'.</Nothing></p>
+<ul>
+  <li>Shared meanining all the processes in the namespace can see the mounted or unmounted device.</li>
+  <li>Private is not shared, so no peering</li>
+  <li>Master/slave is where events propagate to the namespace from shared ones, but they do send events to their peers.</li>
+</ul>
+
+<p>When creating a less privileged mount namespace, shared mounts are reduced to slave mounts. This ensures that mappings performed in less privileged mount namespaces will 
+not propagate to more privileged mount namespaces.</p>
+
+<div class="language-console highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="gp">PS1='sh1#</span><span class="s1">'
+</span><span class="go">
+</span><span class="gp">sh1#</span>/ mount <span class="nt">--make-shared</span> /mntX
+<span class="gp">sh1#</span>/ mount <span class="nt">--make-private</span> /mntY
+<span class="go">
+</span><span class="gp">#</span>/ <span class="nb">cat</span> /proc/self/mountinfo | <span class="nb">grep</span> <span class="s1">'/mnt'</span> | <span class="nb">sed</span> <span class="s1">'s/ - .*//'</span>
+<span class="go">
+77 61 8:17 / /mntX rw,relatime shared:1
+83 61 8:15 / /mntY rw,relatime
+</span></code></pre></div></div>
+
+<p>We can see, <code class="language-plaintext highlighter-rouge">/mntX</code> has <code class="language-plaintext highlighter-rouge">shared:1</code>, while <code class="language-plaintext highlighter-rouge">/mntY</code> is private. Creating nampespace and mounting in sub directories should make them inherit this <code class="language-plaintext highlighter-rouge">mount state</code></p>
+
+<div class="language-console highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="gp">#</span>/ <span class="nv">PS1</span><span class="o">=</span><span class="s1">'sh2# '</span> <span class="nb">sudo </span>unshare <span class="nt">-m</span> <span class="nt">--propagation</span> unchanged sh
+<span class="gp">sh2#</span>/ <span class="nb">mkdir</span> /mntX/a <span class="o">&amp;&amp;</span> mount /dev/sdb6 /mntX/a
+<span class="gp">sh2#</span>/ <span class="nb">mkdir</span> /mntY/b <span class="o">&amp;&amp;</span> mount /dev/sdb7 /mntY/b
+<span class="go">
+</span><span class="gp">sh2#</span>/ <span class="nb">cat</span> /proc/self/mountinfo
+<span class="go">
+222 145 8:17 / /mntX rw,relatime shared:1
+225 145 8:15 / /mntY rw,relatime
+178 222 8:22 / /mntX/a rw,relatime shared:2
+230 225 8:23 / /mntY/b rw,relatime
+</span></code></pre></div></div>
+
+<p>from the parent namespace <code class="language-plaintext highlighter-rouge">sh1#/ cat /proc/self/mountinfo</code>, we can’t see the <code class="language-plaintext highlighter-rouge">/mntY/b</code>, because of the mount state and propagaition type set to <code class="language-plaintext highlighter-rouge">private</code>:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>77 61  8:17 / /mntX rw,relatime shared:1
+83 61  8:15 / /mntY rw,relatime
+179 77 8:22 / /mntX/a rw,relatime shared:2
+</code></pre></div></div>
+
+<p>Let’s check a case where privileges are downgraded.</p>
+
+<div class="language-shell highlighter-rouge"><div class="highlight"><pre class="highlight"><code>sh1#/ mount <span class="nt">--make-shared</span> /mntZ
+sh1#/ <span class="nb">cat</span> /proc/self/mountinfo
+
+133 83 8:22 / /mntZ rw,relatime shared:1
+
+sh1#/ <span class="nv">PS1</span><span class="o">=</span><span class="s1">'sh2#'</span> <span class="nb">sudo </span>unshare <span class="nt">-m</span> <span class="nt">--propagation</span> unchanged sh
+</code></pre></div></div>
+
+<div class="language-shell highlighter-rouge"><div class="highlight"><pre class="highlight"><code>sh2#/ mount <span class="nt">--make-slave</span> /mntY
+sh2#/ <span class="nb">cat</span> /proc/self/mountinfo
+
+169 167 8:22 / /mntZ rw,relatime master:1
+</code></pre></div></div>
+
+<div class="language-shell highlighter-rouge"><div class="highlight"><pre class="highlight"><code>sh2#/ <span class="nb">mkdir</span> /mntZ/c <span class="o">&amp;&amp;</span> mount /dev/sda8 /mntZ/c
+sh2#/ <span class="nb">cat</span> /proc/self/mountinfo
+
+169 167 8:22 / /mntZ rw,relatime master:1
+175 169 8:5 / /mntZ/c rw,relatime
+</code></pre></div></div>
+
+<p>we can see, the <code class="language-plaintext highlighter-rouge">/mntZ/c</code> has dropped priveleges. But this is opaque to the parent namespace.</p>
+
+<div class="language-shell highlighter-rouge"><div class="highlight"><pre class="highlight"><code>sh1#/ <span class="nb">cat</span> /proc/self/mountinfo
+
+133 83 8:22 / /mntZ rw,relatime shared:1
+</code></pre></div></div>
+
+<p>So, if we create a mount point for <code class="language-plaintext highlighter-rouge">/mntZ/d</code> from this namespace it should be visible, because of <code class="language-plaintext highlighter-rouge">shared</code>. But inside the namespace <code class="language-plaintext highlighter-rouge">sh2</code>, it gets degraded to <code class="language-plaintext highlighter-rouge">slave/master</code></p>
+
+<div class="language-shell highlighter-rouge"><div class="highlight"><pre class="highlight"><code>sh1#/ <span class="nb">mkdir</span> <span class="nt">-p</span> /mntZ/d <span class="o">&amp;&amp;</span> mount /dev/sdb9 /mntZ/d
+sh1#/ <span class="nb">cat</span> /proc/self/mountinfo
+
+178 133 8:1 / /mntZ/d rw,relatime shared:2
+
+sh2#/ <span class="nb">cat</span> /proc/self/mountinfo
+
+179 169 8:1 / /mntZ/d rw,relatime master:2
+</code></pre></div></div>
+
+<h3 id="uts_namespaces">uts_namespaces</h3>
+
+<p>This is mostly used to isolate the hostname. So lets create a uts namespace in the <code class="language-plaintext highlighter-rouge">rootfs</code> alipne image.</p>
+
+<h3 id="pid_namespaces">pid_namespaces</h3>
+
+<p>When a process is created on most Unix-like operating systems, it is given a specific numeric identifier called a <code class="language-plaintext highlighter-rouge">process ID(PID)</code>.
+All of these processes are tracked in a special file system called <code class="language-plaintext highlighter-rouge">procfs</code>. and is mounted under <code class="language-plaintext highlighter-rouge">/proc</code>.</p>
+
+<p>PID namespaces isolate the <code class="language-plaintext highlighter-rouge">process ID number space</code>, meaning that processes in different PID namespaces can have the same PID.  PID
+namespaces allow containers to provide functionality such as suspending/resuming the set of processes in the container and migrating 
+the container to a new host while the processes inside the container maintain the same PIDs.</p>
+
+<p>A <code class="language-plaintext highlighter-rouge">/proc</code> virtual filesystem shows (in the /proc/pid directories) only processes visible in the PID namespace of the process that 
+performed the mount, even if the <code class="language-plaintext highlighter-rouge">/proc</code> filesystem is viewed from processes in other namespaces. As shown before.</p>
+
+<blockquote>
+  <p>A caveat of the creating the pid_namespace is, the process that initiates the creation of a new PID namespace with <code class="language-plaintext highlighter-rouge">unshare</code> does not enter the new namespace; only its child processes do.
+In our system</p>
+  <ul>
+    <li>for kernel the PID is 0</li>
+    <li>PID = 1 is the assigned to init, which is the first process in the <code class="language-plaintext highlighter-rouge">user space</code>.</li>
+  </ul>
+</blockquote>
+
+<p>There are some special stuff that goes on while handling <code class="language-plaintext highlighter-rouge">PID = 1</code>. You can find them <a href="https://medium.com/hackernoon/the-curious-case-of-pid-namespaces-1ce86b6bc900">here</a>:</p>
+
+<p>First lets check the contents of <code class="language-plaintext highlighter-rouge">/</code></p>
+
+<div class="language-console highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="gp">vagrant@vagrant:~/containerization$</span><span class="w"> </span><span class="nb">ls</span> /
+<span class="go">
+bin  boot  dev  etc  home  lib  lib32  lib64  libx32  lost+found  media  mnt  opt  proc  root  run  sbin  srv  sys  tmp  usr  vagrant  var
+</span></code></pre></div></div>
+
+<p>In here, we definetly don’t need to the <code class="language-plaintext highlighter-rouge">lost+found</code>, so we will need to clean them after. Because the child namespaces will inherit the mount points from the parent processes. Reducing image size by removing unnecessary files.
+Also disallowing access to modifications in the parent namespace.</p>
+
+<div class="language-shell highlighter-rouge"><div class="highlight"><pre class="highlight"><code>vagrant@vagrant:~/containerization<span class="nv">$ </span>unshare <span class="nt">-Urfpm</span> <span class="nt">--mount-proc</span>
+vagrant@vagrant:~/containerization<span class="nv">$ </span><span class="nb">mkdir</span> <span class="nt">-p</span> rootfs/.oldroot
+
+root@vagrant:~/containerization# <span class="nb">ls</span> /
+<span class="c"># bin  boot  dev  etc  home  lib  lib32  lib64  libx32  lost+found  media  mnt  opt  proc  root  run  sbin  srv  sys  tmp  usr  vagrant  var</span>
+
+
+root@vagrant:~/containerization# mount
+
+<span class="c"># /dev/sda1 on / type ext4 (rw,relatime,discard,errors=remount-ro)</span>
+<span class="c"># cgroup2 on /sys/fs/cgroup type cgroup2 (rw,nosuid,nodev,noexec,relatime,nsdelegate,memory_recursiveprot)</span>
+<span class="c"># pstore on /sys/fs/pstore type pstore (rw,nosuid,nodev,noexec,relatime)</span>
+<span class="c"># bpf on /sys/fs/bpf type bpf (rw,nosuid,nodev,noexec,relatime,mode=700)</span>
+<span class="c"># debugfs on /sys/kernel/debug type debugfs (rw,nosuid,nodev,noexec,relatime)</span>
+<span class="c"># tracefs on /sys/kernel/tracing type tracefs (rw,nosuid,nodev,noexec,relatime)</span>
+<span class="c"># fusectl on /sys/fs/fuse/connections type fusectl (rw,nosuid,nodev,noexec,relatime)</span>
+<span class="c"># configfs on /sys/kernel/config type configfs (rw,nosuid,nodev,noexec,relatime)</span>
+<span class="c"># ... etc</span>
+
+
+<span class="c"># we need to bind the rootfs folder to a folder in the new namespace</span>
+root@vagrant:~/containerization# mount <span class="nt">--rbind</span> rootfs rootfs
+root@vagrant:~/containerization# mount
+/dev/sda1 on / <span class="nb">type </span>ext4 <span class="o">(</span>rw,relatime,discard,errors<span class="o">=</span>remount-ro<span class="o">)</span>
+proc on /proc <span class="nb">type </span>proc <span class="o">(</span>rw,nosuid,nodev,noexec,relatime<span class="o">)</span>
+/dev/sda1 on /home/vagrant/containerization/rootfs <span class="nb">type </span>ext4 <span class="o">(</span>rw,relatime,discard,errors<span class="o">=</span>remount-ro<span class="o">)</span>
+none on /home/vagrant/containerization/rootfs/proc <span class="nb">type </span>proc <span class="o">(</span>rw,relatime<span class="o">)</span>
+
+
+root@vagrant:~/containerization# pivot_root rootfs rootfs/.oldroot
+root@vagrant:~/containerization# <span class="nv">PATH</span><span class="o">=</span>/bin:/sbin:<span class="nv">$PATH</span> <span class="c"># because apline's PATH doesn't have sbin</span>
+root@vagrant:~/containerization# mount
+
+<span class="c"># /dev/sda1 on /.oldroot type ext4 (rw,relatime,discard,errors=remount-ro)</span>
+<span class="c"># none on /.oldroot/home/vagrant/containerization/rootfs/proc type proc (rw,relatime)</span>
+<span class="c"># proc on /.oldroot/proc type proc (rw,nosuid,nodev,noexec,relatime)</span>
+<span class="c"># /dev/sda1 on / type ext4 (rw,relatime,discard,errors=remount-ro)</span>
+<span class="c"># none on /proc type proc (rw,relatime)</span>
+<span class="c">#</span>
+<span class="c"># here you can see, the initial filesystem /dev/sda1 is now pointing to the /.oldroot directory</span>
+<span class="c"># so we can unmount it. thereby removing the </span>
+
+
+<span class="c"># we could mount the proc and tmpfs file system.</span>
+
+
+root@vagrant:~/containerization# umount <span class="nt">-l</span> /.oldroot2
+root@vagrant:~/containerization# mount
+
+/dev/sda1 on / <span class="nb">type </span>ext4 <span class="o">(</span>rw,relatime,discard,errors<span class="o">=</span>remount-ro<span class="o">)</span>
+none on /proc <span class="nb">type </span>proc <span class="o">(</span>rw,relatime<span class="o">)</span>
+proc on /proc <span class="nb">type </span>proc <span class="o">(</span>rw,relatime<span class="o">)</span>
+root@vagrant:~/containerization#
+
+
+root@vagrant:~/containerization# <span class="nb">echo</span> <span class="s1">'lopard'</span> <span class="o">&gt;</span> /tmp/sometext
+root@vagrant:~/containerization# <span class="nb">cat</span> /tmp/sometext
+lopard
+
+root@vagrant:~/containerization# <span class="nb">exit
+logout
+
+</span>vagrant@vagrant:~/containerization<span class="nv">$ </span><span class="nb">cat</span> /tmp/sometext
+<span class="nb">cat</span>: /tmp/sometext: No such file or directory
+</code></pre></div></div>
+
+<p><strong>How to use this knowledge to interract with docker containers</strong></p>
+
+<p>In order to see this, lets start a <code class="language-plaintext highlighter-rouge">docker container</code> with a <code class="language-plaintext highlighter-rouge">nginx</code> server running. And inspect the directories from there.</p>
+
+<div class="language-console highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="gp">root@vagrant:~#</span><span class="w"> </span>docker run <span class="nt">--name</span> webserver <span class="nt">-d</span> nginx
+<span class="gp">root@vagrant:~#</span><span class="w"> </span><span class="nb">sudo </span>lsns
+<span class="go">
+        NS TYPE   NPROCS   PID USER    COMMAND
+</span><span class="gp">4026532167 mnt         3  5426 root    nginx: master process nginx -g daemon off;</span><span class="w">
+</span><span class="gp">4026532168 uts         3  5426 root    nginx: master process nginx -g daemon off;</span><span class="w">
+</span><span class="gp">4026532169 ipc         3  5426 root    nginx: master process nginx -g daemon off;</span><span class="w">
+</span><span class="gp">4026532170 pid         3  5426 root    nginx: master process nginx -g daemon off;</span><span class="w">
+</span><span class="gp">4026532171 net         3  5426 root    nginx: master process nginx -g daemon off;</span><span class="w">
+</span><span class="gp">4026532242 cgroup      3  5426 root    nginx: master process nginx -g daemon off;</span><span class="w">
+</span><span class="go">
+</span><span class="gp">#</span><span class="w"> </span>we can see the process <span class="nb">id </span>is 5426, we can also check it using
+<span class="gp">root@vagrant:~#</span><span class="w"> </span>docker inspect <span class="nt">-f</span> <span class="s1">''</span> webserver
+<span class="gp">root@vagrant:~#</span><span class="w"> 
+</span><span class="gp">root@vagrant:~#</span><span class="w"> </span>findmnt <span class="nt">-N</span> 5426
+<span class="go">TARGET                  SOURCE               FSTYPE  OPTIONS
+/                       overlay              overlay rw,relatime,lowerdir=/var/lib/docker/overlay2/l/IZIA76DUQYFLCEM6U6T4JUAXKU:/var/lib/docker/overlay2/l/EAJ2MHCQ4VHZ24ER57333HY2ZO:/var/lib/docker/overlay2/l/T5SEXCKKH5MODEFH44MWNERUFN:/var/lib/do
+├─/proc                 proc                 proc    rw,nosuid,nodev,noexec,relatime
+│ ├─/proc/bus           proc[/bus]           proc    ro,nosuid,nodev,noexec,relatime
+│ ├─/proc/fs            proc[/fs]            proc    ro,nosuid,nodev,noexec,relatime
+│ ├─/proc/irq           proc[/irq]           proc    ro,nosuid,nodev,noexec,relatime
+│ ├─/proc/sys           proc[/sys]           proc    ro,nosuid,nodev,noexec,relatime
+│ ├─/proc/sysrq-trigger proc[/sysrq-trigger] proc    ro,nosuid,nodev,noexec,relatime
+│ ├─/proc/acpi          tmpfs                tmpfs   ro,relatime,inode64
+│ ├─/proc/kcore         tmpfs[/null]         tmpfs   rw,nosuid,size=65536k,mode=755,inode64
+│ ├─/proc/keys          tmpfs[/null]         tmpfs   rw,nosuid,size=65536k,mode=755,inode64
+│ └─/proc/timer_list    tmpfs[/null]         tmpfs   rw,nosuid,size=65536k,mode=755,inode64
+├─/dev                  tmpfs                tmpfs   rw,nosuid,size=65536k,mode=755,inode64
+│ ├─/dev/pts            devpts               devpts  rw,nosuid,noexec,relatime,gid=5,mode=620,ptmxmode=666
+│ ├─/dev/mqueue         mqueue               mqueue  rw,nosuid,nodev,noexec,relatime
+│ └─/dev/shm            shm                  tmpfs   rw,nosuid,nodev,noexec,relatime,size=65536k,inode64
+├─/sys                  sysfs                sysfs   ro,nosuid,nodev,noexec,relatime
+│ ├─/sys/firmware       tmpfs                tmpfs   ro,relatime,inode64
+│ └─/sys/fs/cgroup      cgroup[/system.slice/docker-b509c5f9e86e1b9241ab80a44be1f990148c523c5233cf5d69453ec3ea459d6e.scope]
+│                                            cgroup2 ro,nosuid,nodev,noexec,relatime,nsdelegate,memory_recursiveprot
+├─/etc/resolv.conf      /dev/sda1[/var/lib/docker/containers/b509c5f9e86e1b9241ab80a44be1f990148c523c5233cf5d69453ec3ea459d6e/resolv.conf]
+│                                            ext4    rw,relatime,discard,errors=remount-ro
+├─/etc/hostname         /dev/sda1[/var/lib/docker/containers/b509c5f9e86e1b9241ab80a44be1f990148c523c5233cf5d69453ec3ea459d6e/hostname]
+│                                            ext4    rw,relatime,discard,errors=remount-ro
+└─/etc/hosts            /dev/sda1[/var/lib/docker/containers/b509c5f9e86e1b9241ab80a44be1f990148c523c5233cf5d69453ec3ea459d6e/hosts]
+                                             ext4    rw,relatime,discard,errors=remount-ro
+
+</span><span class="gp">#</span><span class="w"> </span>we can see the mount list <span class="k">for </span>the container
+<span class="gp">root@vagrant:~#</span><span class="w"> 
+</span><span class="gp">root@vagrant:~#</span><span class="w"> </span>nsenter <span class="nt">--target</span> 5426 <span class="nt">--mount</span> <span class="nb">ls</span> /
+<span class="go">bin  boot  dev  docker-entrypoint.d  docker-entrypoint.sh  etc  home  lib  lib32  lib64  libx32  media  mnt  opt  proc  root  run  sbin  srv  sys  tmp  usr  var
+
+</span><span class="gp">root@vagrant:~#</span><span class="w"> </span>docker <span class="nb">exec </span>webserver <span class="nb">touch </span>new_test_file
+<span class="gp">root@vagrant:~#</span><span class="w">
+</span><span class="gp">root@vagrant:~#</span><span class="w"> </span><span class="nb">ls</span> /proc/5426/root | <span class="nb">grep </span>new_test
+<span class="go">new_test_file
+</span></code></pre></div></div>
+<p>The last bit shows, that, <code class="language-plaintext highlighter-rouge">linux containers</code> are basically <code class="language-plaintext highlighter-rouge">processes</code> that can be interracted with using regular <code class="language-plaintext highlighter-rouge">linux system tools</code>.</p>
+
+<p><strong>Troubleshoot</strong></p>
+
+<p>We might need to check on our processes inside out container. We can mount the <code class="language-plaintext highlighter-rouge">mnt/</code> and <code class="language-plaintext highlighter-rouge">pid namespace</code>.</p>
+
+<div class="language-shell highlighter-rouge"><div class="highlight"><pre class="highlight"><code>
+root@vagrant:~# nsenter <span class="nt">--target</span> 5426 <span class="nt">-m</span> <span class="nt">-p</span> ps <span class="nt">-ef</span>
+nsenter: failed to execute ps: No such file or directory
+
+root@vagrant:~# nsenter <span class="nt">--target</span> 5426 <span class="nt">-m</span> <span class="nt">-p</span> apt-get <span class="nb">install </span>procps
+root@vagrant:~# nsenter <span class="nt">--target</span> 5426 <span class="nt">-m</span> <span class="nt">-p</span> ps <span class="nt">-ef</span>
+
+UID          PID    PPID  C STIME TTY          TIME CMD
+root           1       0  0 17:37 ?        00:00:00 nginx: master process nginx <span class="nt">-g</span> daemon off<span class="p">;</span>
+nginx         29       1  0 17:37 ?        00:00:00 nginx: worker process
+
+root@vagrant:~# docker run <span class="nt">-it</span> <span class="nt">--name</span> debug-server-2 <span class="nt">--pid</span><span class="o">=</span>container:webserver <span class="nt">--network</span><span class="o">=</span>container:webserver raesene/alpine-containertools /bin/bash
+bash-5.1#
+bash-5.1#
+bash-5.1# ps <span class="nt">-f</span>
+PID   USER     TIME  COMMAND
+    1 root      0:00 nginx: master process nginx <span class="nt">-g</span> daemon off<span class="p">;</span>
+   29 101       0:00 nginx: worker process
+   30 101       0:00 nginx: worker process
+  258 root      0:00 /bin/bash
+  264 root      0:00 ps <span class="nt">-f</span>
+</code></pre></div></div>
+
+<p>This works because we are creating a new namespace (debug-server-2), with the pid_namespace of the <code class="language-plaintext highlighter-rouge">webserver</code> container.</p>
+
+<h3 id="network-namespaces">network namespaces</h3>
+
+<p>This is used to manage the network stack between namespaces, routing tables, IP addresses, sockets etc. We basically need to be aware of two things:</p>
+<ul>
+  <li>veth, configure a point-to-point net namespace, between two namespaces. (server and db namespace)</li>
+  <li>switch, connecting multiple namespaces.</li>
+</ul>
+
+<p><a href="https://www.redhat.com/sysadmin/net-namespaces">Redhat</a>, has a great article on how to set up <code class="language-plaintext highlighter-rouge">virtual ethernet</code> between two namespaces, and assigning ips to them.
+We are going to see this in context of <code class="language-plaintext highlighter-rouge">docker</code>.</p>
+
+<p>Lets try to find the <code class="language-plaintext highlighter-rouge">ip</code> of the <code class="language-plaintext highlighter-rouge">nginx box</code></p>
+
+<div class="language-shell highlighter-rouge"><div class="highlight"><pre class="highlight"><code>root@vagrant:~# docker <span class="nb">exec </span>webserver ip addr
+OCI runtime <span class="nb">exec </span>failed: <span class="nb">exec </span>failed: unable to start container process: <span class="nb">exec</span>: <span class="s2">"ip"</span>: executable file not found <span class="k">in</span> <span class="nv">$PATH</span>: unknown
+
+<span class="c"># nsenter with the network namespace loaded</span>
+
+root@vagrant:~# nsenter <span class="nt">--target</span> 5426 <span class="nt">--net</span> ip addr show
+1: lo: &lt;LOOPBACK,UP,LOWER_UP&gt; mtu 65536 qdisc noqueue state UNKNOWN group default qlen 1000
+    <span class="nb">link</span>/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
+    inet 127.0.0.1/8 scope host lo
+       valid_lft forever preferred_lft forever
+6: eth0@if7: &lt;BROADCAST,MULTICAST,UP,LOWER_UP&gt; mtu 1500 qdisc noqueue state UP group default
+    <span class="nb">link</span>/ether 02:42:ac:11:00:02 brd ff:ff:ff:ff:ff:ff link-netnsid 0
+    inet 172.17.0.2/16 brd 172.17.255.255 scope global eth0
+       valid_lft forever preferred_lft forever
+root@vagrant:~#
+</code></pre></div></div>
+
+<p><strong>Troubleshoot</strong></p>
+
+<p>We can leverage joining processes from a new container to the network namespace from another (webserver) container. In linux terms it probably looks like</p>
+
+<div class="language-shell highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="nv">WEB_SERVER_PID</span><span class="o">=</span><span class="si">$(</span>docker inspect <span class="nt">-f</span> <span class="s1">''</span> webserver<span class="si">)</span>
+
+<span class="c"># Join the network namespace</span>
+unshare <span class="nt">--net</span><span class="o">=</span>/proc/<span class="nv">$WEB_SERVER_PID</span>/ns/net /bin/bash
+</code></pre></div></div>
+
+<p>Coming back to debugging with another docker container.</p>
+
+<div class="language-shell highlighter-rouge"><div class="highlight"><pre class="highlight"><code>bash-5.1# netstat <span class="nt">-tunap</span>
+Active Internet connections <span class="o">(</span>servers and established<span class="o">)</span>
+Proto Recv-Q Send-Q Local Address           Foreign Address         State       PID/Program name
+tcp        0      0 0.0.0.0:80              0.0.0.0:<span class="k">*</span>               LISTEN      -
+tcp        0      0 :::80                   :::<span class="k">*</span>                    LISTEN      -
+bash-5.1# ip addr show
+1: lo: &lt;LOOPBACK,UP,LOWER_UP&gt; mtu 65536 qdisc noqueue state UNKNOWN group default qlen 1000
+    <span class="nb">link</span>/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
+    inet 127.0.0.1/8 scope host lo
+       valid_lft forever preferred_lft forever
+6: eth0@if7: &lt;BROADCAST,MULTICAST,UP,LOWER_UP&gt; mtu 1500 qdisc noqueue state UP group default
+    <span class="nb">link</span>/ether 02:42:ac:11:00:02 brd ff:ff:ff:ff:ff:ff link-netnsid 0
+    inet 172.17.0.2/16 brd 172.17.255.255 scope global eth0
+       valid_lft forever preferred_lft forever
+
+</code></pre></div></div>
+
+<h2 id="other-details">Other details:</h2>
+
+<p><strong>Apparmor</strong></p>
+
+<p>Apparmor is a mandatory ACL system that confines programs according to a set of rules that specify what files a given program can access. This proactive approach helps protect the system against both known and unknown vulnerabilities.
+Even for root users.</p>
+
+<p>This provides additional layer of security, apart from cgroups and namespaces and capabilites (<code class="language-plaintext highlighter-rouge">CAP_*</code>)</p>
+
+<p><strong>seccomp</strong></p>
+
+<p>This is used to allow or block specific <code class="language-plaintext highlighter-rouge">syscalls</code> for a <code class="language-plaintext highlighter-rouge">container/process</code>. These are enforced by guys at <a href="https://docs.docker.com/get-started/">docker</a>. For example, <code class="language-plaintext highlighter-rouge">unshare</code> is not permitted inside a docker container.
+This can be turned of using <code class="language-plaintext highlighter-rouge">--security-opt seccomp=unconfined</code>.</p>
+
+<p>Both of these are ways to allow isolation in the container. I think we have enough knowledge about how to work with <code class="language-plaintext highlighter-rouge">processes</code>, <code class="language-plaintext highlighter-rouge">namespaces</code>, <code class="language-plaintext highlighter-rouge">mounts</code>. We haven’t covered <code class="language-plaintext highlighter-rouge">network</code> in depth, but the article on Redhat,
+alreay has a great explanation. Also there are different kinds of networks that docker allows, and it needs a separate post.</p>
+
+<h2 id="notes">Notes</h2>
+
+<p><strong>PID = 1</strong></p>
+
+<p>Inside a namespace, init (pid 1) has three unique features when compared to other processes:</p>
+
+<ul>
+  <li>It does not automatically get default signal handers, so a signal sent to it is ignored unless it registers a signal hander for that signal.
+(This is why many dockerized processes fail to respond to ctrl-c and you are forced to kill them with something like <code class="language-plaintext highlighter-rouge">docker kill</code>).</li>
+  <li>If another process in the namespace dies before its children, its children will be <code class="language-plaintext highlighter-rouge">re-parented</code> to <code class="language-plaintext highlighter-rouge">pid 1</code>. This allows <code class="language-plaintext highlighter-rouge">init</code> to collect the exit status of the child processes so that the kernel can remove it from the process table.</li>
+  <li>If it dies, every other process in the pid namespace will be forcibly terminated and the namespace will be cleaned up.</li>
+</ul>
+
+<p>This prevents us from doing <code class="language-plaintext highlighter-rouge">unshare --pid --mount-proc /bin/bash</code>. This will cause an error: <code class="language-plaintext highlighter-rouge">Error: bash: fork: Cannot allocate memory</code>, because,
+<code class="language-plaintext highlighter-rouge">unshare</code> will exectue <code class="language-plaintext highlighter-rouge">/bin/bash</code>, which will load some <code class="language-plaintext highlighter-rouge">shell modules</code>.</p>
+
+<p>The first process in that becomes <code class="language-plaintext highlighter-rouge">PID = 1</code>. When the process <code class="language-plaintext highlighter-rouge">exit</code>s, it causes <code class="language-plaintext highlighter-rouge">re-paranting</code>, and then <code class="language-plaintext highlighter-rouge">terminating all other processes in namespace</code>.</p>
+
+<p>This eventually causes <code class="language-plaintext highlighter-rouge">init</code> of the host process, and the state change, and <code class="language-plaintext highlighter-rouge">creation of process</code> fails because PID cannot be allocated, resulting in the error, <code class="language-plaintext highlighter-rouge">Cannot allocate memory</code></p>
+
+<p><strong>setuid</strong> or set user id</p>
+
+<p>The Unix and Linux access rights flags setuid and setgid allow users to run an executable with the file system permissions of the executable’s owner or group respectively and to change behaviour in directories.</p>
+
+<p>When the setuid or setgid attributes are set on an executable file, it means when running the executable it will set its permissions to that of the owner of file, instead of the uuser who launched it. For using this in code, once this bit is set, dropping privileges doesn’t prevent the uniprivileged user from accessing the file descriptor.</p>
+
+<p>Hence careful consideration must be taken to replace the effective userid of the executable/program to that of the owner of the program, and closing filedesriptors on complete.
+Read <a href="https://manpages.ubuntu.com/manpages/jammy/man2/execve.2.html">execve</a>.</p>
+
+<blockquote>
+  <p>If the set-user-ID bit is set on the program  file  referred  to  by pathname, thenthe 
+effective  user  ID  of the calling process is changed to that of the owner of the program file.</p>
+</blockquote>
+
+<p>This allows the system designer to permit trusted programs to be run which a user would otherwise not be allowed to execute.</p>
+
+<h2 id="references">References:</h2>
+
+<ul>
+  <li><a href="https://www.redhat.com/sysadmin/building-container-namespaces">https://www.redhat.com/sysadmin/building-container-namespaces</a></li>
+  <li><a href="https://www.man7.org/linux/man-pages/man7/namespaces.7.html">https://www.man7.org/linux/man-pages/man7/namespaces.7.html</a></li>
+  <li><a href="https://www.man7.org/linux/man-pages/man7/mount_namespaces.7.html">https://www.man7.org/linux/man-pages/man7/mount_namespaces.7.html</a></li>
+  <li><a href="https://www.man7.org/linux/man-pages/man7/user_namespaces.7.html">https://www.man7.org/linux/man-pages/man7/user_namespaces.7.html</a></li>
+  <li><a href="https://www.man7.org/linux/man-pages/man7/pid_namespaces.7.html">https://www.man7.org/linux/man-pages/man7/pid_namespaces.7.html</a></li>
+  <li><a href="https://www.redhat.com/sysadmin/net-namespaces">https://www.redhat.com/sysadmin/net-namespaces</a></li>
+  <li><a href="https://akashrajpurohit.com/blog/build-your-own-docker-with-linux-namespaces-cgroups-and-chroot-handson-guide/">https://akashrajpurohit.com/blog/build-your-own-docker-with-linux-namespaces-cgroups-and-chroot-handson-guide/</a></li>
+  <li><a href="https://manpages.ubuntu.com/manpages/jammy/man2/setegid.2freebsd.html">https://manpages.ubuntu.com/manpages/jammy/man2/setegid.2freebsd.html</a></li>
+  <li><a href="https://www.alanjohn.dev/blog/Deep-dive-into-Containerization-Creating-containers-from-scratch">https://www.alanjohn.dev/blog/Deep-dive-into-Containerization-Creating-containers-from-scratch</a></li>
+  <li><a href="https://www.youtube.com/watch?v=0kJPa-1FuoI">https://www.youtube.com/watch?v=0kJPa-1FuoI</a></li>
+  <li><a href="https://www.youtube.com/watch?v=EFOA2nCZ0gg&amp;list=RDCMUCPO2QgTCReBAThZca6MB9jg&amp;start_radio=1&amp;rv=EFOA2nCZ0">https://www.youtube.com/watch?list=RDCMUCPO2QgTCReBAThZca6MB9jg</a></li>
+</ul>
+
+<p><code class="language-plaintext highlighter-rouge">Thank you.</code></p>
+
+
+      <hr>
+      <div class="row mb-5 mt-5">
+  <div class="col-md-6 d-flex align-items-end ">
+    <span>Thanks. <i>mind sharing?</i></span>
+  </div>
+
+  <!-- Right Column with Social Media Icons (on the right for larger screens, on bottom for smaller screens) -->
+  <div class="col-md-6 order-md-2 order-1 text-md-right text-center mt-3 mt-md-0">
+    <div>
+
+      <a
+          href="https://www.linkedin.com/sharing/share-offsite?url=ikouchiha47.github.io/2024/02/05/how-containers-work.html"
+          onclick="window.open(this.href, 'pop-up', 'left=20,top=20,width=500,height=500,toolbar=1,resizable=0'); return false;"
+          class="d-inline-block mr-2"
+       >
+        <span class="fa-stack fa-lg" style="color: #0077b5;">
+          <i class="fas fa-square fa-stack-2x"></i>
+          <i class="fab fa-linkedin fa-stack-1x fa-inverse"></i>
+        </span>
+      </a>
+
+      <a
+          href="https://twitter.com/intent/tweet?text=Troubleshooting containers&url=ikouchiha47.github.io/2024/02/05/how-containers-work.html"
+          onclick="window.open(this.href, 'pop-up', 'left=20,top=20,width=500,height=500,toolbar=1,resizable=0'); return false;"
+          class="d-inline-block mr-2">
+        <span class="fa-stack fa-lg" style="color: #1DA1F2;">
+          <i class="fas fa-square fa-stack-2x"></i>
+          <i class="fab fa-twitter fa-stack-1x fa-inverse"></i>
+        </span>
+      </a>
+
+      <a
+          href="http://www.reddit.com/submit?url=ikouchiha47.github.io/2024/02/05/how-containers-work.html"
+          onclick="window.open(this.href, 'pop-up', 'left=20,top=20,width=500,height=500,toolbar=1,resizable=0'); return false;"
+          class="d-inline-block mr-2">
+        <span class="fa-stack fa-lg" style="color: #FF4500;">
+          <i class="fas fa-square fa-stack-2x"></i>
+          <i class="fab fa-reddit fa-stack-1x fa-inverse"></i>
+        </span>
+      </a>
+    </div>
+  </div>
+</div>
+
+<hr/>
+
+
+      <div class="clearfix">
+
+        
+        <a class="btn btn-primary float-left" href="/2024/02/03/building-ecommerce-end-to-end.html" data-toggle="tooltip" data-placement="top" title="Building an ecommerce website end to end">&larr; Previous<span class="d-none d-md-inline">
+            Post</span></a>
+        
+        
+        <a class="btn btn-primary float-right" href="/2024/02/05/elaru-cache.html" data-toggle="tooltip" data-placement="top" title="YALC">Next<span class="d-none d-md-inline">
+            Post</span> &rarr;</a>
+        
+
+      </div>
+
+    </div>
+  </div>
+</div>
+
+
+  <!-- Footer -->
+
+<hr>
+
+<footer>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <ul class="list-inline text-center">
+          
+          <li class="list-inline-item">
+            <a href="mailto:amitava.dev@proton.me" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="far fa-envelope fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          
+          
+          <li class="list-inline-item">
+            <a href="https://www.linkedin.com/in/amitavaag" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-linkedin fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          <li class="list-inline-item">
+            <a href="https://github.com/ikouchiha47" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-github fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+        </ul>
+
+        <p class="copyright text-muted">
+          Build with: 
+          <a 
+            href="https://github.com/StartBootstrap/startbootstrap-clean-blog-jekyll"
+            class="text-gray"
+            target="_blank">startbootstrap-clean-blog-jekyll</a></p>
+      </div>
+    </div>
+  </div>
+</footer>
+
+
+  <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="/assets/vendor/blog/js/scripts.js"></script>
+
+<script src="/assets/scripts.js"></script>
+
+
+
+
+  
+
+</body>
+
+</html>

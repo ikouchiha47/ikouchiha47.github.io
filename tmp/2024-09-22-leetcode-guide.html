@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+  <title>
+    Algorithms Interview Roadmap - iko&#39;s logs
+    
+  </title>
+
+  <meta name="description" content="A roadmap for getting warmed up for algo interview for working professionals">
+  <meta property="og:description" content="A roadmap for getting warmed up for algo interview for working professionals">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Algorithms Interview Roadmap">
+  <meta property="og:url" content="https://ikouchiha47.github.io/tmp/2024-09-22-leetcode-guide.html">
+
+  
+
+  <link href='https://fonts.googleapis.com/css?family=Lora:400,700,400italic,700italic' rel='stylesheet' type='text/css'>
+  <link href='https://fonts.googleapis.com/css?family=Open+Sans:300italic,400italic,600italic,700italic,800italic,400,300,600,700,800' rel='stylesheet' type='text/css'>
+
+  <!-- <script src="https://use.fontawesome.com/releases/v5.15.3/js/all.js" crossorigin="anonymous"></script> -->
+  <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.15.4/css/all.css" integrity="sha384-DyZ88mC6Up2uqS4h/KRgHuoeGwBcD4Ng9SiP4dIRy0EXTlnuz47vAwmeGwVChigm" crossorigin="anonymous"/>
+
+  <link rel="stylesheet" href="/assets/main.css">
+  <link rel="canonical" href="https://ikouchiha47.github.io/tmp/2024-09-22-leetcode-guide.html">
+  <link rel="alternate" type="application/rss+xml" title="iko&#39;s logs" href="/feed.xml">
+
+  <meta name="google-site-verification" content="lWkg6gIxJgzEKX_5XnhcxCtPE9QknaimFWWos_dTvPM" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fira+Sans:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Inconsolata:wght@200..900&family=Jersey+25&family=Kanit:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Merriweather+Sans:ital,wght@0,300..800;1,300..800&family=Nanum+Gothic+Coding&family=Space+Grotesk:wght@300..700&family=Titillium+Web:ital,wght@0,200;0,300;0,400;0,600;0,700;0,900;1,200;1,300;1,400;1,600;1,700&display=swap" rel="stylesheet">
+
+</head>
+
+
+<body>
+
+  <!-- Navigation -->
+<nav class="navbar navbar-expand-lg navbar-light fixed-top" id="mainNav">
+  <div class="container">
+    <a class="navbar-brand" href="/">iko&#39;s logs</a>
+    <button class="navbar-toggler navbar-toggler-right" type="button" data-toggle="collapse" data-target="#navbarResponsive" aria-controls="navbarResponsive" aria-expanded="false" aria-label="Toggle navigation">
+      Menu
+      <i class="fa fa-bars"></i>
+    </button>
+    <div class="collapse navbar-collapse" id="navbarResponsive">
+      <ul class="navbar-nav ml-auto">
+        <li class="nav-item">
+          <a class="nav-link" href="/">Home</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/about">About</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/posts">Posts</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/contact">Contact</a>
+        </li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+
+  <!-- Page Header -->
+
+<header class="masthead" style="background: #00ff00">
+
+  <div class="overlay"></div>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <div class="post-heading">
+          <h1>Algorithms Interview Roadmap</h1>
+          
+          <h2 class="subheading">Categorizing and Subcategorizing Problem Types</h2>
+          
+          <span class="meta">Posted by
+            <a href="#">ikouchiha47</a>
+            on September 22, 2024 &middot; <span class="reading-time" title="Estimated read time">
+  
+   4 mins  read </span>
+
+          </span>
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="container space-grotesk">
+  <div class="row">
+    <div class="col-lg-8 col-md-10 mx-auto">
+
+      <h1 id="algorithm-warmup-guide">Algorithm Warmup Guide</h1>
+
+<p>This is a cookbook for starting an algorithm prep, or introduction to problem solving using algorithms.
+The problem most working developers, is we don’t get to practice these exculsively, and hence when you
+don’t practice you lose the neural links. But, good thing is, we get to use a lot of data-structures at work.</p>
+
+<p>It’s the thinking part that needs to be mouleded to solve this kinds of problems. But the process is the same,
+you have a toolbelt, which are the basic datastructure and algorithms, which you will need to modify the data,
+to eventually converge at the expected output data.</p>
+
+<p>Solving more types of problems is the same</p>
+
+<p>This guidebook/cookbook, is meant to be a way to rebound, and start practicing efficiently.</p>
+
+<p><strong>P.S.: I have used gpt to catrgorize problems, the core code can be found <a href="https://github.com/ikouchiha47/llama-experiments/blob/litkode/cli.py">on github</a></strong></p>
+
+<h2 id="basic-datastructures">Basic Datastructures</h2>
+
+<p>Some of these datastructures are used all the time:</p>
+
+<ul>
+  <li>Arrays (as Stacks and Queues)</li>
+  <li>Hash/Map/Dictionary</li>
+  <li>OrderedHash/OrderedDict</li>
+  <li>Heaps (max,min,pq)</li>
+  <li>LinkedLists</li>
+</ul>
+
+<p>And a few derived ones are:</p>
+
+<ul>
+  <li>Trees (with LinkedList or Array)</li>
+  <li>Graphs (with 2d Array or Hash)</li>
+  <li>Skiplists (with Array and LinkedList)</li>
+</ul>
+
+<h2 id="basic-algorithms">Basic Algorithms</h2>
+
+<ul>
+  <li>Binary Search</li>
+  <li>Bisect Left</li>
+  <li>Bisect Right</li>
+  <li>Minimize Maximum, vice versa</li>
+  <li>Prefix Sum</li>
+  <li></li>
+</ul>
+
+<p>The pre-condition is for the array to be sorted or sorted/rotated. <code class="language-plaintext highlighter-rouge">O(log n)</code> time.</p>
+
+<p>The idea is: <strong>To take an item randomly and check if the requested item can be fitted in left side or right side of the selected item.</strong></p>
+
+<h4 id="binary_search">binary_search</h4>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>search(nums: List, target):
+  lo, hi = 0, nums.length
+
+  while lo &lt; hi:
+    mid = (lo + hi) &gt;&gt; 1 # prandomly pick an item
+    # or 
+    # (lo + hi) // 2
+    # math.floor(lo + (hi - lo) / 2)
+    # (lo &gt;&gt; 1) + (hi &gt;&gt; 1)
+
+    if target == nums[mid]:
+      return True
+
+    # reduce the search space 
+    # to check fittment in the region
+    if target &lt; nums[mid]:
+      lo = mid + 1
+    else:
+      hi = mid
+
+  return False
+</code></pre></div></div>
+
+<p>For bisect left, you are to get the lowest index in the array, where the element
+would exists if it wasn’t there, or the first occurance of the target item.</p>
+
+<p>Bisect right is the opposite. Examples:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>nums = [2,2,3,3,5,5,5]
+bisect_left(nums, 5) # =&gt; 4
+bisect_left(nums, 1) # =&gt; 0
+bisect_left(nums, 6) # =&gt; 7
+
+bisect_right(nums, 5) # =&gt; 7
+bisect_right(nums, 1) # =&gt; 0
+bisect_right(nums, 4) # =&gt; 4 # idx to insert at
+bisect_right(nums, 6) # =&gt; 7
+</code></pre></div></div>
+
+<blockquote>
+  <p>So when trying to find an element with <code class="language-plaintext highlighter-rouge">bisect_left</code> and <code class="language-plaintext highlighter-rouge">bisect_right</code>, look for the validating the index or item at index.</p>
+</blockquote>
+
+<h4 id="bisect_left">bisect_left</h4>
+
+<blockquote>
+  <p>as long as the <code class="language-plaintext highlighter-rouge">target_item &lt;= present_item_in_consideration</code>, keep shrinking the search space tp left.</p>
+</blockquote>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>loop:
+  mid = (lo + hi) &gt;&gt; 1
+  if target &lt;= nums[mid]: hi = mid # shrinking to left
+  else: lo = mid + 1
+
+return lo
+</code></pre></div></div>
+
+<h4 id="bisect_right">bisect_right</h4>
+
+<blockquote>
+  <p>as long as <code class="language-plaintext highlighter-rouge">target_item &gt;= present_item_in_consideration</code>, keep shirking the space to right</p>
+</blockquote>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>loop:
+  mid = (lo + hi) &gt;&gt; 1
+  if target &gt;= nums[mid]: lo = mid + 1 # shrinking to right
+  else: hi = mid
+
+return lo
+</code></pre></div></div>
+
+<h4 id="maximize-minimum">maximize minimum</h4>
+
+<p>This category of problems require you to chose a random solution, test if the random solution i.
+Increase or decrease the chosen solution</p>
+
+
+      <hr>
+      <div class="row mb-5 mt-5">
+  <div class="col-md-6 d-flex align-items-end ">
+    <span>Thanks. <i>mind sharing?</i></span>
+  </div>
+
+  <!-- Right Column with Social Media Icons (on the right for larger screens, on bottom for smaller screens) -->
+  <div class="col-md-6 order-md-2 order-1 text-md-right text-center mt-3 mt-md-0">
+    <div>
+
+      <a
+          href="https://www.linkedin.com/sharing/share-offsite?url=ikouchiha47.github.io/tmp/2024-09-22-leetcode-guide.html"
+          onclick="window.open(this.href, 'pop-up', 'left=20,top=20,width=500,height=500,toolbar=1,resizable=0'); return false;"
+          class="d-inline-block mr-2"
+       >
+        <span class="fa-stack fa-lg" style="color: #0077b5;">
+          <i class="fas fa-square fa-stack-2x"></i>
+          <i class="fab fa-linkedin fa-stack-1x fa-inverse"></i>
+        </span>
+      </a>
+
+      <a
+          href="https://twitter.com/intent/tweet?text=Algorithms Interview Roadmap&url=ikouchiha47.github.io/tmp/2024-09-22-leetcode-guide.html"
+          onclick="window.open(this.href, 'pop-up', 'left=20,top=20,width=500,height=500,toolbar=1,resizable=0'); return false;"
+          class="d-inline-block mr-2">
+        <span class="fa-stack fa-lg" style="color: #1DA1F2;">
+          <i class="fas fa-square fa-stack-2x"></i>
+          <i class="fab fa-twitter fa-stack-1x fa-inverse"></i>
+        </span>
+      </a>
+
+      <a
+          href="http://www.reddit.com/submit?url=ikouchiha47.github.io/tmp/2024-09-22-leetcode-guide.html"
+          onclick="window.open(this.href, 'pop-up', 'left=20,top=20,width=500,height=500,toolbar=1,resizable=0'); return false;"
+          class="d-inline-block mr-2">
+        <span class="fa-stack fa-lg" style="color: #FF4500;">
+          <i class="fas fa-square fa-stack-2x"></i>
+          <i class="fab fa-reddit fa-stack-1x fa-inverse"></i>
+        </span>
+      </a>
+    </div>
+  </div>
+</div>
+
+<hr/>
+
+
+      <div class="clearfix">
+
+        
+        
+
+      </div>
+
+    </div>
+  </div>
+</div>
+
+
+  <!-- Footer -->
+
+<hr>
+
+<footer>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <ul class="list-inline text-center">
+          
+          <li class="list-inline-item">
+            <a href="mailto:amitava.dev@proton.me" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="far fa-envelope fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          
+          
+          <li class="list-inline-item">
+            <a href="https://www.linkedin.com/in/amitavaag" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-linkedin fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          <li class="list-inline-item">
+            <a href="https://github.com/ikouchiha47" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-github fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+        </ul>
+
+        <p class="copyright text-muted">
+          Build with: 
+          <a 
+            href="https://github.com/StartBootstrap/startbootstrap-clean-blog-jekyll"
+            class="text-gray"
+            target="_blank">startbootstrap-clean-blog-jekyll</a></p>
+      </div>
+    </div>
+  </div>
+</footer>
+
+
+  <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="/assets/vendor/blog/js/scripts.js"></script>
+
+<script src="/assets/scripts.js"></script>
+
+
+
+
+  
+
+</body>
+
+</html>

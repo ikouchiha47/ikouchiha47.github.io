@@ -1,0 +1,487 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+  <title>
+    Hosting Server on Bare Metals - iko&#39;s logs
+    
+  </title>
+
+  <meta name="description" content="Host your server from your home network and laptop/server">
+  <meta property="og:description" content="Host your server from your home network and laptop/server">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Hosting Server on Bare Metals">
+  <meta property="og:url" content="https://ikouchiha47.github.io/2023/11/27/self-hosted-website.html">
+
+  
+    <meta property="og:image" content="https://ikouchiha47.github.io/img/bg_self_hosting.png"/>
+  
+
+  <link href='https://fonts.googleapis.com/css?family=Lora:400,700,400italic,700italic' rel='stylesheet' type='text/css'>
+  <link href='https://fonts.googleapis.com/css?family=Open+Sans:300italic,400italic,600italic,700italic,800italic,400,300,600,700,800' rel='stylesheet' type='text/css'>
+
+  <!-- <script src="https://use.fontawesome.com/releases/v5.15.3/js/all.js" crossorigin="anonymous"></script> -->
+  <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.15.4/css/all.css" integrity="sha384-DyZ88mC6Up2uqS4h/KRgHuoeGwBcD4Ng9SiP4dIRy0EXTlnuz47vAwmeGwVChigm" crossorigin="anonymous"/>
+
+  <link rel="stylesheet" href="/assets/main.css">
+  <link rel="canonical" href="https://ikouchiha47.github.io/2023/11/27/self-hosted-website.html">
+  <link rel="alternate" type="application/rss+xml" title="iko&#39;s logs" href="/feed.xml">
+
+  <meta name="google-site-verification" content="lWkg6gIxJgzEKX_5XnhcxCtPE9QknaimFWWos_dTvPM" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fira+Sans:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Inconsolata:wght@200..900&family=Jersey+25&family=Kanit:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Merriweather+Sans:ital,wght@0,300..800;1,300..800&family=Nanum+Gothic+Coding&family=Space+Grotesk:wght@300..700&family=Titillium+Web:ital,wght@0,200;0,300;0,400;0,600;0,700;0,900;1,200;1,300;1,400;1,600;1,700&display=swap" rel="stylesheet">
+
+</head>
+
+
+<body>
+
+  <!-- Navigation -->
+<nav class="navbar navbar-expand-lg navbar-light fixed-top" id="mainNav">
+  <div class="container">
+    <a class="navbar-brand" href="/">iko&#39;s logs</a>
+    <button class="navbar-toggler navbar-toggler-right" type="button" data-toggle="collapse" data-target="#navbarResponsive" aria-controls="navbarResponsive" aria-expanded="false" aria-label="Toggle navigation">
+      Menu
+      <i class="fa fa-bars"></i>
+    </button>
+    <div class="collapse navbar-collapse" id="navbarResponsive">
+      <ul class="navbar-nav ml-auto">
+        <li class="nav-item">
+          <a class="nav-link" href="/">Home</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/about">About</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/posts">Posts</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/contact">Contact</a>
+        </li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+
+  <!-- Page Header -->
+
+<header class="masthead" style="background-image: url('/img/bg_self_hosting.png')">
+
+  <div class="overlay"></div>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <div class="post-heading">
+          <h1>Hosting Server on Bare Metals</h1>
+          
+          <h2 class="subheading">Host your server from your home network and laptop/server</h2>
+          
+          <span class="meta">Posted by
+            <a href="#">ikouchiha47</a>
+            on November 27, 2023 &middot; <span class="reading-time" title="Estimated read time">
+  
+   11 mins  read </span>
+
+          </span>
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="container space-grotesk">
+  <div class="row">
+    <div class="col-lg-8 col-md-10 mx-auto">
+
+      <p><strong>Make Your Laptop Work Overtime as a Web Server</strong>: A DIY Guide</p>
+
+<p>In this article, I’ll share some exciting ideas and steps to help you embark on this adventurous journey. While this approach may not be the most secure, it’s definitely fun. So, let’s dive in.</p>
+
+<p>&nbsp;</p>
+
+<h3 id="prerequisite">Prerequisite:</h3>
+
+<ul>
+  <li>Laptop or Any form of computer</li>
+  <li>Internet connection. Preferably a broadband connection</li>
+  <li>A working server which can serve requests</li>
+  <li>A credit card</li>
+  <li>A real operating system, Linux</li>
+</ul>
+
+<p>The choice of a laptop is driven by its power backup feature, ensuring your server remains up and running. It’s also a good idea to have an Uninterruptible Power Supply (UPS) for added security.</p>
+
+<p>Why Use a Credit Card?</p>
+
+<p>You’ll need a credit card for a few essential steps:</p>
+
+<ul>
+  <li>Purchasing a domain name.</li>
+  <li>Setting up a server on the cloud, often available with free trials on platforms like AWS, GCP, or Oracle Cloud.</li>
+</ul>
+
+<p>&nbsp;</p>
+
+<h3 id="getting-started">Getting Started:</h3>
+
+<ul>
+  <li>Check your IP addresses using commands like <code class="language-plaintext highlighter-rouge">ip addr show</code> or <code class="language-plaintext highlighter-rouge">ifconfig</code>. You’ll typically see an <code class="language-plaintext highlighter-rouge">IPv4 address</code>, an <code class="language-plaintext highlighter-rouge">IPv6 address</code>, and a <code class="language-plaintext highlighter-rouge">public IPv6 address</code>. Most routers and ISPs now provide IPv6 addresses, simplifying the initial setup.</li>
+  <li>Assume your server is running on port <code class="language-plaintext highlighter-rouge">:3000</code>. Without a firewall initially, you can access your website via the <code class="language-plaintext highlighter-rouge">public IPv6 address</code> followed by the port number.</li>
+  <li>Note that device compatibility may vary. Some devices, like the iPhone 13 Pro, come with built-in IPv6 support, while others may require manual configuration.</li>
+</ul>
+
+<p>&nbsp;</p>
+
+<h4 id="ddns">DDNS:</h4>
+
+<p>The ipv6/ipv4 addresses assigned to you by your ISP can change. Like when you maybe restart your router, or the ISP did some changes.</p>
+
+<p>These is where you either need a <strong>Dynamic DNS</strong> or contact your ISP for a static IP address. But the later is not what I want to do, I am already paying 1500 INR for my internet services and <strong>I am cheap</strong>.</p>
+
+<p>Dynamic DNS providers make it dead simple to assign a memorable name to your home IP address by automatically updating your public-facing domain name entry to point at your home internet IP address at any given moment.</p>
+
+<p>And it does just that, there are a couple of free providers, one of the notable ones is <a href="https://noip.com">no-ip.com</a> . You can also find a list of it in your router config.</p>
+
+<div class="preview-wrapper">
+  <div class="preview-wrapper-inner">
+    <div class="preview-content">
+      <div class="preview-image">
+        <a href="https://www.noip.com/" target="_blank" class="preview-img-wrapper">
+          <img src="https://dmej8g5cpdyqd.cloudfront.net/blog/wp-content/uploads/2024/02/01124917/domain-name-scams-blog-image-1.png" />
+        </a>
+      </div>
+
+      <div class="preview-body">
+        <h2 class="preview-title">
+          <a href="https://www.noip.com/" target="_blank">Free Dynamic DNS - Managed DNS - Managed Email - Domain Registration - No-IP</a>
+        </h2>
+        <div class="preview-description">Free Dynamic DNS and Managed DNS Provider trusted since 1999 with 100% uptime history. Our Free DDNS service points your dynamic IP to a free static hostname. Create a free account today!</div>
+        <div class="preview-footer">
+          <a href="//www.noip.com" target="_blank">www.noip.com</a>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<p>Generally your router should have a settings where you can update the credentials for your account at no-ip.com . Or you can have a cronjob which makes a request to the api which updates the ip every couple of minute interval.</p>
+
+<p>In the above scenario, you don’t need to worry about the ipv4, you need to point the domain name to the ipv6 address.</p>
+
+<p>The other alternative here would be to update the <code class="language-plaintext highlighter-rouge">AAA record</code> in your hosting provider. But I am not sure if all of them provide an API to update it.</p>
+
+<p>tl;dr just get a dynamic domain name, pointing to the public ipv6 address. It should look something like this:</p>
+
+<div class="language-ruby highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="vg">$&gt;</span> <span class="n">inet6</span> <span class="n">i</span><span class="o">::</span><span class="nb">p</span><span class="o">::</span><span class="n">v</span><span class="o">::</span><span class="mi">6</span><span class="o">/</span><span class="mi">64</span> <span class="n">scope</span> <span class="n">global</span> <span class="n">dynamic</span> <span class="n">noprefixroute</span>
+</code></pre></div></div>
+
+<p><em>Well, in the end when we do end up using a vps from cloud we can get rid of the above</em></p>
+
+<p>&nbsp;</p>
+
+<h3 id="setting-up-your-machine">Setting up your machine:</h3>
+
+<p><strong>First</strong>, setup nginx along with ssl certificates using <a href="https://www.digitalocean.com/community/tutorials/how-to-secure-nginx-with-let-s-encrypt-on-ubuntu-20-04">letsencrypt</a>. (I am not going to expand on this right now, please check the article below)</p>
+
+<div class="preview-wrapper">
+  <div class="preview-wrapper-inner">
+    <div class="preview-content">
+      <div class="preview-image">
+        <a href="https://www.digitalocean.com/community/tutorials/how-to-secure-nginx-with-let-s-encrypt-on-ubuntu-20-04" target="_blank" class="preview-img-wrapper">
+          <img src="https://community-cdn-digitalocean-com.global.ssl.fastly.net/vkL74ySp2fFiArxbTvhp4QF2" />
+        </a>
+      </div>
+
+      <div class="preview-body">
+        <h2 class="preview-title">
+          <a href="https://www.digitalocean.com/community/tutorials/how-to-secure-nginx-with-let-s-encrypt-on-ubuntu-20-04" target="_blank">How To Secure Nginx with Let's Encrypt on Ubuntu 20.04 | DigitalOcean</a>
+        </h2>
+        <div class="preview-description">Let’s Encrypt is a Certificate Authority (CA) that provides an easy way to obtain and install free TLS/SSL certificates, thereby enabling encrypted HTTPS on … </div>
+        <div class="preview-footer">
+          <a href="//www.digitalocean.com" target="_blank">www.digitalocean.com</a>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<p><strong>Second</strong>, Modify your nginx config server block to match the proper domain name, and terminate the ssl at the nginx layer.</p>
+
+<p>Nginx is going to act as a reverse proxy, that will forward the request to your server and then send the response back from the server via nginx.</p>
+
+<p><strong>Third</strong>, Setup <code class="language-plaintext highlighter-rouge">firewall</code> and also enable <code class="language-plaintext highlighter-rouge">sshd</code>. For a firewall I chose to use <code class="language-plaintext highlighter-rouge">ufw</code>.</p>
+
+<p>The configuration is to block everything except SSH and NGINX. You can find the <a href="https://www.digitalocean.com/community/tutorials/ufw-essentials-common-firewall-rules-and-commands#list-available-application-profiles">setup guide here, on a digitalocean article.</a></p>
+
+<div class="preview-wrapper">
+  <div class="preview-wrapper-inner">
+    <div class="preview-content">
+      <div class="preview-image">
+        <a href="https://www.digitalocean.com/community/tutorials/ufw-essentials-common-firewall-rules-and-commands" target="_blank" class="preview-img-wrapper">
+          <img src="https://www.digitalocean.com/_next/static/media/intro-to-cloud.d49bc5f7.jpeg" />
+        </a>
+      </div>
+
+      <div class="preview-body">
+        <h2 class="preview-title">
+          <a href="https://www.digitalocean.com/community/tutorials/ufw-essentials-common-firewall-rules-and-commands" target="_blank">UFW Essentials: Common Firewall Rules and Commands | DigitalOcean</a>
+        </h2>
+        <div class="preview-description">UFW (uncomplicated firewall) is a firewall configuration tool that runs on top of iptables, included by default within Ubuntu distributions. It provides a … </div>
+        <div class="preview-footer">
+          <a href="//www.digitalocean.com" target="_blank">www.digitalocean.com</a>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<p>And this awesome article from <a href="https://www.zerotier.com/blog/the-state-of-nat-traversal/">zerotier</a></p>
+
+<div class="preview-wrapper">
+  <div class="preview-wrapper-inner">
+    <div class="preview-content">
+      <div class="preview-image">
+        <a href="https://www.zerotier.com/blog/the-state-of-nat-traversal/" target="_blank" class="preview-img-wrapper">
+          <img src="https://www.zerotier.com/static/4ed218c27a958689183e2c042ca36e54/a464d/Abstract_Blue_Rhombi_Background_70fb41c5d0.jpg" />
+        </a>
+      </div>
+
+      <div class="preview-body">
+        <h2 class="preview-title">
+          <a href="https://www.zerotier.com/blog/the-state-of-nat-traversal/" target="_blank"></a>
+        </h2>
+        <div class="preview-description">For those who don’t know, NAT stands for Network Address Translation. If you’re on a typical network, your system probably has an IP address like 10.1.2.3or 192.168.0.66. These are private IPs. They are not your real Internet IP address. Between you and the network there is a device called a “NAT router” that performs intelligent address translation back and forth.</div>
+        <div class="preview-footer">
+          <a href="//www.zerotier.com" target="_blank">www.zerotier.com</a>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<p>&nbsp;</p>
+
+<h3 id="hosting">Hosting:</h3>
+
+<p>Pretty straightforward here, get a cheap domain name. I got a domain name .shop , at 80 INR per year.</p>
+
+<ul>
+  <li>Purchase an affordable domain name, such as .shop.</li>
+  <li>Point the ALIAS to the domain name provided by your DDNS provider.</li>
+  <li>At this point, users with IPv6-enabled devices should be able to access your website.</li>
+</ul>
+
+<p>&nbsp;</p>
+
+<h3 id="solving-for-the-ipv4-nat-problem">Solving for the IPv4 NAT Problem:</h3>
+
+<p>The assigned ipv4 obviously doesn’t work for you, because its not a static public IP address, atleast not in India.</p>
+
+<p>The assigned ipv4 is inside a NAT, which is why your public ip doesn’t match whatever you see in ifconfig or ip addr show.</p>
+
+<p>( If you are not sure about NAT, <a href="https://access.redhat.com/documentation/en-us/red_hat_enterprise_linux/7/html/virtualization_deployment_and_administration_guide/sect-virtual_networking-network_address_translation">here is a short introduction</a> )</p>
+
+<p>The solution is to use a VPS/VPN provider. But again that requires spending money, and I am cheap.</p>
+
+<p>So we have wireguard or <a href="https://docs.zerotier.com/getting-started/getting-started/">zerotier</a> to rescue. I f***ng love free software.</p>
+
+<p>The way this will work is, somewhat like a peer to peer connection, a mesh of sorts, where multiple machines can join the zerotier network and they can be access each other within the mesh.</p>
+
+<p>So,</p>
+
+<ul>
+  <li>You get an account in AWS or GCP, each has their own free tier plans.</li>
+  <li>Use it to setup a small box maybe like 2 core cpu with 1GB RAM.</li>
+  <li>Create an account in zerotier and create a network</li>
+  <li>Install <a href="https://zerotier.atlassian.net/wiki/spaces/SD/pages/29065282/Command+Line+Interface+zerotier-cli">zerotier-cli</a></li>
+  <li>Using the above, join the network, from both the laptop and the VM you just created in cloud. And follow the <strong>getting started</strong> guide above.</li>
+</ul>
+
+<p>You should click on the <code class="language-plaintext highlighter-rouge">Auth</code> checkbox.</p>
+
+<p>To test if its working, you should see the zerotier ip’s in the zerotier webUI or even when you run ifconfig.</p>
+
+<p>Try to ping each other using the assigned IPs.</p>
+
+<p>Once successfull, you can use socat or iptables to forward the requests from the cloud VM to your local machine.</p>
+
+<p>One example configuration which forwards the ssl traffic to a target ip will look like this.</p>
+
+<div class="language-shell highlighter-rouge"><div class="highlight"><pre class="highlight"><code>socat TCP-LISTEN:8080,fork,reuseaddr TCP:target-ip:443
+</code></pre></div></div>
+
+<p>&nbsp;</p>
+
+<h3 id="curtains-call">Curtains Call:</h3>
+
+<p>Now your cloud VM has a public ip address, and if not you can probably enable it from your cloud provider settings.</p>
+
+<p>This is the IP that we will add as an <code class="language-plaintext highlighter-rouge">A record</code> to our hosting provider. And this is how the whole thing works.</p>
+
+<p><img src="/img/posts/self-hosted-website_flow.png" style="width: 100%; object-fit: contain;" alt="somewhat inaccurate representation" /></p>
+
+<p>And volla, now when you try to access on your android phone, which doesn’t support ipv6 or doesn’t have it enabled by default, can easily access your website.</p>
+
+<p>You can check out a working demo at <a href="https://mr-notorious.shop">https://mr-notorious.shop</a> .</p>
+
+<p>&nbsp;</p>
+
+<h3 id="obvious-cons">Obvious Cons:</h3>
+
+<p>Of course, hosting your website at home comes with some challenges:</p>
+
+<ul>
+  <li>You need to take care of security (Try to harden the OS)</li>
+  <li>You can run out of disk space (Setup things like log rotate, switch hard disks, mount a disk as a partition inside /etc/fstab)</li>
+  <li>Handling databases is no longer fun.</li>
+  <li>You have to keep updated with regular updates and patch management. Like <code class="language-plaintext highlighter-rouge">certbot</code>, <code class="language-plaintext highlighter-rouge">database backups</code></li>
+  <li>You definitely need some monitoring, here again for sending notifications you can use <a href="https://ntfy.sh/">https://ntfy.sh/</a> , or roll one with zerotier.</li>
+  <li>You also are limited to using one server. Which is your laptop. So yeah memory management and scaling is a big challenge.</li>
+  <li>Using an <strong>Intrusion Detection System</strong> like <a href="https://www.redhat.com/sysadmin/security-intrusion-detection">fail2ban or Snor</a></li>
+</ul>
+
+<p>Well, this is not for production use. But you can host your own stuff without paying to providers. We did however didn’t consider some points.</p>
+
+
+      <hr>
+      <div class="row mb-5 mt-5">
+  <div class="col-md-6 d-flex align-items-end ">
+    <span>Thanks. <i>mind sharing?</i></span>
+  </div>
+
+  <!-- Right Column with Social Media Icons (on the right for larger screens, on bottom for smaller screens) -->
+  <div class="col-md-6 order-md-2 order-1 text-md-right text-center mt-3 mt-md-0">
+    <div>
+
+      <a
+          href="https://www.linkedin.com/sharing/share-offsite?url=ikouchiha47.github.io/2023/11/27/self-hosted-website.html"
+          onclick="window.open(this.href, 'pop-up', 'left=20,top=20,width=500,height=500,toolbar=1,resizable=0'); return false;"
+          class="d-inline-block mr-2"
+       >
+        <span class="fa-stack fa-lg" style="color: #0077b5;">
+          <i class="fas fa-square fa-stack-2x"></i>
+          <i class="fab fa-linkedin fa-stack-1x fa-inverse"></i>
+        </span>
+      </a>
+
+      <a
+          href="https://twitter.com/intent/tweet?text=Hosting Server on Bare Metals&url=ikouchiha47.github.io/2023/11/27/self-hosted-website.html"
+          onclick="window.open(this.href, 'pop-up', 'left=20,top=20,width=500,height=500,toolbar=1,resizable=0'); return false;"
+          class="d-inline-block mr-2">
+        <span class="fa-stack fa-lg" style="color: #1DA1F2;">
+          <i class="fas fa-square fa-stack-2x"></i>
+          <i class="fab fa-twitter fa-stack-1x fa-inverse"></i>
+        </span>
+      </a>
+
+      <a
+          href="http://www.reddit.com/submit?url=ikouchiha47.github.io/2023/11/27/self-hosted-website.html"
+          onclick="window.open(this.href, 'pop-up', 'left=20,top=20,width=500,height=500,toolbar=1,resizable=0'); return false;"
+          class="d-inline-block mr-2">
+        <span class="fa-stack fa-lg" style="color: #FF4500;">
+          <i class="fas fa-square fa-stack-2x"></i>
+          <i class="fab fa-reddit fa-stack-1x fa-inverse"></i>
+        </span>
+      </a>
+    </div>
+  </div>
+</div>
+
+<hr/>
+
+
+      <div class="clearfix">
+
+        
+        <a class="btn btn-primary float-left" href="/2023/11/20/generating-getters-in-go.html" data-toggle="tooltip" data-placement="top" title="Go getters">&larr; Previous<span class="d-none d-md-inline">
+            Post</span></a>
+        
+        
+        <a class="btn btn-primary float-right" href="/2023/11/29/generating-link-preview.html" data-toggle="tooltip" data-placement="top" title="Generate Link Preview">Next<span class="d-none d-md-inline">
+            Post</span> &rarr;</a>
+        
+
+      </div>
+
+    </div>
+  </div>
+</div>
+
+
+  <!-- Footer -->
+
+<hr>
+
+<footer>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <ul class="list-inline text-center">
+          
+          <li class="list-inline-item">
+            <a href="mailto:amitava.dev@proton.me" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="far fa-envelope fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          
+          
+          <li class="list-inline-item">
+            <a href="https://www.linkedin.com/in/amitavaag" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-linkedin fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          <li class="list-inline-item">
+            <a href="https://github.com/ikouchiha47" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-github fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+        </ul>
+
+        <p class="copyright text-muted">
+          Build with: 
+          <a 
+            href="https://github.com/StartBootstrap/startbootstrap-clean-blog-jekyll"
+            class="text-gray"
+            target="_blank">startbootstrap-clean-blog-jekyll</a></p>
+      </div>
+    </div>
+  </div>
+</footer>
+
+
+  <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="/assets/vendor/blog/js/scripts.js"></script>
+
+<script src="/assets/scripts.js"></script>
+
+
+
+
+  
+
+</body>
+
+</html>

@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+  <title>
+    Pairy - iko&#39;s logs
+    
+  </title>
+
+  <meta name="description" content="simple enough two person remote pair programing setup">
+  <meta property="og:description" content="simple enough two person remote pair programing setup">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Pairy">
+  <meta property="og:url" content="https://ikouchiha47.github.io/2024/10/24/pairy.html">
+
+  
+    <meta property="og:image" content="https://ikouchiha47.github.io#000"/>
+  
+
+  <link href='https://fonts.googleapis.com/css?family=Lora:400,700,400italic,700italic' rel='stylesheet' type='text/css'>
+  <link href='https://fonts.googleapis.com/css?family=Open+Sans:300italic,400italic,600italic,700italic,800italic,400,300,600,700,800' rel='stylesheet' type='text/css'>
+
+  <!-- <script src="https://use.fontawesome.com/releases/v5.15.3/js/all.js" crossorigin="anonymous"></script> -->
+  <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.15.4/css/all.css" integrity="sha384-DyZ88mC6Up2uqS4h/KRgHuoeGwBcD4Ng9SiP4dIRy0EXTlnuz47vAwmeGwVChigm" crossorigin="anonymous"/>
+
+  <link rel="stylesheet" href="/assets/main.css">
+  <link rel="canonical" href="https://ikouchiha47.github.io/2024/10/24/pairy.html">
+  <link rel="alternate" type="application/rss+xml" title="iko&#39;s logs" href="/feed.xml">
+
+  <meta name="google-site-verification" content="lWkg6gIxJgzEKX_5XnhcxCtPE9QknaimFWWos_dTvPM" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fira+Sans:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Inconsolata:wght@200..900&family=Jersey+25&family=Kanit:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Merriweather+Sans:ital,wght@0,300..800;1,300..800&family=Nanum+Gothic+Coding&family=Space+Grotesk:wght@300..700&family=Titillium+Web:ital,wght@0,200;0,300;0,400;0,600;0,700;0,900;1,200;1,300;1,400;1,600;1,700&display=swap" rel="stylesheet">
+
+</head>
+
+
+<body>
+
+  <!-- Navigation -->
+<nav class="navbar navbar-expand-lg navbar-light fixed-top" id="mainNav">
+  <div class="container">
+    <a class="navbar-brand" href="/">iko&#39;s logs</a>
+    <button class="navbar-toggler navbar-toggler-right" type="button" data-toggle="collapse" data-target="#navbarResponsive" aria-controls="navbarResponsive" aria-expanded="false" aria-label="Toggle navigation">
+      Menu
+      <i class="fa fa-bars"></i>
+    </button>
+    <div class="collapse navbar-collapse" id="navbarResponsive">
+      <ul class="navbar-nav ml-auto">
+        <li class="nav-item">
+          <a class="nav-link" href="/">Home</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/about">About</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/posts">Posts</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/contact">Contact</a>
+        </li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+
+  <!-- Page Header -->
+
+<header class="masthead" style="background-image: url('#000')">
+
+  <div class="overlay"></div>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <div class="post-heading">
+          <h1>Pairy</h1>
+          
+          <h2 class="subheading">pair programming remotely in neovim</h2>
+          
+          <span class="meta">Posted by
+            <a href="#">ikouchiha47</a>
+            on October 24, 2024 &middot; <span class="reading-time" title="Estimated read time">
+  
+   6 mins  read </span>
+
+          </span>
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="container space-grotesk">
+  <div class="row">
+    <div class="col-lg-8 col-md-10 mx-auto">
+
+      <p><a href="https://github.com/ikouchiha47/pairy">github</a></p>
+
+<h1 id="pairy">Pairy</h1>
+
+<p>The problem of sharing just code always remained. There has been
+multiple solutions over the years, infact <a href="https://zed.dev/">Zed</a> comes with an
+inbuilt click to pair option.</p>
+
+<p>The problem however, you have to sign-in. So <strong>fuck that</strong>.</p>
+
+<h2 id="base-idea">Base idea</h2>
+
+<p>Implementing a full fledged real time collaboration is tough. <code class="language-plaintext highlighter-rouge">CRDT</code> is the go-to
+solution in most cases. <code class="language-plaintext highlighter-rouge">Operational Transform</code> is another option, but one needs
+to define those transforms. Open up any open source library, and you can find filessss. <code class="language-plaintext highlighter-rouge">_|_</code></p>
+
+<p>However, I was more interested in a simpler working solution. The idea is simple:</p>
+
+<ul>
+  <li>Have a server to handle clients, (and future extensions on features like auth, discover-ability and stuff)</li>
+  <li>Have both the participants on the same network, achieved with <code class="language-plaintext highlighter-rouge">zerotier</code>.</li>
+  <li>Communicate the <code class="language-plaintext highlighter-rouge">mode</code> and <code class="language-plaintext highlighter-rouge">input</code> between the participants, and update the whole buffer.</li>
+</ul>
+
+<p>Right now, the system works like so:</p>
+
+<ul>
+  <li>One has to provide the remote ip address, for lua to connect.</li>
+  <li>This is where lua sends the data to.</li>
+  <li>Connect with the local hosted server</li>
+  <li>This is where the golang receives the data from.</li>
+  <li>Upon receiving the data update the current file/buffer.</li>
+  <li>Before sending or re-rendering, it does a hash comparison to detect changes.</li>
+</ul>
+
+<h2 id="improvements">Improvements</h2>
+
+<p>Although I am not looking to make huge improvements anytime soon, with CRDTs, there
+are however a set of things that I will do.</p>
+
+<ul>
+  <li>Handle the states, <code class="language-plaintext highlighter-rouge">receiving</code>, <code class="language-plaintext highlighter-rouge">sending</code>, <code class="language-plaintext highlighter-rouge">typing</code>, to manage the sync better.</li>
+  <li>Anytime someone is <code class="language-plaintext highlighter-rouge">typing</code>, prevent, any <code class="language-plaintext highlighter-rouge">updates</code>.</li>
+  <li>Start the sync process only when in <code class="language-plaintext highlighter-rouge">receiving</code> or <code class="language-plaintext highlighter-rouge">sending</code> mode</li>
+  <li>Show mismatch with options, like a <code class="language-plaintext highlighter-rouge">three way merge</code></li>
+  <li>Rn participants need to be on the same network, would add a hosted service as well.</li>
+</ul>
+
+<h2 id="internals">Internals</h2>
+
+<p>The golang server is rn a dumb operator forwarding the received data to lua.
+There is no concept of EOF here, so the buffer is read until ‘\n’.
+The lua end is where some hacky things happen.</p>
+
+<p>Now in a text a new-line <code class="language-plaintext highlighter-rouge">\n</code> can occur, between sentences, so while sending
+the data we need to do some hacky shit. With a <code class="language-plaintext highlighter-rouge">crdt</code>, we would be sending
+the data wrapped in some other data, so this problem won’t arise.</p>
+
+<p>But fear not, the answer right now is simple.
+<code class="language-plaintext highlighter-rouge">Replace the \n with \xn and then add a \n in the end</code>.</p>
+
+<p>The data is sent using a line protocol, cause <code class="language-plaintext highlighter-rouge">_|_ json parsing</code>.</p>
+
+<p>The format is: <code class="language-plaintext highlighter-rouge">mode|whatever</code></p>
+
+<div class="language-go highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">for</span> <span class="p">{</span>
+  <span class="n">message</span><span class="p">,</span> <span class="n">err</span> <span class="o">:=</span> <span class="n">reader</span><span class="o">.</span><span class="n">ReadString</span><span class="p">(</span><span class="sc">'\n'</span><span class="p">)</span>
+  <span class="k">if</span> <span class="n">err</span> <span class="o">!=</span> <span class="no">nil</span> <span class="p">{</span>
+    <span class="k">break</span>
+  <span class="p">}</span>
+
+  <span class="n">log</span><span class="o">.</span><span class="n">Print</span><span class="p">(</span><span class="s">"Received:"</span><span class="p">,</span> <span class="n">message</span><span class="p">)</span>
+
+  <span class="n">slicendice</span><span class="o">.</span><span class="n">Map</span><span class="p">(</span><span class="n">filteredClients</span><span class="p">,</span> <span class="k">func</span><span class="p">(</span><span class="n">client</span> <span class="n">net</span><span class="o">.</span><span class="n">Conn</span><span class="p">)</span> <span class="p">{</span>
+    <span class="n">client</span><span class="o">.</span><span class="n">Write</span><span class="p">([]</span><span class="kt">byte</span><span class="p">(</span><span class="n">message</span><span class="p">))</span>
+  <span class="p">})</span>
+<span class="p">}</span>
+</code></pre></div></div>
+
+<div class="language-lua highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">function</span> <span class="nc">M</span><span class="p">.</span><span class="nf">parse</span><span class="p">(</span><span class="n">data</span><span class="p">)</span>
+  <span class="c1">-- compare hashes</span>
+  <span class="kd">local</span> <span class="n">currHash</span> <span class="o">=</span> <span class="n">md5</span><span class="p">.</span><span class="n">sum</span><span class="p">(</span><span class="n">data</span><span class="p">)</span>
+  <span class="k">if</span> <span class="n">M</span><span class="p">.</span><span class="n">prevHash</span> <span class="o">==</span> <span class="n">currHash</span> <span class="k">then</span>
+    <span class="k">return</span>
+  <span class="k">end</span>
+
+  <span class="n">M</span><span class="p">.</span><span class="n">prevHash</span> <span class="o">=</span> <span class="n">currHash</span>
+
+  <span class="c1">-- get the mode and data</span>
+  <span class="kd">local</span> <span class="n">mode</span><span class="p">,</span> <span class="n">line</span> <span class="o">=</span> <span class="n">data</span><span class="p">:</span><span class="n">match</span><span class="p">(</span><span class="s2">"^(%a)|(.+)$"</span><span class="p">)</span>
+
+  <span class="c1">-- replace the \\xn with new-lines, for the in-text line breaks</span>
+  <span class="n">line</span> <span class="o">=</span> <span class="n">line</span><span class="p">:</span><span class="nb">gsub</span><span class="p">(</span><span class="sr">"</span><span class="se">\\</span><span class="sr">xn"</span><span class="p">,</span> <span class="sr">"</span><span class="se">\n</span><span class="sr">"</span><span class="p">)</span>
+
+  <span class="c1">-- handle the modes</span>
+  <span class="k">if</span> <span class="n">mode</span> <span class="o">==</span> <span class="s2">"i"</span> <span class="k">then</span>
+    <span class="n">vim</span><span class="p">.</span><span class="n">schedule</span><span class="p">(</span><span class="k">function</span><span class="p">()</span>
+      <span class="kd">local</span> <span class="n">lines</span> <span class="o">=</span> <span class="n">vim</span><span class="p">.</span><span class="n">split</span><span class="p">(</span><span class="n">line</span><span class="p">,</span> <span class="s2">"</span><span class="se">\n</span><span class="s2">"</span><span class="p">,</span> <span class="p">{</span> <span class="n">trimempty</span> <span class="o">=</span> <span class="kc">true</span> <span class="p">})</span>
+      <span class="kd">local</span> <span class="n">buf</span> <span class="o">=</span> <span class="n">vim</span><span class="p">.</span><span class="n">api</span><span class="p">.</span><span class="n">nvim_get_current_buf</span><span class="p">()</span>
+
+      <span class="n">vim</span><span class="p">.</span><span class="n">api</span><span class="p">.</span><span class="n">nvim_buf_set_lines</span><span class="p">(</span><span class="n">buf</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="kc">false</span><span class="p">,</span> <span class="n">lines</span><span class="p">)</span>
+    <span class="k">end</span><span class="p">)</span>
+
+    <span class="c1">-- other modes</span>
+  <span class="k">end</span>
+<span class="k">end</span>
+
+<span class="k">function</span> <span class="nc">M</span><span class="p">.</span><span class="nf">currentBuffer</span><span class="p">()</span>
+  <span class="kd">local</span> <span class="n">buffer</span> <span class="o">=</span> <span class="n">vim</span><span class="p">.</span><span class="n">api</span><span class="p">.</span><span class="n">nvim_buf_get_lines</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="kc">false</span><span class="p">)</span>
+  <span class="kd">local</span> <span class="n">buffer_string</span> <span class="o">=</span> <span class="nb">table.concat</span><span class="p">(</span><span class="n">buffer</span><span class="p">,</span> <span class="s2">"</span><span class="se">\\</span><span class="s2">xn"</span><span class="p">)</span> <span class="c1">-- as discussed above</span>
+
+  <span class="k">if</span> <span class="n">buffer_string</span> <span class="o">==</span> <span class="s2">""</span> <span class="k">then</span>
+    <span class="k">return</span> <span class="s2">""</span>
+  <span class="k">end</span>
+
+  <span class="k">return</span> <span class="s2">"i|"</span> <span class="o">..</span> <span class="n">buffer_string</span>
+<span class="k">end</span>
+</code></pre></div></div>
+
+<p>– vim: ts=2 sts=2 sw=2 et</p>
+
+<h3 id="thanks">thanks</h3>
+
+<p>until next time, ladies.</p>
+
+
+      <hr>
+      <div class="row mb-5 mt-5">
+  <div class="col-md-6 d-flex align-items-end ">
+    <span>Thanks. <i>mind sharing?</i></span>
+  </div>
+
+  <!-- Right Column with Social Media Icons (on the right for larger screens, on bottom for smaller screens) -->
+  <div class="col-md-6 order-md-2 order-1 text-md-right text-center mt-3 mt-md-0">
+    <div>
+
+      <a
+          href="https://www.linkedin.com/sharing/share-offsite?url=ikouchiha47.github.io/2024/10/24/pairy.html"
+          onclick="window.open(this.href, 'pop-up', 'left=20,top=20,width=500,height=500,toolbar=1,resizable=0'); return false;"
+          class="d-inline-block mr-2"
+       >
+        <span class="fa-stack fa-lg" style="color: #0077b5;">
+          <i class="fas fa-square fa-stack-2x"></i>
+          <i class="fab fa-linkedin fa-stack-1x fa-inverse"></i>
+        </span>
+      </a>
+
+      <a
+          href="https://twitter.com/intent/tweet?text=Pairy&url=ikouchiha47.github.io/2024/10/24/pairy.html"
+          onclick="window.open(this.href, 'pop-up', 'left=20,top=20,width=500,height=500,toolbar=1,resizable=0'); return false;"
+          class="d-inline-block mr-2">
+        <span class="fa-stack fa-lg" style="color: #1DA1F2;">
+          <i class="fas fa-square fa-stack-2x"></i>
+          <i class="fab fa-twitter fa-stack-1x fa-inverse"></i>
+        </span>
+      </a>
+
+      <a
+          href="http://www.reddit.com/submit?url=ikouchiha47.github.io/2024/10/24/pairy.html"
+          onclick="window.open(this.href, 'pop-up', 'left=20,top=20,width=500,height=500,toolbar=1,resizable=0'); return false;"
+          class="d-inline-block mr-2">
+        <span class="fa-stack fa-lg" style="color: #FF4500;">
+          <i class="fas fa-square fa-stack-2x"></i>
+          <i class="fab fa-reddit fa-stack-1x fa-inverse"></i>
+        </span>
+      </a>
+    </div>
+  </div>
+</div>
+
+<hr/>
+
+
+      <div class="clearfix">
+
+        
+        <a class="btn btn-primary float-left" href="/2024/07/10/building-a-storage-engine.html" data-toggle="tooltip" data-placement="top" title="beetledb">&larr; Previous<span class="d-none d-md-inline">
+            Post</span></a>
+        
+        
+
+      </div>
+
+    </div>
+  </div>
+</div>
+
+
+  <!-- Footer -->
+
+<hr>
+
+<footer>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <ul class="list-inline text-center">
+          
+          <li class="list-inline-item">
+            <a href="mailto:amitava.dev@proton.me" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="far fa-envelope fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          
+          
+          <li class="list-inline-item">
+            <a href="https://www.linkedin.com/in/amitavaag" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-linkedin fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          <li class="list-inline-item">
+            <a href="https://github.com/ikouchiha47" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-github fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+        </ul>
+
+        <p class="copyright text-muted">
+          Build with: 
+          <a 
+            href="https://github.com/StartBootstrap/startbootstrap-clean-blog-jekyll"
+            class="text-gray"
+            target="_blank">startbootstrap-clean-blog-jekyll</a></p>
+      </div>
+    </div>
+  </div>
+</footer>
+
+
+  <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="/assets/vendor/blog/js/scripts.js"></script>
+
+<script src="/assets/scripts.js"></script>
+
+
+
+
+  
+
+</body>
+
+</html>
