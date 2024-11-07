@@ -393,3 +393,7 @@ sortedIntervals.slice(1).reduce((acc, interval) => {
 
 }, answer)
 ```
+
+### Windowing
+
+

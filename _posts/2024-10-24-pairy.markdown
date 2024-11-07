@@ -10,7 +10,7 @@ background: '#000'
 
 [github](https://github.com/ikouchiha47/pairy)
 
-# [Pairy]
+# Pairy
 
 The problem of sharing just code always remained. There has been
 multiple solutions over the years, infact [Zed](https://zed.dev/) comes with an
