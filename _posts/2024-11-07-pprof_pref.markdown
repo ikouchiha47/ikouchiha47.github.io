@@ -4,8 +4,8 @@ layout: post
 title: "Bench & Perf"
 subtitle: "Part 1: Journey to understanding system performance"
 description: "understanding how to look for system performance"
-date: 2024-04-20 00:00:00
-background: '#000'
+date: 2024-11-07 00:00:00
+background: 'purple'
 ---
 
 # Part 1: Getting to know the tools

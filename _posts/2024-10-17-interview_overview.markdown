@@ -394,6 +394,37 @@ sortedIntervals.slice(1).reduce((acc, interval) => {
 }, answer)
 ```
 
-### Windowing
+### Monotonic Stack
 
+Main Idea: have a stack, before inserting an element pop until you find a `nextGreater` or `nextLower` element.
+
+Problem Types:
+
+- Next greater Element
+- Next smaller Element
+- Previous greater Element
+- Previous smaller Element
+- Lexicographically Smallest/Greatest
+- Histogram Related Problems left and right boundaries for each
+
+Template:
+
+```js
+function monotonicStack(arr) {
+  var stack = [], result = SOME_VALUE;
+
+  for (int i = 0; i < arr.size(); ++i) {
+    while(stack.length && stack.at(-1) OPERATOR arr[i] /* && other Logic given in problem */) {
+      /* do something with */ stack.at(-1)
+      stack.pop()
+
+      //Use the current element and STACK TOP to update result
+
+      }
+
+    stack.push(i)
+  }
+  //at this point we have a monotonic stack in our hand
+}
+```
 

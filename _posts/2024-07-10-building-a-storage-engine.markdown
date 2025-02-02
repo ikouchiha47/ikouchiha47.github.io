@@ -220,11 +220,11 @@ Page 2: {TID11: (11, row data), ..., TID15: (15, row data)}
 Since the data in the leaf is not ordered like in case of Mysql or sqlite, the insertion process
 doesn't need to find the proper data page.
 
-__SELECTs on secondar indexes are therefore faster__, 
+__SELECTs on secondary indexes are therefore faster__, 
 
 
 This however causes a problem, that the data on disk is not contigious. (Although I am not really sure, aside from using `bitmaps` are there any optimizations they use, this is just theoritical understanding from the book).
-And "theoritically" it makes __RANGE queries slower compared to clusted indexes.
+And "theoritically" it makes __RANGE__ queries slower compared to clusted indexes.
 
 So, something, like using 8bit blocks to represent integer keys, so for a 32bit, divided in 4 blocks.
 
