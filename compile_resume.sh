@@ -10,7 +10,7 @@ fi
 
 
 echo "compiling"
-typst compile resume_oct_24.typ resume_short.pdf
+typst compile resume.typ resume.pdf
 echo "generated resume_short.pdf"
-cp resume_short.pdf ~/Desktop/Resume_Software_Engineer.pdf 
+cp resume.pdf ~/Desktop/Resume_Software_Engineer.pdf 
 exit 0
