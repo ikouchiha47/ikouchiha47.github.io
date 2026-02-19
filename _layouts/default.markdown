@@ -14,6 +14,8 @@
 
   {% include scripts.html %}
 
+  {% include mermaid.html %}
+
   {% unless site.disable_tracking  %}
     {% include google-analytics.html %}
   {% endunless %}

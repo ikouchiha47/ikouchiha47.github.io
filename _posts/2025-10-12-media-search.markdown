@@ -1,15 +1,17 @@
 ---
 active: true
 layout: post
-title: "Cinestar: A Local-First Media Search, Organiser"
-subtitle: ""
+title: "Cinestar"
+subtitle: "A Local-First Media Search, Organiser"
 description: "Index images, videos. Search in natural lanuage, for images and relevant segments in videos"
-date: 2025-10-12 00:00:00
-background: 'green'
+date: 2025-10-02 00:00:00
+background_color: 'green'
 ---
 
+[Download](https://github.com/ikouchiha47/cinestar-release/releases/tag/v0.1.53)
 
-## 1. Core Principle: Privacy-First, Local AI.
+
+## 1. Core Principle: Privacy-First, Local AI
 
 The design of Cinestar originates from a commitment to user privacy. The goal was to create a powerful media search tool that does not require cloud uploads. This privacy-first principle dictated the first major technical decision: the exclusive use of **local AI models**.
 
@@ -29,21 +31,27 @@ Extending the system to video introduced the complexity of `ffmpeg`. The initial
 Several approaches were tested before arriving at the current solution:
 
 **Attempt 1: Direct Shell Execution**
+
 ```bash
 ffmpeg -i video.mp4 -vn -acodec pcm_s16le audio.wav
 ```
+
 - **Problem**: No resource limits, multiple concurrent processes caused CPU spikes to 100%
 - **Result**: UI freezes, system instability
 
 **Attempt 2: Sequential Processing**
+
 ```bash
+
 ffmpeg -i video.mp4 -vn -acodec pcm_s16le audio.wav && \
 ffmpeg -i video.mp4 -vf "select='eq(pict_type,I)'" -vsync vfr frame_%04d.png
 ```
+
 - **Problem**: Blocking operations, no parallelism
 - **Result**: Extremely slow for large video libraries
 
 **Attempt 3: Resource-Aware Pool (Final Solution)**
+
 - Implemented a semaphore-based pool limiting concurrent FFmpeg instances (default: 2)
 - Job queue with priority scheduling
 - Graceful degradation under load
@@ -183,33 +191,39 @@ After the initial audio indexing, a deeper, multi-modal analysis begins for each
 The scene reconstruction process creates a rich, contextual understanding that goes beyond simple object detection. By combining audio, visual information, **and temporal context from previous segments**, the system can understand:
 
 **Object Interactions:**
+
 - "person handing object to another person"
 - "dog playing with ball in park"
 - "chef chopping vegetables on cutting board"
 
 **Spatial Relationships:**
+
 - "car parked next to building"
 - "people sitting around table"
 - "mountains in the background behind the lake"
 
 **Temporal Actions:**
+
 - "person walking towards camera"
 - "door opening slowly"
 - "liquid pouring into glass"
 
 **Contextual Scenes:**
+
 - "tense conversation in office setting" (combines facial expressions, body language, dialogue tone)
 - "celebration with people dancing" (combines movement, audio cues, visual atmosphere)
 - "cooking demonstration with ingredients on counter" (combines objects, actions, spatial layout)
 
 **Narrative Continuity (Temporal Context):**
+
 The system maintains a sliding window of previous segment descriptions, enabling it to understand:
 - Scene transitions: "After the introduction, the speaker begins the demonstration"
 - Character tracking: "The same person continues explaining the concept"
 - Story progression: "Following the setup, the action sequence begins"
 
 **Example Scene Reconstruction Prompt:**
-```
+
+```txt
 Previous segments: 
   → "Person introduces topic in office setting" 
   → "Close-up of whiteboard with diagrams"
@@ -230,16 +244,19 @@ This RNN-style temporal context allows the model to understand that this is a **
 After the initial indexing and enrichment, the system enters a continuous improvement loop with three additional refinement passes, each using progressively lower confidence thresholds:
 
 **Phase 2 - Coarse Segmentation (Threshold: 0.8)**
+
 - Triggered: Immediately after Phase 1
 - Purpose: Initial coarse segmentation for immediate results
 - Creates broader segments with high-confidence content
 
 **Phase 3 - Medium Refinement (Threshold: 0.6)**
+
 - Triggered: 5 minutes after initial processing
 - Purpose: Medium-grained analysis to capture more nuanced content
 - Identifies additional segments that were missed in the first pass
 
 **Phase 4 - Fine Refinement (Threshold: 0.4)**
+
 - Triggered: 30 minutes after initial processing (conditional)
 - Purpose: Deep analysis for maximum search coverage
 - Conditional execution based on video length and existing segment count
@@ -251,6 +268,7 @@ The `RefinementJobScheduler` manages this process:
 - Applies conditional logic to skip unnecessary refinement (e.g., short videos, already well-segmented content)
 
 This five-phase approach ensures videos are searchable almost instantly (Phase 0), enriched with multi-modal understanding (Phase 1), and progressively refined over time (Phases 2-4) for maximum search quality.
+
 
 ## 5. The Search System: Intelligence Through Multi-Modal Query Understanding
 
@@ -271,6 +289,7 @@ The system uses Llama 3.2 (3B) to classify queries into five types:
 5. **MIXED** - Combinations ("beginning where someone is cooking")
 
 **Example Classification:**
+
 ```typescript
 // Query: "romantic scene in dimly lit room"
 classification = {
@@ -307,18 +326,21 @@ This transformation ensures the search understands both what's being said (audio
 The system uses a **hybrid search** approach that combines two complementary methods:
 
 **1. Vector Similarity Search (70% weight)**
+
 - Uses `sqlite-vec` extension for efficient vector operations
 - Searches 1024-dimensional BGE-large embeddings
 - Finds semantically similar content even without exact keyword matches
 - L2 distance threshold: 15.0 (strict) for high-quality matches
 
 **2. Full-Text Search / FTS (30% weight)**
+
 - Uses SQLite's FTS5 with BM25 ranking
 - Matches exact keywords and phrases
 - Handles queries with specific terminology
 - Complements vector search for precise term matching
 
 **Hybrid Scoring Formula:**
+
 ```
 final_score = α × vector_similarity + (1 - α) × fts_score
 ```
@@ -346,6 +368,7 @@ if (queryType === 'spatial' && result.type === 'video') {
 ```
 
 This ensures that:
+
 - Time-based queries prioritize specific segments
 - Visual queries favor complete videos with full context
 - Audio queries weight transcription matches higher
@@ -353,16 +376,19 @@ This ensures that:
 ### Search Performance Optimizations
 
 **1. Database Architecture**
+
 - `SQLite` with `sqlite-vec` extension for local vector search
 - Separate FTS5 virtual table (`media_fts`) for text search
 - Indexed joins for fast result merging
 
 **2. Search Cancellation**
+
 - Robust cancellation mechanism for responsive UI
 - Old queries immediately cancelled when user types new query
 - Prevents resource waste on stale searches
 
 **3. Result Deduplication**
+
 - Parent videos and segments deduplicated intelligently
 - Shows parent video with "(X segments match)" indicator
 - Preserves segment information for precise navigation
@@ -410,17 +436,21 @@ This multi-stage approach ensures that searches are both **intelligent** (unders
 The search system applies different strategies for images vs. videos, reflecting their fundamental differences in content structure:
 
 #### Image Search
+
 **Indexing:**
+
 - Single-step captioning using Moondream:v2 vision model
 - One caption per image describing visual content
 - Caption → Text embedding (BGE-large 1024D)
 
 **Search:**
+
 - Query against single caption embedding
 - No temporal context (images are static)
 - Standard hybrid search (vector + FTS)
 
 **Example:**
+
 ```
 Image: sunset-beach.jpg
 Caption: "Golden sunset over ocean with silhouetted palm trees"
@@ -429,7 +459,9 @@ Search: "beach sunset" → Direct similarity match
 ```
 
 #### Video Search
+
 **Indexing:**
+
 - Multi-stage, multi-modal process across 5 phases
 - Each 5-minute batch generates:
   - **Audio transcription** → `transcription_embedding`
@@ -438,6 +470,7 @@ Search: "beach sunset" → Direct similarity match
 - Multiple embeddings per video segment
 
 **Search:**
+
 - Query against multi-modal embeddings (audio + visual + scene)
 - **Query-aware score boosting:**
   - Temporal queries (`"beginning"`, `"first 5 minutes"`) → Boost segments with timestamps (1.1×)
@@ -447,6 +480,7 @@ Search: "beach sunset" → Direct similarity match
 - **Segment navigation:** Results link to specific timestamps
 
 **Example:**
+
 ```
 Video: presentation.mp4 (20 minutes)
 Batch 1 (0-5min):
@@ -480,6 +514,7 @@ Search: "presentation about technology"
 | **Result Deduplication** | Not needed | Parent + segments merged |
 | **Navigation** | Direct image view | Timestamp-based seeking |
 | **Processing Time** | ~2-5s per image | ~40s for 60min video (Phase 0) |
+
 
 This differentiated approach ensures that each media type is indexed and searched in a way that matches how users naturally think about that content—images as single visual moments, videos as temporal narratives with multiple modalities.
 
@@ -523,6 +558,7 @@ This differentiated approach ensures that each media type is indexed and searche
 | Phase 3 (T:0.6) | +5min | +5min | ✓ Medium |
 | Phase 4 (T:0.4) | +30min | +30min | ✓ Fine |
 
+
 ### Search Performance
 
 - **Vector search latency:** 7-50ms (database query)
@@ -540,6 +576,7 @@ This differentiated approach ensures that each media type is indexed and searche
 ## 8. Technology Stack
 
 ### Core Framework
+
 | Component | Technology | Purpose |
 |-----------|-----------|---------|
 | Desktop Framework | Electron | Cross-platform desktop app |
@@ -547,7 +584,9 @@ This differentiated approach ensures that each media type is indexed and searche
 | Styling | TailwindCSS + shadcn/ui | Modern, responsive design |
 | Icons | Lucide | Consistent iconography |
 
+
 ### AI & ML Models
+
 | Model | Parameters | Purpose | Runtime |
 |-------|-----------|---------|---------|
 | Whisper | Base | Audio transcription | Local CPU |
@@ -555,41 +594,51 @@ This differentiated approach ensures that each media type is indexed and searche
 | Moondream:v2 | 2B | Visual captioning | Ollama |
 | Llama 3.2 | 3B | Scene reconstruction & query analysis | Ollama |
 
+
 ### Data Layer
+
 | Component | Technology | Purpose |
 |-----------|-----------|---------|
 | Main Database | SQLite | Metadata, jobs, configuration |
 | Vector Database | SQLite + sqlite-vec | Semantic search with embeddings |
 | Video Database | SQLite (video-rag.db) | Video segments, batches, transcriptions |
 
+
 ### Media Processing
+
 | Tool | Purpose |
 |------|---------|
 | FFmpeg | Video/audio extraction, keyframe generation |
 | FFprobe | Video metadata analysis |
 | Sharp | Image processing (thumbnails, compression) |
 
+
 ### Infrastructure
+
 | Component | Technology |
 |-----------|-----------|
 | AI Runtime | Ollama (2 instances + nginx load balancer) |
 | Process Management | Node.js child processes with semaphore pools |
 | IPC | Electron IPC (main ↔ renderer) |
 
+
 ## 9. Future Enhancements
 
 ### Short-term
+
 - **Intelligent Query Cache:** Semantic caching layer using embeddings to eliminate redundant search operations. Expected 35-55% cache hit rate with <5ms latency for cached queries
 - **OCR Integration:** Extract text from video frames for document/presentation search
 - **Audio Fingerprinting:** Detect duplicate videos and similar content
 - **Batch Export:** Export search results with timestamps for video editing workflows
 
 ### Medium-term
+
 - **Face Recognition:** Local face detection and clustering for person-based search
 - **Object Detection:** Identify and track objects across video frames
 - **Multi-language Support:** Extend transcription beyond English
 
 ### Long-term
+
 - **Distributed Processing:** Support for processing across multiple machines
 - **Plugin System:** Allow community-developed processors and search filters
 - **Mobile Companion App:** View and search indexed content from mobile devices
@@ -601,6 +650,7 @@ Cinestar's architecture is the result of an iterative engineering process. The c
 The five-phase pipeline ensures that users get immediate value (Phase 0) while the system continuously improves search quality in the background (Phases 1-4). The dual-database architecture (metadata + vectors) and dual-Ollama setup (search + indexing) provide both speed and intelligence without sacrificing user experience.
 
 **Key Takeaways:**
+
 - **Privacy is non-negotiable:** Local AI models can match cloud services
 - **Progressive enhancement works:** Users don't wait for perfection
 - **CQRS enables responsiveness:** Separate read/write paths prevent UI blocking
