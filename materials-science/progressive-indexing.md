@@ -78,6 +78,18 @@ This is where AI-powered analysis runs. The system identifies:
 
 By the time Stage 3 finishes, the researcher might already be two questions deep in a conversation. The dataset cards and citations simply appear in the sidebar, enriching an already-active session.
 
+## Why Not Just pgvector
+
+A natural question: if you're already on Postgres, why not use `pgvector` for everything?
+
+We did, initially. Postgres gives you exact nearest-neighbor search out of the box, and with `pgvector`'s IVFFlat or HNSW indexes you get approximate nearest-neighbor (ANN). For a few hundred papers it's fine.
+
+The problem shows up at scale with multi-model embeddings. We run two embedding models per chunk (a general-purpose embedder and a domain-specific one like SPECTER), fuse results with RRF, and also need per-page visual embeddings from ColPali (~1030 vectors of 128 dims *per page*). That's a lot of vectors with different dimensionalities and different query patterns.
+
+Postgres HNSW indexes are single-vector, single-metric. To do multi-model RRF you'd need separate indexes, separate queries, and manual fusion in SQL or application code — which is what we ended up doing, but with a dedicated vector store (ChromaDB for development, Qdrant for production) where index management, batch upserts, and collection isolation are first-class operations rather than afterthoughts bolted onto a relational engine.
+
+The tradeoff: Postgres stays as the source of truth for paper metadata, processing state, and workspace management. The vector stores are derived indexes — rebuildable from source. If a vector store corrupts, we re-embed from the stored chunks. That separation keeps the progressive pipeline honest: Stage 1 writes to Postgres immediately, vector indexing happens asynchronously without blocking the researcher.
+
 ## The State Machine
 
 Each paper moves through a clear progression:

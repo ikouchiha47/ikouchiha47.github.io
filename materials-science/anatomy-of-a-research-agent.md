@@ -108,7 +108,11 @@ That has two direct effects:
 - **Recall improves** because "question-shaped" queries match "question-shaped" embeddings.
 - **Precision improves** because summaries drop noise and keep the chunk's purpose sharp.
 
-On top of that, we support hybrid retrieval (semantic + keyword). In engineering terms: dense vectors give you concept matching; sparse terms give you exact-symbol and exact-name matching; fusion keeps both.
+On top of that, we run a **multi-model hybrid retrieval** pipeline. Each chunk is embedded by two models: a general-purpose embedder (OpenAI or Jina v4) for broad semantic coverage, and **AllenAI SPECTER** for scientific-domain awareness — SPECTER is trained on citation graphs and understands how research papers relate to each other.
+
+At query time, both models retrieve independently and results are fused using **Reciprocal Rank Fusion (RRF)**. RRF is rank-based, not score-based, so it sidesteps the calibration problem of mixing scores from different embedding spaces. A document that ranks highly in both models surfaces to the top; a document that only one model likes gets a moderate rank instead of being drowned out.
+
+On top of that, we layer keyword matching for exact-symbol and exact-name retrieval — formula names, element symbols, and database IDs that semantic models tend to fumble.
 
 ## Self-Correcting Retrieval (CRAG v2)
 
@@ -131,7 +135,11 @@ The analogy is race engineering, not chat: when the telemetry doesn't reconcile,
 
 A lot of the signal in materials papers is not in sentences. It is in a phase diagram, a band structure plot, a microscopy image, or a table layout.
 
-For that, we also index pages visually using **ColPali-style late interaction embeddings** and store per-page vectors alongside OCR text. Query-time scoring is MaxSim over page patches: you can retrieve a page because it *looks* like the thing you asked for, even when the caption is weak or the OCR is imperfect.
+For that, we run two visual pipelines on every page:
+
+**ColPali v1.3** for visual retrieval — each page is encoded into ~1030 patch vectors (128 dims each), and queries get token-level embeddings. Scoring is MaxSim over page patches: you can retrieve a page because it *looks* like the thing you asked for, even when the caption is weak or the text extraction missed a table.
+
+**An LLM-based OCR model** for structured text extraction — a vision-language model that reads page images and produces clean markdown with tables, equations, and headings preserved. This replaces traditional OCR for pages where layout matters, which in scientific papers is most of them.
 
 This matters because it lets the agent answer questions like:
 

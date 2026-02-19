@@ -4,12 +4,6 @@
 
 <script src="{{"/assets/scripts.js" | relative_url }}"></script>
 
-{% if page.layout == 'group_page' or page.layout == 'group_index' %}
-<script type="module">
-  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10.6.0/dist/mermaid.esm.min.mjs';
-  mermaid.initialize({ startOnLoad: true, theme: 'neutral' });
-</script>
-{% endif %}
 
 {% if page.url contains 'contact' %}
   <!-- Form Validation -->

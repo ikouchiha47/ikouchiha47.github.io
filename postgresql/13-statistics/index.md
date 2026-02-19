@@ -3,7 +3,7 @@ title: "Statistics & Monitoring"
 layout: group_page
 group: postgresql
 group_title: "PostgreSQL Internals Deep Dive"
-group_url: "/2025/06/01/postgresql-internals.html"
+group_url: "/postgresql-internals/"
 chapter: "13-statistics"
 chapter_title: "Statistics & Monitoring"
 is_chapter_index: true

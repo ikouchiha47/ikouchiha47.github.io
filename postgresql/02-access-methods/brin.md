@@ -3,7 +3,7 @@ title: "BRIN Index"
 layout: group_page
 group: postgresql
 group_title: "PostgreSQL Internals Deep Dive"
-group_url: "/2025/06/01/postgresql-internals.html"
+group_url: "/postgresql-internals/"
 chapter: "02-access-methods"
 chapter_title: "Access Methods"
 chapter_url: "/postgresql/02-access-methods/"

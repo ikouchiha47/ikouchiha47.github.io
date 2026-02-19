@@ -3,7 +3,7 @@ title: "WAL for Extensions"
 layout: group_page
 group: postgresql
 group_title: "PostgreSQL Internals Deep Dive"
-group_url: "/2025/06/01/postgresql-internals.html"
+group_url: "/postgresql-internals/"
 chapter: "04-wal"
 chapter_title: "Write-Ahead Logging"
 chapter_url: "/postgresql/04-wal/"

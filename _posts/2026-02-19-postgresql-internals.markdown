@@ -3,9 +3,10 @@ active: true
 layout: group_index
 title: "PostgreSQL Internals Deep Dive"
 subtitle: "A wizard-level exploration of the PostgreSQL codebase"
-date: 2025-06-01 00:00:00
+date: 2026-02-19 00:00:00
 background_color: '#000'
 group: postgresql
+permalink: /postgresql-internals/
 ---
 
 > A wizard-level exploration of the PostgreSQL codebase, from SQL string to disk blocks and back.
@@ -26,13 +27,6 @@ You can read linearly or jump to any topic. The dependency arrows in each chapte
 - Basic understanding of operating systems (processes, virtual memory, file I/O)
 - Familiarity with SQL and relational databases
 - A cloned PostgreSQL source tree (this book references `src/` paths throughout)
-
-## Conventions
-
-- `src/backend/storage/buffer/bufmgr.c:123` — source file with line number
-- **Bold terms** — defined in context on first use
-- Mermaid diagrams — rendered inline; viewable in any Mermaid-compatible viewer
-- `{: .warning }` callouts — things that bite you in production
 
 ## Acknowledgments
 
