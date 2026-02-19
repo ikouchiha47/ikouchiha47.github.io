@@ -42,10 +42,15 @@ layout: default
       {{ content }}
 
       <!-- Home Post List -->
-      {% for post in site.posts limit : 5 %}
-        {% if post.active != true %}
+      {% assign shown = 0 %}
+      {% for post in site.posts %}
+        {% if post.active != true or post.hidden == true %}
           {% continue %}
         {% endif %}
+        {% if shown >= 5 %}
+          {% break %}
+        {% endif %}
+        {% assign shown = shown | plus: 1 %}
 
       <article class="post-preview">
         <a href="{{ post.url | prepend: site.baseurl | replace: '//', '/' }}">

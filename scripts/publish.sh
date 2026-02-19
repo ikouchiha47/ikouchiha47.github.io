@@ -15,13 +15,12 @@ if [[ -d "_site" ]]; then
 fi
 
 echo "⚡️ Installing project dependencies..."
-cd blog/
 bundle install --binstubs
 
 
 echo "🏋️ Building website..."
 JEKYLL_ENV=production ./bin/jekyll build
-mv _site ../ && cd ../_site
+mv _site /tmp/_site_publish && cd /tmp/_site_publish
 
 
 echo "☁️  Publishing website"
