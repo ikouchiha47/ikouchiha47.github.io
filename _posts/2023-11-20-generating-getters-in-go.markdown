@@ -5,6 +5,7 @@ subtitle: "Generating getters in go with go generate"
 description: "Generating getters in go with go generate"
 date: 2023-11-20 00:00:00
 background_color: '#000'
+active: true
 ---
 
 In this article we will explore how to beat Intellij.

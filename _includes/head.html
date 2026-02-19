@@ -12,10 +12,10 @@
   <meta property="og:description" content="{{ page.description | default: page.excerpt | strip_html | normalize_whitespace | truncate: 160 | escape }}">
   <meta property="og:type" content="website">
   <meta property="og:title" content="{{page.title | normalize_whitespace | truncate: 50 | escape}}">
-  <meta property="og:url" content="{{ site.remote_url }}{{ site.baseurl }}{{ page.url }}">
+  <meta property="og:url" content="{{ site.url }}{{ site.baseurl }}{{ page.url }}">
 
   {% if page.background && page.background contains 'img' %}
-    <meta property="og:image" content="{{ site.remote_url }}{{ site.baseurl }}{{ page.background }}"/>
+    <meta property="og:image" content="{{ site.url }}{{ site.baseurl }}{{ page.background }}"/>
   {% endif %}
 
   <link href='https://fonts.googleapis.com/css?family=Lora:400,700,400italic,700italic' rel='stylesheet' type='text/css'>

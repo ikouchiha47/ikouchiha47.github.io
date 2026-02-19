@@ -1,4 +1,5 @@
 ---
+active: true
 layout: post
 title: "Hosting with AWS (Part 2)"
 subtitle: "using a free tier manage ec2 instances with auto-scaling"

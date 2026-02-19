@@ -1,4 +1,5 @@
 ---
+active: true
 layout: post
 title: "Automate deployment with CI/CD"
 subtitle: "Simple setup using gitlab, aws and terraform"
@@ -423,3 +424,6 @@ fi
 ## Backword
 
 IaC has proven to be a valuable tool for streamlining our deployment processes and improving infrastructure management. I'm excited to continue refining our approach and sharing our experiences with the community.
+
+
+`Thank you.`

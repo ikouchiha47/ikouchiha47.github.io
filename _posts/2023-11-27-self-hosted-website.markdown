@@ -1,4 +1,5 @@
 ---
+active: true
 layout: post
 title: "Hosting Server on Bare Metals"
 subtitle: "Host your server from your home network and laptop/server"

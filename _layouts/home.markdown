@@ -25,10 +25,12 @@ layout: default
   </div>
 </header>
 
-<div class="container">
+<div class="container space-grotesk">
   <div class="row">
     <div class="col-lg-8 col-md-10 mx-auto">
       <i>Personal blog to keep a tack of my work, experiments, findings and thoughts.</i>
+      <a href="https://github.com/ikouchiha47" style="display:inline-block">Github</a> and 
+      <a href="https://github.com/go-batteries" style="display:inline-block">Github</a>
     </div>
   </div>
 
@@ -40,7 +42,15 @@ layout: default
       {{ content }}
 
       <!-- Home Post List -->
-      {% for post in site.posts limit : 5 %}
+      {% assign shown = 0 %}
+      {% for post in site.posts %}
+        {% if post.active != true or post.hidden == true %}
+          {% continue %}
+        {% endif %}
+        {% if shown >= 5 %}
+          {% break %}
+        {% endif %}
+        {% assign shown = shown | plus: 1 %}
 
       <article class="post-preview">
         <a href="{{ post.url | prepend: site.baseurl | replace: '//', '/' }}">
