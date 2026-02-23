@@ -23,8 +23,6 @@ Before diving into architecture, consider what a materials researcher dealing wi
 3. **Material candidates evaluated before the expensive run** — not "Cu2S is worth investigating", but "here is the energy landscape for Cu2S, Ag2S, and Cu2Se from ML predictions, and here is which one actually discriminates between hypotheses."
 4. **An audit trail that a PI can review** — every hypothesis traces back to specific paper sections, every experiment has explicit falsification criteria, every result is JSON-serializable.
 
-That is not a chatbot feature list. That is a research operations surface.
-
 ## The Core Loop
 
 Our system runs a three-part loop:
@@ -176,7 +174,7 @@ graph TD
     style V fill:#eef2ff,stroke:#6366f1,color:#111827
 ```
 
-This is the difference between an agent that answers questions and a system that designs experiments. The researcher gets a systematic exploration of compositional space, not a single-point answer.
+The researcher gets a systematic exploration of compositional space, not a single-point answer.
 
 In practice, this means:
 
@@ -225,10 +223,6 @@ We generate a full research workspace with:
 - `data/physical_parameters.json` (numeric anchors from the literature)
 - experiment command templates and agent roles
 - analysis/report scaffolding
-
-This is the difference between a demo and an operations surface.
-
-A single script is a sprint. A workspace is a race program.
 
 ```mermaid
 graph TD
@@ -324,17 +318,20 @@ For investors evaluating a materials discovery company, this is the difference b
 
 ## The "Withheld Final Paper" Check
 
-One of the most useful validation patterns we use is simple:
+The hypothesis agent was reverse-engineered from this evaluation method. We started with the question: *how do you know if a hypothesis engine is any good?* The answer shaped the architecture.
 
-- build hypotheses from an initial paper chain
-- hold out the final resolution paper
-- score generated hypotheses against the held-out resolution
+The pattern:
+
+- pick a resolved scientific controversy with a known outcome
+- build the paper chain *without* the final resolution paper
+- feed the incomplete chain to the hypothesis agent
+- score the generated hypotheses against the withheld paper using an LLM-as-a-judge
+
+The judge model receives the generated hypothesis, the withheld resolution paper, and a scoring rubric. It evaluates on target keyword coverage (did the hypothesis identify the right mechanism, materials, and phenomena?), directional correctness (does it point toward the same conclusion?), and falsification quality (are the proposed tests the ones that would actually resolve the question?). The scores are structured — not a vibes-based "looks good" — so we can track improvements across agent iterations.
+
+This evaluation loop was the testing ground before the agent was ever used on live research questions. Every change to the reasoning loop, tool selection, or hypothesis ranking was validated against held-out papers first.
 
 In our LK-99 run, the system scored 5/5 on target keyword coverage against the withheld consensus paper, with a composite evaluation score of 1.0. The hypothesis it ranked highest was the one the community eventually converged on.
-
-That gives you a practical measure of whether your system is learning signal or just echoing noise.
-
-In racing terms, it is not enough for your strategy simulator to look smart during the race. It has to match post-race truth.
 
 ## Engineering Principles We Optimized For
 
@@ -349,4 +346,22 @@ Those principles let us support multi-paper reasoning and material discovery wit
 
 If you want to see this loop in action, open the app and run a hypothesis-to-workspace cycle on your own paper set.
 
+## References: LK-99 Paper Corpus
+
+The input chain (10 papers fed to the hypothesis agent):
+
+1. Lee et al., "The First Room-Temperature Ambient-Pressure Superconductor" — [arXiv:2307.12008](https://arxiv.org/abs/2307.12008)
+2. Lee et al., "Superconductor Pb₁₀₋ₓCuₓ(PO₄)₆O showing levitation at room temperature" — [arXiv:2307.12037](https://arxiv.org/abs/2307.12037)
+3. Si & Held, "Origin of correlated isolated flat bands in copper-substituted lead phosphate apatite" — [arXiv:2307.16892](https://arxiv.org/abs/2307.16892)
+4. Kumar et al., "Synthesis of possible room temperature superconductor LK-99:Pb₉Cu(PO₄)₆O" — [arXiv:2307.16402](https://arxiv.org/abs/2307.16402)
+5. Griffin, "Electronic Structure and Vibrational Stability of Copper-substituted Lead Apatite" — [arXiv:2308.01135](https://arxiv.org/abs/2308.01135)
+6. Hou et al., "Successful growth and room temperature ambient-pressure magnetic levitation of LK-99" — [arXiv:2308.01516](https://arxiv.org/abs/2308.01516)
+7. Liu et al., "Absence of superconductivity in LK-99 at ambient conditions" — [arXiv:2308.03544](https://arxiv.org/abs/2308.03544)
+8. Guo et al., "First order transition in Pb₁₀₋ₓCuₓ(PO₄)₆O containing Cu₂S" — [arXiv:2308.04353](https://arxiv.org/abs/2308.04353)
+9. Jain et al., "Superionic phase transition of copper(I) sulfide and its implication for purported superconductivity of LK-99" — [arXiv:2308.05222](https://arxiv.org/abs/2308.05222)
+10. Puphal et al., "Single crystal synthesis, structure, and magnetism of Pb₁₀₋ₓCuₓ(PO₄)₆O" — [arXiv:2308.06256](https://arxiv.org/abs/2308.06256)
+
+Withheld resolution paper (used for LLM-as-judge evaluation):
+
+- Habamahoro et al., "Replication and study of anomalies in LK-99 — the alleged ambient-pressure, room-temperature superconductor" — [arXiv:2311.03558](https://arxiv.org/abs/2311.03558)
 

@@ -129,8 +129,6 @@ CRAG v2 treats retrieval as an iterative control problem:
 
 It stops early when scores plateau, and it carries section metadata (`section_covers`, page grounding) through the loop so the agent can narrow reads to the right parts of the right papers.
 
-The analogy is race engineering, not chat: when the telemetry doesn't reconcile, you do another lap of instrumentation with a tighter hypothesis, not a longer paragraph.
-
 ## Visual Retrieval When Text Is Not Enough
 
 A lot of the signal in materials papers is not in sentences. It is in a phase diagram, a band structure plot, a microscopy image, or a table layout.
@@ -181,7 +179,7 @@ The difference from a notebook: the agent decides *when* code is needed, writes 
 
 We started with separate agents — one for papers, one for materials, one for code — and tried connecting them with a router that classified intent. It didn't work well for questions that span multiple domains, which turned out to be most of them.
 
-The fix was elegant: **make agents into tools**.
+The fix: **make agents into tools**.
 
 ```mermaid
 graph TD
