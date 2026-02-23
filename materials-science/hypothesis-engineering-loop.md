@@ -112,6 +112,8 @@ The runner agent wrote each script, called the compute gateway for ML prediction
 
 The final analysis report scored 5 out of 5 on target keyword coverage and produced a composite evaluation score of 1.0 against the held-out resolution paper. The system correctly identified the Cu2S phase transition as the dominant mechanism, consistent with the later consensus in the literature.
 
+> *This does not mean the system is complete or the best at what it does. It is one data point on one controversy. The value is having a repeatable evaluation harness — run it against different paper sets, different domains, and see how the system fares against both manual review and other autonomous discovery approaches. The score tells you where you are, not that you've arrived.*
+
 Total wall-clock time from "here are ten papers" to "here is a scientific verdict with evidence": approximately 23 minutes.
 
 For context, a graduate student doing this manually — reading the papers, setting up the calculations, running them, and writing an analysis — would typically need one to two weeks.
