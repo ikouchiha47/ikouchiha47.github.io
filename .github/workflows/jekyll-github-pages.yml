@@ -1,18 +1,31 @@
-name: workflow
+name: Deploy to GitHub Pages
 on:
-  push:
-    branches:
-      - main
+  workflow_dispatch:
 
 jobs:
-  build:
-    name: deploy
-    runs-on: ubuntu-18.04
+  deploy:
+    name: Build and deploy
+    runs-on: ubuntu-latest
     steps:
-      # checkout to main repo
-      - uses: actions/checkout@v2
-      - uses: ./.github/actions/build_site
-        env:
-          GIHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITHUB_ACTOR: ${{ secrets.GITHUB_ACTOR }}
-          GITHUB_REPO: ${{ secrets.GITHUB_REPOSITORY }}
+      - uses: actions/checkout@v4
+
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.2'
+          bundler-cache: true
+
+      - name: Build site
+        run: |
+          bundle install --binstubs
+          JEKYLL_ENV=production ./bin/jekyll build
+
+      - name: Deploy to gh-pages
+        run: |
+          cd _site
+          git init
+          git config user.name "${GITHUB_ACTOR}"
+          git config user.email "${GITHUB_ACTOR}@users.noreply.github.com"
+          git checkout -b gh-pages
+          git add .
+          git commit -m "GitHub Actions: Publishing Static site - $(date)"
+          git push --force "https://${GITHUB_ACTOR}:${{ secrets.GITHUB_TOKEN }}@github.com/${GITHUB_REPOSITORY}.git" gh-pages:gh-pages

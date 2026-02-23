@@ -89,7 +89,7 @@ A query that arrives at tier 1 gets FTS-only retrieval. Not perfect, but fast an
 
 The key insight: researchers don't upload a paper and immediately ask their hardest question. They start with "what's this about?" and work their way to specifics. Progressive indexing matches the system's readiness to the user's actual behavior.
 
-This is the same pattern behind [Cinestar's](/2025/10/12/media-search.html) five-phase video indexing pipeline — make a video searchable the moment it's uploaded (phase 0, basic metadata), then progressively refine with multi-modal enrichment, coarse segmentation, fine segmentation, and cross-reference passes. The domain is different but the architecture is identical: immediate utility, background refinement, each tier unlocking better search quality.
+This is the same pattern behind [Cinestar's](/2025/10/02/media-search.html) five-phase video indexing pipeline — make a video searchable the moment it's uploaded (phase 0, basic metadata), then progressively refine with multi-modal enrichment, coarse segmentation, fine segmentation, and cross-reference passes. The domain is different but the architecture is identical: immediate utility, background refinement, each tier unlocking better search quality.
 
 ---
 
