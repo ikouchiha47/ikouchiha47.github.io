@@ -20,6 +20,7 @@ bundle install --binstubs
 
 echo "🏋️ Building website..."
 JEKYLL_ENV=production ./bin/jekyll build
+rm -rf /tmp/_site_publish
 mv _site /tmp/_site_publish && cd /tmp/_site_publish
 
 
