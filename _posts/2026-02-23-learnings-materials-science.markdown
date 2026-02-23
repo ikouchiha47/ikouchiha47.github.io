@@ -170,7 +170,15 @@ When working with non-textual data, it's fairly impossible for an LLM to predict
 - Heavy action sequences — even something simple as parkour would fall apart
 - Predicting anything that needs **visual cues or real-world feedback loops**
 
-This is not a video-specific problem. If a system already has all the grounded data it needs, slapping an LLM on it and expecting it to turn out right is a bad bet.
+The failure has multiple layers, and it's well-documented:
+
+- **Text encoders lose spatial information before generation even starts.** CLIP-based encoders (used in most diffusion models) establish representations in early layers and don't compose spatially. T5-based encoders (Imagen, DeepFloyd) do ~10% better because they process sequentially — but still fall short. ([Unlocking Spatial Comprehension in T2I Diffusion Models](https://arxiv.org/abs/2311.17937))
+- **Training data rarely contains explicit spatial language.** Captions say "a dog in a park" not "a dog positioned 2 meters left of a bench." The models have minimal exposure to spatial relations like "inside", "below", "smaller than." ([Improving Explicit Spatial Relationships in T2I Generation](https://arxiv.org/html/2403.00587))
+- **No internal 3D or physics model.** The generator learns statistical co-occurrence — "pocket" appears with "phone", "boombox" appears with "music player" — but never learns that a pocket has a fixed volume, or that an object must be smaller than its container.
+- Ask an image model for "a big music player bulging in someone's pocket" — you'll get a person holding a boombox. It retrieved the strongest visual pattern for "big music player", never computed whether it fits inside the pocket.
+- [T2I-CompBench](https://arxiv.org/abs/2307.06350) (NeurIPS 2023) confirms **spatial relationships are the weakest category** across all tested models. OpenAI's own [Sora technical report](https://arxiv.org/html/2402.17177v2) acknowledges failures in physics, causality, and left/right differentiation.
+
+The precise term from the literature: **statistical co-occurrence without compositional constraint satisfaction**. The models know what things look like together, but can't enforce constraints between them.
 
 > LLMs are probabilistic systems. `If you expect a probabilistic system to reliably (do X), it will probably, reliably (do X)`
 
@@ -488,6 +496,79 @@ The message bus convention means moving from dev to production is configuration,
 6. Define validation rules — both for agent outputs and experiment safety bounds
 7. Define the experiment schema — what constitutes a hypothesis, a run, a result
 8. Everything else — contracts, retrieval, agent lifecycle, progressive indexing, correction loops, workspace state, epistemic graph, git-backed tracking — is the framework
+
+---
+
+## Testing from both directions
+
+Not being a materials science expert meant there was no way to eyeball whether the system was producing good hypotheses. So the build happened in two directions simultaneously.
+
+### Direction 1: Build the subsystems
+
+Same approach as building a compiler — lexer, parser, codegen, each independently testable:
+
+| Subsystem | What it does | Testable in isolation? |
+|-----------|-------------|----------------------|
+| Document pipeline | Parse, chunk, index scientific PDFs | Yes — output is structured text, verifiable |
+| Retrieval | Hybrid search across indexed papers | Yes — relevance scoring against known queries |
+| Domain tools | CHGNet, GPAW, materials databases | Yes — known inputs, known outputs |
+| Agents | Orchestrate tools, maintain context | Yes — given fixed retrieval, does the plan make sense |
+| Experiment runner | Execute computational experiments | Yes — scripts produce reproducible results |
+
+Each piece could be validated without domain expertise. The document pipeline either extracts tables correctly or it doesn't. CHGNet either returns a valid energy prediction or it doesn't.
+
+### Direction 2: Build the evaluation
+
+The harder question: **does the whole system, end-to-end, produce hypotheses that are actually good?**
+
+The approach:
+- Pick a **resolved scientific controversy** with a known outcome (LK-99 superconductivity)
+- Build the paper chain **without** the final resolution paper
+- Feed the incomplete chain to the system **in a conversational pattern** — not "tell me the answer", but the way a researcher would actually explore: "what are the competing claims?", "what experiments would resolve this?", "which hypothesis has the strongest evidence?"
+- Score the generated hypotheses against the withheld paper
+
+The conversational pattern matters. A direct request — "what caused the LK-99 results?" — would test whether the model memorized the answer. A conversational exploration tests whether the *system architecture* can guide reasoning through literature, contradictions, and evidence toward a defensible hypothesis.
+
+The hypothesis engine was essentially reverse-engineered from this evaluation. The question "how do you know if it's any good?" shaped every architectural decision — what agents exist, how they communicate, what tools they call, how hypotheses get ranked.
+
+### Testing probabilistic systems
+
+This evaluation approach generalizes. Once tests exist for LLM-driven workflows, they become a model selection ground — run the same test suite against different models, collect golden results, compare.
+
+But testing probabilistic systems is fundamentally different from testing deterministic code. Three patterns that worked:
+
+**1. Black box / outcome-only testing**
+
+Treat the LLM like a private method. Don't assert on internal reasoning. Only check:
+- Did the output match the expected schema?
+- Did citations reference real passages?
+- Did domain values fall within valid ranges?
+
+This is the most robust approach — it survives model swaps without rewriting tests.
+
+**2. Value-in-collection assertions**
+
+When the output should contain specific elements but order doesn't matter:
+- Assert that key entities appear in the extracted list
+- Assert that required sections are covered
+- Assert that tool calls include the expected tools
+
+Not "the answer is X" but "the answer contains X, Y, Z."
+
+**3. Workflow / DAG testing**
+
+A goal can have multiple valid pathways, even with cycles. But:
+
+| What stays the same | What can vary |
+|---------------------|---------------|
+| The set of nodes visited | The order of traversal |
+| The final memory state | The number of correction cycles |
+| The tools invoked | Which tool was called first |
+| The types of intermediate results | The exact values |
+
+Test the DAG shape, not the exact path. If "retrieve → extract → validate → synthesize" is the expected workflow, assert that all four steps happened and the memory state after each step contains what downstream steps need. The path between them — whether the agent took one cycle or three, whether it backtracked — is the probabilistic part. The nodes and final state are the deterministic contract.
+
+This turns model comparison from "which one feels better" into "which one reaches the same nodes in fewer cycles, with fewer validation failures."
 
 ---
 

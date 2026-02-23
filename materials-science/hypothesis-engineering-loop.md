@@ -114,6 +114,8 @@ The final analysis report scored 5 out of 5 on target keyword coverage and produ
 
 > *This does not mean the system is complete or the best at what it does. It is one data point on one controversy. The value is having a repeatable evaluation harness — run it against different paper sets, different domains, and see how the system fares against both manual review and other autonomous discovery approaches. The score tells you where you are, not that you've arrived.*
 
+> **Important caveat:** The LK-99 controversy was widely covered and discussed before the foundational model's training cutoff. The papers, the debates, and the eventual consensus were all in the training data. So scoring 5/5 here doesn't demonstrate true discovery — it demonstrates that the system can structure and surface what the model already knows. A fairer test would use a controversy that resolved *after* the model's training cutoff, where the model genuinely cannot have seen the answer. Until that test is run, this score measures retrieval and reasoning architecture, not novel scientific discovery.
+
 Total wall-clock time from "here are ten papers" to "here is a scientific verdict with evidence": approximately 23 minutes.
 
 For context, a graduate student doing this manually — reading the papers, setting up the calculations, running them, and writing an analysis — would typically need one to two weeks.
@@ -333,7 +335,7 @@ The judge model receives the generated hypothesis, the withheld resolution paper
 
 This evaluation loop was the testing ground before the agent was ever used on live research questions. Every change to the reasoning loop, tool selection, or hypothesis ranking was validated against held-out papers first.
 
-In our LK-99 run, the system scored 5/5 on target keyword coverage against the withheld consensus paper, with a composite evaluation score of 1.0. The hypothesis it ranked highest was the one the community eventually converged on.
+In our LK-99 run, the system scored 5/5 on target keyword coverage against the withheld consensus paper, with a composite evaluation score of 1.0. The hypothesis it ranked highest was the one the community eventually converged on. The same caveat applies here — LK-99 was in the training data. This validates the architecture's ability to structure known knowledge, not its ability to discover the unknown.
 
 ## Engineering Principles We Optimized For
 
