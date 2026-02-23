@@ -89,7 +89,9 @@ A query that arrives at tier 1 gets FTS-only retrieval. Not perfect, but fast an
 
 The key insight: researchers don't upload a paper and immediately ask their hardest question. They start with "what's this about?" and work their way to specifics. Progressive indexing matches the system's readiness to the user's actual behavior.
 
-This is the same pattern behind [Cinestar's](/2025/10/02/media-search.html) five-phase video indexing pipeline — make a video searchable the moment it's uploaded (phase 0, basic metadata), then progressively refine with multi-modal enrichment, coarse segmentation, fine segmentation, and cross-reference passes. The domain is different but the architecture is identical: immediate utility, background refinement, each tier unlocking better search quality.
+This is the same pattern behind [Cinestar's](/2025/10/02/media-search.html) five-phase video indexing pipeline — make a video searchable the moment it's uploaded (phase 0, basic metadata), then progressively refine with multi-modal enrichment, coarse segmentation, fine segmentation, and cross-reference passes.
+
+The domain is different but the architecture is identical: immediate utility, background refinement, each tier unlocking better search quality.
 
 ---
 
@@ -107,7 +109,21 @@ Building a knowledge graph over **one document** requires:
 
 For a single document, this is expensive relative to the payoff. A well-chunked document with good metadata gets roughly 80% of the way there.
 
-**The lighter alternative** — hierarchical section tagging. Label sections with what they cover ("synthesis conditions," "characterization results," "computational methods," or whatever the domain's taxonomy looks like). This gives the retrieval system structural awareness without full graph construction. The LLM can then drive a ReAct loop to compare across sections, navigate the hierarchy, and synthesize — all without needing an entity graph.
+**The better alternative** — `section_covers`.
+
+No matter how unstructured a PDF layout looks, the domain and the humans in it have a structure. Every scientific paper has an implicit hierarchy — title, abstract, hypothesis, methods, results, conclusion. The sections might be named differently, merged together, or split across pages, but the structure is always there. Researchers read papers this way instinctively.
+
+The idea: teach the LLM this structure through the prompt, and have it classify each chunk during ingestion. The classification is an array — `["methods", "results", "datasets"]` — not a single label, because sections overflow. A "methods" section often contains datasets and preliminary results too.
+
+**How the LLM knows the structure.** The agent prompt is hierarchically organized with custom tags — identity, capabilities, workflows, security, output rules — each scoped and nested. Within this, the paper-reading workflows define phased strategies:
+
+- **Summarization:** extract six elements from any paper — hypothesis, claim, evidence, assumption, experiment, result — mapped to section types
+- **Comparison:** compare across papers element-by-element, using section types as the navigation axis
+- **Hypothesis generation:** scan → deep-read → synthesize, with section-aware retrieval at each phase
+
+The prompt doesn't just say "read the paper." It encodes how a researcher reads — which sections to check first for which kind of question, when to fall back to broader reading, how to cross-reference across documents.
+
+At query time, filtering by section type is a simple indexed array lookup. "Show me just the methods across these three papers" — no graph traversal needed. The LLM can then drive a ReAct loop to compare across sections, navigate the hierarchy, and synthesize — all without an entity graph.
 
 ### Across a workspace over time: where it shines
 
