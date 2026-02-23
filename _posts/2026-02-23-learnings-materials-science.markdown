@@ -9,7 +9,7 @@ background_color: '#000'
 
 My previous employment was at a company in the `Digital asset management` space, working on making short form commercial videos, towards the end.
 
-One of the USP was, consistent character generation, which was until `nano banana`, and soon other mainstream models caught up. So the switch was to,
+One of the USP was, consistent character generation, which was until [Nano Banana](https://blog.google/technology/ai/nano-banana-pro/), and soon other mainstream models caught up. So the switch was to
 generate short form commercial videos.
 Once the shop closed, I spent time reflecting on how things went, and how the overlap landscape changes with AI in picture.
 One of those thoughts gave birth to [krearts](https://github.com/ikouchiha47/krearts)
@@ -18,8 +18,8 @@ During the time I was also:
 
 - Helping bootstrap an LLM-powered research platform for materials scientists.
   The kind where researchers upload papers, ask questions, and get structured answers with citations. Not a chatbot. A system.
-- Was trying to make hot-choclate, because 90% of hot choclate served in Bangalore is either a middle-class bourvita drink with extra hot water,
-  and the rest 10% adds a bunch of non-sense to hide their pathetic hot-choclate.
+- Was trying to make hot-chocolate, because 90% of hot chocolate served in Bangalore is either a middle-class bourvita drink with extra hot water,
+  and the rest 10% adds a bunch of non-sense to hide their pathetic hot-chocolate.
 
 This blog documents some of the observations, in building a research oriented framework, and my understanding of this space, apart from code.
 
@@ -37,7 +37,7 @@ Then there's retrieval. Without preprocessing and indexing:
 - Every question re-parses everything from scratch.
 - Every query pays the full cost of understanding the document.
 
-As a first prototype worked exactly this way - no tagging of sections, no embeddings, only enrchied extractions.
+The first prototype worked exactly this way - no tagging of sections, no embeddings, only enriched extractions.
 
 **It was slow, and it had to be tweaked continuously to support new types of queries**
 
@@ -61,64 +61,6 @@ The naive assumption is "send to LLM, get answer." In practice, there's a whole 
 None of this retrieval composition is new. Google has done this for decades. The difference is composing these with an LLM reasoning loop instead of hand-tuned ranking signals. Reciprocal Rank Fusion (RRF) merges results from different retrieval methods into a single ranked list. The LLM then reasons over the top results instead of just returning links.
 
 **Reranking.** The initial retrieval casts a wide net. A reranker (cross-encoder or LLM-based) scores each chunk against the original question for fine-grained relevance. This is where you go from "related passages" to "the actual answer is in these three paragraphs."
-
----
-
-## Video Generation, LLM focus and Hot Chocolate
-
-At this point, we understand, that these foundational models are trained on a lot of data, and they have some inherent knowledge.
-I would have imagined, that because of neural networks and how embedding space works, the llm would be the one who sees all patterns, but more powerful.
-
-And maybe it does, but what is does and doesn't depends on how it was trained. So if one were to actually combine differnet domains, they would
-have to map it to the same embedding space.
-
-General LLMs are not an answer to this. In terms of video generation, it meant, that the underlying models have to be tweaked enough
-to guard how the llm generates the media. An example being:
-
-- Bags are not displayed the same way as watches.
-- A wrist watch is not advertised the same way as a wall clock
-- and, A mechanical watch is not adverstied the same way as a quartz.
-
-The differences are at both macro and micro levels.
-- The macro level define the physics, environment
-- Micro determines where to market, whom to market, what to say, and even sometimes dictates the environment.
-
-Such details become more visible, when we add cultural context to mix.
-Say for a website builder, a common japaneese website looks quite different from a US built website.
-
-Fashion is not the same. I mean, if anyone were to build an AI-based fashion brand, the first target should be Japan.
-I have seen Japan, has magazines, which tell how about the clothing, what its for, how to pair it. Its very structured for data extraction and suggestions.
-
-I am not entirely sure, but it appears to me that, with all these neural networks, LLMs tend to usually take the path of least work, and hence the need
-for such detailed planning and guardrails, and extensive efforts at instruction following. Why would one need to use a custom embedding model if these foundational
-models had all these world knowledge.
-
-The paper should have been: "Focussed Attention is all you Need"
-
-
-The **second problem** is LLM's lack of spatial awareness. When working with non-textual data, its fairly impossible for an LLM to predict things in real life.
-This was back in very late 2025, no one of the llm models are consistenly good at dynamic camera angles mid scene.
-Heavy action sequences, even something simple as parkour would fall apart.
-
-
-The problem is not a video or image generation specific problem. If a system already has all the grounded data it needs, slapping an LLM on it, and
-expecting things to turn out right, is a stupidity to embark on. LLMs are probablistic systems, so `If you expect a probablistic system to reliably (do X), it will probably, reliably (do X)`
-
-The problem comes with predicting, anything that needs visual cues or actual feedback loops from predictions. This was confirmed, when I used gpt to make hot chocolate.
-
-GPT probably had a lot of information, about how a good hot chocolate is made, even can tell you how countries or regions, liked their hot-chocolate to be like, **if you asked for it**.
-It would have access to all kindof receipes, ratings, discussions, to give you a fair enough idea. 
-
-Obviously an LLM has never seen or tasted hot chocolate, so it relies on what I call, "collective truth". So its not possible for an LLM to accurately predicit
-the changes in quantities of different items, leading to different taste.
-
-This is the same with materials research, CHGNet and other tools provide Contextual Models, which have computation baked in, than a LLM trying to predict.
-
-So, when I asked the LLM to adjust the quantites for 4 person. Its replied with an amount of water or sugar, that was way far off from reality. What worked was:
-- The LLM knew the desired result of each step, like: "a creamy paste, not a pudding thick. but not watery"
-- The LLM also knows the taste (not going into the details of Oneshot or React)
-
-So as long as you feed these signals back, 
 
 ---
 
@@ -176,11 +118,77 @@ One observation: most open-source models share failure modes — they're fine-tu
 
 ---
 
-## How you deliver this matters
+## Video Generation, Spatial Awareness and Hot Chocolate
+
+At this point, we understand, that these foundational models are trained on a lot of data, and they have some inherent knowledge.
+I would have imagined, that because of neural networks and how embedding space works, the llm would be the one who sees all patterns, but more powerful.
+
+And maybe it does, but what is does and doesn't depends on how it was trained. So if one were to actually combine different domains, they would
+have to map it to the same embedding space.
+
+General LLMs are not an answer to this. In terms of video generation, it meant, that the underlying models have to be tweaked enough
+to guard how the llm generates the media. An example being:
+
+- Bags are not displayed the same way as watches.
+- A wrist watch is not advertised the same way as a wall clock
+- and, A mechanical watch is not advertised the same way as a quartz.
+
+The differences are at both macro and micro levels.
+- The macro level define the physics, environment
+- Micro determines where to market, whom to market, what to say, and even sometimes dictates the environment.
+
+Such details become more visible, when we add cultural context to mix.
+Say for a website builder, a common Japanese website looks quite different from a US built website.
+
+Fashion is not the same. I mean, if anyone were to build an AI-based fashion brand, the first target should be Japan.
+I have seen Japan, has magazines, which tell how about the clothing, what its for, how to pair it. Its very structured for data extraction and suggestions.
+
+It appears that with all these neural networks, LLMs tend to usually take the path of least work, and hence the need
+for such detailed planning and guardrails, and extensive efforts at instruction following. Why would one need to use a custom embedding model if these foundational
+models had all this world knowledge.
+
+This sounds more like a Mixture of Experts, but constrained to a domain.
+
+
+The **second problem** is LLM's lack of spatial awareness. When working with non-textual data, it's fairly impossible for an LLM to predict things in real life.
+This was back in very late 2025, none of the LLM models were consistently good at dynamic camera angles mid scene.
+Heavy action sequences, even something simple as parkour would fall apart.
+
+
+The problem is not a video or image generation specific problem. If a system already has all the grounded data it needs, slapping an LLM on it, and
+expecting things to turn out right, is a stupidity to embark on. LLMs are probabilistic systems, so `If you expect a probabilistic system to reliably (do X), it will probably, reliably (do X)`
+
+The problem comes with predicting, anything that needs visual cues or actual feedback loops from predictions. This was confirmed, when I used gpt to make hot chocolate.
+
+GPT probably had a lot of information, about how a good hot chocolate is made, even can tell you how countries or regions, liked their hot-chocolate to be like, **if you asked for it**.
+It would have access to all kinds of recipes, ratings, discussions, to give you a fair enough idea. 
+
+Obviously an LLM has never seen or tasted hot chocolate, so it relies on what I call, "collective truth". So it's not possible for an LLM to accurately predict
+the changes in quantities of different items, leading to different taste.
+
+This is the same with materials research, CHGNet and other tools provide Contextual Models, which have computation baked in, than a LLM trying to predict.
+
+So, when I asked the LLM to adjust the quantites for 4 person. Its replied with an amount of water or sugar, that was way far off from reality. What worked was:
+- The LLM knew the desired result of each step, like: "a creamy paste, not a pudding thick. but not watery"
+- The LLM also knows the taste (not going into the details of Oneshot or React)
+
+In terms of automation, it means, as long as the llm has access to eyes, ears and other senses into the real world, the foundational models can
+actively guide towards a more real life usable outcomes.
+
+The same principles can be applied to sequential or batched sequential image and video generation, with a corrective feedback loop. But your costs would shoot up!!
+
+
+_I would assume, with enough effort with yolo, rpi-pico or esp32 to capture images in batches, actual instruments, sensors and provide continuous feedback.
+Overall I feel, most real life applications of AI will only come when we add sensory elements to it, which lets the llm continuously validate against the desired outcome at each stage_
+
+---
+
+## Shipping LLM Powered Apps
 
 The obvious first move is a web app. Upload papers, ask questions, get answers. Fastest to ship, easiest to demo. For a lot of teams, it's the right choice.
+But once the architecture is model-agnostic, it doesn't actually *need* to be centralized.
 
-But once the architecture is model-agnostic, it doesn't actually *need* to be centralized. The workspace, the agents, the retrieval layer — all of it can run on a researcher's machine or a lab's own infrastructure. That opens up delivery options worth considering.
+The workspace, the agents, the retrieval layer — all of it can run on a researcher's machine or a lab's own infrastructure. That opens up delivery options worth considering.
 
 ### The options as I see them
 
@@ -201,7 +209,25 @@ No single right answer:
 - A plugin meets them where they already are
 - Different labs, different constraints, different choices
 
-The interesting observation is that model-agnostic design (the cage and the wind) is what makes these options possible at all. Once inference is swappable — hosted, self-hosted, open-source, Model Garden, whatever — the delivery question becomes about where the *data* lives, not where the *model* lives.
+The interesting observation is that model-agnostic design (the cage and the wind) is what makes these options possible at all.
+
+> Once inference is swappable — hosted, self-hosted, open-source, Model Garden, whatever — the delivery question becomes about where the *data* lives, not where the *model* lives.
+
+
+In terms of business models, at the time of writing this, I see three prevalent ones.
+
+1. That bets on the foundational model being better, using simple adapters, all forms of prompt and context engineering, to build a product.
+2. The ones that are building their own foundational models, embedding models, ocr and other llm-ification of existing tools.
+3. Using 2, or building 2, by providing narrow expertise in a certain domain. For example, Windsurf, has their own SWE models, we dont know if they will get better over time, beyond the foundational models
+   But, companies like moonshot.ai , with `moondream`, gives us a pretty good idea, what a focussed model can do.
+   The materials hypothesis engine, which uses `chgnet` and `gpaw` etc, to run actual predictions, and dft relaxation.
+
+
+The 1st one however, would probably not survive, if it's not a niche the big players don't want to focus on, and public data is unavailable. Without a proper moat, the fear of being
+invalidated or competitor proliferation is much higher. The DocuSign incident is a glaring example — OpenAI launched DocuGPT, and DocuSign's stock [dropped 17%](https://finance.yahoo.com/news/docusign-docu-falls-12-openai-044456722.html) overnight. Open-source alternatives like [OpenSign](https://www.opensignlabs.com/) and [Documenso](https://documenso.com/) were already circling.
+
+When everyone has a gun, you need a bigger gun (leverage).
+
 
 ### What local delivery unlocks
 
@@ -223,6 +249,94 @@ Every research domain already has validated tools:
 Researchers know and trust these tools. Building an LLM system that tries to replace them means reimplementing domain logic badly and asking an LLM to do math it will get wrong.
 
 The better pattern: give the agent access to these tools. The LLM understands the question, picks the right tool, formats the input, interprets the output. The computation stays with code that's been validated by the domain for decades. Same for existing ML models — if a trained classifier or prediction model exists for a subtask, use it. The agent orchestrates; the specialists compute.
+
+---
+
+## Thoughts
+
+Overall, as I understand, llm's use on textual data, is pretty limited use of this technology. Yes one can convert a natural language to an sql query.
+The system you might have built, using agents and tools, to produce a valid grounded query, might as well be one shotable with a long enough context window.
+
+So there isn't much inherent value in building such systems. Looking back, I realize, for sure, if an MVP or bootstrapped product, is headon with
+existing features available on the available SaaS platform, and is presented to the users, the **in-evitable, un-avoidable and un-answereable question, how is that different from GPT**,
+will be presented.
+
+In all honesty, its probably not, because building a production grade ChatGPT like interface, with all the functionalities and edge cases take time.
+It would be similar to asking `Build me Twitter`. _Sure, but why?_
+
+> The users do not and should not care about such engineering challenges.
+
+- Businesses should identify an actual gap or pain-point, which is much narrow, and yet generic enough for 10 people.
+- Evaluate where in a LLM and its Senses are needed, if at all.
+- Build on the narrow domain, and choose the pain points early on. Especially for bootstrap teams or startups, choosing the right battle is necessary
+
+Chat becomes another interface to communicate with the system, much like REST. And hence the comparison against GPT or other models never come along.
+
+Overall I dont feel like much has affected in terms of how one does business.
+When the internet came along, there were loads of websites just built with no actual substance, and as time went by,
+the web just became a medium or enabler for actual labour.
+
+I think the same will happen for AI, most companies, whose identities are based around LLM will not survive in the end.
+Anything and most things, that was generated or is one shotable by an LLM, will eventually get replicated and saturated.
+
+So one way I guess could be to build wrappers very fast, on multiple domains. I mean, there are 100s and 1000s of n8n workflows,
+skills, subagents, entire repositories of "leaked" prompts for agentic coding tools.
+
+The only leverage these tools have is funding. If funding, networking and marketing were readily available, everyone could sell their own spinoff of `opencode`.
+Which again is business as usual. There are a lot of twitter clones, and reddit alternatives, but the rate of success doesn't depend on just code execution.
+
+> Code execution at base level has always been cheap. Especially in India, where culture is mostly managerial driven. CxOs all over the world, earn disproportionately more, not because they can write code.
+
+And it's getting cheaper. Cross-provider deployment can be automated pretty easily now — Terraform, Pulumi, SST, whatever your flavor. Code generation is commoditized. Porting concepts from one language's ecosystem to another is a weekend project with a coding agent. Elixir's supervision trees in Go, Python's Ray actors in Rust, Ruby's convention-over-configuration patterns anywhere — the implementation barrier between "I know this pattern exists" and "it's running in my stack" has collapsed. Which means the moat is never in the code.
+
+
+### Org changes
+
+I don't think this is new practice now, but still to acknowledge, AI has caused some cultural shifts in org. It also has somehow set the wrong expectations from a lot of people.
+
+Osho once said, "Democracy basically means government by the people, of the people, for the people — but the people are retarded." I think to some extent its terribly true. This is more prevalent and out in the world today
+because of social media.
+
+Only a handful of companies, have presented their experiments as is to the real world. Marketing gimmicks like, "LLM wrote C compiler from scratch". Yeah i mean, great that
+your LLM could do it, but:
+
+1. so you are telling me, the model was not trained on C, and C books, and yet the model generates quality code than other models in the market?
+2. how many dollars in tokens, over how many iterations? especially when you are the costliest of all.
+
+I don't blame anyone, everyone is doing their part to survive. Lets not forget such waves of `data science`, have already hit us before twice, and both times
+the companies were all in losses.
+
+So building a sustained customer facing model is a lot of pressure.
+
+But you dont need to `XD`. It begins with educating everyone alike, juniors, seniors, management, stakeholders. 
+
+An org should take the time in first doing a planned research on whats possible, to set the records straight. Some basic expectations on either end:
+
+For developers it can be:
+- using AI assist, to deliver faster.
+- reduce tech debt, by being able to refactor or find patterns faster
+- with some base setup, onboarding process can be smoothened a lot.
+- using some spec based approach, with spec PRs, approved by peers or seniors.
+- to build platforms which would allow non tech people to also be a part of the process, (versioning, access control etc)
+
+For non developers, to understand:
+- execution is cheap, and so you can build mockups, and iterate yourself, before handing off some idea
+- if the platform supports, run your a/b tests with a small enough team, and iterate faster
+- for managers, your code powered editor is more than enough to track developer task updates
+- writing code is quite nuanced, when you think about LLM lies/hallucinations, bad instruction following, technical debts, corner cases, code quality
+- Given that LLMs are not cheap, who gets how much token budget, when real pricings hit you.
+- Think of the developers long term. Good software doesn't come from a better LLM, but a better person driving the LLM.
+  Which you can see is totally in congruence with how just an LLM itself isn't enough to be a good product.
+
+An LLM doesn't reduce the complexity of a business problem, if at all it increases some workload. Because now one has to think about how to bridge the probabilistic and deterministic parts.
+
+An LLM does make you faster, but the quality of code, the philosophy, the foresight, doesn't come from the LLM.
+A novice coder now produces more bad code, faster, and vice versa.
+
+Its medically stupid, to make an LLM learn a very well established set of rules, and turn it into a probabilistic model in real life. Yeah, maybe it can be used to figure a better, faster, alternate way,
+but the process of exploration can't be the way.
+
+There is no point in making an LLM add two numbers, or add two numbers using a GPU consuming 16Amps.
 
 ---
 
