@@ -1,7 +1,7 @@
 ---
 active: true
 layout: post
-title: "Learnings from Working at a Materials Science Company"
+title: "Learnings from Building LLM Systems"
 subtitle: "What building an LLM-powered research platform actually looks like"
 date: 2026-02-23 00:00:00
 background_color: '#000'
@@ -60,6 +60,15 @@ The naive assumption is "send to LLM, get answer." In practice, there's a whole 
 
 None of this retrieval composition is new. Google has done this for decades. The difference is composing these with an LLM reasoning loop instead of hand-tuned ranking signals. Reciprocal Rank Fusion (RRF) merges results from different retrieval methods into a single ranked list. The LLM then reasons over the top results instead of just returning links.
 
+**What this replaces.** Traditionally, doing this well meant deploying **Elasticsearch or Solr** — heavy infrastructure with its own operational cost, query DSLs, analyzers, synonym dictionaries, spell-check configs, and tokenizer tuning.
+
+With an LLM and vector search, a lot of that goes away:
+
+- **Spell correction, synonyms, query reformulation** — handled natively by the LLM. "therml stability" still matches "thermal stability" because the embedding is close enough, and the LLM rewrites the query anyway.
+- **The search cluster itself** — a vector database (or even just `pgvector`) plus FTS on Postgres replaces what used to require a dedicated search deployment.
+
+> The infrastructure footprint shrinks dramatically. What used to be a separate cluster with its own ops burden becomes a Postgres extension and an API call.
+
 **Reranking.** The initial retrieval casts a wide net. A reranker (cross-encoder or LLM-based) scores each chunk against the original question for fine-grained relevance. This is where you go from "related passages" to "the actual answer is in these three paragraphs."
 
 ---
@@ -80,23 +89,39 @@ A query that arrives at tier 1 gets FTS-only retrieval. Not perfect, but fast an
 
 The key insight: researchers don't upload a paper and immediately ask their hardest question. They start with "what's this about?" and work their way to specifics. Progressive indexing matches the system's readiness to the user's actual behavior.
 
+This is the same pattern behind [Cinestar's](/2025/10/12/media-search.html) five-phase video indexing pipeline — make a video searchable the moment it's uploaded (phase 0, basic metadata), then progressively refine with multi-modal enrichment, coarse segmentation, fine segmentation, and cross-reference passes. The domain is different but the architecture is identical: immediate utility, background refinement, each tier unlocking better search quality.
+
 ---
 
 ## Graph RAG — where it fits
 
 Graph RAG has real value. But the costs are real too.
 
-Building a knowledge graph over a single document requires full entity extraction — identifying entities, properties, conditions, methods, extracting relationships, resolving co-references, building a traversable graph. For a single document, the cost is hard to justify. A well-chunked document with good metadata gets roughly 80% of the way there.
+### Single document: usually not worth it
 
-A lighter alternative is hierarchical section tagging — labeling sections with what they cover ("synthesis conditions," "characterization results," "computational methods," or whatever the domain's taxonomy looks like). This gives the retrieval system structural awareness without full graph construction. The LLM can then drive a ReAct loop to compare across sections, navigate the document hierarchy, and synthesize information — all without needing an entity graph.
+Building a knowledge graph over **one document** requires:
+- Full entity extraction — identifying entities, properties, conditions, methods
+- Relationship extraction between them
+- Co-reference resolution
+- Building a traversable graph
 
-Where graph RAG earns its keep is the slow-build case.
+For a single document, this is expensive relative to the payoff. A well-chunked document with good metadata gets roughly 80% of the way there.
 
-Researchers don't work with one paper. They work with a workspace — dozens of papers, their own experimental notes, simulation results, reviewer feedback. Over weeks and months, connections accumulate: this paper's synthesis conditions produced the same phase as that paper's computational prediction. This reviewer's objection was addressed by that experiment.
+**The lighter alternative** — hierarchical section tagging. Label sections with what they cover ("synthesis conditions," "characterization results," "computational methods," or whatever the domain's taxonomy looks like). This gives the retrieval system structural awareness without full graph construction. The LLM can then drive a ReAct loop to compare across sections, navigate the hierarchy, and synthesize — all without needing an entity graph.
 
-That's where a knowledge graph becomes valuable. Not blind LLM extraction — asking a model to "extract all entities" from a paper produces confident garbage. What works is curated, validated connections built incrementally. Each new paper, each new result gets integrated with human-in-the-loop validation. The graph grows as the research grows.
+### Across a workspace over time: where it shines
 
-The distinction: graph RAG for single-document retrieval is usually overkill. Graph RAG as an epistemic knowledge web built over months of research — that's where it becomes worth the investment.
+Researchers don't work with one paper. They work with a **workspace** — dozens of papers, experimental notes, simulation results, reviewer feedback. Over weeks and months, connections accumulate:
+- This paper's synthesis conditions produced the same phase as that paper's computational prediction
+- This reviewer's objection was addressed by that experiment
+- This failed hypothesis ruled out a class of compositions
+
+That's where a knowledge graph becomes valuable. **Not blind LLM extraction** — asking a model to "extract all entities" from a paper produces confident garbage. What works is:
+- **Curated, validated connections** built incrementally
+- **Human-in-the-loop validation** for each new paper and result
+- The graph grows as the research grows
+
+> Graph RAG for single-document retrieval is usually overkill. Graph RAG as an epistemic knowledge web built over months of research — that's where it becomes worth the investment.
 
 ---
 
@@ -120,66 +145,55 @@ One observation: most open-source models share failure modes — they're fine-tu
 
 ## Video Generation, Spatial Awareness and Hot Chocolate
 
-At this point, we understand, that these foundational models are trained on a lot of data, and they have some inherent knowledge.
-I would have imagined, that because of neural networks and how embedding space works, the llm would be the one who sees all patterns, but more powerful.
+Foundational models are trained on a lot of data. The assumption is that because of how embedding spaces work, the LLM would be the one that sees all patterns — but more powerful.
 
-And maybe it does, but what is does and doesn't depends on how it was trained. So if one were to actually combine different domains, they would
-have to map it to the same embedding space.
+Maybe it does. But what it does and doesn't depends on **how it was trained**. Combining different domains means mapping them to the same embedding space. General LLMs are not an answer to this.
 
-General LLMs are not an answer to this. In terms of video generation, it meant, that the underlying models have to be tweaked enough
-to guard how the llm generates the media. An example being:
+### Domain knowledge has layers
 
-- Bags are not displayed the same way as watches.
-- A wrist watch is not advertised the same way as a wall clock
-- and, A mechanical watch is not advertised the same way as a quartz.
+In video generation, the underlying models have to be tweaked enough to guard how the LLM generates media. The nuances are real:
 
-The differences are at both macro and micro levels.
-- The macro level define the physics, environment
-- Micro determines where to market, whom to market, what to say, and even sometimes dictates the environment.
+| Level | What it determines | Example |
+|-------|-------------------|---------|
+| **Macro** | Physics, environment, scene composition | Bags are not displayed the same way as watches |
+| **Micro** | Audience, messaging, tone | A wrist watch is not advertised the same way as a wall clock. A mechanical watch is not advertised the same way as a quartz. |
+| **Cultural** | Aesthetics, conventions, expectations | A Japanese website looks nothing like a US-built website. Japanese fashion magazines are structured for data extraction — what to wear, how to pair it, what it's for. |
 
-Such details become more visible, when we add cultural context to mix.
-Say for a website builder, a common Japanese website looks quite different from a US built website.
+LLMs tend to take the path of least work. Hence the need for detailed planning, guardrails, and extensive instruction following. If these foundational models had all this world knowledge baked in, why would anyone need custom embedding models?
 
-Fashion is not the same. I mean, if anyone were to build an AI-based fashion brand, the first target should be Japan.
-I have seen Japan, has magazines, which tell how about the clothing, what its for, how to pair it. Its very structured for data extraction and suggestions.
+> This sounds more like a Mixture of Experts, but constrained to a domain.
 
-It appears that with all these neural networks, LLMs tend to usually take the path of least work, and hence the need
-for such detailed planning and guardrails, and extensive efforts at instruction following. Why would one need to use a custom embedding model if these foundational
-models had all this world knowledge.
+### LLMs lack spatial awareness
 
-This sounds more like a Mixture of Experts, but constrained to a domain.
+When working with non-textual data, it's fairly impossible for an LLM to predict things in real life. Back in very late 2025, none of the LLM models were consistently good at:
+- Dynamic camera angles mid-scene
+- Heavy action sequences — even something simple as parkour would fall apart
+- Predicting anything that needs **visual cues or real-world feedback loops**
 
+This is not a video-specific problem. If a system already has all the grounded data it needs, slapping an LLM on it and expecting it to turn out right is a bad bet.
 
-The **second problem** is LLM's lack of spatial awareness. When working with non-textual data, it's fairly impossible for an LLM to predict things in real life.
-This was back in very late 2025, none of the LLM models were consistently good at dynamic camera angles mid scene.
-Heavy action sequences, even something simple as parkour would fall apart.
+> LLMs are probabilistic systems. `If you expect a probabilistic system to reliably (do X), it will probably, reliably (do X)`
 
+### The hot chocolate test
 
-The problem is not a video or image generation specific problem. If a system already has all the grounded data it needs, slapping an LLM on it, and
-expecting things to turn out right, is a stupidity to embark on. LLMs are probabilistic systems, so `If you expect a probabilistic system to reliably (do X), it will probably, reliably (do X)`
+GPT has a lot of information about how good hot chocolate is made. It can tell you how different countries and regions like theirs, **if you ask for it**. It has access to all kinds of recipes, ratings, discussions — enough for a fair idea.
 
-The problem comes with predicting, anything that needs visual cues or actual feedback loops from predictions. This was confirmed, when I used gpt to make hot chocolate.
+But an LLM has never **seen or tasted** hot chocolate. It relies on what I call **"collective truth"**. So it can't accurately predict how changes in quantities lead to different taste.
 
-GPT probably had a lot of information, about how a good hot chocolate is made, even can tell you how countries or regions, liked their hot-chocolate to be like, **if you asked for it**.
-It would have access to all kinds of recipes, ratings, discussions, to give you a fair enough idea. 
+This is the same with materials research — CHGNet and other tools provide contextual models with **computation baked in**, rather than an LLM trying to predict outcomes.
 
-Obviously an LLM has never seen or tasted hot chocolate, so it relies on what I call, "collective truth". So it's not possible for an LLM to accurately predict
-the changes in quantities of different items, leading to different taste.
+When I asked the LLM to adjust quantities for 4 people, the amount of water and sugar was way off from reality. **What actually worked:**
+- The LLM knew the **desired result** of each step — "a creamy paste, not pudding-thick, but not watery"
+- The LLM knew what **good taste means** (not going into the details of one-shot or ReAct)
+- But it needed **real-world feedback** to get the quantities right
 
-This is the same with materials research, CHGNet and other tools provide Contextual Models, which have computation baked in, than a LLM trying to predict.
+### The sensory gap
 
-So, when I asked the LLM to adjust the quantites for 4 person. Its replied with an amount of water or sugar, that was way far off from reality. What worked was:
-- The LLM knew the desired result of each step, like: "a creamy paste, not a pudding thick. but not watery"
-- The LLM also knows the taste (not going into the details of Oneshot or React)
+For automation, this means: as long as the LLM has access to eyes, ears and other senses into the real world, foundational models can actively guide towards real-life usable outcomes.
 
-In terms of automation, it means, as long as the llm has access to eyes, ears and other senses into the real world, the foundational models can
-actively guide towards a more real life usable outcomes.
+The same principles apply to sequential or batched image and video generation — with a corrective feedback loop. But costs shoot up.
 
-The same principles can be applied to sequential or batched sequential image and video generation, with a corrective feedback loop. But your costs would shoot up!!
-
-
-_I would assume, with enough effort with yolo, rpi-pico or esp32 to capture images in batches, actual instruments, sensors and provide continuous feedback.
-Overall I feel, most real life applications of AI will only come when we add sensory elements to it, which lets the llm continuously validate against the desired outcome at each stage_
+_With enough effort — YOLO for vision, RPi Pico or ESP32 to capture images in batches, actual instruments and sensors providing continuous feedback — most real-life applications of AI will come when we add sensory elements to it. The LLM continuously validates against the desired outcome at each stage._
 
 ---
 
