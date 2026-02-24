@@ -335,11 +335,11 @@ I don't think this is new practice now, but still to acknowledge, AI has caused 
 Osho once said, "Democracy basically means government by the people, of the people, for the people — but the people are retarded." I think to some extent its terribly true. This is more prevalent and out in the world today
 because of social media.
 
-Only a handful of companies, have presented their experiments as is to the real world. Marketing gimmicks like, "LLM wrote C compiler from scratch". Yeah i mean, great that
-your LLM could do it, but:
+Only a handful of companies have presented their experiments as-is to the real world. Most lean into marketing — "LLM wrote a C compiler from scratch", "AI agents built an entire browser in a week."
 
-1. so you are telling me, the model was not trained on C, and C books, and yet the model generates quality code than other models in the market?
-2. how many dollars in tokens, over how many iterations? especially when you are the costliest of all.
+To be fair, Anthropic did disclose costs for the C compiler — [$20,000 in API costs](https://www.anthropic.com/engineering/building-c-compiler), 2 billion input tokens, ~2,000 sessions. The compiler passed 99% of GCC torture tests. But $20K for a compiler that a senior engineer could write for less, and actually maintain afterwards — that's a question worth asking.
+
+Cursor's [FastRender](https://www.softwareimprovementgroup.com/blog/quality-of-fastrender/) browser, on the other hand, produced 3 million lines of code — and scored 1.3/5 on maintainability (bottom 5% of all analyzed systems), had an 88% job failure rate, and recent commits [didn't even compile](https://www.theregister.com/2026/01/22/cursor_ai_wrote_a_browser/). The JS interpreter was hand-included, not AI-generated. No cost disclosure.
 
 I don't blame anyone, everyone is doing their part to survive. Lets not forget such waves of `data science`, have already hit us before twice, and both times
 the companies were all in losses.
