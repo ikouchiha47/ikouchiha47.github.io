@@ -44,6 +44,15 @@ The first prototype worked exactly this way - no tagging of sections, no embeddi
 Corrective RAG, structured extraction, citation grounding — each turned out to be its own subsystem with its own failure modes.
 The "wrapper" ended up being the smallest part of the system.
 
+[Crewai](https://docs.crewai.com/) should get more credit, it is like the `rails` of `ruby`.
+Especially the memory management, extensibility, tooling and integrations. It also has a inbuilt support for varieties of doc format.
+For a smaller startup with captial, one could throw `GPUs` and `docling` at the problem, 
+Otherwise choose to build the intermediate stages.
+
+Similar could be said for langchain and langgraph. But I would relate it more to `sinatra`.
+
+__N.B: Watchout for the event management system of crewai, its a app level global situation, but one can use async context to map events to connections__
+
 ---
 
 ## What actually happens to a query
