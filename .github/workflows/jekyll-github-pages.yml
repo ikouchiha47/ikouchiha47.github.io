@@ -20,7 +20,6 @@ jobs:
         with:
           path: |
             .jekyll-cache
-            _site
           key: ${{ runner.os }}-jekyll-${{ hashFiles('**/*.md', '**/*.html', '**/*.yml', 'Gemfile.lock') }}
           restore-keys: |
             ${{ runner.os }}-jekyll-
@@ -38,8 +37,7 @@ jobs:
 
       - name: Deploy to gh-pages
         run: |
-          mv _site /tmp/_site
-          cd /tmp/_site
+          cd _site
           git init
           git config user.name "github-actions"
           git config user.email "github-actions@github.com"
