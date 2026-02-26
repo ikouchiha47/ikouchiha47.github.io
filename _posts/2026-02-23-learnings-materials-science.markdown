@@ -252,6 +252,29 @@ The easier version would be just to let an app do the compute_
 
 ---
 
+## UI in the era of LLMs
+
+This is still a very interesting field, which is realted to one of my projects, `adaptui`. I think, one day, `UI` would be built on fly.
+The cost is an inherent problem - not just token cost, but time taken. It would obviously take less time to just generate data
+for a static UI, than letting an llm decide an UI. Like any other system design, we can divide the UI into two parts, static and dynamic, as well.
+
+Many of the recent day llms also understand `react components` (from reactjs), tailwind, icons etc. So it would be intereseting to see
+where that goes. Maybe most apps will be replaced by a `SuperApp`, with some UI protocol allowing different brands to have consistency and control over some parts of the app.
+
+A good middleground right now is somewhere in between:
+- Either the LLM can generate the data and the html component, which has to be rendered safetly on FE
+- Or, the LLM is given the data and the expected response structure, that is associated with a response schema.
+  The `response schema` in this case can be used to populate the data in the corresponding `react` component.
+
+The second one, requires some upfront thinking, like a `react component` builder, on what parts to allow to change and what is the
+expected data structure. Again, the problem here is the same:
+
+> More things we leave it to the LLM, more the latency and chances of error increases, and hence more error recovery mechanism.
+
+On a bad day, you will really have a bad day.
+
+---
+
 ## Shipping LLM Powered Apps
 
 The obvious first move is a web app. Upload papers, ask questions, get answers. Fastest to ship, easiest to demo. For a lot of teams, it's the right choice.
@@ -537,7 +560,32 @@ This turns model comparison from "which one feels better" into "which one reache
 
 ## What I'd tell someone starting this
 
-- Start with the data pipeline, not the model. Parsing, chunking, indexing, retrieval — that's where the work is. The LLM call is one step in a twenty-step pipeline.
+Some non-negotiables:
+- Configurability: as much as possible, especially with prompts, model names/bundles, iteration counts, embeeders, stores, anything that is experiment land (which is anything that the language models and embeddings touches)
+- VersionSystem: for schema changes and prompt changes
+- Conventions for collaboration: allow for people to participate. **Platform engineers now need to consider non-tech people as junior developers, so that other teams can make the changes in-dependently**
+- Abstractions: This is not the what design pattern to use.
+  If I were a famous person, I would add an `C` (changability) at the end of `CAP`.
+
+**Systems now not only need to worry about Read and Write patterns, but also which parts of the whole system can be replaced. This is Strategy Pattern applied at a more org and infra level**
+
+Once you think, you have a problem, you should explore with existing system. A path could look like so:
+
+- Start with finding what is your delivery mechanism, and pin point on 2 maybe. This also forces you to write code for future expansion
+- Try the whole workflow manually with your favourite tools, `chatgpt.com`, `codex`, `claude`.
+- In case you have no idea about the field, you can use a similar approach of `Simulation`, let the llm figure out test and train and target datasets.
+- Try to build the system using exsisting opensource tools, without much code, just bare-bones.
+- If the above turns out to be not so diffucult, that you can wrap the tui in a API and SSE, find something else or other business model. Otherise,
+- If the above turns out can not be completely done with a claude/opencode skills and subagents or n8n, it means you have leverage and a solution.
+- So even if the workflow can be built by someone, neither the provider, nor the competitor would have access to the propeitory stuff.
+- Once you have a system, which works with these already established tools like above, rebuilt them in code.
+- Run against a bunch of queries, and multi turn conversations, and track the tools used, total iterations taken. Try ot against different models and embeddings, So, **making things configurable should come from day one**
+- This is where you start to see failures, and correction loops of the agent.
+- Start tweaking the prompts and tool descriptions, add the memory/storage layer, think about the **intermediate pre-processing steps**, as we saw with the `section_covers`.
+
+**Remember, LLMs and neural nets end of the day are high on patterns, and how humans have interracted with the system. This realisation
+should help you organise the data access patterns and tool prompts for them**
+
 - Build correction loops from day one. If the system can't handle a malformed LLM response gracefully, it can't handle production.
 - Measure retrieval quality separately from generation quality. When the answer is wrong, it's almost always because retrieval surfaced the wrong context, not because the model can't reason.
 - Treat every shortcut as debt. Skipping the indexing pipeline feels fast until every query takes 30 seconds. Hardcoding prompts for one model feels easy until you need to switch. Building for one document format feels simple until researchers upload the weird one.
