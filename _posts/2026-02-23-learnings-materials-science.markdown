@@ -58,18 +58,22 @@ The naive assumption is "send to LLM, get answer." In practice, there's a whole 
 
 **Hybrid retrieval.** Full-text search (FTS), n-gram matching, and semantic embeddings each catch different things. FTS finds exact terms. N-grams handle partial matches and chemical formulas that embedding models mangle. Embeddings capture semantic similarity — "thermal stability" matching "resistance to decomposition."
 
-None of this retrieval composition is new. Google has done this for decades. The difference is composing these with an LLM reasoning loop instead of hand-tuned ranking signals. Reciprocal Rank Fusion (RRF) merges results from different retrieval methods into a single ranked list. The LLM then reasons over the top results instead of just returning links.
+**Reranking.** The initial retrieval casts a wide net. A reranker (cross-encoder or LLM-based) scores each chunk against the original question for fine-grained relevance. This is where you go from "related passages" to "the actual answer is in these three paragraphs."
 
-**What this replaces.** Traditionally, doing this well meant deploying **Elasticsearch or Solr** — heavy infrastructure with its own operational cost, query DSLs, analyzers, synonym dictionaries, spell-check configs, and tokenizer tuning.
+> Reciprocal Rank Fusion (RRF) merges results from different retrieval methods into a single ranked list. The LLM then reasons over the top results instead of just returning links.
+
+None of this retrieval composition is new. Google has done this for decades. The difference is composing these with an LLM reasoning loop instead of hand-tuned ranking signals. 
+
+**What this replaces:**
+
+Traditionally, doing this well meant deploying **Elasticsearch or Solr** — heavy infrastructure with its own operational cost, query DSLs, analyzers, synonym dictionaries, spell-check configs, and tokenizer tuning.
 
 With an LLM and vector search, a lot of that goes away:
 
 - **Spell correction, synonyms, query reformulation** — handled natively by the LLM. "therml stability" still matches "thermal stability" because the embedding is close enough, and the LLM rewrites the query anyway.
 - **The search cluster itself** — a vector database (or even just `pgvector`) plus FTS on Postgres replaces what used to require a dedicated search deployment.
 
-> The infrastructure footprint shrinks dramatically. What used to be a separate cluster with its own ops burden becomes a Postgres extension and an API call.
-
-**Reranking.** The initial retrieval casts a wide net. A reranker (cross-encoder or LLM-based) scores each chunk against the original question for fine-grained relevance. This is where you go from "related passages" to "the actual answer is in these three paragraphs."
+> The complexity of maintainance cost and migration costs, associated with elasticsearch, and its java baked ecosystem reduces to something much simpler - `GPUs`, `Database`, and `API calls`
 
 ---
 
