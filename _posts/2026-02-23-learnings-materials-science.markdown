@@ -65,7 +65,6 @@ The naive assumption is "send to LLM, get answer." In practice, there's a whole 
 None of this retrieval composition is new. Google has done this for decades. The difference is composing these with an LLM reasoning loop instead of hand-tuned ranking signals. 
 
 **What this replaces:**
-
 Traditionally, doing this well meant deploying **Elasticsearch or Solr** — heavy infrastructure with its own operational cost, query DSLs, analyzers, synonym dictionaries, spell-check configs, and tokenizer tuning.
 
 With an LLM and vector search, a lot of that goes away:
