@@ -38,7 +38,8 @@ jobs:
 
       - name: Deploy to gh-pages
         run: |
-          cd _site
+          mv _site /tmp/_site
+          cd /tmp/_site
           git init
           git config user.name "github-actions"
           git config user.email "github-actions@github.com"
