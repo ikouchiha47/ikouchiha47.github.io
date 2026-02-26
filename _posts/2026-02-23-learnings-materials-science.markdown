@@ -283,6 +283,39 @@ expected data structure. Again, the problem here is the same:
 On a bad day, you will really have a bad day.
 
 ---
+## Testing from both directions
+
+Not being a materials science expert meant there was no way to eyeball whether the system was producing good hypotheses. So the build happened in two directions simultaneously.
+
+### Direction 1: Build the subsystems
+
+Same approach as building a compiler — lexer, parser, codegen, each independently testable:
+
+| Subsystem | What it does | Testable in isolation? |
+|-----------|-------------|----------------------|
+| Document pipeline | Parse, chunk, index scientific PDFs | Yes — output is structured text, verifiable |
+| Retrieval | Hybrid search across indexed papers | Yes — relevance scoring against known queries |
+| Domain tools | CHGNet, GPAW, materials databases | Yes — known inputs, known outputs |
+| Agents | Orchestrate tools, maintain context | Yes — given fixed retrieval, does the plan make sense |
+| Experiment runner | Execute computational experiments | Yes — scripts produce reproducible results |
+
+Each piece could be validated without domain expertise. The document pipeline either extracts tables correctly or it doesn't. CHGNet either returns a valid energy prediction or it doesn't.
+
+### Direction 2: Build the evaluation
+
+The harder question: **does the whole system, end-to-end, produce hypotheses that are actually good?**
+
+The approach:
+- Pick a **resolved scientific controversy** with a known outcome (LK-99 superconductivity)
+- Build the paper chain **without** the final resolution paper
+- Feed the incomplete chain to the system **in a conversational pattern** — not "tell me the answer", but the way a researcher would actually explore: "what are the competing claims?", "what experiments would resolve this?", "which hypothesis has the strongest evidence?"
+- Score the generated hypotheses against the withheld paper
+
+The conversational pattern matters. A direct request — "what caused the LK-99 results?" — would test whether the model memorized the answer. A conversational exploration tests whether the *system architecture* can guide reasoning through literature, contradictions, and evidence toward a defensible hypothesis.
+
+The hypothesis engine was essentially reverse-engineered from this evaluation. The question "how do you know if it's any good?" shaped every architectural decision — what agents exist, how they communicate, what tools they call, how hypotheses get ranked.
+
+---
 
 ## Shipping LLM Powered Apps
 
@@ -335,21 +368,6 @@ When everyone has a gun, you need a bigger gun (leverage).
 
 ---
 
-## Don't replace domain tools — compose with them
-
-Every research domain already has validated tools:
-
-- **Materials science:** Pymatgen, ASE, NIST-JANAF, AFLOW
-- **Biotech:** BLAST, PDB, UniProt
-- **Chemistry:** RDKit, Open Babel
-- **Machine learning:** scikit-learn, PyTorch model zoos, HuggingFace
-
-Researchers know and trust these tools. Building an LLM system that tries to replace them means reimplementing domain logic badly and asking an LLM to do math it will get wrong.
-
-The better pattern: give the agent access to these tools. The LLM understands the question, picks the right tool, formats the input, interprets the output. The computation stays with code that's been validated by the domain for decades. Same for existing ML models — if a trained classifier or prediction model exists for a subtask, use it. The agent orchestrates; the specialists compute.
-
----
-
 ## Thoughts
 
 Overall, as I understand, llm's use on textual data, is pretty limited use of this technology. Yes one can convert a natural language to an sql query.
@@ -387,26 +405,12 @@ Which again is business as usual. There are a lot of twitter clones, and reddit 
 
 And it's getting cheaper. Cross-provider deployment can be automated pretty easily now — Terraform, Pulumi, SST, whatever your flavor. Code generation is commoditized. Porting concepts from one language's ecosystem to another is a weekend project with a coding agent. Elixir's supervision trees in Go, Python's Ray actors in Rust, Ruby's convention-over-configuration patterns anywhere — the implementation barrier between "I know this pattern exists" and "it's running in my stack" has collapsed. Which means the moat is never in the code.
 
-
 ### Org changes
 
-I don't think this is new practice now, but still to acknowledge, AI has caused some cultural shifts in org. It also has somehow set the wrong expectations from a lot of people.
+I don't think this is new practice now, but still to acknowledge, AI has caused some cultural shifts in org.
+It also has somehow set the wrong expectations from a lot of people. In a way, I feel the bigger question is missed.
 
-Osho once said, "Democracy basically means government by the people, of the people, for the people — but the people are retarded." I think to some extent its terribly true. This is more prevalent and out in the world today
-because of social media.
-
-Only a handful of companies have presented their experiments as-is to the real world. Most lean into marketing — "LLM wrote a C compiler from scratch", "AI agents built an entire browser in a week."
-
-To be fair, Anthropic did disclose costs for the C compiler — [$20,000 in API costs](https://www.anthropic.com/engineering/building-c-compiler), 2 billion input tokens, ~2,000 sessions. The compiler passed 99% of GCC torture tests. But $20K for a compiler that a senior engineer could write for less, and actually maintain afterwards — that's a question worth asking.
-
-Cursor's [FastRender](https://www.softwareimprovementgroup.com/blog/quality-of-fastrender/) browser, on the other hand, produced 3 million lines of code — and scored 1.3/5 on maintainability (bottom 5% of all analyzed systems), had an 88% job failure rate, and recent commits [didn't even compile](https://www.theregister.com/2026/01/22/cursor_ai_wrote_a_browser/). The JS interpreter was hand-included, not AI-generated. No cost disclosure.
-
-I don't blame anyone, everyone is doing their part to survive. Lets not forget such waves of `data science`, have already hit us before twice, and both times
-the companies were all in losses.
-
-So building a sustained customer facing model is a lot of pressure.
-
-But you dont need to `XD`. It begins with educating everyone alike, juniors, seniors, management, stakeholders. 
+It begins with educating everyone alike, juniors, seniors, management, stakeholders. 
 
 An org should take the time in first doing a planned research on whats possible, to set the records straight. Some basic expectations on either end:
 
@@ -426,144 +430,95 @@ For non developers, to understand:
 - Think of the developers long term. Good software doesn't come from a better LLM, but a better person driving the LLM.
   Which you can see is totally in congruence with how just an LLM itself isn't enough to be a good product.
 
-An LLM doesn't reduce the complexity of a business problem, if at all it increases some workload. Because now one has to think about how to bridge the probabilistic and deterministic parts.
-
-An LLM does make you faster, but the quality of code, the philosophy, the foresight, doesn't come from the LLM.
-A novice coder now produces more bad code, faster, and vice versa.
 
 Its medically stupid, to make an LLM learn a very well established set of rules, and turn it into a probabilistic model in real life. Yeah, maybe it can be used to figure a better, faster, alternate way,
 but the process of exploration can't be the way.
 
-There is no point in making an LLM add two numbers, or add two numbers using a GPU consuming 16Amps.
-
 ---
 
-## A research framework could look like
+## The Bigger Question
 
-### Conventions
+If you have a look at [claude-skills-repo](https://github.com/ikouchiha47/claude-scientific-skills), I can alwaya
+go and create a few `sub-agents`, prompt so financial-analysis to life, looking at geographical data, charts etc.,
+and one could write a few scripts, which can be directly used to run backtesting and quant-analysis.
 
-**Everything is a message.** Components never call each other directly. Every interaction — tool invocation, retrieval request, state update, experiment result — is a typed message on a bus. This maps to whatever concurrency model the language provides (actors, channels, async queues). The constraint: no shared mutable state between components, only messages. This is what makes the system distributable without a rewrite.
+There is this other thing - if something can be built with ai, it can be replicated with ai.
 
-**Tools are the domain extension point.** A tool has: name, description, input schema, output schema, handler. The agent reads the tool catalog at runtime and picks tools based on descriptions and schemas — not hardcoded dispatch. Domain computation, ML models, and lab equipment all enter the system as tools. If a validated domain tool or model exists for a subtask, register it. The LLM orchestrates; specialists compute.
+So the question still is, if its possible to let things happen automatically:
+- then how does business look?
+- how does the concept of fairness evolve, is it going to be first mover?, only deep tech? or deep connections and pockets?
+- software engineers are not essential? a doctor could vibe code some app.
 
-**Device-driver model.** The framework defines the tool interface. Labs implement the connector for their specific equipment — communication protocol, safety interlocks, data formatting. From the agent's perspective, measuring an XRD pattern and computing a phase diagram are the same operation: call a tool, get a result.
+### The hidden cost of development
 
-**Agents are stateful, long-running processes.** Not request handlers. Each agent maintains context across interactions — loaded documents, active hypotheses, running experiments. The agent loop: receive → classify intent → plan steps → execute (with validation at each step) → on failure, retry with corrective context (budget: N attempts) → accumulate results → update workspace state → respond. If an agent crashes, the supervisor restarts it from its last checkpoint. If an indexer dies mid-document, the research agent keeps serving from whatever tiers are already built.
+I look back at my experience with building cinestar, and I had no choice but to keep vibe coding, like a druggie.
+What started off as maybe at max a week like hackathon, turned into a 2-3 month tussle with the LLM:
+- constantly lying/skipping
+- writing tests to satisfy its own understanding
+- missing the data gathering phases
+- fixing one thing, breaking other things
+- refactor nightmare
 
-**Memory**, a first class agent, with prompts to understand how to best get the out of context memory. These can have:
-- history
-- events and callback results
-- other intermediate results injected manually or from tools
+In hindsight, if I had done an `assist` mode, instead of `vibe` mode, it would be been a much better experience.
 
-**An epistemic loop.**
-The graph isn't a retrieval index. It's accumulated understanding — which claims have been tested, which hypotheses failed, which things were actually verified vs. only predicted.
+**So, even if you know what needs to be done, seeing the entire codebase playout from inception to delivery and refactor, cycles still need human suffering behind it**
 
-**Validation is not optional.** Every agent step passes through validation. Validators are pure functions — deterministic, no LLM calls. Four categories: schema (structure), citations (grounding), domain rules (plausibility), experiment safety (bounds before reaching equipment). The correction loop feeds validation errors back as retry context. Experiment safety validation is the guardrail between an AI system and real equipment. No exceptions.
+> You are/should be objectively faster at writing a binary search without mistakes, than an LLM, and can do it multiple times without losing money.
 
-In terms of tui ai editors like: `opencode`, `claude`, the hieararchy can be:
-- Subagents which do specific things, and a generic fallback subagent
-- Skills which each subagent can use. These skills can have knowledge on how to execute things, some python scripts (fudging RLM)
-- Tools, (these would be the ones that are already provided by default by these editors, like bash, todo, grep etc.)
+And I am not entirely sure, the people higher up in the org is necessarily using AI to write and deliver code, as soon as he gets back from a client meeting. Nor do I think they should do it at a bigger org, where more complex things are at play.
 
-### Infrastructure mapping
+I am also not entirely sure, why would a doctor be trusted with a vibe coded application, to use for anything substantial in his work.
 
-The framework needs backing services. Start embedded, graduate to distributed.
+As we move more closer to the real world, we see that apart from LLMs there are more focussed models and maths which do-not hallucinate. **Here, probably, LLM becomes a driver** . Eventually the outcomes predicted has to be tested in the real world,
+which was quite evident from our `hot chochlate` stint.
 
-| Concern | Dev (laptop) | Production |
-|---------|-------------|------------|
-| Message bus | In-process (language's native concurrency) | NATS, RabbitMQ, or Redis Streams |
-| Document storage | Filesystem + SQLite | Object storage + Postgres |
-| Search indexes | SQLite FTS5 + sqlite-vss (or pgvector) | Postgres tsvector + dedicated vector store |
-| Agent runtime | Single process, multiple actors/goroutines/tasks | Distributed nodes (OTP, Ray, K8s pods) |
-| Job and Notification Outbox | In-process task queue | Durable job queue (language-appropriate) |
-| Memory storage | Git + SQLite | Git + Postgres + object storage for artifacts |
-| Model inference | API calls to foundation model providers | Self-hosted (vLLM, TGI), Model Garden, Azure ML, or local GPUs |
+### Replication and UX problem
 
-The message bus convention means moving from dev to production is configuration, not a rewrite.
+I could not only argue that, Cinestar can be replicated, and be replicated faster, but also say, this whole project can be a collection of `skills` and `sub-agents`. For the `terminal-ly` challanged, we could expose a website or an app or a plugin.
 
-### To configure for a new domain
+The replication problem has exsisted, but the time to replicate has come down by a lot (arguably). Lets assume that it improves over time. So what's left?
 
-1. Create `domains/{domain_name}/`
-2. Implement parsers for the domain's document formats
-3. Register domain tools and ML models in the tool registry
-4. Write connectors for any physical equipment (same tool interface)
-5. Implement a domain matcher for specialized query patterns
-6. Define validation rules — both for agent outputs and experiment safety bounds
-7. Define the experiment schema — what constitutes a hypothesis, a run, a result
-8. Everything else — contracts, retrieval, agent lifecycle, progressive indexing, correction loops, workspace state, epistemic graph, git-backed tracking — is the framework
+What actually holds value:
 
----
+1. **Data moats**, not code moats. The software is replicable. Your proprietary dataset isn't. The memory agent recording execution pathways, curated knowledge, internal algorithms/workflows/secret sauces — that's probably the moat. The code is commodity. The accumulated intelligence isn't.
+2. **Distribution > creation**. Always was true, now brutally so. Two identical products — the one with users wins. It's not just speed, it's access to the audience, and also the type of audience.
+3. **Domain depth**: Kknowing that NMDC drops after earthquakes near Bellary, that INR depreciation eats nominal returns, that specific credit card reward structures can be arbitraged — an AI can discover these things, but **Someone has to know to ask the right questions**. The person who's lived in Indian markets for years asks better questions than someone who just has the same tools.
 
-## Testing from both directions
+The UX is also quite scattered:
+- Devs use it in a certain set of ways. Editors, TUIs, Plugins
+- General dumb public, who would let products have complete autonomy of devices
+- Non-devs who are entering into the dev territory. These are people who just want to build.
 
-Not being a materials science expert meant there was no way to eyeball whether the system was producing good hypotheses. So the build happened in two directions simultaneously.
+Overall, even if some systems are built, maintaining them would require engineers, so the task or way of execution
+in the lower layer changes. As long as there is a core product/problem which requires more work than just prompting
+it out, finer integrations, are the ones that do end up surviving and keeping the influx of engineers.
 
-### Direction 1: Build the subsystems
+- Platform/infra engineers — Core services, Devops + Data Engineers
+- Security engineers — attack surface grows with AI-generated code
+- Domain specialists who code and audit — the quant trader, the biotech researcher, the fintech person
+- "Taste" roles — product sense, design judgment, editorial quality
 
-Same approach as building a compiler — lexer, parser, codegen, each independently testable:
 
-| Subsystem | What it does | Testable in isolation? |
-|-----------|-------------|----------------------|
-| Document pipeline | Parse, chunk, index scientific PDFs | Yes — output is structured text, verifiable |
-| Retrieval | Hybrid search across indexed papers | Yes — relevance scoring against known queries |
-| Domain tools | CHGNet, GPAW, materials databases | Yes — known inputs, known outputs |
-| Agents | Orchestrate tools, maintain context | Yes — given fixed retrieval, does the plan make sense |
-| Experiment runner | Execute computational experiments | Yes — scripts produce reproducible results |
+** I wonder is it always going to be biased towards people who have better networking, capital and influence?**
 
-Each piece could be validated without domain expertise. The document pipeline either extracts tables correctly or it doesn't. CHGNet either returns a valid energy prediction or it doesn't.
+I guess, Yes. But that was always true. The industry genuienly hates software engineers. There is quite some science to this,
+but it rarely reflects in the way the IT system functions.
 
-### Direction 2: Build the evaluation
+If I consider, that people always saw `Software engineering` as a temporary anomaly, a means to an end — a 30-year window where a person with a laptop and skill could create outsized value without capital or connections, and
 
-The harder question: **does the whole system, end-to-end, produce hypotheses that are actually good?**
+What's replacing it is closer to how every other industry works:
 
-The approach:
-- Pick a **resolved scientific controversy** with a known outcome (LK-99 superconductivity)
-- Build the paper chain **without** the final resolution paper
-- Feed the incomplete chain to the system **in a conversational pattern** — not "tell me the answer", but the way a researcher would actually explore: "what are the competing claims?", "what experiments would resolve this?", "which hypothesis has the strongest evidence?"
-- Score the generated hypotheses against the withheld paper
+- Capital lets you run more experiments faster (more API calls, more compute, more data)
+- Network gives you distribution and domain access
+- Speed matters because the first mover accumulates the data/users that become the moat
 
-The conversational pattern matters. A direct request — "what caused the LK-99 results?" — would test whether the model memorized the answer. A conversational exploration tests whether the *system architecture* can guide reasoning through literature, contradictions, and evidence toward a defensible hypothesis.
+> A person building AI-driven quant tools in their bedroom can absolutely beat a bank's trading desk on idea generation. But the bank has the capital to act on those ideas at scale, the regulatory access to trade, and the data feeds and a lot more compute and brains and speed(lol, so much more speed its diabolical)
 
-The hypothesis engine was essentially reverse-engineered from this evaluation. The question "how do you know if it's any good?" shaped every architectural decision — what agents exist, how they communicate, what tools they call, how hypotheses get ranked.
+So the bedroom builder either joins the bank, sells to the bank, or finds a niche the bank doesn't care about.
 
-### Testing probabilistic systems
+Not to mention, this shit is not for consumers, at all. All windows users, using powershell to run claude code, yeah sure. So whatever consumer adoption comes, that is going through the business/products they consume. 
 
-This evaluation approach generalizes. Once tests exist for LLM-driven workflows, they become a model selection ground — run the same test suite against different models, collect golden results, compare.
-
-But testing probabilistic systems is fundamentally different from testing deterministic code. Three patterns that worked:
-
-**1. Black box / outcome-only testing**
-
-Treat the LLM like a private method. Don't assert on internal reasoning. Only check:
-- Did the output match the expected schema?
-- Did citations reference real passages?
-- Did domain values fall within valid ranges?
-
-This is the most robust approach — it survives model swaps without rewriting tests.
-
-**2. Value-in-collection assertions**
-
-When the output should contain specific elements but order doesn't matter:
-- Assert that key entities appear in the extracted list
-- Assert that required sections are covered
-- Assert that tool calls include the expected tools
-
-Not "the answer is X" but "the answer contains X, Y, Z."
-
-**3. Workflow / DAG testing**
-
-A goal can have multiple valid pathways, even with cycles. But:
-
-| What stays the same | What can vary |
-|---------------------|---------------|
-| The set of nodes visited | The order of traversal |
-| The final memory state | The number of correction cycles |
-| The tools invoked | Which tool was called first |
-| The types of intermediate results | The exact values |
-
-Test the DAG shape, not the exact path. If "retrieve → extract → validate → synthesize" is the expected workflow, assert that all four steps happened and the memory state after each step contains what downstream steps need. The path between them — whether the agent took one cycle or three, whether it backtracked — is the probabilistic part. The nodes and final state are the deterministic contract.
-
-This turns model comparison from "which one feels better" into "which one reaches the same nodes in fewer cycles, with fewer validation failures."
+So **computer science as a discipline will still be valid**, the stuff in between might eventually become production-line, like amazon factory workers, where someone just monitors metrics, and the llm crashes systems, causes a crowrdstrike like incident and then blames it on the CTO's family.
 
 ---
 
