@@ -223,7 +223,8 @@ For automation, this means: as long as the LLM has access to eyes, ears and othe
 
 The same principles apply to sequential or batched image and video generation — with a corrective feedback loop. But costs shoot up.
 
-_With enough effort — YOLO for vision, RPi Pico or ESP32 to capture images in batches, actual instruments and sensors providing continuous feedback — most real-life applications of AI will come when we add sensory elements to it. The LLM continuously validates against the desired outcome at each stage._
+_With enough effort — YOLO for vision, RPi Zero or ESP32 to capture images in batches, actual instruments and sensors providing continuous feedback — most real-life applications of AI will come when we add sensory elements to it. The LLM continuously validates against the desired outcome at each stage.
+The easier version would be just to let an app do the compute_
 
 ---
 
