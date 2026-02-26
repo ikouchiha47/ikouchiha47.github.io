@@ -165,6 +165,30 @@ One observation: most open-source models share failure modes — they're fine-tu
 
 ---
 
+## The Context Window Problem
+
+I wished I could write very passionately about these things, but I don't really find much challange or learnings
+in terms of high level abstractions.
+
+Some of the instruction following of LLM has gotten better over time, so the `ReACT` is a good place to start at.
+So the only two things that remain:
+
+1. Handle Compression of Context
+2. Use memory agent with a storage backed, and expose the tools of the agent.
+
+The interesting parts are in the:
+- details of how to better store or structure the data for storage.
+- combining sparse and dense embeddings
+- how year or month long conversations can be retrieved.
+
+Rest of everything even `RLM`s sounds like a fancy FAD to me.
+
+> Using python env to run code, to get information from context. And if it gets the code wrong does it retry? how many tokens per roundtrip? how do you run it securely? how about the llm lieeeeessssss in the code?. 
+
+**ReACT** should be evolved into, `ParallelReACT`, `Goal Planning`, and other mechanisms that are already well established in gaming systems. Instead of _Why don't we replace a simple predictible agent and retrival system into a token vaccum and a security knightmare, rather than have a proper data structure and ways to query them!! SQL is for insane people_
+
+---
+
 ## Video Generation, Spatial Awareness and Hot Chocolate
 
 Foundational models are trained on a lot of data. The assumption is that because of how embedding spaces work, the LLM would be the one that sees all patterns — but more powerful.
@@ -254,31 +278,28 @@ No single right answer:
 - A plugin meets them where they already are
 - Different labs, different constraints, different choices
 
-The interesting observation is that model-agnostic design (the cage and the wind) is what makes these options possible at all.
-
-> Once inference is swappable — hosted, self-hosted, open-source, Model Garden, whatever — the delivery question becomes about where the *data* lives, not where the *model* lives.
-
-
-In terms of business models, at the time of writing this, I see three prevalent ones.
-
-1. That bets on the foundational model being better, using simple adapters, all forms of prompt and context engineering, to build a product.
-2. The ones that are building their own foundational models, embedding models, ocr and other llm-ification of existing tools.
-3. Using 2, or building 2, by providing narrow expertise in a certain domain. For example, Windsurf, has their own SWE models, we dont know if they will get better over time, beyond the foundational models
-   But, companies like moonshot.ai , with `moondream`, gives us a pretty good idea, what a focussed model can do.
-   The materials hypothesis engine, which uses `chgnet` and `gpaw` etc, to run actual predictions, and dft relaxation.
-
-
-The 1st one however, would probably not survive, if it's not a niche the big players don't want to focus on, and public data is unavailable. Without a proper moat, the fear of being
-invalidated or competitor proliferation is much higher. The DocuSign incident is a glaring example — OpenAI launched DocuGPT, and DocuSign's stock [dropped 17%](https://finance.yahoo.com/news/docusign-docu-falls-12-openai-044456722.html) overnight. Open-source alternatives like [OpenSign](https://www.opensignlabs.com/) and [Documenso](https://documenso.com/) were already circling.
-
-When everyone has a gun, you need a bigger gun (leverage).
-
+The interesting observation is that a model-agnostic design (the cage and the wind) is what makes these options possible at all.
 
 ### What local delivery unlocks
 
 **Git-based tracking.** When the workspace is local, versioning research artifacts in git becomes natural. Every query, experiment config, hypothesis — versioned. Branch a research direction. Diff two experimental setups. Revert a dead end. Researchers already think in version control for code; extending it to research is a small step.
 
 **The device-driver pattern.** With local or lab-hosted infrastructure, physical equipment can connect directly. The framework defines the tool interface; labs implement the connector for their instruments — a synthesis furnace, an XRD machine, a spectrophotometer. Same interface as any other tool in the registry. This is harder to pull off through a cloud intermediary, though not impossible.
+
+> Once inference is swappable — hosted, self-hosted, open-source, Model Garden, whatever — the delivery question becomes about where the *data* lives, not where the *model* lives.
+
+In terms of business models, at the time of writing this, I see three prevalent ones.
+
+1. That bets on the foundational model being better, using simple adapters, all forms of prompt and context engineering, to build a product.
+2. The ones that are building their own foundational models, embedding models, ocr and other llm-ification of existing tools.
+3. They have a or a bunch of products, and LLM, VLM, Vector Embeddings are a driver of the product. These could be services industry as well, providing custom implementations on top of different models.
+
+The 1st one however, would probably not survive, if it's not a niche the big players don't want to focus on, and public data is unavailable. Without a proper moat, the fear of being invalidated or competitor proliferation is much higher. 
+
+The DocuSign incident is a glaring example — OpenAI launched DocuGPT, and DocuSign's stock [dropped 17%](https://finance.yahoo.com/news/docusign-docu-falls-12-openai-044456722.html) overnight. Open-source alternatives like [OpenSign](https://www.opensignlabs.com/) and [Documenso](https://documenso.com/) were already circling.
+
+
+When everyone has a gun, you need a bigger gun (leverage).
 
 ---
 
