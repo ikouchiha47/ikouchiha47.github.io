@@ -412,27 +412,18 @@ It also has somehow set the wrong expectations from a lot of people. In a way, I
 
 It begins with educating everyone alike, juniors, seniors, management, stakeholders. 
 
-An org should take the time in first doing a planned research on whats possible, to set the records straight. Some basic expectations on either end:
+This is both in terms of work volume and work culture. Both of them can be solved to a good extent using code and conventions.
+Maybe in the near future, instead of `full-stack engineers`, we have actual `product engineers`, who can understand product and the build it as well.
 
-For developers it can be:
-- using AI assist, to deliver faster.
-- reduce tech debt, by being able to refactor or find patterns faster
-- with some base setup, onboarding process can be smoothened a lot.
-- using some spec based approach, with spec PRs, approved by peers or seniors.
-- to build platforms which would allow non tech people to also be a part of the process, (versioning, access control etc)
+Until then, platforms in the org needs to bridge this gap. In such a style of development, a developer would need to be able to identify such parts of a system in the architecture planning stage. Building abstractions, configurations, and the right interfaces and pipelines which allows the developers to be able to handoff some or most of the work to the specific dept.
 
-For non developers, to understand:
-- execution is cheap, and so you can build mockups, and iterate yourself, before handing off some idea
-- if the platform supports, run your a/b tests with a small enough team, and iterate faster
-- for managers, your code powered editor is more than enough to track developer task updates
-- writing code is quite nuanced, when you think about LLM lies/hallucinations, bad instruction following, technical debts, corner cases, code quality
-- Given that LLMs are not cheap, who gets how much token budget, when real pricings hit you.
-- Think of the developers long term. Good software doesn't come from a better LLM, but a better person driving the LLM.
-  Which you can see is totally in congruence with how just an LLM itself isn't enough to be a good product.
+A backend dev, building a service layer, doesn't need to what prompts are being used, what ml models are running. He/She would instead build a system, where:
+- Prompts are versioned and the source is decoupled
+- Loads of configurations for models or family of models, the location of model, finetuned or not is not his headache.
+- **Eval framework**, no matter how lightweight, to compare against golden data
+- Monitoring and logging
+- Keeping a data migration plan between versions ready.
 
-
-Its medically stupid, to make an LLM learn a very well established set of rules, and turn it into a probabilistic model in real life. Yeah, maybe it can be used to figure a better, faster, alternate way,
-but the process of exploration can't be the way.
 
 ---
 
