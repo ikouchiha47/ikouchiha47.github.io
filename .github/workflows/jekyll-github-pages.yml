@@ -43,6 +43,8 @@ jobs:
           git init
           git config user.name "github-actions"
           git config user.email "github-actions@github.com"
+          
+          git branch -D gh-pages
           git checkout -b gh-pages
           git add .
           git commit -m "Deploy $(date)"
