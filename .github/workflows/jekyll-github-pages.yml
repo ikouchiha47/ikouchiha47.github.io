@@ -1,11 +1,12 @@
 name: Deploy to GitHub Pages
+
 on:
   workflow_dispatch:
 
 jobs:
   deploy:
-    name: Build and deploy
     runs-on: ubuntu-latest
+
     steps:
       - uses: actions/checkout@v4
 
@@ -14,18 +15,34 @@ jobs:
           ruby-version: '3.2.2'
           bundler-cache: true
 
+      - name: Cache Jekyll build
+        uses: actions/cache@v4
+        with:
+          path: |
+            .jekyll-cache
+            _site
+          key: ${{ runner.os }}-jekyll-${{ hashFiles('**/*.md', '**/*.html', '**/*.yml', 'Gemfile.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-jekyll-
+
       - name: Build site
         run: |
-          bundle install --binstubs
-          JEKYLL_ENV=production ./bin/jekyll build
+          JEKYLL_ENV=production bundle exec jekyll build --incremental
+
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.ACTIONS_DEPLOY_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan github.com >> ~/.ssh/known_hosts
 
       - name: Deploy to gh-pages
         run: |
           cd _site
           git init
-          git config user.name "${GITHUB_ACTOR}"
-          git config user.email "${GITHUB_ACTOR}@users.noreply.github.com"
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
           git checkout -b gh-pages
           git add .
-          git commit -m "GitHub Actions: Publishing Static site - $(date)"
-          git push --force "https://${GITHUB_ACTOR}:${{ secrets.GITHUB_TOKEN }}@github.com/${GITHUB_REPOSITORY}.git" gh-pages:gh-pages
+          git commit -m "Deploy $(date)"
+          git push --force git@github.com:${GITHUB_REPOSITORY}.git gh-pages:gh-pages
