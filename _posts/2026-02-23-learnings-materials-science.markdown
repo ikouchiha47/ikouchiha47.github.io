@@ -406,89 +406,7 @@ There is no point in making an LLM add two numbers, or add two numbers using a G
 
 ---
 
-## A research framework you can actually build
-
-The pattern that fell out of building this is domain-agnostic. What follows is the architecture — contracts, conventions, build order, and acceptance criteria. Pick your language, pick your domain. The shape stays the same.
-
-### Input: domain configuration
-
-Before building anything, define these for the target domain. Everything downstream depends on them.
-
-| What | Example (materials science) | Example (biotech) | Example (ML research) |
-|------|---------------------------|-------------------|----------------------|
-| **Document formats** | Scientific PDFs, CIF files, VASP output | PDB files, FASTA, clinical trial PDFs | arXiv PDFs, Jupyter notebooks, model cards |
-| **Domain tools** | Pymatgen, ASE, Materials Project API | BLAST, UniProt API, RDKit | scikit-learn, HuggingFace model hub, W&B API |
-| **Domain ML models** | Crystal system classifiers, GNNs for molecular dynamics | Protein structure predictors, toxicity models | Benchmark evaluators, dataset quality scorers |
-| **Lab equipment** | Furnaces, XRD, spectrophotometers | Sequencers, PCR machines, plate readers | GPU clusters, training pipelines, eval harnesses |
-| **Domain-specific query patterns** | Chemical formulas (Li₂FePO₄), crystal notation | Gene names (BRCA1), protein IDs (P53_HUMAN) | Model identifiers, dataset names, metric names |
-| **Validation rules** | Formation energy ∈ [-10, +10] eV/atom; temperature > 0K | Gene names match HGNC; dosage within safe range | Accuracy ∈ [0, 1]; loss is non-negative |
-| **Experiment schema** | Hypothesis → synthesis params → characterization → result | Hypothesis → protocol → assay → measurement | Hypothesis → hyperparams → training run → eval metrics |
-
-### Component architecture
-
-```
-workspace/
-├── contracts/              ← message types, shared by all components
-│   ├── messages            ← every inter-component interaction is a typed message
-│   └── schemas             ← domain entity schemas (documents, experiments, graph nodes)
-│
-├── document_store/         ← ingest, parse, chunk, index
-│   ├── parsers/            ← one parser per document format, registered by MIME type
-│   ├── chunkers/           ← section-aware splitting (not blind fixed-size)
-│   └── indexers/           ← progressive: raw → sectioned → embedded → fully indexed
-│
-├── retriever/              ← hybrid search across whatever indexes exist
-│   ├── strategies/         ← fts, semantic, hybrid (RRF fusion)
-│   └── domain_matcher      ← scores chunks using domain-specific logic
-│
-├── tool_registry/          ← domain tools, ML models, lab connectors — one interface
-│   ├── tools/              ← each tool: name, description, input/output schema, handler
-│   └── connectors/         ← lab equipment drivers (same tool interface)
-│
-├── experiment_tracker/     ← runs, parameters, results, lineage — git-backed
-│
-├── agents/                 ← long-running stateful processes
-│   ├── supervisor          ← spawns, monitors, restarts, checkpoints
-│   ├── research_agent      ← handles user queries, invokes tools
-│   ├── indexer_agent       ← background progressive indexing
-│   ├── experiment_agent    ← designs experiments, monitors runs, logs results
-│   └── watcher_agent       ← monitors external sources for new documents
-│
-├── workspace_state/        ← shared blackboard
-│   ├── documents           ← registry of ingested docs and their index tier
-│   ├── history             ← query/response log with tool call traces
-│   ├── experiments         ← run registry with full lineage
-│   └── graph               ← knowledge graph: entities, relations, evidence chains
-│
-├── validation/             ← pure functions, no LLM calls, deterministic
-│   ├── schema              ← does output match expected structure
-│   ├── citations           ← does every claim trace to a source passage
-│   ├── domain_rules        ← is output physically/logically plausible
-│   └── experiment_safety   ← are params within safe bounds before reaching equipment
-│
-└── domains/
-    └── {domain_name}/      ← all domain-specific config in one place
-        ├── parsers         ← document format implementations
-        ├── tools           ← tool registrations + connector configs
-        ├── matcher         ← domain query pattern scorer
-        ├── rules           ← validation rules + safety bounds
-        └── experiment      ← what constitutes hypothesis, run, result
-```
-
-### Build order
-
-Components have dependencies. Build in this order — each layer only depends on layers above it.
-
-| Phase | Component | Depends on | Done when |
-|-------|-----------|-----------|-----------|
-| **1** | **contracts/** | Nothing | Message types defined for: tool_call/tool_result, retrieve/results, ingest/indexed, experiment_create/experiment_result, state_read/state_write. All components will import these. |
-| **2** | **workspace_state/** | contracts | Can store and retrieve documents, history entries, experiment runs, and graph nodes/edges. Supports concurrent reads. |
-| **3** | **validation/** | contracts | Each validator accepts output + rules, returns ok or error with details. No network calls, no LLM calls. Experiment safety validator rejects out-of-bounds parameters. |
-| **4** | **document_store/** | contracts, workspace_state | Can ingest a file, run it through a parser, chunk it, and register it in workspace state. Progressive indexing: ingest returns immediately at tier 1, background jobs upgrade tiers. Search works against whatever tiers exist. |
-| **5** | **retriever/** | contracts, document_store, workspace_state | Accepts a query and strategy (fts/semantic/hybrid). Returns ranked chunks with scores and source references. Domain matcher plugs in as a scoring function. |
-| **6** | **tool_registry/** | contracts, validation | Tools register with typed schemas. Call dispatches to handler, validates output against schema. Lab connectors implement the same interface. Agent can list available tools and their descriptions. |
-| **7** | **experiment_tracker/** | contracts, workspace_state, validation | Can create a run from a hypothesis + params, log results, trace lineage back to source hypothesis/papers/queries. Git-backed: each run is a commit, params are diffable. |
-| **8** | **agents/** | Everything above | Each agent is a long-running process with its own lifecycle. Supervisor manages spawn/monitor/restart/checkpoint. Agents communicate through workspace_state, not direct calls. |
+## A research framework could look like
 
 ### Conventions
 
@@ -496,23 +414,24 @@ Components have dependencies. Build in this order — each layer only depends on
 
 **Tools are the domain extension point.** A tool has: name, description, input schema, output schema, handler. The agent reads the tool catalog at runtime and picks tools based on descriptions and schemas — not hardcoded dispatch. Domain computation, ML models, and lab equipment all enter the system as tools. If a validated domain tool or model exists for a subtask, register it. The LLM orchestrates; specialists compute.
 
-**Lab equipment follows the device-driver model.** The framework defines the tool interface. Labs implement the connector for their specific equipment — communication protocol, safety interlocks, data formatting. From the agent's perspective, measuring an XRD pattern and computing a phase diagram are the same operation: call a tool, get a result.
+**Device-driver model.** The framework defines the tool interface. Labs implement the connector for their specific equipment — communication protocol, safety interlocks, data formatting. From the agent's perspective, measuring an XRD pattern and computing a phase diagram are the same operation: call a tool, get a result.
 
 **Agents are stateful, long-running processes.** Not request handlers. Each agent maintains context across interactions — loaded documents, active hypotheses, running experiments. The agent loop: receive → classify intent → plan steps → execute (with validation at each step) → on failure, retry with corrective context (budget: N attempts) → accumulate results → update workspace state → respond. If an agent crashes, the supervisor restarts it from its last checkpoint. If an indexer dies mid-document, the research agent keeps serving from whatever tiers are already built.
 
-**Experiments are first-class.** A run records: triggering hypothesis, parameters, tools called, data in, results out. Full lineage — traceable back through the graph to the papers and queries that generated the hypothesis. Git-backed: each run is a commit, params are diffable, branching an experiment direction keeps the history clean.
+**Memory**, a first class agent, with prompts to understand how to best get the out of context memory. These can have:
+- history
+- events and callback results
+- other intermediate results injected manually or from tools
 
-**The epistemic loop.** The knowledge graph grows through a cycle:
-
-1. **Literature** → papers ingested, entities and claims extracted
-2. **Hypotheses** → agents identify contradictions or gaps, propose testable hypotheses
-3. **Experiments** → runs designed, lab connectors or simulation tools called
-4. **Results** → outcomes validated and added as evidence
-5. **Updated knowledge** → graph now contains empirical results alongside literature claims → new hypotheses emerge → repeat
-
+**An epistemic loop.**
 The graph isn't a retrieval index. It's accumulated understanding — which claims have been tested, which hypotheses failed, which things were actually verified vs. only predicted.
 
 **Validation is not optional.** Every agent step passes through validation. Validators are pure functions — deterministic, no LLM calls. Four categories: schema (structure), citations (grounding), domain rules (plausibility), experiment safety (bounds before reaching equipment). The correction loop feeds validation errors back as retry context. Experiment safety validation is the guardrail between an AI system and real equipment. No exceptions.
+
+In terms of tui ai editors like: `opencode`, `claude`, the hieararchy can be:
+- Subagents which do specific things, and a generic fallback subagent
+- Skills which each subagent can use. These skills can have knowledge on how to execute things, some python scripts (fudging RLM)
+- Tools, (these would be the ones that are already provided by default by these editors, like bash, todo, grep etc.)
 
 ### Infrastructure mapping
 
@@ -524,8 +443,8 @@ The framework needs backing services. Start embedded, graduate to distributed.
 | Document storage | Filesystem + SQLite | Object storage + Postgres |
 | Search indexes | SQLite FTS5 + sqlite-vss (or pgvector) | Postgres tsvector + dedicated vector store |
 | Agent runtime | Single process, multiple actors/goroutines/tasks | Distributed nodes (OTP, Ray, K8s pods) |
-| Job queue | In-process task queue | Durable job queue (language-appropriate) |
-| Experiment storage | Git + SQLite | Git + Postgres + object storage for artifacts |
+| Job and Notification Outbox | In-process task queue | Durable job queue (language-appropriate) |
+| Memory storage | Git + SQLite | Git + Postgres + object storage for artifacts |
 | Model inference | API calls to foundation model providers | Self-hosted (vLLM, TGI), Model Garden, Azure ML, or local GPUs |
 
 The message bus convention means moving from dev to production is configuration, not a rewrite.
