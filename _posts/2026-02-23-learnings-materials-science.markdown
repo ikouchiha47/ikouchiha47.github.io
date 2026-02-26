@@ -124,18 +124,21 @@ The idea: teach the LLM this structure through the prompt, and have it classify 
 - **Comparison:** compare across papers element-by-element, using section types as the navigation axis
 - **Hypothesis generation:** scan → deep-read → synthesize, with section-aware retrieval at each phase
 
-The prompt doesn't just say "read the paper." It encodes how a researcher reads — which sections to check first for which kind of question, when to fall back to broader reading, how to cross-reference across documents.
+The `Researcher` agent, is given detailed instructions on how a "researcher" reads — which sections to check first for which kind of question, when to fall back to broader reading, how to cross-reference across documents.
 
-At query time, filtering by section type is a simple indexed array lookup. "Show me just the methods across these three papers" — no graph traversal needed. The LLM can then drive a ReAct loop to compare across sections, navigate the hierarchy, and synthesize — all without an entity graph.
+At query time, filtering by section type is a simple indexed array lookup.
+"Show me just the methods across these three papers" — no graph traversal needed. The LLM can then drive a ReAct loop to compare across sections, navigate the hierarchy, and synthesize — all without an entity graph.
 
 ### Across a workspace over time: where it shines
 
-Researchers don't work with one paper. They work with a **workspace** — dozens of papers, experimental notes, simulation results, reviewer feedback. Over weeks and months, connections accumulate:
+Researchers don't work with one paper. They work with a dozens of papers, experimental notes, simulation results, reviewer feedback. Over weeks and months, connections accumulate:
 - This paper's synthesis conditions produced the same phase as that paper's computational prediction
 - This reviewer's objection was addressed by that experiment
 - This failed hypothesis ruled out a class of compositions
 
-That's where a knowledge graph becomes valuable. **Not blind LLM extraction** — asking a model to "extract all entities" from a paper produces confident garbage. What works is:
+That's where a knowledge graph becomes valuable. **Not blind LLM extraction** — asking a model to "extract all entities" from a paper produces confident garbage. 
+
+What works is:
 - **Curated, validated connections** built incrementally
 - **Human-in-the-loop validation** for each new paper and result
 - The graph grows as the research grows
