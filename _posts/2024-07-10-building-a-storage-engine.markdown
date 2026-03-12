@@ -111,6 +111,7 @@ This exercise, atleast for me, requires a whole lot of reading. So here is the l
 - [a good damn book](https://www.oreilly.com/library/view/database-internals/9781492040330/)
   This is again a whole lot of reading, but then you understand different types of indexes.
 
+---
 
 ### A bit about indexes
 
