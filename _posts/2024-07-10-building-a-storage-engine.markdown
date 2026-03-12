@@ -100,23 +100,7 @@ Head over to the [sqlite's btree internals](https://fly.io/blog/sqlite-internals
 Database engines generally generate bytecode, which is then translated to equivalent machine instructions.
 But my idea is to see, if we can eliminate that.
 
-
-## Detour
-
-Aaaaannyyyyeeewhooo. On other news. I recently got diagonised with the cliced `ADD` and `Social Anxiety Disorder`. I mean, at this point I am not really surprised, anyone who knows me, can pretty much vouch for my anxiety. The anxiety mostly comes from knowing what's the other person is grade me on what I say. I am also quite self-critical.
-
-There is no shame in admitting that success pretty much defines who I am. So not only I am judging myself, I am also thinking of what I said, and how it didn't go the way I wanted to, and hence I am a failure. I wish it was some other way.
-
-I got my `ADD` in control though, coz a man's gotta live. I have things in place to keep me sane. Of late, writing has helped slow down the thinking, although drawing is faster than writing. Sometimes there are so many variables to an asked question, that I just freeze and stare stupidly. As to help, I can do that to myself, has always been there.
-
-The only good thing about all this. I got addicted to the computer and with its ups and down it has fed me and kept me alive, for me to do other stuff. (If you couldn't tell my now, other stuff is a constant in my life.)
-
-[Dr. K](https://www.youtube.com/watch?v=FUj3-B4yI8U) videos have been helpful. But I already had some of them figured out.
-
-__Those who help themselves, end up helping themselves and some more.__
-
-
-# More sqlite love
+---
 
 This exercise, atleast for me, requires a whole lot of reading. So here is the list:
 
