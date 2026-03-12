@@ -1,0 +1,404 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+  <title>
+    Extensions - iko&#39;s logs
+    
+  </title>
+
+  <meta name="description" content="">
+  <meta property="og:description" content="">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Extensions">
+  <meta property="og:url" content="https://ikouchiha47.github.io/postgresql/15-extensions/">
+
+  
+
+  <link href='https://fonts.googleapis.com/css?family=Lora:400,700,400italic,700italic' rel='stylesheet' type='text/css'>
+  <link href='https://fonts.googleapis.com/css?family=Open+Sans:300italic,400italic,600italic,700italic,800italic,400,300,600,700,800' rel='stylesheet' type='text/css'>
+
+  <!-- <script src="https://use.fontawesome.com/releases/v5.15.3/js/all.js" crossorigin="anonymous"></script> -->
+  <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.15.4/css/all.css" integrity="sha384-DyZ88mC6Up2uqS4h/KRgHuoeGwBcD4Ng9SiP4dIRy0EXTlnuz47vAwmeGwVChigm" crossorigin="anonymous"/>
+
+  <link rel="stylesheet" href="/assets/main.css">
+  <link rel="canonical" href="https://ikouchiha47.github.io/postgresql/15-extensions/">
+  <link rel="alternate" type="application/rss+xml" title="iko&#39;s logs" href="/feed.xml">
+
+  <meta name="google-site-verification" content="lWkg6gIxJgzEKX_5XnhcxCtPE9QknaimFWWos_dTvPM" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fira+Sans:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Inconsolata:wght@200..900&family=Jersey+25&family=Kanit:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Merriweather+Sans:ital,wght@0,300..800;1,300..800&family=Nanum+Gothic+Coding&family=Space+Grotesk:wght@300..700&family=Titillium+Web:ital,wght@0,200;0,300;0,400;0,600;0,700;0,900;1,200;1,300;1,400;1,600;1,700&display=swap" rel="stylesheet">
+
+</head>
+
+
+<body>
+
+  <!-- Navigation -->
+<nav class="navbar navbar-expand-lg navbar-light fixed-top" id="mainNav">
+  <div class="container">
+    <a class="navbar-brand" href="/">iko&#39;s logs</a>
+    <button class="navbar-toggler navbar-toggler-right" type="button" data-toggle="collapse" data-target="#navbarResponsive" aria-controls="navbarResponsive" aria-expanded="false" aria-label="Toggle navigation">
+      Menu
+      <i class="fa fa-bars"></i>
+    </button>
+    <div class="collapse navbar-collapse" id="navbarResponsive">
+      <ul class="navbar-nav ml-auto">
+        <li class="nav-item">
+          <a class="nav-link" href="/">Home</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/about">About</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/posts">Posts</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/contact">Contact</a>
+        </li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+
+  <!-- Page Header -->
+
+<header class="masthead">
+
+  <div class="overlay"></div>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <div class="post-heading">
+          <h1>Extensions</h1>
+          
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="container space-grotesk">
+  <div class="row">
+    <div class="col-lg-8 col-md-10 mx-auto">
+
+      <!-- Breadcrumb -->
+      <nav aria-label="breadcrumb" style="margin-bottom: 1.5rem;">
+        <ol class="breadcrumb" style="background: transparent; padding: 0;">
+          
+            <li class="breadcrumb-item"><a href="/postgresql-internals/">PostgreSQL Internals Deep Dive</a></li>
+          
+          
+          <li class="breadcrumb-item active" aria-current="page">Extensions</li>
+        </ol>
+      </nav>
+
+      <h1 id="chapter-15-extensions">Chapter 15: Extensions</h1>
+
+<blockquote>
+  <p><em>PostgreSQL’s extension architecture transforms the database from a fixed application into a programmable platform – every hook, callback API, and worker slot is a seam where external code can alter behavior without touching a single line of core source.</em></p>
+</blockquote>
+
+<h2 id="why-this-matters">Why This Matters</h2>
+
+<p>Most databases are closed systems. You can configure them, but you cannot change how the planner costs a join, how the executor runs a scan, or how authentication validates a password. PostgreSQL is different. Through a combination of global function-pointer hooks, pluggable access method APIs, background worker slots, and the Foreign Data Wrapper protocol, external shared libraries can intercept, replace, or extend nearly every stage of query processing and server operation.</p>
+
+<p>Understanding these extension points is essential for three audiences. Extension authors need to know which callbacks exist and how to register them safely. DBAs evaluating extensions (pg_stat_statements, timescaledb, citus, postgis) need to understand what those extensions are actually doing to the server process. And core hackers proposing new hooks need to see the existing patterns and their trade-offs.</p>
+
+<p>This chapter covers the four major extension mechanisms: <strong>hooks</strong> (function pointers that intercept planner, executor, and authentication paths), <strong>custom access methods</strong> (the Table AM and Index AM callback structs that let you replace heap storage or btree indexing), <strong>background workers</strong> (long-running processes forked by the postmaster that can run arbitrary code), and <strong>Foreign Data Wrappers</strong> (the full planning-through-execution callback protocol for accessing external data sources as if they were local tables).</p>
+
+<h2 id="chapter-map">Chapter Map</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>Topic</th>
+      <th>File</th>
+      <th>What You Will Learn</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Hooks</td>
+      <td><a href="hooks.md">hooks.md</a></td>
+      <td>How <code class="language-plaintext highlighter-rouge">planner_hook</code>, <code class="language-plaintext highlighter-rouge">ExecutorStart_hook</code>, <code class="language-plaintext highlighter-rouge">ClientAuthentication_hook</code>, and dozens of other global function pointers let extensions intercept core code paths</td>
+    </tr>
+    <tr>
+      <td>Custom Access Methods</td>
+      <td><a href="custom-access-methods.md">custom-access-methods.md</a></td>
+      <td>The <code class="language-plaintext highlighter-rouge">TableAmRoutine</code> and <code class="language-plaintext highlighter-rouge">IndexAmRoutine</code> callback structs that define the contract between the executor and pluggable storage engines</td>
+    </tr>
+    <tr>
+      <td>Background Workers</td>
+      <td><a href="background-workers.md">background-workers.md</a></td>
+      <td>How to register, start, monitor, and terminate background worker processes using the <code class="language-plaintext highlighter-rouge">BackgroundWorker</code> struct and the postmaster’s worker management slots</td>
+    </tr>
+    <tr>
+      <td>Foreign Data Wrappers</td>
+      <td><a href="fdw.md">fdw.md</a></td>
+      <td>The <code class="language-plaintext highlighter-rouge">FdwRoutine</code> callback protocol covering planning, scanning, modification, and parallel execution of foreign tables</td>
+    </tr>
+  </tbody>
+</table>
+
+<h2 id="extension-loading-the-entry-point">Extension Loading: The Entry Point</h2>
+
+<p>Every PostgreSQL extension begins life as a shared library (<code class="language-plaintext highlighter-rouge">.so</code> / <code class="language-plaintext highlighter-rouge">.dll</code>) loaded into the server process. The loading mechanism and initialization protocol are the same regardless of whether the extension installs hooks, access methods, background workers, or FDW handlers.</p>
+
+<h3 id="the-_pg_init-contract">The _PG_init Contract</h3>
+
+<p>When PostgreSQL loads a shared library, it looks for and calls a function named <code class="language-plaintext highlighter-rouge">_PG_init</code>:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="cm">/* src/include/fmgr.h */</span>
+<span class="k">extern</span> <span class="n">PGDLLEXPORT</span> <span class="kt">void</span> <span class="nf">_PG_init</span><span class="p">(</span><span class="kt">void</span><span class="p">);</span>
+</code></pre></div></div>
+
+<p>This is where extensions perform all setup: installing hook functions, registering background workers, defining custom GUCs, and requesting shared memory. The function runs exactly once per library load, in the postmaster process (for <code class="language-plaintext highlighter-rouge">shared_preload_libraries</code>) or in a backend process (for <code class="language-plaintext highlighter-rouge">session_preload_libraries</code> or <code class="language-plaintext highlighter-rouge">LOAD</code>).</p>
+
+<h3 id="library-loading-paths">Library Loading Paths</h3>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>                    +--------------------------+
+                    |   postgresql.conf        |
+                    |                          |
+                    |  shared_preload_libraries|----&gt; Loaded at postmaster start
+                    |  session_preload_libraries|---&gt; Loaded at session start
+                    |  local_preload_libraries |----&gt; Loaded at session start
+                    +--------------------------+
+                              |
+                              v
+                    +--------------------------+
+                    |  process_shared_preload_ |
+                    |  libraries()             |
+                    |                          |
+                    |  For each library:       |
+                    |    dlopen(libname)        |
+                    |    dlsym("_PG_init")     |
+                    |    _PG_init()            |
+                    +--------------------------+
+</code></pre></div></div>
+
+<p>The critical distinction: only <code class="language-plaintext highlighter-rouge">shared_preload_libraries</code> runs in the postmaster before any backends are forked. This is the only path that allows:</p>
+
+<ul>
+  <li>Registering background workers (they need postmaster to fork them)</li>
+  <li>Requesting shared memory via <code class="language-plaintext highlighter-rouge">shmem_request_hook</code></li>
+  <li>Installing hooks that must be active for all sessions</li>
+</ul>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="cm">/* src/include/miscadmin.h */</span>
+<span class="k">extern</span> <span class="n">PGDLLIMPORT</span> <span class="n">bool</span> <span class="n">process_shared_preload_libraries_in_progress</span><span class="p">;</span>
+<span class="k">extern</span> <span class="n">PGDLLIMPORT</span> <span class="n">bool</span> <span class="n">process_shared_preload_libraries_done</span><span class="p">;</span>
+
+<span class="k">typedef</span> <span class="nf">void</span> <span class="p">(</span><span class="o">*</span><span class="n">shmem_request_hook_type</span><span class="p">)</span> <span class="p">(</span><span class="kt">void</span><span class="p">);</span>
+<span class="k">extern</span> <span class="n">PGDLLIMPORT</span> <span class="n">shmem_request_hook_type</span> <span class="n">shmem_request_hook</span><span class="p">;</span>
+</code></pre></div></div>
+
+<h3 id="a-minimal-extension-skeleton">A Minimal Extension Skeleton</h3>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="cm">/* myext.c -- minimal extension that installs a planner hook */</span>
+
+<span class="cp">#include</span> <span class="cpf">"postgres.h"</span><span class="cp">
+#include</span> <span class="cpf">"fmgr.h"</span><span class="cp">
+#include</span> <span class="cpf">"optimizer/planner.h"</span><span class="cp">
+</span>
+<span class="n">PG_MODULE_MAGIC</span><span class="p">;</span>
+
+<span class="k">static</span> <span class="n">planner_hook_type</span> <span class="n">prev_planner_hook</span> <span class="o">=</span> <span class="nb">NULL</span><span class="p">;</span>
+
+<span class="k">static</span> <span class="n">PlannedStmt</span> <span class="o">*</span>
+<span class="nf">my_planner</span><span class="p">(</span><span class="n">Query</span> <span class="o">*</span><span class="n">parse</span><span class="p">,</span> <span class="k">const</span> <span class="kt">char</span> <span class="o">*</span><span class="n">query_string</span><span class="p">,</span>
+           <span class="kt">int</span> <span class="n">cursorOptions</span><span class="p">,</span> <span class="n">ParamListInfo</span> <span class="n">boundParams</span><span class="p">,</span>
+           <span class="n">ExplainState</span> <span class="o">*</span><span class="n">es</span><span class="p">)</span>
+<span class="p">{</span>
+    <span class="cm">/* Pre-planning logic here */</span>
+
+    <span class="k">if</span> <span class="p">(</span><span class="n">prev_planner_hook</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">prev_planner_hook</span><span class="p">(</span><span class="n">parse</span><span class="p">,</span> <span class="n">query_string</span><span class="p">,</span>
+                                 <span class="n">cursorOptions</span><span class="p">,</span> <span class="n">boundParams</span><span class="p">,</span> <span class="n">es</span><span class="p">);</span>
+    <span class="k">else</span>
+        <span class="k">return</span> <span class="n">standard_planner</span><span class="p">(</span><span class="n">parse</span><span class="p">,</span> <span class="n">query_string</span><span class="p">,</span>
+                                <span class="n">cursorOptions</span><span class="p">,</span> <span class="n">boundParams</span><span class="p">,</span> <span class="n">es</span><span class="p">);</span>
+<span class="p">}</span>
+
+<span class="kt">void</span>
+<span class="nf">_PG_init</span><span class="p">(</span><span class="kt">void</span><span class="p">)</span>
+<span class="p">{</span>
+    <span class="n">prev_planner_hook</span> <span class="o">=</span> <span class="n">planner_hook</span><span class="p">;</span>
+    <span class="n">planner_hook</span> <span class="o">=</span> <span class="n">my_planner</span><span class="p">;</span>
+<span class="p">}</span>
+</code></pre></div></div>
+
+<p>The pattern of saving the previous hook value and chaining to it (or falling back to the <code class="language-plaintext highlighter-rouge">standard_*</code> function) is universal across all PostgreSQL hooks. It allows multiple extensions to coexist on the same hook point.</p>
+
+<h2 id="the-extension-control-file">The Extension Control File</h2>
+
+<p>Beyond the C shared library, PostgreSQL’s <code class="language-plaintext highlighter-rouge">CREATE EXTENSION</code> system uses a <code class="language-plaintext highlighter-rouge">.control</code> file to declare metadata and a SQL script to create the extension’s database objects:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code># myext.control
+comment = 'My extension description'
+default_version = '1.0'
+module_pathname = '$libdir/myext'
+relocatable = true
+</code></pre></div></div>
+
+<p>This infrastructure (managed by <code class="language-plaintext highlighter-rouge">src/backend/commands/extension.c</code>) handles versioning, upgrade paths, and dependency tracking – but the actual power of extensions comes from the C-level APIs described in the following pages.</p>
+
+<h2 id="connections-to-other-chapters">Connections to Other Chapters</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>Chapter</th>
+      <th>Connection</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><a href="../07-query-optimizer/">Chapter 7: Query Optimizer</a></td>
+      <td>Planner hooks intercept the optimization pipeline; custom access methods provide cost estimates via their callback APIs</td>
+    </tr>
+    <tr>
+      <td><a href="../08-executor/">Chapter 8: Executor</a></td>
+      <td>Executor hooks wrap every stage from <code class="language-plaintext highlighter-rouge">ExecutorStart</code> through <code class="language-plaintext highlighter-rouge">ExecutorEnd</code>; table and index AMs provide the scan/modify callbacks the executor calls</td>
+    </tr>
+    <tr>
+      <td><a href="../02-access-methods/">Chapter 2: Access Methods</a></td>
+      <td>Custom index and table AMs extend the same framework that implements btree, hash, GiST, GIN, and the heap</td>
+    </tr>
+    <tr>
+      <td><a href="../11-ipc/">Chapter 11: IPC</a></td>
+      <td>Background workers use shared memory and the latch/signal infrastructure for coordination with backends</td>
+    </tr>
+    <tr>
+      <td><a href="../00-architecture/">Chapter 0: Architecture</a></td>
+      <td>Background workers are full server processes forked by the postmaster, following the same lifecycle as regular backends</td>
+    </tr>
+  </tbody>
+</table>
+
+
+      <hr>
+
+      <!-- Prev / Next / Up navigation -->
+      
+      
+      
+
+      <div class="clearfix" style="margin-top: 2rem;">
+        
+          
+          
+
+          
+            
+            <a class="btn btn-primary float-left" href="/postgresql/14-platform/simd-and-crc.html" title="SIMD, CRC, and Hardware Acceleration">&larr; Previous</a>
+          
+
+          
+            
+            <a class="btn btn-primary float-right" href="/postgresql/15-extensions/background-workers.html" title="Background Workers">Next &rarr;</a>
+          
+        
+      </div>
+
+      
+      <div style="text-align: center; margin-top: 1rem;">
+        <a href="/postgresql-internals/">&uarr; Back to Table of Contents</a>
+      </div>
+      
+
+    </div>
+  </div>
+</div>
+
+
+  <!-- Footer -->
+
+<hr>
+
+<footer>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <ul class="list-inline text-center">
+          
+          <li class="list-inline-item">
+            <a href="mailto:amitava.dev@proton.me" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="far fa-envelope fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          
+          
+          <li class="list-inline-item">
+            <a href="https://www.linkedin.com/in/amitavaag" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-linkedin fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          <li class="list-inline-item">
+            <a href="https://github.com/ikouchiha47" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-github fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+        </ul>
+
+        <p class="copyright text-muted">
+          Build with: 
+          <a 
+            href="https://github.com/StartBootstrap/startbootstrap-clean-blog-jekyll"
+            class="text-gray"
+            target="_blank">startbootstrap-clean-blog-jekyll</a></p>
+      </div>
+    </div>
+  </div>
+</footer>
+
+
+  <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="/assets/vendor/blog/js/scripts.js"></script>
+
+<script src="/assets/scripts.js"></script>
+
+
+
+
+
+  <script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+
+    document.querySelectorAll('pre > code.language-mermaid').forEach((codeBlock) => {
+      codeBlock.parentElement.outerHTML = `<pre class="mermaid">${codeBlock.textContent}</pre>`;
+    });
+
+
+    mermaid.initialize({ startOnLoad: true, theme: 'forest' });
+</script>
+
+
+  
+
+</body>
+
+</html>

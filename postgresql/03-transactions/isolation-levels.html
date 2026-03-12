@@ -1,0 +1,542 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+  <title>
+    Isolation Levels - iko&#39;s logs
+    
+  </title>
+
+  <meta name="description" content="">
+  <meta property="og:description" content="">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Isolation Levels">
+  <meta property="og:url" content="https://ikouchiha47.github.io/postgresql/03-transactions/isolation-levels.html">
+
+  
+
+  <link href='https://fonts.googleapis.com/css?family=Lora:400,700,400italic,700italic' rel='stylesheet' type='text/css'>
+  <link href='https://fonts.googleapis.com/css?family=Open+Sans:300italic,400italic,600italic,700italic,800italic,400,300,600,700,800' rel='stylesheet' type='text/css'>
+
+  <!-- <script src="https://use.fontawesome.com/releases/v5.15.3/js/all.js" crossorigin="anonymous"></script> -->
+  <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.15.4/css/all.css" integrity="sha384-DyZ88mC6Up2uqS4h/KRgHuoeGwBcD4Ng9SiP4dIRy0EXTlnuz47vAwmeGwVChigm" crossorigin="anonymous"/>
+
+  <link rel="stylesheet" href="/assets/main.css">
+  <link rel="canonical" href="https://ikouchiha47.github.io/postgresql/03-transactions/isolation-levels.html">
+  <link rel="alternate" type="application/rss+xml" title="iko&#39;s logs" href="/feed.xml">
+
+  <meta name="google-site-verification" content="lWkg6gIxJgzEKX_5XnhcxCtPE9QknaimFWWos_dTvPM" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fira+Sans:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Inconsolata:wght@200..900&family=Jersey+25&family=Kanit:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Merriweather+Sans:ital,wght@0,300..800;1,300..800&family=Nanum+Gothic+Coding&family=Space+Grotesk:wght@300..700&family=Titillium+Web:ital,wght@0,200;0,300;0,400;0,600;0,700;0,900;1,200;1,300;1,400;1,600;1,700&display=swap" rel="stylesheet">
+
+</head>
+
+
+<body>
+
+  <!-- Navigation -->
+<nav class="navbar navbar-expand-lg navbar-light fixed-top" id="mainNav">
+  <div class="container">
+    <a class="navbar-brand" href="/">iko&#39;s logs</a>
+    <button class="navbar-toggler navbar-toggler-right" type="button" data-toggle="collapse" data-target="#navbarResponsive" aria-controls="navbarResponsive" aria-expanded="false" aria-label="Toggle navigation">
+      Menu
+      <i class="fa fa-bars"></i>
+    </button>
+    <div class="collapse navbar-collapse" id="navbarResponsive">
+      <ul class="navbar-nav ml-auto">
+        <li class="nav-item">
+          <a class="nav-link" href="/">Home</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/about">About</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/posts">Posts</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/contact">Contact</a>
+        </li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+
+  <!-- Page Header -->
+
+<header class="masthead">
+
+  <div class="overlay"></div>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <div class="post-heading">
+          <h1>Isolation Levels</h1>
+          
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="container space-grotesk">
+  <div class="row">
+    <div class="col-lg-8 col-md-10 mx-auto">
+
+      <!-- Breadcrumb -->
+      <nav aria-label="breadcrumb" style="margin-bottom: 1.5rem;">
+        <ol class="breadcrumb" style="background: transparent; padding: 0;">
+          
+            <li class="breadcrumb-item"><a href="/postgresql-internals/">PostgreSQL Internals Deep Dive</a></li>
+          
+          
+            
+              <li class="breadcrumb-item"><a href="/postgresql/03-transactions/">Transactions & MVCC</a></li>
+            
+          
+          <li class="breadcrumb-item active" aria-current="page">Isolation Levels</li>
+        </ol>
+      </nav>
+
+      <h1 id="isolation-levels">Isolation Levels</h1>
+
+<p>PostgreSQL supports three isolation levels: Read Committed, Repeatable Read, and Serializable. The SQL standard defines a fourth (Read Uncommitted), but PostgreSQL treats it identically to Read Committed – dirty reads are never allowed under MVCC.</p>
+
+<p>The fundamental difference between the levels is <strong>when snapshots are taken</strong> and <strong>what additional conflict detection</strong> is performed.</p>
+
+<h2 id="key-source-files">Key Source Files</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>File</th>
+      <th>Purpose</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/access/transam/xact.c</code></td>
+      <td><code class="language-plaintext highlighter-rouge">DefaultXactIsoLevel</code>, <code class="language-plaintext highlighter-rouge">XactIsoLevel</code> GUC handling</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/utils/time/snapmgr.c</code></td>
+      <td>Snapshot acquisition per isolation level</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/access/heap/heapam_visibility.c</code></td>
+      <td>Visibility checks</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/access/heap/heapam.c</code></td>
+      <td>EvalPlanQual for Read Committed</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/storage/lmgr/predicate.c</code></td>
+      <td>SSI for Serializable</td>
+    </tr>
+  </tbody>
+</table>
+
+<h2 id="summary-of-behavior">Summary of Behavior</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>Phenomenon</th>
+      <th>Read Committed</th>
+      <th>Repeatable Read</th>
+      <th>Serializable</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Dirty read</td>
+      <td>Not possible</td>
+      <td>Not possible</td>
+      <td>Not possible</td>
+    </tr>
+    <tr>
+      <td>Non-repeatable read</td>
+      <td>Possible</td>
+      <td>Not possible</td>
+      <td>Not possible</td>
+    </tr>
+    <tr>
+      <td>Phantom read</td>
+      <td>Possible</td>
+      <td>Not possible</td>
+      <td>Not possible</td>
+    </tr>
+    <tr>
+      <td>Serialization anomaly</td>
+      <td>Possible</td>
+      <td>Possible</td>
+      <td>Not possible</td>
+    </tr>
+  </tbody>
+</table>
+
+<h2 id="read-committed-default">Read Committed (Default)</h2>
+
+<h3 id="snapshot-strategy">Snapshot Strategy</h3>
+
+<p>A new snapshot is acquired at the <strong>start of each SQL statement</strong>. This means:</p>
+
+<ul>
+  <li>Two consecutive SELECT statements in the same transaction can return different results if another transaction committed between them.</li>
+  <li>The transaction always sees the latest committed state at statement start.</li>
+</ul>
+
+<h3 id="the-evalplanqual-mechanism">The EvalPlanQual Mechanism</h3>
+
+<p>Read Committed has a special behavior for UPDATE and DELETE: if the target row was modified by a concurrent transaction that committed after the current statement’s snapshot was taken, PostgreSQL does not simply skip the row. Instead, it:</p>
+
+<ol>
+  <li>Waits for the concurrent transaction to commit or abort</li>
+  <li>If it committed, re-evaluates the WHERE clause against the <strong>new version</strong> of the row</li>
+  <li>If the row still qualifies, the operation proceeds on the new version</li>
+</ol>
+
+<p>This is called <strong>EvalPlanQual</strong> (EPQ) and is implemented in <code class="language-plaintext highlighter-rouge">src/backend/executor/execMain.c</code>. Without it, Read Committed would silently lose updates.</p>
+
+<pre><code class="language-mermaid">sequenceDiagram
+    participant T1 as Transaction 1
+    participant T2 as Transaction 2
+    participant Heap as Heap
+
+    T1-&gt;&gt;Heap: UPDATE t SET x=x+1 WHERE id=1
+    Note over Heap: Row (id=1, x=10) locked by T1
+
+    T2-&gt;&gt;Heap: UPDATE t SET x=x+1 WHERE id=1
+    Note over T2: Blocked -- row locked by T1
+
+    T1-&gt;&gt;Heap: COMMIT
+    Note over Heap: New version (id=1, x=11) committed
+
+    Note over T2: Unblocked. EvalPlanQual re-checks
+    T2-&gt;&gt;Heap: Re-evaluate WHERE on new version (x=11)
+    Note over T2: Still qualifies, proceed
+    T2-&gt;&gt;Heap: Creates (id=1, x=12)
+    T2-&gt;&gt;Heap: COMMIT
+</code></pre>
+
+<h3 id="read-committed-anomalies">Read Committed Anomalies</h3>
+
+<p>Because each statement sees a fresh snapshot, the following anomalies are possible:</p>
+
+<ul>
+  <li><strong>Non-repeatable read</strong>: Reading the same row twice in the same transaction can yield different values.</li>
+  <li><strong>Phantom read</strong>: A repeated query can return additional rows that were inserted and committed by another transaction.</li>
+  <li><strong>Write skew</strong>: Two transactions each read a value, make a decision based on it, and write – but neither sees the other’s write.</li>
+</ul>
+
+<h2 id="repeatable-read">Repeatable Read</h2>
+
+<h3 id="snapshot-strategy-1">Snapshot Strategy</h3>
+
+<p>A single snapshot is taken at the <strong>start of the first SQL statement</strong> in the transaction. All subsequent statements reuse this same snapshot. This guarantees a consistent view of the database throughout the transaction.</p>
+
+<h3 id="error-on-conflict">Error on Conflict</h3>
+
+<p>Unlike Read Committed, Repeatable Read does not use EvalPlanQual to re-evaluate rows. If an UPDATE or DELETE targets a row that was modified by a concurrent committed transaction:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>ERROR:  could not serialize access due to concurrent update
+</code></pre></div></div>
+
+<p>The application must catch this error and retry the transaction. This is the <code class="language-plaintext highlighter-rouge">SQLSTATE 40001</code> serialization failure.</p>
+
+<h3 id="what-repeatable-read-prevents">What Repeatable Read Prevents</h3>
+
+<ul>
+  <li><strong>Non-repeatable reads</strong>: Impossible because the snapshot never changes.</li>
+  <li><strong>Phantom reads</strong>: Impossible because newly committed rows are invisible to the frozen snapshot.</li>
+</ul>
+
+<h3 id="what-repeatable-read-does-not-prevent">What Repeatable Read Does NOT Prevent</h3>
+
+<ul>
+  <li><strong>Serialization anomalies (write skew)</strong>: Two concurrent Repeatable Read transactions can still produce results inconsistent with any serial ordering. The classic example:</li>
+</ul>
+
+<div class="language-sql highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="c1">-- Table: doctors(name, on_call boolean)</span>
+<span class="c1">-- Constraint: at least one doctor must be on call</span>
+
+<span class="c1">-- T1 (snapshot sees both Alice and Bob on call):</span>
+<span class="k">UPDATE</span> <span class="n">doctors</span> <span class="k">SET</span> <span class="n">on_call</span> <span class="o">=</span> <span class="k">false</span> <span class="k">WHERE</span> <span class="n">name</span> <span class="o">=</span> <span class="s1">'Alice'</span><span class="p">;</span>
+
+<span class="c1">-- T2 (snapshot also sees both on call):</span>
+<span class="k">UPDATE</span> <span class="n">doctors</span> <span class="k">SET</span> <span class="n">on_call</span> <span class="o">=</span> <span class="k">false</span> <span class="k">WHERE</span> <span class="n">name</span> <span class="o">=</span> <span class="s1">'Bob'</span><span class="p">;</span>
+
+<span class="c1">-- Both commit. Nobody is on call. Constraint violated.</span>
+</code></pre></div></div>
+
+<p>This is the gap that Serializable isolation fills.</p>
+
+<h2 id="serializable">Serializable</h2>
+
+<h3 id="snapshot-strategy-2">Snapshot Strategy</h3>
+
+<p>Same as Repeatable Read – a single snapshot taken at the start of the first statement. The difference is that an additional layer of conflict detection (SSI) monitors for dangerous patterns.</p>
+
+<h3 id="ssi-conflict-detection">SSI Conflict Detection</h3>
+
+<p>Serializable adds <strong>predicate locks</strong> and <strong>rw-conflict tracking</strong> to detect patterns that could produce serialization anomalies. When a dangerous structure is detected, one of the involved transactions is aborted with:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>ERROR:  could not serialize access due to read/write dependencies among transactions
+</code></pre></div></div>
+
+<p>The full SSI algorithm is covered in <a href="ssi.html">Serializable Snapshot Isolation</a>.</p>
+
+<h2 id="implementation-how-isolation-level-affects-snapshot-acquisition">Implementation: How Isolation Level Affects Snapshot Acquisition</h2>
+
+<pre><code class="language-mermaid">flowchart TD
+    subgraph "Read Committed"
+        RC_BEGIN["BEGIN"] --&gt; RC_S1["Statement 1"]
+        RC_S1 --&gt;|"new snapshot"| RC_SNAP1["Snapshot A"]
+        RC_S1 --&gt; RC_S2["Statement 2"]
+        RC_S2 --&gt;|"new snapshot"| RC_SNAP2["Snapshot B"]
+        RC_S2 --&gt; RC_S3["Statement 3"]
+        RC_S3 --&gt;|"new snapshot"| RC_SNAP3["Snapshot C"]
+    end
+
+    subgraph "Repeatable Read / Serializable"
+        RR_BEGIN["BEGIN"] --&gt; RR_S1["Statement 1"]
+        RR_S1 --&gt;|"take snapshot"| RR_SNAP["Snapshot X"]
+        RR_S1 --&gt; RR_S2["Statement 2"]
+        RR_S2 --&gt;|"reuse"| RR_SNAP
+        RR_S2 --&gt; RR_S3["Statement 3"]
+        RR_S3 --&gt;|"reuse"| RR_SNAP
+    end
+</code></pre>
+
+<p>In <code class="language-plaintext highlighter-rouge">snapmgr.c</code>, the logic is approximately:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">if</span> <span class="p">(</span><span class="n">IsolationUsesXactSnapshot</span><span class="p">())</span>
+<span class="p">{</span>
+    <span class="cm">/* Repeatable Read or Serializable: reuse first snapshot */</span>
+    <span class="k">if</span> <span class="p">(</span><span class="n">FirstSnapshotSet</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">CurrentSnapshot</span><span class="p">;</span>  <span class="cm">/* already have one */</span>
+<span class="p">}</span>
+<span class="cm">/* Read Committed: always get a fresh snapshot */</span>
+<span class="k">return</span> <span class="nf">GetSnapshotData</span><span class="p">(</span><span class="n">CurrentSnapshot</span><span class="p">);</span>
+</code></pre></div></div>
+
+<h2 id="the-set-transaction-command">The SET TRANSACTION Command</h2>
+
+<div class="language-sql highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">SET</span> <span class="n">TRANSACTION</span> <span class="k">ISOLATION</span> <span class="k">LEVEL</span> <span class="k">REPEATABLE</span> <span class="k">READ</span><span class="p">;</span>
+<span class="c1">-- or</span>
+<span class="k">BEGIN</span> <span class="n">TRANSACTION</span> <span class="k">ISOLATION</span> <span class="k">LEVEL</span> <span class="k">SERIALIZABLE</span><span class="p">;</span>
+<span class="c1">-- or</span>
+<span class="k">SET</span> <span class="n">default_transaction_isolation</span> <span class="o">=</span> <span class="s1">'serializable'</span><span class="p">;</span>
+</code></pre></div></div>
+
+<p>The isolation level is stored in <code class="language-plaintext highlighter-rouge">XactIsoLevel</code> (an integer taking values <code class="language-plaintext highlighter-rouge">XACT_READ_UNCOMMITTED</code>, <code class="language-plaintext highlighter-rouge">XACT_READ_COMMITTED</code>, <code class="language-plaintext highlighter-rouge">XACT_REPEATABLE_READ</code>, or <code class="language-plaintext highlighter-rouge">XACT_SERIALIZABLE</code> defined in <code class="language-plaintext highlighter-rouge">xact.h</code>).</p>
+
+<h2 id="practical-guidance">Practical Guidance</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>Use Case</th>
+      <th>Recommended Level</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>General OLTP</td>
+      <td>Read Committed (default)</td>
+    </tr>
+    <tr>
+      <td>Reports needing consistent reads</td>
+      <td>Repeatable Read</td>
+    </tr>
+    <tr>
+      <td>Financial / integrity-critical</td>
+      <td>Serializable</td>
+    </tr>
+    <tr>
+      <td>Bulk ETL / data loading</td>
+      <td>Read Committed</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>Read Committed is the right choice for most applications because it avoids the retry logic needed at higher levels. Serializable is the safest but requires applications to handle <code class="language-plaintext highlighter-rouge">SQLSTATE 40001</code> retries.</p>
+
+<h2 id="key-data-structures">Key Data Structures</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>Symbol</th>
+      <th>Location</th>
+      <th>Role</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">XactIsoLevel</code></td>
+      <td><code class="language-plaintext highlighter-rouge">xact.c</code></td>
+      <td>Current transaction’s isolation level</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">XACT_READ_COMMITTED</code></td>
+      <td><code class="language-plaintext highlighter-rouge">xact.h</code></td>
+      <td>Value 1</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">XACT_REPEATABLE_READ</code></td>
+      <td><code class="language-plaintext highlighter-rouge">xact.h</code></td>
+      <td>Value 2</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">XACT_SERIALIZABLE</code></td>
+      <td><code class="language-plaintext highlighter-rouge">xact.h</code></td>
+      <td>Value 3</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">IsolationUsesXactSnapshot()</code></td>
+      <td><code class="language-plaintext highlighter-rouge">xact.h</code></td>
+      <td>Macro: true if RR or Serializable</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">IsolationIsSerializable()</code></td>
+      <td><code class="language-plaintext highlighter-rouge">xact.h</code></td>
+      <td>Macro: true if Serializable</td>
+    </tr>
+  </tbody>
+</table>
+
+<h2 id="connections">Connections</h2>
+
+<ul>
+  <li><strong>Snapshots</strong>: The snapshot acquisition strategy is the primary mechanism differentiating isolation levels. See <a href="snapshots.html">Snapshots</a>.</li>
+  <li><strong>SSI</strong>: Serializable builds on Repeatable Read by adding predicate lock tracking. See <a href="ssi.html">SSI</a>.</li>
+  <li><strong>MVCC</strong>: All levels use the same underlying tuple visibility rules. See <a href="mvcc.html">MVCC</a>.</li>
+</ul>
+
+
+      <hr>
+
+      <!-- Prev / Next / Up navigation -->
+      
+      
+      
+
+      <div class="clearfix" style="margin-top: 2rem;">
+        
+          
+          
+
+          
+            
+            <a class="btn btn-primary float-left" href="/postgresql/03-transactions/clog-and-subtrans.html" title="CLOG and Subtransactions">&larr; Previous</a>
+          
+
+          
+            
+            <a class="btn btn-primary float-right" href="/postgresql/03-transactions/mvcc.html" title="MVCC and Tuple Versioning">Next &rarr;</a>
+          
+        
+      </div>
+
+      
+      <div style="text-align: center; margin-top: 1rem;">
+        <a href="/postgresql-internals/">&uarr; Back to Table of Contents</a>
+      </div>
+      
+
+    </div>
+  </div>
+</div>
+
+
+  <!-- Footer -->
+
+<hr>
+
+<footer>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <ul class="list-inline text-center">
+          
+          <li class="list-inline-item">
+            <a href="mailto:amitava.dev@proton.me" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="far fa-envelope fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          
+          
+          <li class="list-inline-item">
+            <a href="https://www.linkedin.com/in/amitavaag" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-linkedin fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          <li class="list-inline-item">
+            <a href="https://github.com/ikouchiha47" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-github fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+        </ul>
+
+        <p class="copyright text-muted">
+          Build with: 
+          <a 
+            href="https://github.com/StartBootstrap/startbootstrap-clean-blog-jekyll"
+            class="text-gray"
+            target="_blank">startbootstrap-clean-blog-jekyll</a></p>
+      </div>
+    </div>
+  </div>
+</footer>
+
+
+  <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="/assets/vendor/blog/js/scripts.js"></script>
+
+<script src="/assets/scripts.js"></script>
+
+
+
+
+
+  <script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+
+    document.querySelectorAll('pre > code.language-mermaid').forEach((codeBlock) => {
+      codeBlock.parentElement.outerHTML = `<pre class="mermaid">${codeBlock.textContent}</pre>`;
+    });
+
+
+    mermaid.initialize({ startOnLoad: true, theme: 'forest' });
+</script>
+
+
+  
+
+</body>
+
+</html>

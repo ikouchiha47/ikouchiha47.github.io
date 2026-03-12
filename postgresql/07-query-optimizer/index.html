@@ -1,0 +1,758 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+  <title>
+    Query Optimizer - iko&#39;s logs
+    
+  </title>
+
+  <meta name="description" content="">
+  <meta property="og:description" content="">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Query Optimizer">
+  <meta property="og:url" content="https://ikouchiha47.github.io/postgresql/07-query-optimizer/">
+
+  
+
+  <link href='https://fonts.googleapis.com/css?family=Lora:400,700,400italic,700italic' rel='stylesheet' type='text/css'>
+  <link href='https://fonts.googleapis.com/css?family=Open+Sans:300italic,400italic,600italic,700italic,800italic,400,300,600,700,800' rel='stylesheet' type='text/css'>
+
+  <!-- <script src="https://use.fontawesome.com/releases/v5.15.3/js/all.js" crossorigin="anonymous"></script> -->
+  <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.15.4/css/all.css" integrity="sha384-DyZ88mC6Up2uqS4h/KRgHuoeGwBcD4Ng9SiP4dIRy0EXTlnuz47vAwmeGwVChigm" crossorigin="anonymous"/>
+
+  <link rel="stylesheet" href="/assets/main.css">
+  <link rel="canonical" href="https://ikouchiha47.github.io/postgresql/07-query-optimizer/">
+  <link rel="alternate" type="application/rss+xml" title="iko&#39;s logs" href="/feed.xml">
+
+  <meta name="google-site-verification" content="lWkg6gIxJgzEKX_5XnhcxCtPE9QknaimFWWos_dTvPM" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fira+Sans:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Inconsolata:wght@200..900&family=Jersey+25&family=Kanit:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Merriweather+Sans:ital,wght@0,300..800;1,300..800&family=Nanum+Gothic+Coding&family=Space+Grotesk:wght@300..700&family=Titillium+Web:ital,wght@0,200;0,300;0,400;0,600;0,700;0,900;1,200;1,300;1,400;1,600;1,700&display=swap" rel="stylesheet">
+
+</head>
+
+
+<body>
+
+  <!-- Navigation -->
+<nav class="navbar navbar-expand-lg navbar-light fixed-top" id="mainNav">
+  <div class="container">
+    <a class="navbar-brand" href="/">iko&#39;s logs</a>
+    <button class="navbar-toggler navbar-toggler-right" type="button" data-toggle="collapse" data-target="#navbarResponsive" aria-controls="navbarResponsive" aria-expanded="false" aria-label="Toggle navigation">
+      Menu
+      <i class="fa fa-bars"></i>
+    </button>
+    <div class="collapse navbar-collapse" id="navbarResponsive">
+      <ul class="navbar-nav ml-auto">
+        <li class="nav-item">
+          <a class="nav-link" href="/">Home</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/about">About</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/posts">Posts</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/contact">Contact</a>
+        </li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+
+  <!-- Page Header -->
+
+<header class="masthead">
+
+  <div class="overlay"></div>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <div class="post-heading">
+          <h1>Query Optimizer</h1>
+          
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="container space-grotesk">
+  <div class="row">
+    <div class="col-lg-8 col-md-10 mx-auto">
+
+      <!-- Breadcrumb -->
+      <nav aria-label="breadcrumb" style="margin-bottom: 1.5rem;">
+        <ol class="breadcrumb" style="background: transparent; padding: 0;">
+          
+            <li class="breadcrumb-item"><a href="/postgresql-internals/">PostgreSQL Internals Deep Dive</a></li>
+          
+          
+          <li class="breadcrumb-item active" aria-current="page">Query Optimizer</li>
+        </ol>
+      </nav>
+
+      <h1 id="chapter-7-query-optimizer">Chapter 7: Query Optimizer</h1>
+
+<p>The PostgreSQL query optimizer transforms a parsed and rewritten <code class="language-plaintext highlighter-rouge">Query</code> tree into an executable <code class="language-plaintext highlighter-rouge">Plan</code> tree. It is a <strong>cost-based optimizer</strong>: it enumerates many possible execution strategies, estimates the cost of each, and picks the cheapest one. The optimizer lives entirely in <code class="language-plaintext highlighter-rouge">src/backend/optimizer/</code> and is one of the largest subsystems in PostgreSQL.</p>
+
+<hr />
+
+<h2 id="summary">Summary</h2>
+
+<p>The optimizer receives a <code class="language-plaintext highlighter-rouge">Query</code> from the rewriter and returns a <code class="language-plaintext highlighter-rouge">PlannedStmt</code>. Internally it works in five major phases:</p>
+
+<ol>
+  <li><strong>Preprocessing</strong> – simplify the query tree (pull up subqueries, flatten join trees, canonicalize WHERE clauses).</li>
+  <li><strong>Path generation</strong> – for every base relation and every possible combination of joins, enumerate access strategies (sequential scan, index scan, nested loop, hash join, merge join, etc.) as lightweight <code class="language-plaintext highlighter-rouge">Path</code> nodes.</li>
+  <li><strong>Cost estimation</strong> – attach cost estimates to each Path using a parametric cost model.</li>
+  <li><strong>Join ordering</strong> – search the space of join orders using dynamic programming (or GEQO for large queries) to find the cheapest Path tree.</li>
+  <li><strong>Plan creation</strong> – convert the winning Path tree into a <code class="language-plaintext highlighter-rouge">Plan</code> tree that the executor can run.</li>
+</ol>
+
+<pre><code class="language-mermaid">flowchart LR
+    Q["Query Tree&lt;br/&gt;(from rewriter)"]
+    PRE["Preprocessing&lt;br/&gt;pull up subqueries&lt;br/&gt;flatten joins&lt;br/&gt;canonicalize quals"]
+    PATH["Path Generation&lt;br/&gt;base rel scans&lt;br/&gt;index scans&lt;br/&gt;join methods"]
+    JOIN["Join Ordering&lt;br/&gt;dynamic programming&lt;br/&gt;or GEQO"]
+    COST["Cost Estimation&lt;br/&gt;selectivity&lt;br/&gt;I/O + CPU costs"]
+    PLAN["Plan Creation&lt;br/&gt;Path -&gt; Plan&lt;br/&gt;fix Var references"]
+    OUT["Plan Tree&lt;br/&gt;(PlannedStmt)"]
+
+    Q --&gt; PRE --&gt; PATH --&gt; JOIN --&gt; PLAN --&gt; OUT
+    COST -.-&gt; PATH
+    COST -.-&gt; JOIN
+
+    style Q fill:#e6f3ff,stroke:#333
+    style OUT fill:#e6ffe6,stroke:#333
+    style COST fill:#fff3e6,stroke:#333
+</code></pre>
+
+<hr />
+
+<h2 id="overview">Overview</h2>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>+---------------------------------------------------------------------------+
+|                      planner() entry point                                 |
+|  src/backend/optimizer/plan/planner.c                                      |
++------------+--------------------------------------------------------------+
+             |
+             v
++------------------------+
+|  subquery_planner()    |  Preprocessing: pull up sublinks/subqueries,
+|  prepjointree.c        |  canonicalize quals, simplify expressions
+|  prepqual.c            |
+|  subselect.c           |
++------------+-----------+
+             |
+             v
++------------------------+
+|  query_planner()       |  Build base RelOptInfos, split quals,
+|  planmain.c            |  identify equivalence classes
++------------+-----------+
+             |
+             v
++------------------------+
+|  make_one_rel()        |  Generate Paths for base rels (allpaths.c),
+|  allpaths.c            |  then join them (joinrels.c / joinpath.c)
+|  indxpath.c            |  using standard_join_search() or GEQO
+|  joinpath.c            |
+|  costsize.c            |
++------------+-----------+
+             |
+             v
++------------------------+
+|  grouping_planner()    |  Handle GROUP BY, aggregation, window funcs,
+|  planner.c             |  ORDER BY, DISTINCT, LIMIT
++------------+-----------+
+             |
+             v
++------------------------+
+|  create_plan()         |  Convert best Path tree into Plan tree
+|  createplan.c          |
+|  setrefs.c             |  Fix up Var references for the executor
++------------+-----------+
+             |
+             v
+        PlannedStmt
+</code></pre></div></div>
+
+<hr />
+
+<h2 id="key-source-files">Key Source Files</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>File</th>
+      <th>Purpose</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/optimizer/plan/planner.c</code></td>
+      <td>Top-level entry (<code class="language-plaintext highlighter-rouge">planner()</code>, <code class="language-plaintext highlighter-rouge">subquery_planner()</code>, <code class="language-plaintext highlighter-rouge">grouping_planner()</code>)</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/optimizer/plan/planmain.c</code></td>
+      <td><code class="language-plaintext highlighter-rouge">query_planner()</code> – bridge between preprocessing and path generation</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/optimizer/plan/initsplan.c</code></td>
+      <td><code class="language-plaintext highlighter-rouge">deconstruct_jointree()</code> – distribute quals, build EquivalenceClasses</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/optimizer/prep/prepjointree.c</code></td>
+      <td>Subquery pullup, join-tree flattening</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/optimizer/prep/prepqual.c</code></td>
+      <td>WHERE clause canonicalization (AND/OR flattening)</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/optimizer/path/allpaths.c</code></td>
+      <td>Generate all access paths for base and join rels</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/optimizer/path/indxpath.c</code></td>
+      <td>Index path generation</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/optimizer/path/joinpath.c</code></td>
+      <td>Join path generation (nestloop, mergejoin, hashjoin)</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/optimizer/path/joinrels.c</code></td>
+      <td>Join-order search via dynamic programming</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/optimizer/path/costsize.c</code></td>
+      <td>Cost model for all path types</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/optimizer/path/equivclass.c</code></td>
+      <td>EquivalenceClass management</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/optimizer/path/clausesel.c</code></td>
+      <td>Selectivity estimation for clauses</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/optimizer/path/pathkeys.c</code></td>
+      <td>Sort-order representation and comparison</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/optimizer/geqo/geqo_main.c</code></td>
+      <td>Genetic query optimizer for many-table joins</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/optimizer/plan/createplan.c</code></td>
+      <td>Path-to-Plan conversion</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/optimizer/plan/setrefs.c</code></td>
+      <td>Post-processing: fix Var references</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/optimizer/util/pathnode.c</code></td>
+      <td>Path creation helpers, <code class="language-plaintext highlighter-rouge">add_path()</code></td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/optimizer/util/relnode.c</code></td>
+      <td>RelOptInfo creation and management</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/optimizer/util/restrictinfo.c</code></td>
+      <td>RestrictInfo creation and manipulation</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/optimizer/util/plancat.c</code></td>
+      <td>Catalog lookups for relation metadata</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/nodes/pathnodes.h</code></td>
+      <td>Definitions for PlannerInfo, RelOptInfo, Path, etc.</td>
+    </tr>
+  </tbody>
+</table>
+
+<hr />
+
+<h2 id="key-data-structures">Key Data Structures</h2>
+
+<h3 id="plannerinfo">PlannerInfo</h3>
+
+<p>The per-query planning state. One <code class="language-plaintext highlighter-rouge">PlannerInfo</code> is created for the main query and one for each sub-<code class="language-plaintext highlighter-rouge">SELECT</code>. Key fields:</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>Field</th>
+      <th>Purpose</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">parse</code></td>
+      <td>The original <code class="language-plaintext highlighter-rouge">Query</code> tree</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">simple_rel_array[]</code></td>
+      <td>Array of <code class="language-plaintext highlighter-rouge">RelOptInfo</code> pointers indexed by range-table index</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">join_rel_list</code></td>
+      <td>List of join <code class="language-plaintext highlighter-rouge">RelOptInfo</code>s built so far</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">eq_classes</code></td>
+      <td>List of <code class="language-plaintext highlighter-rouge">EquivalenceClass</code> objects</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">join_info_list</code></td>
+      <td><code class="language-plaintext highlighter-rouge">SpecialJoinInfo</code> nodes for outer/semi/anti joins</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">query_pathkeys</code></td>
+      <td>Desired output ordering</td>
+    </tr>
+  </tbody>
+</table>
+
+<h3 id="reloptinfo">RelOptInfo</h3>
+
+<p>Represents a single relation (base table, subquery, or join result). The optimizer builds one for each base relation and one for each considered join combination.</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>Field</th>
+      <th>Purpose</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">relids</code></td>
+      <td>Bitmapset of base-relation RT indexes in this rel</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">pathlist</code></td>
+      <td>List of Paths representing alternative access strategies</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">cheapest_total_path</code></td>
+      <td>Winner after <code class="language-plaintext highlighter-rouge">set_cheapest()</code></td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">rows</code></td>
+      <td>Estimated output row count</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">baserestrictinfo</code></td>
+      <td>Restriction clauses applicable at this level</td>
+    </tr>
+  </tbody>
+</table>
+
+<h3 id="path">Path</h3>
+
+<p>A lightweight representation of one way to produce a <code class="language-plaintext highlighter-rouge">RelOptInfo</code>’s output. Path nodes form trees: a join Path has sub-Paths for its inputs.</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>Field</th>
+      <th>Purpose</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">pathtype</code></td>
+      <td>Node tag (T_SeqScan, T_IndexScan, T_NestLoop, etc.)</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">parent</code></td>
+      <td>Pointer back to the owning <code class="language-plaintext highlighter-rouge">RelOptInfo</code></td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">startup_cost</code></td>
+      <td>Cost before first tuple is returned</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">total_cost</code></td>
+      <td>Cost to return all tuples</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">pathkeys</code></td>
+      <td>Sort ordering of the output, if any</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">param_info</code></td>
+      <td>Parameterization info for nestloop inner paths</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">disabled_nodes</code></td>
+      <td>Count of disabled plan nodes at or below this point</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>Specialized subtypes include <code class="language-plaintext highlighter-rouge">IndexPath</code>, <code class="language-plaintext highlighter-rouge">NestPath</code>, <code class="language-plaintext highlighter-rouge">MergePath</code>, <code class="language-plaintext highlighter-rouge">HashPath</code>, and many more (see <code class="language-plaintext highlighter-rouge">src/include/nodes/pathnodes.h</code>).</p>
+
+<h3 id="restrictinfo">RestrictInfo</h3>
+
+<p>Wraps a qual clause (WHERE or JOIN/ON condition) with planner metadata:</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>Field</th>
+      <th>Purpose</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">clause</code></td>
+      <td>The actual boolean expression</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">required_relids</code></td>
+      <td>Which rels must be present to evaluate this clause</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">mergeopfamilies</code></td>
+      <td>Opfamilies if clause is merge-joinable</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">hashjoinoperator</code></td>
+      <td>Operator if clause is hash-joinable</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">security_level</code></td>
+      <td>For row-level security ordering</td>
+    </tr>
+  </tbody>
+</table>
+
+<h3 id="equivalenceclass">EquivalenceClass</h3>
+
+<p>Represents a set of expressions known to be equal (e.g., from <code class="language-plaintext highlighter-rouge">WHERE a.x = b.y AND b.y = c.z</code>). Used to derive join clauses, determine sort orderings, and detect constant propagation opportunities.</p>
+
+<h3 id="pathkey">PathKey</h3>
+
+<p>Represents one element of a sort ordering. References an EquivalenceClass, an opfamily, a direction, and a nulls-first/last flag.</p>
+
+<hr />
+
+<h2 id="how-it-works-the-complete-flow">How It Works: The Complete Flow</h2>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>planner(Query)
+  +-- subquery_planner()
+  |     +-- pull_up_sublinks()          -- EXISTS/IN -&gt; semi/anti joins
+  |     +-- pull_up_subqueries()        -- flatten simple subqueries
+  |     +-- preprocess_expression()     -- constant folding, etc.
+  |     +-- canonicalize_qual()         -- AND/OR normalization
+  |     +-- grouping_planner()
+  |           +-- query_planner()
+  |           |     +-- deconstruct_jointree()  -- distribute quals
+  |           |     +-- reconsider_outer_join_clauses()
+  |           |     +-- make_one_rel()
+  |           |           +-- set_base_rel_pathlists()
+  |           |           |     +-- set_rel_pathlist() for each base rel
+  |           |           |           +-- create_seqscan_path()
+  |           |           |           +-- create_index_paths()
+  |           |           |           +-- create_tidscan_paths()
+  |           |           +-- make_rel_from_joinlist()
+  |           |                 +-- standard_join_search()   -- DP
+  |           |                       or geqo()              -- genetic
+  |           +-- handle GROUP BY, aggregation
+  |           +-- handle window functions
+  |           +-- handle DISTINCT, ORDER BY, LIMIT
+  |           +-- apply_scanjoin_target_to_paths()
+  +-- create_plan(best_path)
+        +-- create_plan_recurse()       -- recursive Path-&gt;Plan
+        +-- set_plan_references()       -- fix Var references (setrefs.c)
+</code></pre></div></div>
+
+<hr />
+
+<h2 id="guc-parameters-affecting-the-optimizer">GUC Parameters Affecting the Optimizer</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>GUC</th>
+      <th>Default</th>
+      <th>Effect</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">enable_seqscan</code></td>
+      <td>on</td>
+      <td>Disables sequential scan paths when off</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">enable_indexscan</code></td>
+      <td>on</td>
+      <td>Disables index scan paths</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">enable_hashjoin</code></td>
+      <td>on</td>
+      <td>Disables hash join paths</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">enable_mergejoin</code></td>
+      <td>on</td>
+      <td>Disables merge join paths</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">enable_nestloop</code></td>
+      <td>on</td>
+      <td>Disables nested loop paths</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">geqo</code></td>
+      <td>on</td>
+      <td>Use genetic optimizer when table count &gt;= <code class="language-plaintext highlighter-rouge">geqo_threshold</code></td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">geqo_threshold</code></td>
+      <td>12</td>
+      <td>Number of FROM items to trigger GEQO</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">from_collapse_limit</code></td>
+      <td>8</td>
+      <td>Max FROM items before stopping subquery flattening</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">join_collapse_limit</code></td>
+      <td>8</td>
+      <td>Max FROM items before stopping explicit-JOIN flattening</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">random_page_cost</code></td>
+      <td>4.0</td>
+      <td>Cost of a non-sequential page fetch</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">seq_page_cost</code></td>
+      <td>1.0</td>
+      <td>Cost of a sequential page fetch</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">effective_cache_size</code></td>
+      <td>4GB</td>
+      <td>Planner’s estimate of total disk cache</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">cursor_tuple_fraction</code></td>
+      <td>0.1</td>
+      <td>Expected fraction of rows fetched from a cursor</td>
+    </tr>
+  </tbody>
+</table>
+
+<hr />
+
+<h2 id="connections">Connections</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>Subsystem</th>
+      <th>Relationship</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><a href="../06-query-parser/">Parsing &amp; Rewriting</a></td>
+      <td>Produces the <code class="language-plaintext highlighter-rouge">Query</code> tree consumed by the optimizer</td>
+    </tr>
+    <tr>
+      <td><a href="../08-executor/">Executor</a></td>
+      <td>Consumes the <code class="language-plaintext highlighter-rouge">Plan</code> tree produced by the optimizer</td>
+    </tr>
+    <tr>
+      <td><a href="../13-statistics/">Statistics</a></td>
+      <td><code class="language-plaintext highlighter-rouge">pg_statistic</code> provides the selectivity and cardinality data the cost model depends on</td>
+    </tr>
+    <tr>
+      <td><a href="../09-caches/">Caches</a></td>
+      <td><code class="language-plaintext highlighter-rouge">relcache</code> and <code class="language-plaintext highlighter-rouge">catcache</code> provide relation metadata; plan cache stores finished plans</td>
+    </tr>
+    <tr>
+      <td><a href="../02-access-methods/">Access Methods</a></td>
+      <td>Index AMs declare their capabilities (amcostestimate, amcanreturn) used during path generation</td>
+    </tr>
+  </tbody>
+</table>
+
+<hr />
+
+<h2 id="chapter-contents">Chapter Contents</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>Section</th>
+      <th>What It Covers</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><a href="preprocessing">Preprocessing</a></td>
+      <td>Subquery pullup, qual canonicalization, join tree flattening</td>
+    </tr>
+    <tr>
+      <td><a href="path-generation">Path Generation</a></td>
+      <td>Base-rel and join-rel path enumeration</td>
+    </tr>
+    <tr>
+      <td><a href="cost-model">Cost Model</a></td>
+      <td>costsize.c, selectivity estimation, statistics usage</td>
+    </tr>
+    <tr>
+      <td><a href="join-ordering">Join Ordering</a></td>
+      <td>Dynamic programming, equivalence classes, pathkeys</td>
+    </tr>
+    <tr>
+      <td><a href="geqo">GEQO</a></td>
+      <td>Genetic optimizer for many-table joins</td>
+    </tr>
+    <tr>
+      <td><a href="plan-creation">Plan Creation</a></td>
+      <td>Path-to-Plan conversion, setrefs post-processing</td>
+    </tr>
+  </tbody>
+</table>
+
+
+      <hr>
+
+      <!-- Prev / Next / Up navigation -->
+      
+      
+      
+
+      <div class="clearfix" style="margin-top: 2rem;">
+        
+          
+          
+
+          
+            
+            <a class="btn btn-primary float-left" href="/postgresql/06-query-parser/semantic-analysis.html" title="Semantic Analysis">&larr; Previous</a>
+          
+
+          
+            
+            <a class="btn btn-primary float-right" href="/postgresql/07-query-optimizer/cost-model.html" title="Cost Model">Next &rarr;</a>
+          
+        
+      </div>
+
+      
+      <div style="text-align: center; margin-top: 1rem;">
+        <a href="/postgresql-internals/">&uarr; Back to Table of Contents</a>
+      </div>
+      
+
+    </div>
+  </div>
+</div>
+
+
+  <!-- Footer -->
+
+<hr>
+
+<footer>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <ul class="list-inline text-center">
+          
+          <li class="list-inline-item">
+            <a href="mailto:amitava.dev@proton.me" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="far fa-envelope fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          
+          
+          <li class="list-inline-item">
+            <a href="https://www.linkedin.com/in/amitavaag" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-linkedin fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          <li class="list-inline-item">
+            <a href="https://github.com/ikouchiha47" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-github fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+        </ul>
+
+        <p class="copyright text-muted">
+          Build with: 
+          <a 
+            href="https://github.com/StartBootstrap/startbootstrap-clean-blog-jekyll"
+            class="text-gray"
+            target="_blank">startbootstrap-clean-blog-jekyll</a></p>
+      </div>
+    </div>
+  </div>
+</footer>
+
+
+  <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="/assets/vendor/blog/js/scripts.js"></script>
+
+<script src="/assets/scripts.js"></script>
+
+
+
+
+
+  <script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+
+    document.querySelectorAll('pre > code.language-mermaid').forEach((codeBlock) => {
+      codeBlock.parentElement.outerHTML = `<pre class="mermaid">${codeBlock.textContent}</pre>`;
+    });
+
+
+    mermaid.initialize({ startOnLoad: true, theme: 'forest' });
+</script>
+
+
+  
+
+</body>
+
+</html>

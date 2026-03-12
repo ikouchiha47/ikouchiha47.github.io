@@ -1,0 +1,532 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+  <title>
+    Anatomy of a Research Agent - iko&#39;s logs
+    
+  </title>
+
+  <meta name="description" content="">
+  <meta property="og:description" content="">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Anatomy of a Research Agent">
+  <meta property="og:url" content="https://ikouchiha47.github.io/materials-science/anatomy-of-a-research-agent.html">
+
+  
+
+  <link href='https://fonts.googleapis.com/css?family=Lora:400,700,400italic,700italic' rel='stylesheet' type='text/css'>
+  <link href='https://fonts.googleapis.com/css?family=Open+Sans:300italic,400italic,600italic,700italic,800italic,400,300,600,700,800' rel='stylesheet' type='text/css'>
+
+  <!-- <script src="https://use.fontawesome.com/releases/v5.15.3/js/all.js" crossorigin="anonymous"></script> -->
+  <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.15.4/css/all.css" integrity="sha384-DyZ88mC6Up2uqS4h/KRgHuoeGwBcD4Ng9SiP4dIRy0EXTlnuz47vAwmeGwVChigm" crossorigin="anonymous"/>
+
+  <link rel="stylesheet" href="/assets/main.css">
+  <link rel="canonical" href="https://ikouchiha47.github.io/materials-science/anatomy-of-a-research-agent.html">
+  <link rel="alternate" type="application/rss+xml" title="iko&#39;s logs" href="/feed.xml">
+
+  <meta name="google-site-verification" content="lWkg6gIxJgzEKX_5XnhcxCtPE9QknaimFWWos_dTvPM" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fira+Sans:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Inconsolata:wght@200..900&family=Jersey+25&family=Kanit:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Merriweather+Sans:ital,wght@0,300..800;1,300..800&family=Nanum+Gothic+Coding&family=Space+Grotesk:wght@300..700&family=Titillium+Web:ital,wght@0,200;0,300;0,400;0,600;0,700;0,900;1,200;1,300;1,400;1,600;1,700&display=swap" rel="stylesheet">
+
+</head>
+
+
+<body>
+
+  <!-- Navigation -->
+<nav class="navbar navbar-expand-lg navbar-light fixed-top" id="mainNav">
+  <div class="container">
+    <a class="navbar-brand" href="/">iko&#39;s logs</a>
+    <button class="navbar-toggler navbar-toggler-right" type="button" data-toggle="collapse" data-target="#navbarResponsive" aria-controls="navbarResponsive" aria-expanded="false" aria-label="Toggle navigation">
+      Menu
+      <i class="fa fa-bars"></i>
+    </button>
+    <div class="collapse navbar-collapse" id="navbarResponsive">
+      <ul class="navbar-nav ml-auto">
+        <li class="nav-item">
+          <a class="nav-link" href="/">Home</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/about">About</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/posts">Posts</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/contact">Contact</a>
+        </li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+
+  <!-- Page Header -->
+
+<header class="masthead">
+
+  <div class="overlay"></div>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <div class="post-heading">
+          <h1>Anatomy of a Research Agent</h1>
+          
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="container space-grotesk">
+  <div class="row">
+    <div class="col-lg-8 col-md-10 mx-auto">
+
+      <!-- Breadcrumb -->
+      <nav aria-label="breadcrumb" style="margin-bottom: 1.5rem;">
+        <ol class="breadcrumb" style="background: transparent; padding: 0;">
+          
+            <li class="breadcrumb-item"><a href="/p/b8e2c4/materials-science-notes/">Materials Science Engineering Notes</a></li>
+          
+          
+          <li class="breadcrumb-item active" aria-current="page">Anatomy of a Research Agent</li>
+        </ol>
+      </nav>
+
+      <p>A researcher uploads three papers on perovskite stability and asks: <em>“Which compositions showed the lowest formation energy, and how do the reported values compare to computed predictions?”</em></p>
+
+<p>That question touches four different systems. The agent needs to read the papers, locate the relevant tables, look up computed properties from a materials database, and compare the numbers. A keyword search gives you links. Our agent gives you a table with citations.</p>
+
+<p>This post is about how that works.</p>
+
+<h2 id="the-reasoning-loop">The Reasoning Loop</h2>
+
+<p>Most AI tools generate a response in one shot: question in, answer out. That works for trivia. It falls apart the moment an answer requires <em>looking something up</em>.</p>
+
+<p>Our agent runs a <strong>reasoning loop</strong> — a cycle where the model thinks about what to do, calls a tool, reads the result, and decides whether it has enough to answer or needs to go deeper.</p>
+
+<pre><code class="language-mermaid">graph LR
+    Q[User Question] --&gt; T[Think]
+    T --&gt; A[Act: Call Tool]
+    A --&gt; O[Observe Result]
+    O --&gt; D{Done?}
+    D --&gt;|No| T
+    D --&gt;|Yes| R[Return Answer]
+    style Q fill:#f3f4f6,stroke:#6366f1,color:#111827
+    style R fill:#eef2ff,stroke:#6366f1,color:#111827
+</code></pre>
+
+<p>This is the <strong>ReAct</strong> pattern (Reason + Act). The model doesn’t need to memorize every material property — it needs to know which tool to reach for. The knowledge lives in the databases and documents. The model provides the judgment.</p>
+
+<p>A typical question takes 3–8 iterations. A complex literature comparison might take 12 — searching, reading, refining search terms, querying external data, synthesizing — all within a single response.</p>
+
+<h2 id="what-the-agent-has-access-to">What the Agent Has Access To</h2>
+
+<p>Around 20 tools, in three categories:</p>
+
+<p><strong>Your workspace</strong> — the papers you’ve uploaded:</p>
+<ul>
+  <li>Search across papers with hybrid semantic + keyword matching</li>
+  <li>Read specific sections — methods, results, supplementary</li>
+  <li>Extract structured data: datasets, figures, tables, formulas</li>
+</ul>
+
+<p><strong>The broader literature:</strong></p>
+<ul>
+  <li>Discover related papers you haven’t read yet</li>
+  <li>Filter by research field, author, or date range</li>
+  <li>Surface papers that cite the same datasets</li>
+</ul>
+
+<p><strong>Analysis:</strong></p>
+<ul>
+  <li>Query materials property databases — over 150,000 computed structures with energies, bandgaps, elastic properties, crystal structures</li>
+  <li>Run Python code in a sandboxed environment</li>
+  <li>Search the agent’s own memory from earlier in the conversation</li>
+</ul>
+
+<p>The agent selects tools based on the question. It’s not following a fixed sequence. A question about a single paper triggers section reads. A comparison across sources triggers paper search <em>and</em> database queries <em>and</em> potentially code to generate a comparison table.</p>
+
+<h2 id="the-paper-skeleton-section_covers">The Paper Skeleton (section_covers)</h2>
+
+<p>A paper is not a blob of text. It is a machine with named parts.</p>
+
+<p>When we index and enrich a paper, we do not just store chunks. Each chunk is tagged with a <strong>small fixed taxonomy</strong> called <code class="language-plaintext highlighter-rouge">section_covers</code>.</p>
+
+<p>Think of it as turning a PDF into an addressable map:</p>
+
+<ul>
+  <li>instead of “find me the paragraph about X”</li>
+  <li>you get “methods” vs “results” vs “datasets” as a first-class routing layer</li>
+</ul>
+
+<p>That taxonomy is intentionally constrained (literal values like <code class="language-plaintext highlighter-rouge">abstract</code>, <code class="language-plaintext highlighter-rouge">methods</code>, <code class="language-plaintext highlighter-rouge">results</code>, <code class="language-plaintext highlighter-rouge">datasets</code>, <code class="language-plaintext highlighter-rouge">references</code>, plus a safe <code class="language-plaintext highlighter-rouge">others</code>). Constrained labels beat clever labels here: they keep tool signatures stable, keep filtering deterministic, and prevent the agent from inventing new section names that don’t exist.</p>
+
+<p>This is what makes <code class="language-plaintext highlighter-rouge">read_sections(paper_id, section_type="methods")</code> work like a surgical instrument instead of a prompt.</p>
+
+<pre><code class="language-mermaid">graph TD
+    PDF[PDF] --&gt; P[Parse + Split]
+    P --&gt; E[Enrich Sections]
+    E --&gt; I[Index Chunks]
+    I --&gt; K[Knowledge Store]
+
+    E --&gt;|per chunk| M1[summary]
+    E --&gt;|per chunk| M2[hypothetical_questions]
+    E --&gt;|per chunk| M3[section_covers]
+
+    K --&gt; O[get_overview: available_sections]
+    O --&gt; R[read_sections: filtered retrieval]
+
+    style PDF fill:#f3f4f6,stroke:#6366f1,color:#111827
+    style R fill:#eef2ff,stroke:#6366f1,color:#111827
+</code></pre>
+
+<p>The crucial detail: <code class="language-plaintext highlighter-rouge">get_overview</code> can aggregate <code class="language-plaintext highlighter-rouge">section_covers</code> across indexed chunks to show the agent which sections actually exist in the paper. That prevents the classic RAG failure mode of querying a section that isn’t there.</p>
+
+<h2 id="enrichment-that-makes-rag-behave">Enrichment That Makes RAG Behave</h2>
+
+<p>Most RAG systems embed raw text. Scientific papers punish that approach: raw text is long, repetitive, and full of details that are irrelevant to the user question.</p>
+
+<p>We embed <strong>the thing users actually query for</strong>:</p>
+
+<ul>
+  <li>a short section summary</li>
+  <li>plus a few <em>hypothetical questions</em> that this chunk answers</li>
+</ul>
+
+<p>The raw text stays stored for display and grounding, but the embedding space is built on a representation that matches real research questions.</p>
+
+<p>That has two direct effects:</p>
+
+<ul>
+  <li><strong>Recall improves</strong> because “question-shaped” queries match “question-shaped” embeddings.</li>
+  <li><strong>Precision improves</strong> because summaries drop noise and keep the chunk’s purpose sharp.</li>
+</ul>
+
+<p>On top of that, we run a <strong>multi-model hybrid retrieval</strong> pipeline. Each chunk is embedded by two models: a general-purpose embedder (OpenAI or Jina v4) for broad semantic coverage, and <strong>AllenAI SPECTER</strong> for scientific-domain awareness — SPECTER is trained on citation graphs and understands how research papers relate to each other.</p>
+
+<p>At query time, both models retrieve independently and results are fused using <strong>Reciprocal Rank Fusion (RRF)</strong>. RRF is rank-based, not score-based, so it sidesteps the calibration problem of mixing scores from different embedding spaces. A document that ranks highly in both models surfaces to the top; a document that only one model likes gets a moderate rank instead of being drowned out.</p>
+
+<p>On top of that, we layer keyword matching for exact-symbol and exact-name retrieval — formula names, element symbols, and database IDs that semantic models tend to fumble.</p>
+
+<h2 id="self-correcting-retrieval-crag-v2">Self-Correcting Retrieval (CRAG v2)</h2>
+
+<p>Sometimes a query is easy: one paper, one section, one answer.</p>
+
+<p>Sometimes it is not: contradictions, missing context, multiple candidate mechanisms. In those cases, we switch to a self-correcting loop (CRAG v2).</p>
+
+<p>CRAG v2 treats retrieval as an iterative control problem:</p>
+
+<ol>
+  <li>retrieve candidate evidence</li>
+  <li>critique: do we have enough, and is it consistent?</li>
+  <li>expand/repair the query</li>
+  <li>retrieve again</li>
+</ol>
+
+<p>It stops early when scores plateau, and it carries section metadata (<code class="language-plaintext highlighter-rouge">section_covers</code>, page grounding) through the loop so the agent can narrow reads to the right parts of the right papers.</p>
+
+<h2 id="visual-retrieval-when-text-is-not-enough">Visual Retrieval When Text Is Not Enough</h2>
+
+<p>A lot of the signal in materials papers is not in sentences. It is in a phase diagram, a band structure plot, a microscopy image, or a table layout.</p>
+
+<p>For that, we run two visual pipelines on every page:</p>
+
+<p><strong>ColPali v1.3</strong> for visual retrieval — each page is encoded into ~1030 patch vectors (128 dims each), and queries get token-level embeddings. Scoring is MaxSim over page patches: you can retrieve a page because it <em>looks</em> like the thing you asked for, even when the caption is weak or the text extraction missed a table.</p>
+
+<p><strong>An LLM-based OCR model</strong> for structured text extraction — a vision-language model that reads page images and produces clean markdown with tables, equations, and headings preserved. This replaces traditional OCR for pages where layout matters, which in scientific papers is most of them.</p>
+
+<p>This matters because it lets the agent answer questions like:</p>
+
+<ul>
+  <li>“find the plot where bandgap changes with composition”</li>
+  <li>“show the phase diagram”</li>
+  <li>“which page has the ablation table”</li>
+</ul>
+
+<p>without pretending that those are purely text search problems.</p>
+
+<h2 id="the-materials-specialist">The Materials Specialist</h2>
+
+<p>When the agent encounters a question about a specific compound or crystal structure, it calls a <strong>materials specialist</strong> — a sub-agent purpose-built for property lookups.</p>
+
+<pre><code class="language-mermaid">graph TD
+    Q["Query: LiCoO9 properties?"] --&gt; MA[Materials Specialist]
+    MA --&gt; DB{Known Material?}
+    DB --&gt;|Yes| CP[Computed Properties]
+    DB --&gt;|No| ML[ML-Predicted Properties]
+    CP --&gt; UI[3D Structure + Property Card]
+    ML --&gt; UI
+    style Q fill:#f3f4f6,stroke:#6366f1,color:#111827
+    style UI fill:#eef2ff,stroke:#6366f1,color:#111827
+</code></pre>
+
+<p>The specialist returns computed properties for known materials — energy, stability, electronic structure — along with 3D crystal structure data for interactive visualization. For novel compositions that aren’t in the database, it falls back to machine learning predictions.</p>
+
+<p>The researcher doesn’t need to know which database to query, what format the data comes in, or how to map a formula to a structure ID. They ask a question. The answer comes back with a rotatable crystal structure and a property card.</p>
+
+<h2 id="computation-on-demand">Computation on Demand</h2>
+
+<p>Some questions need more than lookups. Curve fitting against extracted data points, statistical comparisons across papers, custom visualizations — these require computation.</p>
+
+<p>The agent writes Python code, submits it to an isolated execution environment, and weaves the results into its answer. The sandbox is locked down: no network access, no filesystem outside the container, strict resource limits.</p>
+
+<p>The difference from a notebook: the agent decides <em>when</em> code is needed, writes it with full conversation context, and explains the output. The researcher stays in the conversation. No tab-switching. No exporting data to another tool.</p>
+
+<h2 id="agents-as-tools">Agents as Tools</h2>
+
+<p>We started with separate agents — one for papers, one for materials, one for code — and tried connecting them with a router that classified intent. It didn’t work well for questions that span multiple domains, which turned out to be most of them.</p>
+
+<p>The fix: <strong>make agents into tools</strong>.</p>
+
+<pre><code class="language-mermaid">graph TD
+    PA[Research Agent] --&gt;|tool call| S[Search Papers]
+    PA --&gt;|tool call| R[Read Sections]
+    PA --&gt;|tool call| MA[Materials Specialist]
+    PA --&gt;|tool call| CR[Code Runner]
+    PA --&gt;|tool call| M[Memory]
+    MA --&gt;|returns| PA
+    CR --&gt;|returns| PA
+    style PA fill:#eef2ff,stroke:#6366f1,color:#111827
+</code></pre>
+
+<p>One research agent orchestrates everything. The materials specialist isn’t a peer — it’s a tool, callable mid-reasoning. Same for code execution. Same for memory search.</p>
+
+<p>This means the agent can read a results section, extract a candidate composition, then immediately consult the materials specialist to compare reported values against computed stability. The ReAct loop has access to both paper evidence and material evidence, so it can tighten the hypothesis instead of inflating the prose.</p>
+
+<p>New capabilities are added by registering new tools. No routing logic to update. No handoff protocols to maintain.</p>
+
+<h2 id="structured-results-splitting-thought-from-display">Structured Results: Splitting Thought from Display</h2>
+
+<p>When the materials specialist returns crystal structure data, two things need to happen. The agent needs a text summary to continue reasoning. The frontend needs atomic coordinates to render a 3D model. These are fundamentally different representations of the same result.</p>
+
+<p>Every tool in the system returns a structured result with two parts:</p>
+<ul>
+  <li><strong><code class="language-plaintext highlighter-rouge">result</code></strong> — a clean text summary for the agent to reason with</li>
+  <li><strong><code class="language-plaintext highlighter-rouge">ui</code></strong> (optional) — typed data for the frontend to render</li>
+</ul>
+
+<pre><code class="language-mermaid">graph LR
+    T[Tool Executes] --&gt; R[Structured Result]
+    R --&gt; TXT["result  agent reasoning"]
+    R --&gt; UI["ui  frontend component"]
+    TXT --&gt; LLM[Agent continues thinking]
+    UI --&gt; FE[Rendered visualization]
+    style T fill:#f3f4f6,stroke:#6366f1,color:#111827
+    style LLM fill:#eef2ff,stroke:#6366f1,color:#111827
+    style FE fill:#eef2ff,stroke:#6366f1,color:#111827
+</code></pre>
+
+<p>The agent never sees rendering configs. The frontend never parses natural language. Clean boundary.</p>
+
+<p>These structured outputs — we call them <strong>blocks</strong> — accumulate as the agent works. Text, dataset references, figures, code, 3D structures — each is a typed unit. The final response assembles from these blocks, keeping only what the agent actually cited in its answer.</p>
+
+<h2 id="components-from-data">Components from Data</h2>
+
+<p>The block system opens up something powerful. If every tool produces typed, structured data, the frontend can generate the right visualization automatically.</p>
+
+<p>A lightweight <strong>UI agent</strong> takes structured tool output and produces rendering specifications:</p>
+
+<ul>
+  <li>Crystal structure coordinates → interactive 3D viewer</li>
+  <li>Numerical comparisons → charts</li>
+  <li>Tabular data → sortable grids with filtering</li>
+</ul>
+
+<p>These components appear embedded in the conversation, tailored to each specific answer. The researcher didn’t ask for a chart — the agent determined that a visual comparison was the clearest way to present the result, and the system rendered it.</p>
+
+<p>Adding a new visualization type means adding a frontend component. The agents don’t change.</p>
+
+<h2 id="teaching-the-agent-to-pause">Teaching the Agent to Pause</h2>
+
+<p>Code execution can take 90 seconds. In a standard reasoning loop, the agent blocks, the user stares at a spinner, and the connection risks timing out.</p>
+
+<p>We extended the loop with a <strong>halt signal</strong>. Any tool can tell the agent: <em>stop here, come back when I’m done</em>.</p>
+
+<pre><code class="language-mermaid">stateDiagram-v2
+    [*] --&gt; Thinking
+    Thinking --&gt; Acting: Choose tool
+    Acting --&gt; Observing: Tool returns
+    Observing --&gt; Thinking: Continue
+    Acting --&gt; Halted: Tool signals wait
+    Halted --&gt; [*]: Partial answer + job ID
+    Halted --&gt; Resumed: Job completes
+    Resumed --&gt; Thinking: Continue with result
+</code></pre>
+
+<p>The code runner returns immediately with a job ID and sets the halt flag. The agent delivers a partial answer — context it’s already gathered, what it’s computing, and what to expect — then steps aside. The computation runs in the background. When it finishes, the conversation resumes with full results.</p>
+
+<p>The researcher isn’t blocked. They can read the partial analysis, browse their papers, or start a new question. Research doesn’t fit in a single request-response cycle, and the system doesn’t pretend it does.</p>
+
+<h2 id="toward-an-orchestrator">Toward an Orchestrator</h2>
+
+<p>As we add more specialized agents — synthesis planning, experimental design, simulation management — the architecture evolves. A single research agent can’t coordinate everything when the scope expands.</p>
+
+<p>The next layer: a <strong>lightweight orchestrator</strong> using a fast, compact model that reads complex questions, breaks them into sub-tasks, and delegates to the right specialist.</p>
+
+<pre><code class="language-mermaid">graph TD
+    Q[Complex Query] --&gt; O[Orchestrator]
+    O --&gt;|literature| PA[Research Agent]
+    O --&gt;|properties| MA[Materials Specialist]
+    O --&gt;|computation| CA[Code Agent]
+    O --&gt;|synthesis| SA[Synthesis Agent]
+    PA --&gt; O
+    MA --&gt; O
+    CA --&gt; O
+    SA --&gt; O
+    O --&gt; R[Combined Answer]
+    style Q fill:#f3f4f6,stroke:#6366f1,color:#111827
+    style O fill:#eef2ff,stroke:#6366f1,color:#111827
+    style R fill:#eef2ff,stroke:#6366f1,color:#111827
+</code></pre>
+
+<p>The orchestrator stays lightweight — understanding intent and coordinating is a smaller task than deep reasoning. The expensive models run only in the specialists that need them.</p>
+
+<p>Each specialist becomes an <strong>actor</strong>: an independent process that receives tasks, executes, and returns results. Actor state is serializable — it can be saved to storage, the process can release resources, and it resumes exactly where it left off when results arrive. A synthesis agent that needs to wait for simulation results over hours doesn’t hold up anything. It saves its state and comes back.</p>
+
+<p>The halt-and-resume pattern we built for code execution extends naturally to this scale.</p>
+
+<h2 id="memory-three-layers-of-continuity">Memory: Three Layers of Continuity</h2>
+
+<p><strong>Within a question</strong> — a scratchpad accumulates everything the agent finds. Later tools in the same chain can query it. The agent doesn’t redundantly re-search for data it already retrieved.</p>
+
+<p><strong>Across a conversation</strong> — each turn chains to the previous one via context IDs. Follow-up questions like “what about the third paper?” or “rerun that analysis with a tighter cutoff” resolve correctly because the agent holds the full thread.</p>
+
+<p><strong>Across sessions</strong> — the workspace remembers. Upload papers on Monday, ask questions on Wednesday, run analysis on Friday. The conversation history persists. The activity feed shows what changed since your last visit — papers indexed, extractions completed, jobs finished.</p>
+
+<p>Research happens across days and weeks. The tools reflect that.</p>
+
+<h2 id="what-it-adds-up-to">What It Adds Up To</h2>
+
+<p>A single question can trigger paper search, section reading, property lookup, code execution, visual retrieval, and 3D visualization — all within one coherent reasoning chain. The agent pauses for long computations instead of blocking. The UI renders components from typed data instead of templates. Memory carries context across days.</p>
+
+<p>The result: a researcher types a question and gets back something that would have taken an afternoon of cross-referencing across five browser tabs.</p>
+
+<p>Not replacing judgment. Replacing the mechanical work between a question and an answer.</p>
+
+<hr />
+
+
+
+      <hr>
+
+      <!-- Prev / Next / Up navigation -->
+      
+      
+      
+
+      <div class="clearfix" style="margin-top: 2rem;">
+        
+          
+          
+
+          
+
+          
+            
+            <a class="btn btn-primary float-right" href="/materials-science/hypothesis-engineering-loop.html" title="From Paper Chaos to Testable Hypotheses">Next &rarr;</a>
+          
+        
+      </div>
+
+      
+      <div style="text-align: center; margin-top: 1rem;">
+        <a href="/p/b8e2c4/materials-science-notes/">&uarr; Back to Table of Contents</a>
+      </div>
+      
+
+    </div>
+  </div>
+</div>
+
+
+  <!-- Footer -->
+
+<hr>
+
+<footer>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <ul class="list-inline text-center">
+          
+          <li class="list-inline-item">
+            <a href="mailto:amitava.dev@proton.me" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="far fa-envelope fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          
+          
+          <li class="list-inline-item">
+            <a href="https://www.linkedin.com/in/amitavaag" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-linkedin fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          <li class="list-inline-item">
+            <a href="https://github.com/ikouchiha47" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-github fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+        </ul>
+
+        <p class="copyright text-muted">
+          Build with: 
+          <a 
+            href="https://github.com/StartBootstrap/startbootstrap-clean-blog-jekyll"
+            class="text-gray"
+            target="_blank">startbootstrap-clean-blog-jekyll</a></p>
+      </div>
+    </div>
+  </div>
+</footer>
+
+
+  <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="/assets/vendor/blog/js/scripts.js"></script>
+
+<script src="/assets/scripts.js"></script>
+
+
+
+
+
+  <script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+
+    document.querySelectorAll('pre > code.language-mermaid').forEach((codeBlock) => {
+      codeBlock.parentElement.outerHTML = `<pre class="mermaid">${codeBlock.textContent}</pre>`;
+    });
+
+
+    mermaid.initialize({ startOnLoad: true, theme: 'forest' });
+</script>
+
+
+  
+
+</body>
+
+</html>

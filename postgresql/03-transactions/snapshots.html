@@ -1,0 +1,485 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+  <title>
+    Snapshots - iko&#39;s logs
+    
+  </title>
+
+  <meta name="description" content="">
+  <meta property="og:description" content="">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Snapshots">
+  <meta property="og:url" content="https://ikouchiha47.github.io/postgresql/03-transactions/snapshots.html">
+
+  
+
+  <link href='https://fonts.googleapis.com/css?family=Lora:400,700,400italic,700italic' rel='stylesheet' type='text/css'>
+  <link href='https://fonts.googleapis.com/css?family=Open+Sans:300italic,400italic,600italic,700italic,800italic,400,300,600,700,800' rel='stylesheet' type='text/css'>
+
+  <!-- <script src="https://use.fontawesome.com/releases/v5.15.3/js/all.js" crossorigin="anonymous"></script> -->
+  <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.15.4/css/all.css" integrity="sha384-DyZ88mC6Up2uqS4h/KRgHuoeGwBcD4Ng9SiP4dIRy0EXTlnuz47vAwmeGwVChigm" crossorigin="anonymous"/>
+
+  <link rel="stylesheet" href="/assets/main.css">
+  <link rel="canonical" href="https://ikouchiha47.github.io/postgresql/03-transactions/snapshots.html">
+  <link rel="alternate" type="application/rss+xml" title="iko&#39;s logs" href="/feed.xml">
+
+  <meta name="google-site-verification" content="lWkg6gIxJgzEKX_5XnhcxCtPE9QknaimFWWos_dTvPM" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fira+Sans:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Inconsolata:wght@200..900&family=Jersey+25&family=Kanit:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Merriweather+Sans:ital,wght@0,300..800;1,300..800&family=Nanum+Gothic+Coding&family=Space+Grotesk:wght@300..700&family=Titillium+Web:ital,wght@0,200;0,300;0,400;0,600;0,700;0,900;1,200;1,300;1,400;1,600;1,700&display=swap" rel="stylesheet">
+
+</head>
+
+
+<body>
+
+  <!-- Navigation -->
+<nav class="navbar navbar-expand-lg navbar-light fixed-top" id="mainNav">
+  <div class="container">
+    <a class="navbar-brand" href="/">iko&#39;s logs</a>
+    <button class="navbar-toggler navbar-toggler-right" type="button" data-toggle="collapse" data-target="#navbarResponsive" aria-controls="navbarResponsive" aria-expanded="false" aria-label="Toggle navigation">
+      Menu
+      <i class="fa fa-bars"></i>
+    </button>
+    <div class="collapse navbar-collapse" id="navbarResponsive">
+      <ul class="navbar-nav ml-auto">
+        <li class="nav-item">
+          <a class="nav-link" href="/">Home</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/about">About</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/posts">Posts</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/contact">Contact</a>
+        </li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+
+  <!-- Page Header -->
+
+<header class="masthead">
+
+  <div class="overlay"></div>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <div class="post-heading">
+          <h1>Snapshots</h1>
+          
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="container space-grotesk">
+  <div class="row">
+    <div class="col-lg-8 col-md-10 mx-auto">
+
+      <!-- Breadcrumb -->
+      <nav aria-label="breadcrumb" style="margin-bottom: 1.5rem;">
+        <ol class="breadcrumb" style="background: transparent; padding: 0;">
+          
+            <li class="breadcrumb-item"><a href="/postgresql-internals/">PostgreSQL Internals Deep Dive</a></li>
+          
+          
+            
+              <li class="breadcrumb-item"><a href="/postgresql/03-transactions/">Transactions & MVCC</a></li>
+            
+          
+          <li class="breadcrumb-item active" aria-current="page">Snapshots</li>
+        </ol>
+      </nav>
+
+      <h1 id="snapshots">Snapshots</h1>
+
+<p>A snapshot is a frozen-in-time view of which transactions are committed and which are still in progress. Every MVCC visibility decision depends on a snapshot. PostgreSQL builds snapshots by scanning the ProcArray – the shared-memory array of all active backend processes – and recording which transaction IDs are currently running.</p>
+
+<h2 id="key-source-files">Key Source Files</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>File</th>
+      <th>Purpose</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/utils/snapshot.h</code></td>
+      <td>SnapshotData struct, SnapshotType enum</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/storage/ipc/procarray.c</code></td>
+      <td>GetSnapshotData(), TransactionIdIsInProgress()</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/storage/proc.h</code></td>
+      <td>PGPROC struct (per-backend shared memory)</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/storage/procarray.h</code></td>
+      <td>ProcArray API</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/utils/time/snapmgr.c</code></td>
+      <td>Snapshot lifecycle management</td>
+    </tr>
+  </tbody>
+</table>
+
+<h2 id="snapshotdata-structure">SnapshotData Structure</h2>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">typedef</span> <span class="k">struct</span> <span class="n">SnapshotData</span>
+<span class="p">{</span>
+    <span class="n">SnapshotType</span> <span class="n">snapshot_type</span><span class="p">;</span>
+
+    <span class="n">TransactionId</span> <span class="n">xmin</span><span class="p">;</span>     <span class="cm">/* all XIDs &lt; xmin are visible (committed) */</span>
+    <span class="n">TransactionId</span> <span class="n">xmax</span><span class="p">;</span>     <span class="cm">/* all XIDs &gt;= xmax are invisible (not yet started) */</span>
+
+    <span class="n">TransactionId</span> <span class="o">*</span><span class="n">xip</span><span class="p">;</span>     <span class="cm">/* array of in-progress XIDs in [xmin, xmax) */</span>
+    <span class="n">uint32</span>         <span class="n">xcnt</span><span class="p">;</span>    <span class="cm">/* count of entries in xip[] */</span>
+
+    <span class="n">TransactionId</span> <span class="o">*</span><span class="n">subxip</span><span class="p">;</span>  <span class="cm">/* in-progress subtransaction XIDs */</span>
+    <span class="n">int32</span>          <span class="n">subxcnt</span><span class="p">;</span>
+    <span class="n">bool</span>           <span class="n">suboverflowed</span><span class="p">;</span>  <span class="cm">/* true if subxip array overflowed */</span>
+
+    <span class="n">bool</span>           <span class="n">takenDuringRecovery</span><span class="p">;</span>
+    <span class="n">bool</span>           <span class="n">copied</span><span class="p">;</span>
+
+    <span class="n">CommandId</span>      <span class="n">curcid</span><span class="p">;</span>  <span class="cm">/* commands with CID &lt; curcid are visible */</span>
+
+    <span class="n">uint32</span>         <span class="n">speculativeToken</span><span class="p">;</span>
+    <span class="k">struct</span> <span class="n">GlobalVisState</span> <span class="o">*</span><span class="n">vistest</span><span class="p">;</span>
+
+    <span class="cm">/* Bookkeeping */</span>
+    <span class="n">uint32</span>         <span class="n">active_count</span><span class="p">;</span>
+    <span class="n">uint32</span>         <span class="n">regd_count</span><span class="p">;</span>
+    <span class="n">pairingheap_node</span> <span class="n">ph_node</span><span class="p">;</span>
+    <span class="n">uint64</span>         <span class="n">snapXactCompletionCount</span><span class="p">;</span>
+<span class="p">}</span> <span class="n">SnapshotData</span><span class="p">;</span>
+</code></pre></div></div>
+
+<p>The three critical fields form the snapshot’s “window”:</p>
+
+<ul>
+  <li><strong>xmin</strong>: The lowest XID that was still running. Everything below xmin is definitively committed or aborted.</li>
+  <li><strong>xmax</strong>: One past the latest XID assigned at snapshot time. Everything at or above xmax has not started yet.</li>
+  <li><strong>xip[]</strong>: The set of XIDs in the range <code class="language-plaintext highlighter-rouge">[xmin, xmax)</code> that were in progress. These are the transactions whose effects the snapshot cannot see.</li>
+</ul>
+
+<h2 id="snapshot-types">Snapshot Types</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>Type</th>
+      <th>Use Case</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">SNAPSHOT_MVCC</code></td>
+      <td>Normal queries – sees committed transactions, not in-progress ones</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">SNAPSHOT_SELF</code></td>
+      <td>Sees own uncommitted changes (used internally)</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">SNAPSHOT_ANY</code></td>
+      <td>Sees everything, including uncommitted (used by VACUUM)</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">SNAPSHOT_TOAST</code></td>
+      <td>TOAST-specific visibility</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">SNAPSHOT_DIRTY</code></td>
+      <td>Like SELF but also sees uncommitted changes from other transactions</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">SNAPSHOT_NON_VACUUMABLE</code></td>
+      <td>Determines if a tuple is dead to all (for pruning)</td>
+    </tr>
+  </tbody>
+</table>
+
+<h2 id="how-getsnapshotdata-works">How GetSnapshotData() Works</h2>
+
+<p><code class="language-plaintext highlighter-rouge">GetSnapshotData()</code> in <code class="language-plaintext highlighter-rouge">procarray.c</code> is the function that builds an MVCC snapshot. It runs under <code class="language-plaintext highlighter-rouge">ProcArrayLock</code> (shared mode) and scans every active PGPROC:</p>
+
+<pre><code class="language-mermaid">flowchart TD
+    START["GetSnapshotData()"] --&gt; LOCK["Acquire ProcArrayLock (shared)"]
+    LOCK --&gt; READ_XMAX["Set xmax = ShmemVariableCache-&gt;latestCompletedXid + 1"]
+    READ_XMAX --&gt; SCAN["Scan ProcGlobal-&gt;xids[] array"]
+
+    SCAN --&gt; EACH{"For each active backend"}
+    EACH --&gt;|"xid != Invalid"| RECORD["Add xid to xip[]&lt;br/&gt;Track lowest as xmin"]
+    EACH --&gt;|"xid == Invalid"| SKIP["Skip (no active transaction)"]
+    RECORD --&gt; EACH
+    SKIP --&gt; EACH
+
+    EACH --&gt;|"Done"| SUBXIDS["Copy subxid caches&lt;br/&gt;(up to 64 per backend)"]
+    SUBXIDS --&gt; RELEASE["Release ProcArrayLock"]
+    RELEASE --&gt; RETURN["Return snapshot with&lt;br/&gt;xmin, xmax, xip[], subxip[]"]
+</code></pre>
+
+<h3 id="performance-optimization-dense-xid-arrays">Performance Optimization: Dense xid Arrays</h3>
+
+<p>Modern PostgreSQL mirrors certain PGPROC fields (like <code class="language-plaintext highlighter-rouge">xid</code>) into dense arrays in <code class="language-plaintext highlighter-rouge">ProcGlobal</code> (indexed by <code class="language-plaintext highlighter-rouge">pgxactoff</code>). This allows <code class="language-plaintext highlighter-rouge">GetSnapshotData()</code> to scan a compact array rather than chasing pointers through the full PGPROC structs, significantly improving cache locality.</p>
+
+<h3 id="the-snapxactcompletioncount-optimization">The snapXactCompletionCount Optimization</h3>
+
+<p>PostgreSQL tracks a global counter (<code class="language-plaintext highlighter-rouge">ShmemVariableCache-&gt;xactCompletionCount</code>) that increments whenever a transaction commits or aborts. If this counter has not changed since the last snapshot, the old snapshot can be reused without scanning ProcArray again. This is a major optimization for Read Committed isolation, where a new snapshot is needed for every statement.</p>
+
+<h2 id="pgproc-and-procarray">PGPROC and ProcArray</h2>
+
+<p>Every backend has a <code class="language-plaintext highlighter-rouge">PGPROC</code> slot in shared memory. The fields relevant to snapshots:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">struct</span> <span class="n">PGPROC</span>
+<span class="p">{</span>
+    <span class="n">TransactionId</span> <span class="n">xid</span><span class="p">;</span>    <span class="cm">/* current top-level XID, or InvalidTransactionId */</span>
+    <span class="n">TransactionId</span> <span class="n">xmin</span><span class="p">;</span>   <span class="cm">/* this backend's xmin (oldest snapshot) */</span>
+    <span class="kt">int</span>           <span class="n">pid</span><span class="p">;</span>
+    <span class="kt">int</span>           <span class="n">pgxactoff</span><span class="p">;</span>  <span class="cm">/* index into ProcGlobal dense arrays */</span>
+    <span class="cm">/* ... */</span>
+<span class="p">};</span>
+</code></pre></div></div>
+
+<p>The <code class="language-plaintext highlighter-rouge">xmin</code> field in PGPROC is critical: it records the oldest XID that this backend’s oldest active snapshot needs to see. VACUUM uses the <strong>global xmin horizon</strong> – the minimum of all backends’ <code class="language-plaintext highlighter-rouge">xmin</code> values – to determine which dead tuples can safely be removed.</p>
+
+<pre><code class="language-mermaid">flowchart LR
+    subgraph "ProcArray (shared memory)"
+        P1["Backend 1&lt;br/&gt;xid=500&lt;br/&gt;xmin=490"]
+        P2["Backend 2&lt;br/&gt;xid=502&lt;br/&gt;xmin=495"]
+        P3["Backend 3&lt;br/&gt;xid=Invalid&lt;br/&gt;xmin=498"]
+    end
+
+    HORIZON["Global xmin horizon = min(490, 495, 498) = 490"]
+    P1 --&gt; HORIZON
+    P2 --&gt; HORIZON
+    P3 --&gt; HORIZON
+
+    VACUUM["VACUUM can remove tuples&lt;br/&gt;dead before xid 490"]
+    HORIZON --&gt; VACUUM
+</code></pre>
+
+<h2 id="snapshot-lifecycle">Snapshot Lifecycle</h2>
+
+<h3 id="read-committed">Read Committed</h3>
+
+<p>A <strong>new snapshot</strong> is taken at the start of every SQL statement. This means each statement sees a fresh view of committed data, including commits that happened after the transaction started.</p>
+
+<h3 id="repeatable-read--serializable">Repeatable Read / Serializable</h3>
+
+<p>A <strong>single snapshot</strong> is taken at the start of the first statement in the transaction and reused for all subsequent statements. This guarantees that all reads within the transaction see the same consistent point in time.</p>
+
+<h3 id="active-snapshot-stack">Active Snapshot Stack</h3>
+
+<p>PostgreSQL maintains a stack of active snapshots (<code class="language-plaintext highlighter-rouge">ActiveSnapshotElt</code> linked list). The top of the stack is the “current” snapshot used by visibility checks. Functions like <code class="language-plaintext highlighter-rouge">PushActiveSnapshot()</code> and <code class="language-plaintext highlighter-rouge">PopActiveSnapshot()</code> manage this stack.</p>
+
+<h3 id="registered-snapshots">Registered Snapshots</h3>
+
+<p>Snapshots that must survive beyond a single statement (for cursors, for example) are “registered” and tracked in a pairing heap ordered by xmin. The registered snapshot with the oldest xmin determines how far back VACUUM must preserve tuples.</p>
+
+<h2 id="the-xmin-horizon-problem">The xmin Horizon Problem</h2>
+
+<p>A long-running transaction (or an abandoned replication slot) pins the xmin horizon at an old value. This prevents VACUUM from cleaning up dead tuples, causing table bloat. The chain of causation:</p>
+
+<ol>
+  <li>Backend B starts a transaction and takes a snapshot with <code class="language-plaintext highlighter-rouge">xmin = 1000</code></li>
+  <li>B’s <code class="language-plaintext highlighter-rouge">PGPROC.xmin</code> is set to <code class="language-plaintext highlighter-rouge">1000</code></li>
+  <li>Thousands of other transactions commit, creating dead tuple versions</li>
+  <li><code class="language-plaintext highlighter-rouge">GetOldestNonRemovableTransactionId()</code> returns <code class="language-plaintext highlighter-rouge">1000</code> because B is still active</li>
+  <li>VACUUM cannot remove any dead tuples with <code class="language-plaintext highlighter-rouge">xmax &gt; 1000</code></li>
+</ol>
+
+<p>This is one of the most common operational issues in PostgreSQL production environments.</p>
+
+<h2 id="subtransaction-xids-and-overflow">Subtransaction XIDs and Overflow</h2>
+
+<p>Each PGPROC caches up to <code class="language-plaintext highlighter-rouge">PGPROC_MAX_CACHED_SUBXIDS</code> (64) subtransaction XIDs. When a snapshot is taken, these are copied into <code class="language-plaintext highlighter-rouge">subxip[]</code>. If a backend has more than 64 active subtransactions, the cache overflows and <code class="language-plaintext highlighter-rouge">suboverflowed</code> is set to <code class="language-plaintext highlighter-rouge">true</code> in the snapshot.</p>
+
+<p>When <code class="language-plaintext highlighter-rouge">suboverflowed</code> is true, visibility checks cannot definitively determine whether an XID in the <code class="language-plaintext highlighter-rouge">[xmin, xmax)</code> range is a running subtransaction just by checking <code class="language-plaintext highlighter-rouge">subxip[]</code>. Instead, they must fall back to <code class="language-plaintext highlighter-rouge">pg_subtrans</code> lookups to find the parent transaction, then check if the parent is in <code class="language-plaintext highlighter-rouge">xip[]</code>.</p>
+
+<h2 id="key-data-structures-summary">Key Data Structures Summary</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>Structure</th>
+      <th>Location</th>
+      <th>Role</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">SnapshotData</code></td>
+      <td><code class="language-plaintext highlighter-rouge">snapshot.h</code></td>
+      <td>Snapshot state: xmin, xmax, xip[], curcid</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">PGPROC</code></td>
+      <td><code class="language-plaintext highlighter-rouge">proc.h</code></td>
+      <td>Per-backend: current xid, xmin, subxid cache</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">ProcArrayStruct</code></td>
+      <td><code class="language-plaintext highlighter-rouge">procarray.c</code></td>
+      <td>Shared array tracking all backend PGPROC slots</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">GlobalVisState</code></td>
+      <td><code class="language-plaintext highlighter-rouge">procarray.c</code></td>
+      <td>Per-relation visibility horizon for pruning</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">ActiveSnapshotElt</code></td>
+      <td><code class="language-plaintext highlighter-rouge">snapmgr.c</code></td>
+      <td>Stack node for active snapshot management</td>
+    </tr>
+  </tbody>
+</table>
+
+<h2 id="connections">Connections</h2>
+
+<ul>
+  <li><strong>MVCC Visibility</strong>: Snapshots are consumed by <code class="language-plaintext highlighter-rouge">HeapTupleSatisfiesMVCC()</code> to decide tuple visibility. See <a href="mvcc.html">MVCC and Tuple Versioning</a>.</li>
+  <li><strong>Isolation Levels</strong>: The snapshot acquisition strategy (per-statement vs per-transaction) defines isolation level behavior. See <a href="isolation-levels.html">Isolation Levels</a>.</li>
+  <li><strong>VACUUM</strong>: The xmin horizon computed from ProcArray determines what VACUUM can clean up.</li>
+  <li><strong>Replication Slots</strong>: Logical replication slots also hold back the xmin horizon through <code class="language-plaintext highlighter-rouge">ProcArraySetReplicationSlotXmin()</code>.</li>
+</ul>
+
+
+      <hr>
+
+      <!-- Prev / Next / Up navigation -->
+      
+      
+      
+
+      <div class="clearfix" style="margin-top: 2rem;">
+        
+          
+          
+
+          
+            
+            <a class="btn btn-primary float-left" href="/postgresql/03-transactions/mvcc.html" title="MVCC and Tuple Versioning">&larr; Previous</a>
+          
+
+          
+            
+            <a class="btn btn-primary float-right" href="/postgresql/03-transactions/ssi.html" title="Serializable Snapshot Isolation">Next &rarr;</a>
+          
+        
+      </div>
+
+      
+      <div style="text-align: center; margin-top: 1rem;">
+        <a href="/postgresql-internals/">&uarr; Back to Table of Contents</a>
+      </div>
+      
+
+    </div>
+  </div>
+</div>
+
+
+  <!-- Footer -->
+
+<hr>
+
+<footer>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <ul class="list-inline text-center">
+          
+          <li class="list-inline-item">
+            <a href="mailto:amitava.dev@proton.me" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="far fa-envelope fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          
+          
+          <li class="list-inline-item">
+            <a href="https://www.linkedin.com/in/amitavaag" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-linkedin fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          <li class="list-inline-item">
+            <a href="https://github.com/ikouchiha47" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-github fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+        </ul>
+
+        <p class="copyright text-muted">
+          Build with: 
+          <a 
+            href="https://github.com/StartBootstrap/startbootstrap-clean-blog-jekyll"
+            class="text-gray"
+            target="_blank">startbootstrap-clean-blog-jekyll</a></p>
+      </div>
+    </div>
+  </div>
+</footer>
+
+
+  <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="/assets/vendor/blog/js/scripts.js"></script>
+
+<script src="/assets/scripts.js"></script>
+
+
+
+
+
+  <script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+
+    document.querySelectorAll('pre > code.language-mermaid').forEach((codeBlock) => {
+      codeBlock.parentElement.outerHTML = `<pre class="mermaid">${codeBlock.textContent}</pre>`;
+    });
+
+
+    mermaid.initialize({ startOnLoad: true, theme: 'forest' });
+</script>
+
+
+  
+
+</body>
+
+</html>

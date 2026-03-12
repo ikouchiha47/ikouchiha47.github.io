@@ -1,0 +1,790 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+  <title>
+    Conflict Resolution - iko&#39;s logs
+    
+  </title>
+
+  <meta name="description" content="">
+  <meta property="og:description" content="">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Conflict Resolution">
+  <meta property="og:url" content="https://ikouchiha47.github.io/postgresql/12-replication/conflict-resolution.html">
+
+  
+
+  <link href='https://fonts.googleapis.com/css?family=Lora:400,700,400italic,700italic' rel='stylesheet' type='text/css'>
+  <link href='https://fonts.googleapis.com/css?family=Open+Sans:300italic,400italic,600italic,700italic,800italic,400,300,600,700,800' rel='stylesheet' type='text/css'>
+
+  <!-- <script src="https://use.fontawesome.com/releases/v5.15.3/js/all.js" crossorigin="anonymous"></script> -->
+  <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.15.4/css/all.css" integrity="sha384-DyZ88mC6Up2uqS4h/KRgHuoeGwBcD4Ng9SiP4dIRy0EXTlnuz47vAwmeGwVChigm" crossorigin="anonymous"/>
+
+  <link rel="stylesheet" href="/assets/main.css">
+  <link rel="canonical" href="https://ikouchiha47.github.io/postgresql/12-replication/conflict-resolution.html">
+  <link rel="alternate" type="application/rss+xml" title="iko&#39;s logs" href="/feed.xml">
+
+  <meta name="google-site-verification" content="lWkg6gIxJgzEKX_5XnhcxCtPE9QknaimFWWos_dTvPM" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fira+Sans:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Inconsolata:wght@200..900&family=Jersey+25&family=Kanit:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Merriweather+Sans:ital,wght@0,300..800;1,300..800&family=Nanum+Gothic+Coding&family=Space+Grotesk:wght@300..700&family=Titillium+Web:ital,wght@0,200;0,300;0,400;0,600;0,700;0,900;1,200;1,300;1,400;1,600;1,700&display=swap" rel="stylesheet">
+
+</head>
+
+
+<body>
+
+  <!-- Navigation -->
+<nav class="navbar navbar-expand-lg navbar-light fixed-top" id="mainNav">
+  <div class="container">
+    <a class="navbar-brand" href="/">iko&#39;s logs</a>
+    <button class="navbar-toggler navbar-toggler-right" type="button" data-toggle="collapse" data-target="#navbarResponsive" aria-controls="navbarResponsive" aria-expanded="false" aria-label="Toggle navigation">
+      Menu
+      <i class="fa fa-bars"></i>
+    </button>
+    <div class="collapse navbar-collapse" id="navbarResponsive">
+      <ul class="navbar-nav ml-auto">
+        <li class="nav-item">
+          <a class="nav-link" href="/">Home</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/about">About</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/posts">Posts</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/contact">Contact</a>
+        </li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+
+  <!-- Page Header -->
+
+<header class="masthead">
+
+  <div class="overlay"></div>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <div class="post-heading">
+          <h1>Conflict Resolution</h1>
+          
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="container space-grotesk">
+  <div class="row">
+    <div class="col-lg-8 col-md-10 mx-auto">
+
+      <!-- Breadcrumb -->
+      <nav aria-label="breadcrumb" style="margin-bottom: 1.5rem;">
+        <ol class="breadcrumb" style="background: transparent; padding: 0;">
+          
+            <li class="breadcrumb-item"><a href="/postgresql-internals/">PostgreSQL Internals Deep Dive</a></li>
+          
+          
+            
+              <li class="breadcrumb-item"><a href="/postgresql/12-replication/">Replication</a></li>
+            
+          
+          <li class="breadcrumb-item active" aria-current="page">Conflict Resolution</li>
+        </ol>
+      </nav>
+
+      <h1 id="conflict-resolution">Conflict Resolution</h1>
+
+<h2 id="summary">Summary</h2>
+
+<p>Replication conflicts occur when the replication process interferes with
+concurrent activity. PostgreSQL handles two distinct categories: <strong>hot standby
+conflicts</strong>, where WAL replay on a physical standby collides with active
+read queries, and <strong>logical replication conflicts</strong>, where incoming row changes
+on a subscriber violate constraints or encounter missing data. The resolution
+mechanisms differ fundamentally: hot standby conflicts are resolved by either
+cancelling queries or delaying replay, while logical conflicts are resolved
+through detection, logging, and configurable resolution strategies.</p>
+
+<hr />
+
+<h2 id="overview">Overview</h2>
+
+<h3 id="hot-standby-conflicts">Hot Standby Conflicts</h3>
+
+<p>A physical standby running in Hot Standby mode accepts read-only queries
+while simultaneously replaying WAL from the primary. This creates an inherent
+tension: WAL replay modifies physical data pages, but queries need stable
+visibility of those pages. Conflicts arise in several scenarios:</p>
+
+<pre><code class="language-mermaid">flowchart LR
+    subgraph Standby["Hot Standby"]
+        Recovery["Recovery Process&lt;br/&gt;(startup process)&lt;br/&gt;replaying WAL"]
+        Backend["Backend Process&lt;br/&gt;running read-only query"]
+        Buffer["Shared Buffer Page"]
+
+        Recovery --&gt;|"needs to remove tuples&lt;br/&gt;or acquire AccessExclusiveLock"| Buffer
+        Backend --&gt;|"reading tuples via&lt;br/&gt;snapshot / holding pin"| Buffer
+    end
+
+    Recovery -.-|"CONFLICT"| Backend
+
+    Recovery --&gt;|"wait up to&lt;br/&gt;max_standby_streaming_delay"| Decision{Timeout?}
+    Decision --&gt;|"Yes"| Cancel["Cancel query via&lt;br/&gt;PROCSIG_RECOVERY_CONFLICT_*"]
+    Decision --&gt;|"No (query finished)"| Proceed["Replay proceeds"]
+</code></pre>
+
+<ul>
+  <li><strong>Lock conflicts</strong> – replay needs an <code class="language-plaintext highlighter-rouge">AccessExclusiveLock</code> that a query holds</li>
+  <li><strong>Snapshot conflicts</strong> – replay removes rows still visible to a query’s snapshot</li>
+  <li><strong>Buffer pin conflicts</strong> – replay needs to modify a page pinned by a query</li>
+  <li><strong>Tablespace conflicts</strong> – replay drops a tablespace containing temp files for a query</li>
+  <li><strong>Database conflicts</strong> – replay drops a database where a query is connected</li>
+</ul>
+
+<h3 id="logical-replication-conflicts">Logical Replication Conflicts</h3>
+
+<p>Logical replication applies decoded row-level changes on an independent
+subscriber server. Because the subscriber has its own data and indexes,
+incoming changes can conflict with existing rows:</p>
+
+<ul>
+  <li><strong>Insert conflicts</strong> – incoming insert violates a unique constraint</li>
+  <li><strong>Update conflicts</strong> – row to update is missing or was modified by another origin</li>
+  <li><strong>Delete conflicts</strong> – row to delete is missing or was modified by another origin</li>
+</ul>
+
+<hr />
+
+<h2 id="key-source-files">Key Source Files</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>File</th>
+      <th>Purpose</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/storage/ipc/standby.c</code></td>
+      <td>Hot standby conflict detection and resolution</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/storage/ipc/procsignal.c</code></td>
+      <td>Recovery conflict signaling mechanism</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/storage/standby.h</code></td>
+      <td><code class="language-plaintext highlighter-rouge">RecoveryConflictReason</code> enum</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/replication/logical/conflict.c</code></td>
+      <td>Logical replication conflict logging and detection</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/replication/conflict.h</code></td>
+      <td><code class="language-plaintext highlighter-rouge">ConflictType</code> enum, <code class="language-plaintext highlighter-rouge">ConflictTupleInfo</code> struct</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/replication/logical/worker.c</code></td>
+      <td>Apply worker conflict handling during row application</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/storage/ipc/procarray.c</code></td>
+      <td><code class="language-plaintext highlighter-rouge">GetConflictingVirtualXIDs()</code> for standby conflicts</td>
+    </tr>
+  </tbody>
+</table>
+
+<hr />
+
+<h2 id="how-it-works-hot-standby-conflicts">How It Works: Hot Standby Conflicts</h2>
+
+<h3 id="1-conflict-detection">1. Conflict Detection</h3>
+
+<p>During WAL replay, the startup process detects conflicts by checking whether
+any active query would be affected by the operation being replayed. The
+detection varies by conflict type:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>WAL Replay (startup process)                   Active Queries
+  |                                                |
+  | Replay: DROP TABLE foo                         |
+  | Need AccessExclusiveLock on foo                |
+  |                                                |
+  | ResolveRecoveryConflictWithLock():             |
+  |   GetConflictingVirtualXIDs()                  |
+  |   --&gt; finds query Q holding AccessShareLock    |
+  |                                                |
+  | Replay: VACUUM removes dead rows              |
+  | Rows might be visible to query snapshot        |
+  |                                                |
+  | ResolveRecoveryConflictWithSnapshot():         |
+  |   GetConflictingVirtualXIDs(latestRemovedXid)  |
+  |   --&gt; finds query Q whose snapshot can see     |
+  |       the removed rows                         |
+</code></pre></div></div>
+
+<h3 id="2-resolution-the-waitingcancellation-algorithm">2. Resolution: The Waiting/Cancellation Algorithm</h3>
+
+<p>When a conflict is detected, PostgreSQL attempts a graduated response
+controlled by <code class="language-plaintext highlighter-rouge">max_standby_streaming_delay</code> (or <code class="language-plaintext highlighter-rouge">max_standby_archive_delay</code>
+for archive recovery):</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>ResolveRecoveryConflictWithVirtualXIDs(waitlist, reason):
+    for each conflicting backend in waitlist:
+
+        // Phase 1: Wait with timeout
+        deadline = now + max_standby_streaming_delay
+
+        while conflicting backend still active:
+            if now &gt;= deadline:
+                goto cancel
+
+            // Wait, checking periodically
+            wait(STANDBY_DELAY_TIMEOUT)
+
+            // Check if the conflict resolved naturally
+            // (query finished, lock released, etc.)
+
+        cancel:
+        // Phase 2: Cancel or terminate the query
+        if reason is LOCK conflict:
+            SendProcSignal(PROCSIG_RECOVERY_CONFLICT_LOCK)
+            // Cancels the query (like pg_cancel_backend)
+
+        elif reason is SNAPSHOT conflict:
+            SendProcSignal(PROCSIG_RECOVERY_CONFLICT_SNAPSHOT)
+            // Cancels the query
+
+        elif reason is BUFFERPIN conflict:
+            SendRecoveryConflictWithBufferPin()
+            // Special handling: sends PROCSIG and sets
+            // STANDBY_LOCK_TIMEOUT for deadlock detection
+</code></pre></div></div>
+
+<p>The <code class="language-plaintext highlighter-rouge">max_standby_streaming_delay</code> setting controls the trade-off:</p>
+<ul>
+  <li><strong>-1</strong> – wait forever (replay delays indefinitely; queries always complete)</li>
+  <li><strong>0</strong> – cancel immediately (no replay delay; queries may be cancelled)</li>
+  <li><strong>positive value</strong> – wait up to this many milliseconds before cancelling</li>
+</ul>
+
+<h3 id="3-recovery-conflict-reasons">3. Recovery Conflict Reasons</h3>
+
+<p>The <code class="language-plaintext highlighter-rouge">RecoveryConflictReason</code> enum catalogs all conflict types:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">typedef</span> <span class="k">enum</span> <span class="n">RecoveryConflictReason</span>
+<span class="p">{</span>
+    <span class="n">PROCSIG_RECOVERY_CONFLICT_BUFFERPIN</span><span class="p">,</span>   <span class="cm">/* replay needs to modify a pinned buffer */</span>
+    <span class="n">PROCSIG_RECOVERY_CONFLICT_LOCK</span><span class="p">,</span>        <span class="cm">/* replay needs an exclusive lock */</span>
+    <span class="n">PROCSIG_RECOVERY_CONFLICT_SNAPSHOT</span><span class="p">,</span>     <span class="cm">/* replay removes rows visible to a snapshot */</span>
+    <span class="n">PROCSIG_RECOVERY_CONFLICT_STARTUP_DEADLOCK</span><span class="p">,</span> <span class="cm">/* deadlock with startup process */</span>
+    <span class="n">PROCSIG_RECOVERY_CONFLICT_TABLESPACE</span><span class="p">,</span>  <span class="cm">/* replay drops a tablespace in use */</span>
+    <span class="n">PROCSIG_RECOVERY_CONFLICT_DATABASE</span><span class="p">,</span>    <span class="cm">/* replay drops the connected database */</span>
+    <span class="n">PROCSIG_RECOVERY_CONFLICT_LOGICALSLOT</span><span class="p">,</span> <span class="cm">/* replay invalidates a logical slot */</span>
+<span class="p">}</span> <span class="n">RecoveryConflictReason</span><span class="p">;</span>
+</code></pre></div></div>
+
+<h3 id="4-buffer-pin-conflicts">4. Buffer Pin Conflicts</h3>
+
+<p>Buffer pin conflicts deserve special attention because they cannot be resolved
+by simply cancelling a query. A buffer pin means the backend is actively
+reading the page (not just holding a snapshot reference). The startup process:</p>
+
+<ol>
+  <li>Sends <code class="language-plaintext highlighter-rouge">PROCSIG_RECOVERY_CONFLICT_BUFFERPIN</code> to the offending backend</li>
+  <li>Sets a <code class="language-plaintext highlighter-rouge">STANDBY_LOCK_TIMEOUT</code> alarm</li>
+  <li>Waits for the pin to be released</li>
+  <li>If the timeout fires, sends a <code class="language-plaintext highlighter-rouge">SIGINT</code> (cancel) to the backend</li>
+  <li>If that does not help, sends a deadlock-timeout escalation</li>
+</ol>
+
+<h3 id="5-hot-standby-feedback">5. Hot Standby Feedback</h3>
+
+<p>The <code class="language-plaintext highlighter-rouge">hot_standby_feedback</code> mechanism proactively prevents snapshot conflicts
+by communicating the standby’s oldest active xmin back to the primary. The
+primary uses this to prevent vacuum from removing rows that standby queries
+might need:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>Standby (walreceiver)                 Primary (walsender)
+  |                                        |
+  | Compute oldest active xmin             |
+  | from standby's ProcArray               |
+  |                                        |
+  |-- HSFeedback: xmin=1000 -------------&gt;|
+  |                                        |
+  |                    PhysicalReplicationSlotNewXmin(1000)
+  |                    // sets slot-&gt;effective_xmin = 1000
+  |                    // vacuum will not remove rows
+  |                    // visible to xid &gt;= 1000
+</code></pre></div></div>
+
+<p>The trade-off: hot standby feedback prevents snapshot conflicts on the standby
+but can cause table bloat on the primary if the standby runs long queries.</p>
+
+<hr />
+
+<h2 id="how-it-works-logical-replication-conflicts">How It Works: Logical Replication Conflicts</h2>
+
+<h3 id="1-conflict-types">1. Conflict Types</h3>
+
+<p>Logical replication conflicts are classified by the <code class="language-plaintext highlighter-rouge">ConflictType</code> enum:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">typedef</span> <span class="k">enum</span>
+<span class="p">{</span>
+    <span class="n">CT_INSERT_EXISTS</span><span class="p">,</span>              <span class="cm">/* insert: unique constraint violation */</span>
+    <span class="n">CT_UPDATE_ORIGIN_DIFFERS</span><span class="p">,</span>      <span class="cm">/* update: row modified by different origin */</span>
+    <span class="n">CT_UPDATE_EXISTS</span><span class="p">,</span>              <span class="cm">/* update: new values violate unique constraint */</span>
+    <span class="n">CT_UPDATE_DELETED</span><span class="p">,</span>             <span class="cm">/* update: row was concurrently deleted */</span>
+    <span class="n">CT_UPDATE_MISSING</span><span class="p">,</span>             <span class="cm">/* update: target row not found */</span>
+    <span class="n">CT_DELETE_ORIGIN_DIFFERS</span><span class="p">,</span>      <span class="cm">/* delete: row modified by different origin */</span>
+    <span class="n">CT_DELETE_MISSING</span><span class="p">,</span>             <span class="cm">/* delete: target row not found */</span>
+    <span class="n">CT_MULTIPLE_UNIQUE_CONFLICTS</span><span class="p">,</span>  <span class="cm">/* multiple unique constraints violated */</span>
+<span class="p">}</span> <span class="n">ConflictType</span><span class="p">;</span>
+</code></pre></div></div>
+
+<h3 id="2-conflict-detection-in-the-apply-worker">2. Conflict Detection in the Apply Worker</h3>
+
+<p>The apply worker (<code class="language-plaintext highlighter-rouge">worker.c</code>) detects conflicts during row application:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>Apply INSERT:
+    ExecInsertIndexTuples()
+    if unique violation:
+        conflict = CT_INSERT_EXISTS
+        // The existing row's origin and timestamp are examined
+        GetTupleTransactionInfo(existingSlot, &amp;xmin, &amp;origin, &amp;ts)
+
+Apply UPDATE:
+    // Find the row to update using replica identity
+    table_tuple_lock(searchslot)
+    if row not found:
+        conflict = CT_UPDATE_MISSING
+    elif row's origin != local origin:
+        conflict = CT_UPDATE_ORIGIN_DIFFERS
+
+Apply DELETE:
+    table_tuple_lock(searchslot)
+    if row not found:
+        conflict = CT_DELETE_MISSING
+    elif row's origin != local origin:
+        conflict = CT_DELETE_ORIGIN_DIFFERS
+</code></pre></div></div>
+
+<h3 id="3-conflict-information-conflicttupleinfo">3. Conflict Information (ConflictTupleInfo)</h3>
+
+<p>When a conflict is detected, details about the conflicting local row are
+captured:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">typedef</span> <span class="k">struct</span> <span class="n">ConflictTupleInfo</span>
+<span class="p">{</span>
+    <span class="n">TupleTableSlot</span> <span class="o">*</span><span class="n">slot</span><span class="p">;</span>       <span class="cm">/* the conflicting local tuple */</span>
+    <span class="n">Oid</span>         <span class="n">indexoid</span><span class="p">;</span>       <span class="cm">/* index where conflict occurred */</span>
+    <span class="n">TransactionId</span> <span class="n">xmin</span><span class="p">;</span>         <span class="cm">/* xid that last modified the local row */</span>
+    <span class="n">ReplOriginId</span> <span class="n">origin</span><span class="p">;</span>        <span class="cm">/* origin of that modification */</span>
+    <span class="n">TimestampTz</span> <span class="n">ts</span><span class="p">;</span>             <span class="cm">/* timestamp of that modification */</span>
+<span class="p">}</span> <span class="n">ConflictTupleInfo</span><span class="p">;</span>
+</code></pre></div></div>
+
+<p>The origin and timestamp information requires <code class="language-plaintext highlighter-rouge">track_commit_timestamp = on</code>.
+Without it, the system cannot determine when or from where the conflicting
+modification originated.</p>
+
+<h3 id="4-conflict-reporting">4. Conflict Reporting</h3>
+
+<p>Conflicts are reported via <code class="language-plaintext highlighter-rouge">ReportApplyConflict()</code>, which generates detailed
+log messages including:</p>
+
+<ul>
+  <li>The conflict type</li>
+  <li>The relation and index involved</li>
+  <li>Key values from the search tuple, local tuple, and remote tuple</li>
+  <li>The origin and timestamp of the conflicting local modification</li>
+</ul>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="kt">void</span> <span class="nf">ReportApplyConflict</span><span class="p">(</span><span class="n">EState</span> <span class="o">*</span><span class="n">estate</span><span class="p">,</span> <span class="n">ResultRelInfo</span> <span class="o">*</span><span class="n">relinfo</span><span class="p">,</span>
+                         <span class="kt">int</span> <span class="n">elevel</span><span class="p">,</span> <span class="n">ConflictType</span> <span class="n">type</span><span class="p">,</span>
+                         <span class="n">TupleTableSlot</span> <span class="o">*</span><span class="n">searchslot</span><span class="p">,</span>
+                         <span class="n">TupleTableSlot</span> <span class="o">*</span><span class="n">remoteslot</span><span class="p">,</span>
+                         <span class="n">List</span> <span class="o">*</span><span class="n">conflicttuples</span><span class="p">)</span>
+<span class="p">{</span>
+    <span class="cm">/* Builds detailed error message with tuple descriptions */</span>
+    <span class="cm">/* Reports at the configured elevel (WARNING, ERROR, LOG) */</span>
+<span class="p">}</span>
+</code></pre></div></div>
+
+<h3 id="5-conflict-resolution-strategies">5. Conflict Resolution Strategies</h3>
+
+<p>PostgreSQL’s built-in logical replication supports these resolution approaches:</p>
+
+<p><strong>Missing row conflicts (UPDATE_MISSING, DELETE_MISSING):</strong></p>
+<ul>
+  <li>Logged as warnings, the operation is skipped</li>
+  <li>The subscriber continues applying subsequent changes</li>
+</ul>
+
+<p><strong>Unique constraint conflicts (INSERT_EXISTS, UPDATE_EXISTS):</strong></p>
+<ul>
+  <li>The apply worker can use the configured conflict resolution</li>
+  <li>With default settings, raises an ERROR and the worker retries</li>
+  <li>The <code class="language-plaintext highlighter-rouge">pg_conflict_detection</code> slot retains dead tuples for origin tracking</li>
+</ul>
+
+<p><strong>Origin-differs conflicts (UPDATE_ORIGIN_DIFFERS, DELETE_ORIGIN_DIFFERS):</strong></p>
+<ul>
+  <li>Detected when <code class="language-plaintext highlighter-rouge">track_commit_timestamp</code> is enabled</li>
+  <li>Logged for administrator review</li>
+  <li>Resolution depends on application-level conflict handling</li>
+</ul>
+
+<h3 id="6-the-pg_conflict_detection-slot">6. The pg_conflict_detection Slot</h3>
+
+<p>PostgreSQL uses a reserved replication slot named <code class="language-plaintext highlighter-rouge">pg_conflict_detection</code> to
+retain dead tuples needed for conflict detection. This slot holds back the
+<code class="language-plaintext highlighter-rouge">nonremovable_xid</code> horizon so that the system can inspect the origin and
+timestamp of recently-modified rows during conflict resolution.</p>
+
+<hr />
+
+<h2 id="key-data-structures">Key Data Structures</h2>
+
+<h3 id="recoverylock-tracking-standbyc">RecoveryLock Tracking (standby.c)</h3>
+
+<p>Hot standby tracks exclusive locks from replayed transactions using two hash
+tables:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="cm">/* Maps (xid, dbOid, relOid) -&gt; lock chain entry */</span>
+<span class="k">typedef</span> <span class="k">struct</span> <span class="n">RecoveryLockEntry</span>
+<span class="p">{</span>
+    <span class="n">xl_standby_lock</span> <span class="n">key</span><span class="p">;</span>           <span class="cm">/* xid, dbOid, relOid */</span>
+    <span class="k">struct</span> <span class="n">RecoveryLockEntry</span> <span class="o">*</span><span class="n">next</span><span class="p">;</span> <span class="cm">/* chain link */</span>
+<span class="p">}</span> <span class="n">RecoveryLockEntry</span><span class="p">;</span>
+
+<span class="cm">/* Maps xid -&gt; head of lock chain */</span>
+<span class="k">typedef</span> <span class="k">struct</span> <span class="n">RecoveryLockXidEntry</span>
+<span class="p">{</span>
+    <span class="n">TransactionId</span> <span class="n">xid</span><span class="p">;</span>
+    <span class="k">struct</span> <span class="n">RecoveryLockEntry</span> <span class="o">*</span><span class="n">head</span><span class="p">;</span>
+<span class="p">}</span> <span class="n">RecoveryLockXidEntry</span><span class="p">;</span>
+</code></pre></div></div>
+
+<p>When WAL replay encounters an <code class="language-plaintext highlighter-rouge">xl_standby_lock</code> record (indicating a
+transaction on the primary acquired an <code class="language-plaintext highlighter-rouge">AccessExclusiveLock</code>), the lock is
+registered in <code class="language-plaintext highlighter-rouge">RecoveryLockHash</code>. When queries on the standby need to acquire
+conflicting locks, they check this hash table.</p>
+
+<h3 id="standby-timeout-configuration">Standby Timeout Configuration</h3>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="cm">/* GUC parameters (standby.c) */</span>
+<span class="kt">int</span> <span class="n">max_standby_archive_delay</span> <span class="o">=</span> <span class="mi">30</span> <span class="o">*</span> <span class="mi">1000</span><span class="p">;</span>   <span class="cm">/* 30 seconds */</span>
+<span class="kt">int</span> <span class="n">max_standby_streaming_delay</span> <span class="o">=</span> <span class="mi">30</span> <span class="o">*</span> <span class="mi">1000</span><span class="p">;</span>  <span class="cm">/* 30 seconds */</span>
+<span class="n">bool</span> <span class="n">log_recovery_conflict_waits</span> <span class="o">=</span> <span class="nb">false</span><span class="p">;</span>
+</code></pre></div></div>
+
+<hr />
+
+<h2 id="conflict-flow-diagrams">Conflict Flow Diagrams</h2>
+
+<h3 id="hot-standby-snapshot-conflict">Hot Standby: Snapshot Conflict</h3>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>Primary                           Standby
+  |                                  |
+  | VACUUM removes dead tuples      |
+  | (latestRemovedXid = 500)        |
+  |                                  |
+  | WAL record: heap_cleanup        |
+  | includes latestRemovedXid       |
+  |----- WAL stream ------&gt;         |
+  |                                  |
+  |                   Startup process replays:
+  |                     ResolveRecoveryConflictWithSnapshot(500):
+  |                       find queries with snapshot xmin &lt;= 500
+  |                       |
+  |                       +-- Query Q has xmin = 480
+  |                       |
+  |                       Wait up to max_standby_streaming_delay
+  |                       |
+  |                       +-- timeout: cancel Query Q
+  |                       |   SendProcSignal(RECOVERY_CONFLICT_SNAPSHOT)
+  |                       |
+  |                   Query Q receives:
+  |                     "ERROR: canceling statement due to
+  |                      conflict with recovery"
+  |                                  |
+  |                   Replay proceeds
+</code></pre></div></div>
+
+<h3 id="logical-insert-conflict">Logical: Insert Conflict</h3>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>Publisher                          Subscriber
+  |                                    |
+  | INSERT INTO t VALUES (1, 'a')      |
+  |                                    |
+  |--- logical change: INSERT(1,'a') -&gt;|
+  |                                    |
+  |               Apply worker:         |
+  |                 ExecInsert(1, 'a')  |
+  |                 Unique violation!   |
+  |                 Row (1, 'b') already exists
+  |                                    |
+  |               GetTupleTransactionInfo():
+  |                 xmin=700, origin=0 (local), ts=...
+  |                                    |
+  |               ReportApplyConflict():
+  |                 LOG: conflict detected on t
+  |                 Type: insert_exists
+  |                 Key: (id)=(1)
+  |                 Existing local: (id, val) = (1, b)
+  |                 Remote tuple: (id, val) = (1, a)
+  |                                    |
+  |               Resolution: depends on config
+  |               (skip, error, or apply with override)
+</code></pre></div></div>
+
+<hr />
+
+<h2 id="monitoring-conflicts">Monitoring Conflicts</h2>
+
+<h3 id="hot-standby">Hot Standby</h3>
+
+<ul>
+  <li><code class="language-plaintext highlighter-rouge">pg_stat_database_conflicts</code> – counts of conflicts by type per database</li>
+  <li><code class="language-plaintext highlighter-rouge">log_recovery_conflict_waits = on</code> – logs each conflict wait</li>
+  <li><code class="language-plaintext highlighter-rouge">pg_stat_activity.wait_event</code> – shows <code class="language-plaintext highlighter-rouge">RecoveryConflict*</code> wait events</li>
+</ul>
+
+<h3 id="logical-replication">Logical Replication</h3>
+
+<ul>
+  <li><code class="language-plaintext highlighter-rouge">pg_stat_subscription_stats</code> – conflict counts per subscription by type
+(columns: <code class="language-plaintext highlighter-rouge">conflict_count</code> broken down by <code class="language-plaintext highlighter-rouge">ConflictType</code>)</li>
+  <li>Server log messages at the configured elevel</li>
+  <li><code class="language-plaintext highlighter-rouge">pg_replication_origin_status</code> – tracks per-origin progress</li>
+</ul>
+
+<hr />
+
+<h2 id="tuning-recommendations">Tuning Recommendations</h2>
+
+<h3 id="hot-standby-conflicts-1">Hot Standby Conflicts</h3>
+
+<table>
+  <thead>
+    <tr>
+      <th>Strategy</th>
+      <th>Setting</th>
+      <th>Trade-off</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Favor queries</td>
+      <td><code class="language-plaintext highlighter-rouge">max_standby_streaming_delay = -1</code></td>
+      <td>Replay can fall arbitrarily behind</td>
+    </tr>
+    <tr>
+      <td>Favor replay</td>
+      <td><code class="language-plaintext highlighter-rouge">max_standby_streaming_delay = 0</code></td>
+      <td>Queries may be cancelled immediately</td>
+    </tr>
+    <tr>
+      <td>Balanced</td>
+      <td><code class="language-plaintext highlighter-rouge">max_standby_streaming_delay = 30s</code></td>
+      <td>Default; 30-second grace period</td>
+    </tr>
+    <tr>
+      <td>Prevent conflicts</td>
+      <td><code class="language-plaintext highlighter-rouge">hot_standby_feedback = on</code></td>
+      <td>Bloat on primary from held-back vacuum</td>
+    </tr>
+    <tr>
+      <td>Short queries only</td>
+      <td><code class="language-plaintext highlighter-rouge">statement_timeout</code> on standby</td>
+      <td>Limits conflict window</td>
+    </tr>
+  </tbody>
+</table>
+
+<h3 id="logical-replication-conflicts-1">Logical Replication Conflicts</h3>
+
+<table>
+  <thead>
+    <tr>
+      <th>Strategy</th>
+      <th>Approach</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Avoid conflicts</td>
+      <td>Partition writes by origin (no overlapping updates)</td>
+    </tr>
+    <tr>
+      <td>Detect conflicts</td>
+      <td>Enable <code class="language-plaintext highlighter-rouge">track_commit_timestamp</code>, monitor <code class="language-plaintext highlighter-rouge">pg_stat_subscription_stats</code></td>
+    </tr>
+    <tr>
+      <td>Last-writer-wins</td>
+      <td>Use commit timestamps to resolve in favor of the latest change</td>
+    </tr>
+    <tr>
+      <td>Application-level</td>
+      <td>Use conflict triggers or custom apply logic</td>
+    </tr>
+  </tbody>
+</table>
+
+<hr />
+
+<h2 id="connections-to-other-sections">Connections to Other Sections</h2>
+
+<ul>
+  <li>
+    <p><strong><a href="streaming.html">Streaming Replication</a></strong> – Hot standby conflicts are a
+direct consequence of physical WAL replay on a standby that serves queries.
+The walreceiver’s hot standby feedback mechanism is a preventive measure.</p>
+  </li>
+  <li>
+    <p><strong><a href="logical.html">Logical Replication</a></strong> – Logical conflicts occur in the
+apply worker when decoded changes violate subscriber constraints. The
+conflict detection in <code class="language-plaintext highlighter-rouge">conflict.c</code> is invoked during row application in
+<code class="language-plaintext highlighter-rouge">worker.c</code>.</p>
+  </li>
+  <li>
+    <p><strong><a href="synchronous.html">Synchronous Replication</a></strong> – With
+<code class="language-plaintext highlighter-rouge">synchronous_commit = remote_apply</code>, the primary knows that committed
+changes have been applied on the standby, which can simplify reasoning about
+conflict windows in application design.</p>
+  </li>
+</ul>
+
+
+      <hr>
+
+      <!-- Prev / Next / Up navigation -->
+      
+      
+      
+
+      <div class="clearfix" style="margin-top: 2rem;">
+        
+          
+          
+
+          
+            
+            <a class="btn btn-primary float-left" href="/postgresql/12-replication/" title="Replication">&larr; Previous</a>
+          
+
+          
+            
+            <a class="btn btn-primary float-right" href="/postgresql/12-replication/logical.html" title="Logical Replication">Next &rarr;</a>
+          
+        
+      </div>
+
+      
+      <div style="text-align: center; margin-top: 1rem;">
+        <a href="/postgresql-internals/">&uarr; Back to Table of Contents</a>
+      </div>
+      
+
+    </div>
+  </div>
+</div>
+
+
+  <!-- Footer -->
+
+<hr>
+
+<footer>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <ul class="list-inline text-center">
+          
+          <li class="list-inline-item">
+            <a href="mailto:amitava.dev@proton.me" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="far fa-envelope fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          
+          
+          <li class="list-inline-item">
+            <a href="https://www.linkedin.com/in/amitavaag" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-linkedin fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          <li class="list-inline-item">
+            <a href="https://github.com/ikouchiha47" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-github fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+        </ul>
+
+        <p class="copyright text-muted">
+          Build with: 
+          <a 
+            href="https://github.com/StartBootstrap/startbootstrap-clean-blog-jekyll"
+            class="text-gray"
+            target="_blank">startbootstrap-clean-blog-jekyll</a></p>
+      </div>
+    </div>
+  </div>
+</footer>
+
+
+  <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="/assets/vendor/blog/js/scripts.js"></script>
+
+<script src="/assets/scripts.js"></script>
+
+
+
+
+
+  <script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+
+    document.querySelectorAll('pre > code.language-mermaid').forEach((codeBlock) => {
+      codeBlock.parentElement.outerHTML = `<pre class="mermaid">${codeBlock.textContent}</pre>`;
+    });
+
+
+    mermaid.initialize({ startOnLoad: true, theme: 'forest' });
+</script>
+
+
+  
+
+</body>
+
+</html>

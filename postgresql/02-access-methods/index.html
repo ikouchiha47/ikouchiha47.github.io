@@ -1,0 +1,424 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+  <title>
+    Access Methods - iko&#39;s logs
+    
+  </title>
+
+  <meta name="description" content="">
+  <meta property="og:description" content="">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Access Methods">
+  <meta property="og:url" content="https://ikouchiha47.github.io/postgresql/02-access-methods/">
+
+  
+
+  <link href='https://fonts.googleapis.com/css?family=Lora:400,700,400italic,700italic' rel='stylesheet' type='text/css'>
+  <link href='https://fonts.googleapis.com/css?family=Open+Sans:300italic,400italic,600italic,700italic,800italic,400,300,600,700,800' rel='stylesheet' type='text/css'>
+
+  <!-- <script src="https://use.fontawesome.com/releases/v5.15.3/js/all.js" crossorigin="anonymous"></script> -->
+  <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.15.4/css/all.css" integrity="sha384-DyZ88mC6Up2uqS4h/KRgHuoeGwBcD4Ng9SiP4dIRy0EXTlnuz47vAwmeGwVChigm" crossorigin="anonymous"/>
+
+  <link rel="stylesheet" href="/assets/main.css">
+  <link rel="canonical" href="https://ikouchiha47.github.io/postgresql/02-access-methods/">
+  <link rel="alternate" type="application/rss+xml" title="iko&#39;s logs" href="/feed.xml">
+
+  <meta name="google-site-verification" content="lWkg6gIxJgzEKX_5XnhcxCtPE9QknaimFWWos_dTvPM" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fira+Sans:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Inconsolata:wght@200..900&family=Jersey+25&family=Kanit:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Merriweather+Sans:ital,wght@0,300..800;1,300..800&family=Nanum+Gothic+Coding&family=Space+Grotesk:wght@300..700&family=Titillium+Web:ital,wght@0,200;0,300;0,400;0,600;0,700;0,900;1,200;1,300;1,400;1,600;1,700&display=swap" rel="stylesheet">
+
+</head>
+
+
+<body>
+
+  <!-- Navigation -->
+<nav class="navbar navbar-expand-lg navbar-light fixed-top" id="mainNav">
+  <div class="container">
+    <a class="navbar-brand" href="/">iko&#39;s logs</a>
+    <button class="navbar-toggler navbar-toggler-right" type="button" data-toggle="collapse" data-target="#navbarResponsive" aria-controls="navbarResponsive" aria-expanded="false" aria-label="Toggle navigation">
+      Menu
+      <i class="fa fa-bars"></i>
+    </button>
+    <div class="collapse navbar-collapse" id="navbarResponsive">
+      <ul class="navbar-nav ml-auto">
+        <li class="nav-item">
+          <a class="nav-link" href="/">Home</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/about">About</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/posts">Posts</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/contact">Contact</a>
+        </li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+
+  <!-- Page Header -->
+
+<header class="masthead">
+
+  <div class="overlay"></div>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <div class="post-heading">
+          <h1>Access Methods</h1>
+          
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="container space-grotesk">
+  <div class="row">
+    <div class="col-lg-8 col-md-10 mx-auto">
+
+      <!-- Breadcrumb -->
+      <nav aria-label="breadcrumb" style="margin-bottom: 1.5rem;">
+        <ol class="breadcrumb" style="background: transparent; padding: 0;">
+          
+            <li class="breadcrumb-item"><a href="/postgresql-internals/">PostgreSQL Internals Deep Dive</a></li>
+          
+          
+          <li class="breadcrumb-item active" aria-current="page">Access Methods</li>
+        </ol>
+      </nav>
+
+      <h1 id="chapter-2-access-methods">Chapter 2: Access Methods</h1>
+
+<h2 id="summary">Summary</h2>
+
+<p>Access Methods (AMs) are PostgreSQL’s abstraction for how data is stored and
+retrieved. Every table is managed by a <strong>Table AM</strong> (almost always the heap),
+and every index is managed by an <strong>Index AM</strong> (B-tree, hash, GiST, GIN, BRIN,
+or SP-GiST). PostgreSQL 12+ exposes both as pluggable APIs, letting extensions
+provide entirely new storage engines or index types without modifying the core.</p>
+
+<hr />
+
+<h2 id="overview">Overview</h2>
+
+<p>PostgreSQL separates <em>what</em> the executor wants (scan a table, insert a tuple,
+look up a key) from <em>how</em> the AM accomplishes it. Two callback structs sit at
+the centre of this design:</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>Layer</th>
+      <th>Callback Struct</th>
+      <th>Header</th>
+      <th>Purpose</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Table AM</td>
+      <td><code class="language-plaintext highlighter-rouge">TableAmRoutine</code></td>
+      <td><code class="language-plaintext highlighter-rouge">src/include/access/tableam.h</code></td>
+      <td>Scan, fetch, insert, update, delete, vacuum for heap-like stores</td>
+    </tr>
+    <tr>
+      <td>Index AM</td>
+      <td><code class="language-plaintext highlighter-rouge">IndexAmRoutine</code></td>
+      <td><code class="language-plaintext highlighter-rouge">src/include/access/amapi.h</code></td>
+      <td>Build, insert, scan, vacuum for index structures</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>Each AM registers a <strong>handler function</strong> (e.g., <code class="language-plaintext highlighter-rouge">heap_tableam_handler</code>,
+<code class="language-plaintext highlighter-rouge">bthandler</code>) that returns a pointer to the filled-in routine struct. The
+executor then calls through these function pointers, never knowing which
+concrete AM is behind the relation.</p>
+
+<hr />
+
+<h2 id="architecture-diagram">Architecture Diagram</h2>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>                        Executor
+                           |
+              +------------+------------+
+              |                         |
+       table_scan_*()            index_scan_*()
+              |                         |
+      +-------v--------+      +--------v--------+
+      | TableAmRoutine  |      | IndexAmRoutine   |
+      | (tableam.h)     |      | (amapi.h)        |
+      +-------+---------+      +--------+---------+
+              |                         |
+    +---------+          +---------+---------+---------+---------+
+    |                    |         |         |         |         |
+  Heap AM           B-tree     Hash      GiST      GIN      BRIN
+  (heap/)           (nbtree/)  (hash/)   (gist/)   (gin/)   (brin/)
+                                                              |
+                                                           SP-GiST
+                                                           (spgist/)
+</code></pre></div></div>
+
+<hr />
+
+<h2 id="key-source-files">Key Source Files</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>File</th>
+      <th>Purpose</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/access/amapi.h</code></td>
+      <td><code class="language-plaintext highlighter-rouge">IndexAmRoutine</code> definition and all index AM callback typedefs</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/access/tableam.h</code></td>
+      <td><code class="language-plaintext highlighter-rouge">TableAmRoutine</code> definition and table AM callback typedefs</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/access/table/tableam.c</code></td>
+      <td>Generic table AM dispatcher functions</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/access/table/tableamapi.c</code></td>
+      <td><code class="language-plaintext highlighter-rouge">GetTableAmRoutine()</code> – resolves handler OID to routine</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/access/index/</code></td>
+      <td>Generic index AM utilities (<code class="language-plaintext highlighter-rouge">amapi.c</code>, <code class="language-plaintext highlighter-rouge">indexam.c</code>, <code class="language-plaintext highlighter-rouge">genam.c</code>)</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/access/genam.h</code></td>
+      <td><code class="language-plaintext highlighter-rouge">IndexScanDesc</code> and generic index scan definitions</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/access/relscan.h</code></td>
+      <td><code class="language-plaintext highlighter-rouge">TableScanDesc</code> base struct</td>
+    </tr>
+  </tbody>
+</table>
+
+<hr />
+
+<h2 id="how-the-pieces-fit-together">How the Pieces Fit Together</h2>
+
+<h3 id="table-access">Table Access</h3>
+
+<ol>
+  <li><code class="language-plaintext highlighter-rouge">table_beginscan()</code> calls <code class="language-plaintext highlighter-rouge">scan_begin</code> in the <code class="language-plaintext highlighter-rouge">TableAmRoutine</code>.</li>
+  <li>The heap AM creates a <code class="language-plaintext highlighter-rouge">HeapScanDescData</code> (which embeds a <code class="language-plaintext highlighter-rouge">TableScanDescData</code>).</li>
+  <li><code class="language-plaintext highlighter-rouge">table_scan_getnextslot()</code> calls <code class="language-plaintext highlighter-rouge">scan_getnextslot</code> to fetch tuples.</li>
+  <li>Visibility is checked via <code class="language-plaintext highlighter-rouge">HeapTupleSatisfiesVisibility()</code>.</li>
+</ol>
+
+<h3 id="index-access">Index Access</h3>
+
+<ol>
+  <li><code class="language-plaintext highlighter-rouge">index_beginscan()</code> calls <code class="language-plaintext highlighter-rouge">ambeginscan</code> in the <code class="language-plaintext highlighter-rouge">IndexAmRoutine</code>.</li>
+  <li>For a B-tree, <code class="language-plaintext highlighter-rouge">btbeginscan()</code> allocates <code class="language-plaintext highlighter-rouge">BTScanOpaqueData</code>.</li>
+  <li><code class="language-plaintext highlighter-rouge">index_getnext_slot()</code> calls <code class="language-plaintext highlighter-rouge">amgettuple</code>, which walks the tree and
+returns TIDs. The executor then calls <code class="language-plaintext highlighter-rouge">index_fetch_tuple</code> on the table AM
+to retrieve the heap tuple.</li>
+</ol>
+
+<h3 id="planner-integration">Planner Integration</h3>
+
+<p>The planner calls <code class="language-plaintext highlighter-rouge">amcostestimate</code> to get selectivity and cost for each
+potential index path. Flags like <code class="language-plaintext highlighter-rouge">amcanorder</code>, <code class="language-plaintext highlighter-rouge">amcanunique</code>, and
+<code class="language-plaintext highlighter-rouge">amsearcharray</code> on <code class="language-plaintext highlighter-rouge">IndexAmRoutine</code> tell the planner which plan shapes are
+valid.</p>
+
+<hr />
+
+<h2 id="chapter-contents">Chapter Contents</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>Section</th>
+      <th>Topic</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><a href="heap.html">Heap AM</a></td>
+      <td>Heap storage, page layout, HOT updates, TOAST</td>
+    </tr>
+    <tr>
+      <td><a href="btree.html">B-tree</a></td>
+      <td>Lehman-Yao B+tree, deduplication, page splits</td>
+    </tr>
+    <tr>
+      <td><a href="hash.html">Hash Index</a></td>
+      <td>Linear hashing, overflow pages</td>
+    </tr>
+    <tr>
+      <td><a href="gist.html">GiST</a></td>
+      <td>Generalized Search Tree for spatial and custom types</td>
+    </tr>
+    <tr>
+      <td><a href="gin.html">GIN</a></td>
+      <td>Inverted index, fast update buffer, posting lists</td>
+    </tr>
+    <tr>
+      <td><a href="brin.html">BRIN</a></td>
+      <td>Block Range Index for large naturally-ordered tables</td>
+    </tr>
+    <tr>
+      <td><a href="spgist.html">SP-GiST</a></td>
+      <td>Space-partitioned trees: k-d trees, radix tries</td>
+    </tr>
+    <tr>
+      <td><a href="table-am-api.html">Table AM API</a></td>
+      <td>Pluggable storage API deep dive</td>
+    </tr>
+  </tbody>
+</table>
+
+<hr />
+
+<h2 id="connections">Connections</h2>
+
+<ul>
+  <li><strong>Chapter 1 (Storage and Buffer Manager)</strong>: AMs read and write pages through the buffer manager. The heap page layout (<code class="language-plaintext highlighter-rouge">PageHeaderData</code>, <code class="language-plaintext highlighter-rouge">ItemIdData</code>) is the foundation for the heap AM.</li>
+  <li><strong>Chapter 3 (Query Executor)</strong>: The executor drives all AM operations through the <code class="language-plaintext highlighter-rouge">TableAmRoutine</code> and <code class="language-plaintext highlighter-rouge">IndexAmRoutine</code> interfaces.</li>
+  <li><strong>Chapter 4 (MVCC and Concurrency)</strong>: Visibility rules in <code class="language-plaintext highlighter-rouge">heapam_visibility.c</code> determine which tuples the heap AM returns. Index AMs rely on the table AM for final visibility checks.</li>
+  <li><strong>Chapter 5 (WAL and Recovery)</strong>: Every AM writes WAL records for crash safety. Each AM has its own <code class="language-plaintext highlighter-rouge">*_xlog.c</code> module.</li>
+</ul>
+
+
+      <hr>
+
+      <!-- Prev / Next / Up navigation -->
+      
+      
+      
+
+      <div class="clearfix" style="margin-top: 2rem;">
+        
+          
+          
+
+          
+            
+            <a class="btn btn-primary float-left" href="/postgresql/01-storage/visibility-map.html" title="Visibility Map">&larr; Previous</a>
+          
+
+          
+            
+            <a class="btn btn-primary float-right" href="/postgresql/02-access-methods/brin.html" title="BRIN Index">Next &rarr;</a>
+          
+        
+      </div>
+
+      
+      <div style="text-align: center; margin-top: 1rem;">
+        <a href="/postgresql-internals/">&uarr; Back to Table of Contents</a>
+      </div>
+      
+
+    </div>
+  </div>
+</div>
+
+
+  <!-- Footer -->
+
+<hr>
+
+<footer>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <ul class="list-inline text-center">
+          
+          <li class="list-inline-item">
+            <a href="mailto:amitava.dev@proton.me" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="far fa-envelope fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          
+          
+          <li class="list-inline-item">
+            <a href="https://www.linkedin.com/in/amitavaag" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-linkedin fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          <li class="list-inline-item">
+            <a href="https://github.com/ikouchiha47" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-github fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+        </ul>
+
+        <p class="copyright text-muted">
+          Build with: 
+          <a 
+            href="https://github.com/StartBootstrap/startbootstrap-clean-blog-jekyll"
+            class="text-gray"
+            target="_blank">startbootstrap-clean-blog-jekyll</a></p>
+      </div>
+    </div>
+  </div>
+</footer>
+
+
+  <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="/assets/vendor/blog/js/scripts.js"></script>
+
+<script src="/assets/scripts.js"></script>
+
+
+
+
+
+  <script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+
+    document.querySelectorAll('pre > code.language-mermaid').forEach((codeBlock) => {
+      codeBlock.parentElement.outerHTML = `<pre class="mermaid">${codeBlock.textContent}</pre>`;
+    });
+
+
+    mermaid.initialize({ startOnLoad: true, theme: 'forest' });
+</script>
+
+
+  
+
+</body>
+
+</html>

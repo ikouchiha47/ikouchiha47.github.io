@@ -1,0 +1,618 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+  <title>
+    Atomic Operations and Memory Barriers - iko&#39;s logs
+    
+  </title>
+
+  <meta name="description" content="">
+  <meta property="og:description" content="">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Atomic Operations and Memory Barriers">
+  <meta property="og:url" content="https://ikouchiha47.github.io/postgresql/14-platform/atomics.html">
+
+  
+
+  <link href='https://fonts.googleapis.com/css?family=Lora:400,700,400italic,700italic' rel='stylesheet' type='text/css'>
+  <link href='https://fonts.googleapis.com/css?family=Open+Sans:300italic,400italic,600italic,700italic,800italic,400,300,600,700,800' rel='stylesheet' type='text/css'>
+
+  <!-- <script src="https://use.fontawesome.com/releases/v5.15.3/js/all.js" crossorigin="anonymous"></script> -->
+  <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.15.4/css/all.css" integrity="sha384-DyZ88mC6Up2uqS4h/KRgHuoeGwBcD4Ng9SiP4dIRy0EXTlnuz47vAwmeGwVChigm" crossorigin="anonymous"/>
+
+  <link rel="stylesheet" href="/assets/main.css">
+  <link rel="canonical" href="https://ikouchiha47.github.io/postgresql/14-platform/atomics.html">
+  <link rel="alternate" type="application/rss+xml" title="iko&#39;s logs" href="/feed.xml">
+
+  <meta name="google-site-verification" content="lWkg6gIxJgzEKX_5XnhcxCtPE9QknaimFWWos_dTvPM" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fira+Sans:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Inconsolata:wght@200..900&family=Jersey+25&family=Kanit:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Merriweather+Sans:ital,wght@0,300..800;1,300..800&family=Nanum+Gothic+Coding&family=Space+Grotesk:wght@300..700&family=Titillium+Web:ital,wght@0,200;0,300;0,400;0,600;0,700;0,900;1,200;1,300;1,400;1,600;1,700&display=swap" rel="stylesheet">
+
+</head>
+
+
+<body>
+
+  <!-- Navigation -->
+<nav class="navbar navbar-expand-lg navbar-light fixed-top" id="mainNav">
+  <div class="container">
+    <a class="navbar-brand" href="/">iko&#39;s logs</a>
+    <button class="navbar-toggler navbar-toggler-right" type="button" data-toggle="collapse" data-target="#navbarResponsive" aria-controls="navbarResponsive" aria-expanded="false" aria-label="Toggle navigation">
+      Menu
+      <i class="fa fa-bars"></i>
+    </button>
+    <div class="collapse navbar-collapse" id="navbarResponsive">
+      <ul class="navbar-nav ml-auto">
+        <li class="nav-item">
+          <a class="nav-link" href="/">Home</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/about">About</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/posts">Posts</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/contact">Contact</a>
+        </li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+
+  <!-- Page Header -->
+
+<header class="masthead">
+
+  <div class="overlay"></div>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <div class="post-heading">
+          <h1>Atomic Operations and Memory Barriers</h1>
+          
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="container space-grotesk">
+  <div class="row">
+    <div class="col-lg-8 col-md-10 mx-auto">
+
+      <!-- Breadcrumb -->
+      <nav aria-label="breadcrumb" style="margin-bottom: 1.5rem;">
+        <ol class="breadcrumb" style="background: transparent; padding: 0;">
+          
+            <li class="breadcrumb-item"><a href="/postgresql-internals/">PostgreSQL Internals Deep Dive</a></li>
+          
+          
+            
+              <li class="breadcrumb-item"><a href="/postgresql/14-platform/">Platform Layer</a></li>
+            
+          
+          <li class="breadcrumb-item active" aria-current="page">Atomic Operations and Memory Barriers</li>
+        </ol>
+      </nav>
+
+      <h1 id="atomic-operations-and-memory-barriers">Atomic Operations and Memory Barriers</h1>
+
+<h2 id="summary">Summary</h2>
+
+<p>PostgreSQL implements lock-free algorithms throughout its shared-memory
+infrastructure: buffer pin counts, lightweight lock state words, WAL insert
+positions, and procarray transaction ID snapshots all rely on atomic
+operations. The <code class="language-plaintext highlighter-rouge">src/include/port/atomics/</code> subsystem provides a portable
+abstraction that maps these operations onto architecture-specific instructions
+(x86 <code class="language-plaintext highlighter-rouge">LOCK CMPXCHG</code>, ARM <code class="language-plaintext highlighter-rouge">LDXR/STXR</code>) or compiler intrinsics
+(<code class="language-plaintext highlighter-rouge">__atomic_compare_exchange_n</code>), with a spinlock-based fallback for platforms
+that provide neither.</p>
+
+<h2 id="overview">Overview</h2>
+
+<p>The atomics API solves three related problems:</p>
+
+<ol>
+  <li>
+    <p><strong>Indivisible read-modify-write.</strong> Operations like “increment a counter” or
+“swap a value if it matches an expected value” must execute as a single unit
+visible to all CPUs.</p>
+  </li>
+  <li>
+    <p><strong>Memory ordering.</strong> Modern CPUs reorder loads and stores for performance.
+The atomics layer provides barrier primitives that constrain this reordering
+to the minimum extent each algorithm requires.</p>
+  </li>
+  <li>
+    <p><strong>Portability.</strong> The same <code class="language-plaintext highlighter-rouge">pg_atomic_fetch_add_u32()</code> call compiles to a
+single <code class="language-plaintext highlighter-rouge">LOCK XADD</code> on x86-64, a <code class="language-plaintext highlighter-rouge">LDXR/STXR</code> loop on ARM64, or a
+<code class="language-plaintext highlighter-rouge">__sync_fetch_and_add</code> via GCC builtins on less common architectures.</p>
+  </li>
+</ol>
+
+<pre><code class="language-mermaid">flowchart TD
+    Read["Read current value&lt;br/&gt;old = pg_atomic_read_u32(ptr)"]
+    Compute["Compute new value&lt;br/&gt;new = f(old)"]
+    CAS["CAS: pg_atomic_compare_exchange_u32&lt;br/&gt;(ptr, &amp;old, new)"]
+    Success{"Success?"}
+    Done["Proceed with old value"]
+    Retry["old updated to current value&lt;br/&gt;(retry with new 'old')"]
+
+    Read --&gt; Compute --&gt; CAS --&gt; Success
+    Success --&gt;|"Yes"| Done
+    Success --&gt;|"No (another CPU changed it)"| Compute
+</code></pre>
+
+<h2 id="key-source-files">Key Source Files</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>File</th>
+      <th>Role</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/port/atomics.h</code></td>
+      <td>Public API: includes arch headers, defines generic wrappers</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/port/atomics/arch-x86.h</code></td>
+      <td>x86/x86-64 inline assembly implementations</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/port/atomics/arch-arm.h</code></td>
+      <td>ARM/AArch64 configuration (mostly defers to GCC)</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/port/atomics/arch-ppc.h</code></td>
+      <td>PowerPC barrier and atomics definitions</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/port/atomics/generic-gcc.h</code></td>
+      <td>GCC <code class="language-plaintext highlighter-rouge">__sync_*</code> and <code class="language-plaintext highlighter-rouge">__atomic_*</code> builtin implementations</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/port/atomics/generic-msvc.h</code></td>
+      <td>MSVC <code class="language-plaintext highlighter-rouge">_InterlockedCompareExchange</code> implementations</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/port/atomics/fallback.h</code></td>
+      <td>Spinlock-based fallback for unsupported platforms</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/storage/lmgr/README.barrier</code></td>
+      <td>Detailed explanation of barrier usage in PostgreSQL</td>
+    </tr>
+  </tbody>
+</table>
+
+<h2 id="how-it-works">How It Works</h2>
+
+<h3 id="the-include-chain">The Include Chain</h3>
+
+<p>When backend code includes <code class="language-plaintext highlighter-rouge">atomics.h</code>, a carefully ordered chain of
+<code class="language-plaintext highlighter-rouge">#include</code> directives assembles the final implementation:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>atomics.h
+  |
+  +---&gt; arch-{x86,arm,ppc}.h       Architecture-specific types and barriers
+  |         (selected by #if defined(__x86_64__) etc.)
+  |
+  +---&gt; generic-{gcc,msvc}.h       Compiler intrinsic implementations
+  |         (fills in anything arch headers did not define)
+  |
+  +---&gt; fallback.h                 Spinlock fallback for remaining gaps
+</code></pre></div></div>
+
+<p>Each layer checks whether prior layers have already defined a given operation
+using <code class="language-plaintext highlighter-rouge">#ifndef PG_HAVE_ATOMIC_*</code> guards. This means the most efficient
+implementation always wins: hand-written assembly beats compiler intrinsics,
+which beat the spinlock fallback.</p>
+
+<h3 id="memory-barrier-taxonomy">Memory Barrier Taxonomy</h3>
+
+<p>PostgreSQL defines four barrier levels, each mapping differently per CPU:</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>Barrier</th>
+      <th>x86-64</th>
+      <th>ARM64</th>
+      <th>Purpose</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">pg_compiler_barrier()</code></td>
+      <td><code class="language-plaintext highlighter-rouge">asm volatile("" ::: "memory")</code></td>
+      <td>same</td>
+      <td>Prevent compiler reordering only</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">pg_read_barrier()</code></td>
+      <td>compiler barrier (TSO suffices)</td>
+      <td><code class="language-plaintext highlighter-rouge">__atomic_thread_fence(ACQUIRE)</code></td>
+      <td>Order load-before-load</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">pg_write_barrier()</code></td>
+      <td>compiler barrier (TSO suffices)</td>
+      <td><code class="language-plaintext highlighter-rouge">__atomic_thread_fence(RELEASE)</code></td>
+      <td>Order store-before-store</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">pg_memory_barrier()</code></td>
+      <td><code class="language-plaintext highlighter-rouge">lock; addl $0,0(%rsp)</code></td>
+      <td><code class="language-plaintext highlighter-rouge">__atomic_thread_fence(SEQ_CST)</code></td>
+      <td>Full fence: order everything</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>The key insight for x86-64 is that its <strong>Total Store Order</strong> (TSO) memory model
+already guarantees that loads are not reordered with other loads, and stores are
+not reordered with other stores. The only reordering x86 permits is a store
+followed by a load to a <em>different</em> address. Therefore <code class="language-plaintext highlighter-rouge">pg_read_barrier()</code> and
+<code class="language-plaintext highlighter-rouge">pg_write_barrier()</code> collapse to mere compiler barriers on x86, saving the cost
+of an actual fence instruction.</p>
+
+<p>On ARM64, the weakly-ordered memory model means nearly any pair of operations
+can be reordered. PostgreSQL must emit real hardware barriers (via the
+<code class="language-plaintext highlighter-rouge">__atomic_thread_fence</code> intrinsic, which maps to <code class="language-plaintext highlighter-rouge">DMB</code> instructions).</p>
+
+<h3 id="the-core-atomic-types">The Core Atomic Types</h3>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="cm">/* From arch-x86.h */</span>
+<span class="k">typedef</span> <span class="k">struct</span> <span class="n">pg_atomic_flag</span>
+<span class="p">{</span>
+    <span class="k">volatile</span> <span class="kt">char</span> <span class="n">value</span><span class="p">;</span>
+<span class="p">}</span> <span class="n">pg_atomic_flag</span><span class="p">;</span>
+
+<span class="k">typedef</span> <span class="k">struct</span> <span class="n">pg_atomic_uint32</span>
+<span class="p">{</span>
+    <span class="k">volatile</span> <span class="n">uint32</span> <span class="n">value</span><span class="p">;</span>
+<span class="p">}</span> <span class="n">pg_atomic_uint32</span><span class="p">;</span>
+
+<span class="k">typedef</span> <span class="k">struct</span> <span class="n">pg_atomic_uint64</span>
+<span class="p">{</span>
+    <span class="cm">/* Alignment guaranteed on 64-bit platforms */</span>
+    <span class="k">volatile</span> <span class="n">uint64</span> <span class="n">value</span><span class="p">;</span>
+<span class="p">}</span> <span class="n">pg_atomic_uint64</span><span class="p">;</span>
+</code></pre></div></div>
+
+<p>The <code class="language-plaintext highlighter-rouge">volatile</code> qualifier prevents the compiler from caching the value in a
+register, but does <strong>not</strong> provide inter-CPU ordering – that is the job of the
+barrier and atomic-operation implementations.</p>
+
+<h3 id="compare-and-swap-the-fundamental-primitive">Compare-and-Swap: The Fundamental Primitive</h3>
+
+<p>Nearly every lock-free algorithm in PostgreSQL is built on
+compare-and-swap (CAS). The x86 implementation uses inline assembly:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="cm">/* From arch-x86.h -- simplified for clarity */</span>
+<span class="k">static</span> <span class="kr">inline</span> <span class="n">bool</span>
+<span class="nf">pg_atomic_compare_exchange_u32_impl</span><span class="p">(</span><span class="k">volatile</span> <span class="n">pg_atomic_uint32</span> <span class="o">*</span><span class="n">ptr</span><span class="p">,</span>
+                                    <span class="n">uint32</span> <span class="o">*</span><span class="n">expected</span><span class="p">,</span> <span class="n">uint32</span> <span class="n">newval</span><span class="p">)</span>
+<span class="p">{</span>
+    <span class="kt">char</span> <span class="n">ret</span><span class="p">;</span>
+    <span class="n">__asm__</span> <span class="n">__volatile__</span><span class="p">(</span>
+        <span class="s">" lock          </span><span class="se">\n</span><span class="s">"</span>
+        <span class="s">" cmpxchgl %4,%5 </span><span class="se">\n</span><span class="s">"</span>
+        <span class="s">" setz     %2    </span><span class="se">\n</span><span class="s">"</span>
+    <span class="o">:</span> <span class="s">"=a"</span> <span class="p">(</span><span class="o">*</span><span class="n">expected</span><span class="p">),</span> <span class="s">"=m"</span><span class="p">(</span><span class="n">ptr</span><span class="o">-&gt;</span><span class="n">value</span><span class="p">),</span> <span class="s">"=q"</span> <span class="p">(</span><span class="n">ret</span><span class="p">)</span>
+    <span class="o">:</span> <span class="s">"a"</span> <span class="p">(</span><span class="o">*</span><span class="n">expected</span><span class="p">),</span> <span class="s">"r"</span> <span class="p">(</span><span class="n">newval</span><span class="p">),</span> <span class="s">"m"</span><span class="p">(</span><span class="n">ptr</span><span class="o">-&gt;</span><span class="n">value</span><span class="p">)</span>
+    <span class="o">:</span> <span class="s">"memory"</span><span class="p">,</span> <span class="s">"cc"</span><span class="p">);</span>
+    <span class="k">return</span> <span class="p">(</span><span class="n">bool</span><span class="p">)</span> <span class="n">ret</span><span class="p">;</span>
+<span class="p">}</span>
+</code></pre></div></div>
+
+<p>The <code class="language-plaintext highlighter-rouge">LOCK CMPXCHG</code> instruction atomically: (a) compares <code class="language-plaintext highlighter-rouge">*ptr</code> to <code class="language-plaintext highlighter-rouge">*expected</code>,
+(b) if equal, stores <code class="language-plaintext highlighter-rouge">newval</code> into <code class="language-plaintext highlighter-rouge">*ptr</code>, (c) if not equal, loads the current
+value into <code class="language-plaintext highlighter-rouge">*expected</code>. The <code class="language-plaintext highlighter-rouge">LOCK</code> prefix asserts the bus lock (or cache-line
+lock on modern CPUs), making this a full memory barrier on x86.</p>
+
+<h3 id="fetch-and-add-the-fast-path-for-counters">Fetch-and-Add: The Fast Path for Counters</h3>
+
+<p>For simple counters (buffer pin counts, WAL insert position), fetch-and-add
+avoids the retry loop inherent in CAS:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="cm">/* From arch-x86.h */</span>
+<span class="k">static</span> <span class="kr">inline</span> <span class="n">uint32</span>
+<span class="nf">pg_atomic_fetch_add_u32_impl</span><span class="p">(</span><span class="k">volatile</span> <span class="n">pg_atomic_uint32</span> <span class="o">*</span><span class="n">ptr</span><span class="p">,</span> <span class="n">int32</span> <span class="n">add_</span><span class="p">)</span>
+<span class="p">{</span>
+    <span class="n">uint32</span> <span class="n">res</span><span class="p">;</span>
+    <span class="n">__asm__</span> <span class="n">__volatile__</span><span class="p">(</span>
+        <span class="s">" lock          </span><span class="se">\n</span><span class="s">"</span>
+        <span class="s">" xaddl %0,%1   </span><span class="se">\n</span><span class="s">"</span>
+    <span class="o">:</span> <span class="s">"=q"</span><span class="p">(</span><span class="n">res</span><span class="p">),</span> <span class="s">"=m"</span><span class="p">(</span><span class="n">ptr</span><span class="o">-&gt;</span><span class="n">value</span><span class="p">)</span>
+    <span class="o">:</span> <span class="s">"0"</span> <span class="p">(</span><span class="n">add_</span><span class="p">),</span> <span class="s">"m"</span><span class="p">(</span><span class="n">ptr</span><span class="o">-&gt;</span><span class="n">value</span><span class="p">)</span>
+    <span class="o">:</span> <span class="s">"memory"</span><span class="p">,</span> <span class="s">"cc"</span><span class="p">);</span>
+    <span class="k">return</span> <span class="n">res</span><span class="p">;</span>
+<span class="p">}</span>
+</code></pre></div></div>
+
+<p><code class="language-plaintext highlighter-rouge">LOCK XADD</code> atomically adds <code class="language-plaintext highlighter-rouge">add_</code> to <code class="language-plaintext highlighter-rouge">*ptr</code> and returns the <em>previous</em> value.
+This is a single instruction with no possibility of spurious failure, making it
+the preferred primitive for high-contention counters.</p>
+
+<h3 id="the-spin-delay-hint">The Spin-Delay Hint</h3>
+
+<p>When a spin lock or atomic retry loop must spin, PostgreSQL calls
+<code class="language-plaintext highlighter-rouge">pg_spin_delay()</code>, which maps to the x86 <code class="language-plaintext highlighter-rouge">PAUSE</code> instruction:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">static</span> <span class="n">__inline__</span> <span class="kt">void</span>
+<span class="nf">pg_spin_delay_impl</span><span class="p">(</span><span class="kt">void</span><span class="p">)</span>
+<span class="p">{</span>
+    <span class="n">__asm__</span> <span class="n">__volatile__</span><span class="p">(</span><span class="s">" rep; nop </span><span class="se">\n</span><span class="s">"</span><span class="p">);</span>
+<span class="p">}</span>
+</code></pre></div></div>
+
+<p><code class="language-plaintext highlighter-rouge">PAUSE</code> (encoded as <code class="language-plaintext highlighter-rouge">REP NOP</code> for backward compatibility with pre-Pentium-4
+CPUs) provides two benefits:</p>
+
+<ol>
+  <li><strong>Pipeline hint.</strong> It tells the CPU that this is a spin-wait loop, avoiding
+the memory-order-violation pipeline flush that would otherwise occur when the
+spin variable changes.</li>
+  <li><strong>Power reduction.</strong> It introduces a small delay, reducing power consumption
+and bus traffic during the spin.</li>
+</ol>
+
+<h3 id="64-bit-atomics-and-the-32-bit-problem">64-Bit Atomics and the 32-Bit Problem</h3>
+
+<p>On 32-bit x86 and 32-bit ARM, 64-bit atomic operations are not natively
+available as single instructions. PostgreSQL handles this with:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="cm">/* From arch-arm.h */</span>
+<span class="cp">#if !defined(__aarch64__)
+#define PG_DISABLE_64_BIT_ATOMICS
+#endif
+</span></code></pre></div></div>
+
+<p>When <code class="language-plaintext highlighter-rouge">PG_DISABLE_64_BIT_ATOMICS</code> is defined, <code class="language-plaintext highlighter-rouge">fallback.h</code> implements 64-bit
+atomics using a spinlock. This is correct but slow, which is why PostgreSQL
+documents that 64-bit platforms are strongly preferred for production use.</p>
+
+<h3 id="single-copy-atomicity">Single-Copy Atomicity</h3>
+
+<p>Some algorithms need to know that a plain (non-locked) 64-bit read or write is
+atomic. The <code class="language-plaintext highlighter-rouge">PG_HAVE_8BYTE_SINGLE_COPY_ATOMICITY</code> define indicates this:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="cm">/* Defined for x86-64 and AArch64 */</span>
+<span class="cp">#define PG_HAVE_8BYTE_SINGLE_COPY_ATOMICITY
+</span></code></pre></div></div>
+
+<p>When this is defined, code can use <code class="language-plaintext highlighter-rouge">pg_atomic_read_u64()</code> /
+<code class="language-plaintext highlighter-rouge">pg_atomic_write_u64()</code> without additional locking, knowing the hardware
+guarantees a torn read cannot occur.</p>
+
+<h2 id="key-data-structures">Key Data Structures</h2>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>pg_atomic_uint32                pg_atomic_uint64
++------------------+            +------------------+
+| volatile uint32  |            | volatile uint64  |
+| value            |            | value            |
++------------------+            +------------------+
+        |                               |
+        v                               v
+  Accessed via:                   Accessed via:
+  - pg_atomic_read_u32()          - pg_atomic_read_u64()
+  - pg_atomic_write_u32()         - pg_atomic_write_u64()
+  - pg_atomic_fetch_add_u32()     - pg_atomic_fetch_add_u64()
+  - pg_atomic_compare_exchange    - pg_atomic_compare_exchange
+      _u32()                          _u64()
+
+pg_atomic_flag
++------------------+
+| volatile char    |    Used for: test-and-set spinlocks
+| value            |    API: pg_atomic_test_set_flag()
++------------------+          pg_atomic_clear_flag()
+</code></pre></div></div>
+
+<h3 id="implementation-selection-flow">Implementation Selection Flow</h3>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>                    +-------------------+
+                    | atomics.h included|
+                    +--------+----------+
+                             |
+              +--------------+--------------+
+              |              |              |
+         __x86_64__    __aarch64__    __powerpc64__
+              |              |              |
+         arch-x86.h    arch-arm.h    arch-ppc.h
+              |              |              |
+              +--------------+--------------+
+                             |
+                   +---------+----------+
+                   |                    |
+              HAVE_GCC_*          _MSC_VER
+                   |                    |
+            generic-gcc.h      generic-msvc.h
+                   |                    |
+                   +---------+----------+
+                             |
+                    Still missing ops?
+                             |
+                         fallback.h
+                    (spinlock-based)
+</code></pre></div></div>
+
+<h2 id="practical-impact">Practical Impact</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>Use site</th>
+      <th>Atomic operation</th>
+      <th>Why it matters</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Buffer pin/unpin</td>
+      <td><code class="language-plaintext highlighter-rouge">pg_atomic_fetch_add_u32</code></td>
+      <td>Avoids heavyweight lock for every buffer access</td>
+    </tr>
+    <tr>
+      <td>LWLock acquire</td>
+      <td><code class="language-plaintext highlighter-rouge">pg_atomic_compare_exchange_u32</code></td>
+      <td>Enables fast-path exclusive lock without spinlock</td>
+    </tr>
+    <tr>
+      <td>WAL insert</td>
+      <td><code class="language-plaintext highlighter-rouge">pg_atomic_fetch_add_u64</code></td>
+      <td>Allows concurrent WAL writers to claim insert slots</td>
+    </tr>
+    <tr>
+      <td>ProcArray snapshot</td>
+      <td><code class="language-plaintext highlighter-rouge">pg_atomic_read_u64</code> + barrier</td>
+      <td>Enables consistent MVCC snapshots without locks</td>
+    </tr>
+    <tr>
+      <td>Spin lock</td>
+      <td><code class="language-plaintext highlighter-rouge">pg_atomic_test_set_flag</code></td>
+      <td>Implements short-duration mutual exclusion</td>
+    </tr>
+  </tbody>
+</table>
+
+<h2 id="connections">Connections</h2>
+
+<ul>
+  <li><strong>Chapter 6 (Lock Manager):</strong> LWLocks use <code class="language-plaintext highlighter-rouge">pg_atomic_compare_exchange_u32</code> on the lock state word to implement the shared/exclusive protocol without falling back to OS semaphores on the fast path.</li>
+  <li><strong>Chapter 4 (Buffer Manager):</strong> <code class="language-plaintext highlighter-rouge">BufferDesc.state</code> is a <code class="language-plaintext highlighter-rouge">pg_atomic_uint32</code> that packs the reference count, usage count, and flag bits into a single atomically-updated word.</li>
+  <li><strong>Chapter 5 (WAL):</strong> The WAL insert lock uses <code class="language-plaintext highlighter-rouge">pg_atomic_fetch_add_u64</code> to allow multiple backends to concurrently reserve space in the WAL buffer.</li>
+  <li><strong>Chapter 12 (Shared Memory):</strong> All atomic variables used for inter-process synchronization must reside in shared memory segments, since each PostgreSQL backend is a separate OS process.</li>
+</ul>
+
+
+      <hr>
+
+      <!-- Prev / Next / Up navigation -->
+      
+      
+      
+
+      <div class="clearfix" style="margin-top: 2rem;">
+        
+          
+          
+
+          
+            
+            <a class="btn btn-primary float-left" href="/postgresql/14-platform/" title="Platform Layer">&larr; Previous</a>
+          
+
+          
+            
+            <a class="btn btn-primary float-right" href="/postgresql/14-platform/io-backends.html" title="I/O Backends">Next &rarr;</a>
+          
+        
+      </div>
+
+      
+      <div style="text-align: center; margin-top: 1rem;">
+        <a href="/postgresql-internals/">&uarr; Back to Table of Contents</a>
+      </div>
+      
+
+    </div>
+  </div>
+</div>
+
+
+  <!-- Footer -->
+
+<hr>
+
+<footer>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <ul class="list-inline text-center">
+          
+          <li class="list-inline-item">
+            <a href="mailto:amitava.dev@proton.me" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="far fa-envelope fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          
+          
+          <li class="list-inline-item">
+            <a href="https://www.linkedin.com/in/amitavaag" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-linkedin fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          <li class="list-inline-item">
+            <a href="https://github.com/ikouchiha47" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-github fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+        </ul>
+
+        <p class="copyright text-muted">
+          Build with: 
+          <a 
+            href="https://github.com/StartBootstrap/startbootstrap-clean-blog-jekyll"
+            class="text-gray"
+            target="_blank">startbootstrap-clean-blog-jekyll</a></p>
+      </div>
+    </div>
+  </div>
+</footer>
+
+
+  <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="/assets/vendor/blog/js/scripts.js"></script>
+
+<script src="/assets/scripts.js"></script>
+
+
+
+
+
+  <script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+
+    document.querySelectorAll('pre > code.language-mermaid').forEach((codeBlock) => {
+      codeBlock.parentElement.outerHTML = `<pre class="mermaid">${codeBlock.textContent}</pre>`;
+    });
+
+
+    mermaid.initialize({ startOnLoad: true, theme: 'forest' });
+</script>
+
+
+  
+
+</body>
+
+</html>

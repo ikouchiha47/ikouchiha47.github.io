@@ -1,0 +1,465 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+  <title>
+    Type Cache - iko&#39;s logs
+    
+  </title>
+
+  <meta name="description" content="">
+  <meta property="og:description" content="">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Type Cache">
+  <meta property="og:url" content="https://ikouchiha47.github.io/postgresql/09-caches/type-cache.html">
+
+  
+
+  <link href='https://fonts.googleapis.com/css?family=Lora:400,700,400italic,700italic' rel='stylesheet' type='text/css'>
+  <link href='https://fonts.googleapis.com/css?family=Open+Sans:300italic,400italic,600italic,700italic,800italic,400,300,600,700,800' rel='stylesheet' type='text/css'>
+
+  <!-- <script src="https://use.fontawesome.com/releases/v5.15.3/js/all.js" crossorigin="anonymous"></script> -->
+  <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.15.4/css/all.css" integrity="sha384-DyZ88mC6Up2uqS4h/KRgHuoeGwBcD4Ng9SiP4dIRy0EXTlnuz47vAwmeGwVChigm" crossorigin="anonymous"/>
+
+  <link rel="stylesheet" href="/assets/main.css">
+  <link rel="canonical" href="https://ikouchiha47.github.io/postgresql/09-caches/type-cache.html">
+  <link rel="alternate" type="application/rss+xml" title="iko&#39;s logs" href="/feed.xml">
+
+  <meta name="google-site-verification" content="lWkg6gIxJgzEKX_5XnhcxCtPE9QknaimFWWos_dTvPM" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fira+Sans:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Inconsolata:wght@200..900&family=Jersey+25&family=Kanit:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Merriweather+Sans:ital,wght@0,300..800;1,300..800&family=Nanum+Gothic+Coding&family=Space+Grotesk:wght@300..700&family=Titillium+Web:ital,wght@0,200;0,300;0,400;0,600;0,700;0,900;1,200;1,300;1,400;1,600;1,700&display=swap" rel="stylesheet">
+
+</head>
+
+
+<body>
+
+  <!-- Navigation -->
+<nav class="navbar navbar-expand-lg navbar-light fixed-top" id="mainNav">
+  <div class="container">
+    <a class="navbar-brand" href="/">iko&#39;s logs</a>
+    <button class="navbar-toggler navbar-toggler-right" type="button" data-toggle="collapse" data-target="#navbarResponsive" aria-controls="navbarResponsive" aria-expanded="false" aria-label="Toggle navigation">
+      Menu
+      <i class="fa fa-bars"></i>
+    </button>
+    <div class="collapse navbar-collapse" id="navbarResponsive">
+      <ul class="navbar-nav ml-auto">
+        <li class="nav-item">
+          <a class="nav-link" href="/">Home</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/about">About</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/posts">Posts</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/contact">Contact</a>
+        </li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+
+  <!-- Page Header -->
+
+<header class="masthead">
+
+  <div class="overlay"></div>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <div class="post-heading">
+          <h1>Type Cache</h1>
+          
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="container space-grotesk">
+  <div class="row">
+    <div class="col-lg-8 col-md-10 mx-auto">
+
+      <!-- Breadcrumb -->
+      <nav aria-label="breadcrumb" style="margin-bottom: 1.5rem;">
+        <ol class="breadcrumb" style="background: transparent; padding: 0;">
+          
+            <li class="breadcrumb-item"><a href="/postgresql-internals/">PostgreSQL Internals Deep Dive</a></li>
+          
+          
+            
+              <li class="breadcrumb-item"><a href="/postgresql/09-caches/">Caches</a></li>
+            
+          
+          <li class="breadcrumb-item active" aria-current="page">Type Cache</li>
+        </ol>
+      </nav>
+
+      <h1 id="type-cache-typcache">Type Cache (typcache)</h1>
+
+<p>The <strong>type cache</strong> speeds up lookups of information about data types that is not directly stored in <code class="language-plaintext highlighter-rouge">pg_type</code> but must be derived from operator classes, operator families, and other catalog tables. Its primary consumers are generic routines like <code class="language-plaintext highlighter-rouge">array_eq()</code>, <code class="language-plaintext highlighter-rouge">record_cmp()</code>, and <code class="language-plaintext highlighter-rouge">hash_array()</code> – functions that need to compare or hash values of arbitrary types without knowing the type at compile time.</p>
+
+<h2 id="overview">Overview</h2>
+
+<p>Given a type OID, the type cache can quickly answer questions like:</p>
+<ul>
+  <li>What is the default equality operator for this type?</li>
+  <li>What is the default btree comparison function?</li>
+  <li>What is the hash function?</li>
+  <li>What is the tuple descriptor for this composite type?</li>
+  <li>What are the domain constraints for this domain type?</li>
+  <li>What is the range subtype and its comparison function?</li>
+</ul>
+
+<p>Without the type cache, answering each of these questions would require multiple syscache lookups into <code class="language-plaintext highlighter-rouge">pg_opclass</code>, <code class="language-plaintext highlighter-rouge">pg_amop</code>, <code class="language-plaintext highlighter-rouge">pg_amproc</code>, and other catalogs. The type cache performs these lookups once and stores the results in a per-backend hash table keyed by type OID.</p>
+
+<h2 id="key-source-files">Key Source Files</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>File</th>
+      <th>Role</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/utils/cache/typcache.c</code></td>
+      <td>Core implementation: lookup, invalidation, domain constraints</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/utils/typcache.h</code></td>
+      <td><code class="language-plaintext highlighter-rouge">TypeCacheEntry</code> struct, flag constants, public API</td>
+    </tr>
+  </tbody>
+</table>
+
+<h2 id="how-it-works">How It Works</h2>
+
+<h3 id="lookup-lookup_type_cache">Lookup: lookup_type_cache</h3>
+
+<p>The central API is <code class="language-plaintext highlighter-rouge">lookup_type_cache(Oid type_id, int flags)</code>. The <code class="language-plaintext highlighter-rouge">flags</code> argument is a bitmask specifying which fields the caller needs populated. The function:</p>
+
+<ol>
+  <li>Looks up the type OID in <code class="language-plaintext highlighter-rouge">TypeCacheHash</code> (a <code class="language-plaintext highlighter-rouge">dynahash</code> hash table).</li>
+  <li>If not found, creates a new <code class="language-plaintext highlighter-rouge">TypeCacheEntry</code> with basic <code class="language-plaintext highlighter-rouge">pg_type</code> data.</li>
+  <li>Checks which of the requested fields are already computed (tracked by internal <code class="language-plaintext highlighter-rouge">flags</code> in the entry).</li>
+  <li>For any missing fields, performs the necessary catalog lookups:</li>
+</ol>
+
+<table>
+  <thead>
+    <tr>
+      <th>Flag</th>
+      <th>What It Populates</th>
+      <th>Catalog Source</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">TYPECACHE_EQ_OPR</code></td>
+      <td><code class="language-plaintext highlighter-rouge">eq_opr</code></td>
+      <td>Default btree opclass for the type</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">TYPECACHE_LT_OPR</code></td>
+      <td><code class="language-plaintext highlighter-rouge">lt_opr</code></td>
+      <td>Default btree opclass</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">TYPECACHE_GT_OPR</code></td>
+      <td><code class="language-plaintext highlighter-rouge">gt_opr</code></td>
+      <td>Default btree opclass</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">TYPECACHE_CMP_PROC</code></td>
+      <td><code class="language-plaintext highlighter-rouge">cmp_proc</code></td>
+      <td>btree comparison support function</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">TYPECACHE_HASH_PROC</code></td>
+      <td><code class="language-plaintext highlighter-rouge">hash_proc</code></td>
+      <td>Default hash opclass</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">TYPECACHE_EQ_OPR_FINFO</code></td>
+      <td><code class="language-plaintext highlighter-rouge">eq_opr_finfo</code></td>
+      <td>Pre-built <code class="language-plaintext highlighter-rouge">FmgrInfo</code> for equality</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">TYPECACHE_CMP_PROC_FINFO</code></td>
+      <td><code class="language-plaintext highlighter-rouge">cmp_proc_finfo</code></td>
+      <td>Pre-built <code class="language-plaintext highlighter-rouge">FmgrInfo</code> for comparison</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">TYPECACHE_HASH_PROC_FINFO</code></td>
+      <td><code class="language-plaintext highlighter-rouge">hash_proc_finfo</code></td>
+      <td>Pre-built <code class="language-plaintext highlighter-rouge">FmgrInfo</code> for hashing</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">TYPECACHE_TUPDESC</code></td>
+      <td><code class="language-plaintext highlighter-rouge">tupDesc</code></td>
+      <td>Composite type’s tuple descriptor</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">TYPECACHE_RANGE_INFO</code></td>
+      <td><code class="language-plaintext highlighter-rouge">rngelemtype</code>, <code class="language-plaintext highlighter-rouge">rng_cmp_proc_finfo</code>, etc.</td>
+      <td><code class="language-plaintext highlighter-rouge">pg_range</code> catalog</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">TYPECACHE_DOMAIN_BASE_INFO</code></td>
+      <td><code class="language-plaintext highlighter-rouge">domainBaseType</code>, <code class="language-plaintext highlighter-rouge">domainBaseTypmod</code></td>
+      <td><code class="language-plaintext highlighter-rouge">pg_type.typbasetype</code></td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">TYPECACHE_DOMAIN_CONSTR_INFO</code></td>
+      <td><code class="language-plaintext highlighter-rouge">domainData</code></td>
+      <td><code class="language-plaintext highlighter-rouge">pg_constraint</code> lookups</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>The lazy population strategy means a <code class="language-plaintext highlighter-rouge">TypeCacheEntry</code> is only as expensive as the information actually requested.</p>
+
+<h3 id="why-fmgrinfo-caching-matters">Why FmgrInfo Caching Matters</h3>
+
+<p>The <code class="language-plaintext highlighter-rouge">FmgrInfo</code> struct (function manager info) is relatively expensive to initialize – it requires a syscache lookup of <code class="language-plaintext highlighter-rouge">pg_proc</code> plus function pointer resolution. Functions like <code class="language-plaintext highlighter-rouge">array_eq()</code> are called repeatedly for each element comparison. By storing pre-initialized <code class="language-plaintext highlighter-rouge">FmgrInfo</code> structs in the type cache, PostgreSQL avoids reinitializing them on every call. Since type cache entries live for the backend’s lifetime, this is safe from memory leak concerns.</p>
+
+<h3 id="composite-type-tuple-descriptors">Composite Type Tuple Descriptors</h3>
+
+<p>For composite types (row types), the type cache stores a reference-counted <code class="language-plaintext highlighter-rouge">TupleDesc</code>. Each <code class="language-plaintext highlighter-rouge">TupleDesc</code> has a unique <code class="language-plaintext highlighter-rouge">tupDesc_identifier</code> that changes whenever the type’s definition changes (e.g., via <code class="language-plaintext highlighter-rouge">ALTER TABLE</code>). Callers can cheaply detect staleness by comparing identifiers.</p>
+
+<h3 id="domain-constraint-caching">Domain Constraint Caching</h3>
+
+<p>Domain types can have CHECK constraints. The type cache caches the compiled constraint expressions in a <code class="language-plaintext highlighter-rouge">DomainConstraintCache</code>, which is reference-counted and shared across all <code class="language-plaintext highlighter-rouge">DomainConstraintRef</code> holders. When the domain’s constraints change (detected via relcache invalidation of <code class="language-plaintext highlighter-rouge">pg_constraint</code>), the old cache is released and a new one is built on demand.</p>
+
+<p>Callers maintain a <code class="language-plaintext highlighter-rouge">DomainConstraintRef</code> that automatically tracks the current version:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="n">DomainConstraintRef</span> <span class="n">ref</span><span class="p">;</span>
+<span class="n">InitDomainConstraintRef</span><span class="p">(</span><span class="n">domainTypeOid</span><span class="p">,</span> <span class="o">&amp;</span><span class="n">ref</span><span class="p">,</span> <span class="n">context</span><span class="p">,</span> <span class="nb">true</span><span class="p">);</span>
+<span class="cm">/* ... later ... */</span>
+<span class="n">UpdateDomainConstraintRef</span><span class="p">(</span><span class="o">&amp;</span><span class="n">ref</span><span class="p">);</span>  <span class="cm">/* picks up any constraint changes */</span>
+</code></pre></div></div>
+
+<h3 id="enum-type-ordering">Enum Type Ordering</h3>
+
+<p>For enum types, the type cache stores a <code class="language-plaintext highlighter-rouge">TypeCacheEnumData</code> that maps enum OIDs to their sort order positions. This is used by <code class="language-plaintext highlighter-rouge">compare_values_of_enum()</code> to provide efficient comparison without repeated catalog lookups. The data is rebuilt if <code class="language-plaintext highlighter-rouge">pg_enum</code> changes.</p>
+
+<h2 id="key-data-structures">Key Data Structures</h2>
+
+<h3 id="typecacheentry">TypeCacheEntry</h3>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>TypeCacheEntry
+  +-- type_id               type OID (hash key)
+  +-- type_id_hash          precomputed hash of OID
+
+  /* Basic pg_type data */
+  +-- typlen, typbyval, typalign, typstorage
+  +-- typtype               'b'ase, 'c'omposite, 'd'omain, 'e'num, 'r'ange, etc.
+  +-- typrelid              for composite types: relation OID
+  +-- typelem               element type for arrays
+  +-- typcollation          default collation
+
+  /* Operator family info (lazily populated) */
+  +-- btree_opf             default btree operator family
+  +-- hash_opf              default hash operator family
+  +-- eq_opr                equality operator OID
+  +-- lt_opr, gt_opr        ordering operator OIDs
+  +-- cmp_proc              btree comparison function OID
+  +-- hash_proc             hash function OID
+
+  /* Pre-built FmgrInfo (avoids repeated pg_proc lookups) */
+  +-- eq_opr_finfo
+  +-- cmp_proc_finfo
+  +-- hash_proc_finfo
+
+  /* Composite type info */
+  +-- tupDesc               TupleDesc (reference-counted)
+  +-- tupDesc_identifier    unique ID, changes on ALTER TABLE
+
+  /* Range type info */
+  +-- rngelemtype           TypeCacheEntry for element type
+  +-- rng_opfamily          comparison opfamily
+  +-- rng_cmp_proc_finfo    comparison function
+
+  /* Domain info */
+  +-- domainBaseType, domainBaseTypmod
+  +-- domainData            DomainConstraintCache
+
+  /* Internal state */
+  +-- flags                 which fields have been computed
+  +-- enumData              cached enum ordering
+  +-- nextDomain            linked list of domain entries
+</code></pre></div></div>
+
+<h3 id="relidtotypeidcachehash">RelIdToTypeIdCacheHash</h3>
+
+<p>A secondary hash table that maps relation OIDs to their composite type OIDs. When a relcache invalidation arrives for a relation, this mapping allows the type cache to find and invalidate the corresponding <code class="language-plaintext highlighter-rouge">TypeCacheEntry</code> without scanning the entire type cache.</p>
+
+<h2 id="invalidation">Invalidation</h2>
+
+<p>The type cache registers several callbacks:</p>
+
+<ol>
+  <li>
+    <p><strong><code class="language-plaintext highlighter-rouge">pg_type</code> syscache callback</strong> – Clears the <code class="language-plaintext highlighter-rouge">TCFLAGS_HAVE_PG_TYPE_DATA</code> flag, forcing a reload of basic type data on the next lookup.</p>
+  </li>
+  <li>
+    <p><strong><code class="language-plaintext highlighter-rouge">pg_opclass</code> syscache callback</strong> – Clears the operator-related flags (<code class="language-plaintext highlighter-rouge">TCFLAGS_CHECKED_BTREE_OPCLASS</code>, etc.), forcing re-derivation of operator and function OIDs.</p>
+  </li>
+  <li>
+    <p><strong>Relcache callback</strong> – For composite types, invalidates the <code class="language-plaintext highlighter-rouge">TupleDesc</code> and operator info when the underlying relation changes. Uses <code class="language-plaintext highlighter-rouge">RelIdToTypeIdCacheHash</code> for efficient lookup.</p>
+  </li>
+  <li>
+    <p><strong><code class="language-plaintext highlighter-rouge">pg_constraint</code> changes</strong> – For domain types, triggers rebuild of the <code class="language-plaintext highlighter-rouge">DomainConstraintCache</code>.</p>
+  </li>
+</ol>
+
+<pre><code class="language-mermaid">graph LR
+    DDL["ALTER TABLE t ADD COLUMN ..."] --&gt; RelInval["Relcache invalidation&lt;br/&gt;for t's OID"]
+    RelInval --&gt; TypeCB["Type cache relcache callback"]
+    TypeCB --&gt; Lookup["RelIdToTypeIdCacheHash&lt;br/&gt;relid -&gt; composite type OID"]
+    Lookup --&gt; Clear["Clear tupDesc, operator flags&lt;br/&gt;in TypeCacheEntry"]
+    Clear --&gt; Next["Next lookup_type_cache()&lt;br/&gt;rebuilds from catalogs"]
+</code></pre>
+
+<p class="note">Type cache entries are never freed, even if the type is dropped. The entry becomes wasted memory, but this is acceptable because type drops are rare and entries are small. This design allows other code to cache pointers to <code class="language-plaintext highlighter-rouge">TypeCacheEntry</code> in long-lived data structures without worrying about dangling references.</p>
+
+<h2 id="connections">Connections</h2>
+
+<ul>
+  <li><strong><a href="catalog-cache">Catalog Cache</a></strong> – The type cache uses syscache lookups to find operator classes and functions.</li>
+  <li><strong><a href="relation-cache">Relation Cache</a></strong> – Composite type tuple descriptors depend on relcache entries. Relcache invalidation triggers type cache updates.</li>
+  <li><strong><a href="invalidation">Invalidation</a></strong> – The type cache registers both syscache and relcache callbacks.</li>
+  <li><strong>Chapter 2 (Access Methods)</strong> – Operator family and operator class lookups are essential for index scans and sort operations.</li>
+  <li><strong>Chapter 8 (Executor)</strong> – Array and record comparison functions in the executor rely heavily on the type cache.</li>
+</ul>
+
+
+      <hr>
+
+      <!-- Prev / Next / Up navigation -->
+      
+      
+      
+
+      <div class="clearfix" style="margin-top: 2rem;">
+        
+          
+          
+
+          
+            
+            <a class="btn btn-primary float-left" href="/postgresql/09-caches/relation-cache.html" title="Relation Cache">&larr; Previous</a>
+          
+
+          
+            
+            <a class="btn btn-primary float-right" href="/postgresql/10-memory/" title="Memory Management">Next &rarr;</a>
+          
+        
+      </div>
+
+      
+      <div style="text-align: center; margin-top: 1rem;">
+        <a href="/postgresql-internals/">&uarr; Back to Table of Contents</a>
+      </div>
+      
+
+    </div>
+  </div>
+</div>
+
+
+  <!-- Footer -->
+
+<hr>
+
+<footer>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <ul class="list-inline text-center">
+          
+          <li class="list-inline-item">
+            <a href="mailto:amitava.dev@proton.me" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="far fa-envelope fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          
+          
+          <li class="list-inline-item">
+            <a href="https://www.linkedin.com/in/amitavaag" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-linkedin fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          <li class="list-inline-item">
+            <a href="https://github.com/ikouchiha47" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-github fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+        </ul>
+
+        <p class="copyright text-muted">
+          Build with: 
+          <a 
+            href="https://github.com/StartBootstrap/startbootstrap-clean-blog-jekyll"
+            class="text-gray"
+            target="_blank">startbootstrap-clean-blog-jekyll</a></p>
+      </div>
+    </div>
+  </div>
+</footer>
+
+
+  <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="/assets/vendor/blog/js/scripts.js"></script>
+
+<script src="/assets/scripts.js"></script>
+
+
+
+
+
+  <script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+
+    document.querySelectorAll('pre > code.language-mermaid').forEach((codeBlock) => {
+      codeBlock.parentElement.outerHTML = `<pre class="mermaid">${codeBlock.textContent}</pre>`;
+    });
+
+
+    mermaid.initialize({ startOnLoad: true, theme: 'forest' });
+</script>
+
+
+  
+
+</body>
+
+</html>

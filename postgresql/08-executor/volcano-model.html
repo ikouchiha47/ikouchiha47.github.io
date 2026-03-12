@@ -1,0 +1,739 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+  <title>
+    Volcano Iterator Model - iko&#39;s logs
+    
+  </title>
+
+  <meta name="description" content="">
+  <meta property="og:description" content="">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Volcano Iterator Model">
+  <meta property="og:url" content="https://ikouchiha47.github.io/postgresql/08-executor/volcano-model.html">
+
+  
+
+  <link href='https://fonts.googleapis.com/css?family=Lora:400,700,400italic,700italic' rel='stylesheet' type='text/css'>
+  <link href='https://fonts.googleapis.com/css?family=Open+Sans:300italic,400italic,600italic,700italic,800italic,400,300,600,700,800' rel='stylesheet' type='text/css'>
+
+  <!-- <script src="https://use.fontawesome.com/releases/v5.15.3/js/all.js" crossorigin="anonymous"></script> -->
+  <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.15.4/css/all.css" integrity="sha384-DyZ88mC6Up2uqS4h/KRgHuoeGwBcD4Ng9SiP4dIRy0EXTlnuz47vAwmeGwVChigm" crossorigin="anonymous"/>
+
+  <link rel="stylesheet" href="/assets/main.css">
+  <link rel="canonical" href="https://ikouchiha47.github.io/postgresql/08-executor/volcano-model.html">
+  <link rel="alternate" type="application/rss+xml" title="iko&#39;s logs" href="/feed.xml">
+
+  <meta name="google-site-verification" content="lWkg6gIxJgzEKX_5XnhcxCtPE9QknaimFWWos_dTvPM" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fira+Sans:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Inconsolata:wght@200..900&family=Jersey+25&family=Kanit:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Merriweather+Sans:ital,wght@0,300..800;1,300..800&family=Nanum+Gothic+Coding&family=Space+Grotesk:wght@300..700&family=Titillium+Web:ital,wght@0,200;0,300;0,400;0,600;0,700;0,900;1,200;1,300;1,400;1,600;1,700&display=swap" rel="stylesheet">
+
+</head>
+
+
+<body>
+
+  <!-- Navigation -->
+<nav class="navbar navbar-expand-lg navbar-light fixed-top" id="mainNav">
+  <div class="container">
+    <a class="navbar-brand" href="/">iko&#39;s logs</a>
+    <button class="navbar-toggler navbar-toggler-right" type="button" data-toggle="collapse" data-target="#navbarResponsive" aria-controls="navbarResponsive" aria-expanded="false" aria-label="Toggle navigation">
+      Menu
+      <i class="fa fa-bars"></i>
+    </button>
+    <div class="collapse navbar-collapse" id="navbarResponsive">
+      <ul class="navbar-nav ml-auto">
+        <li class="nav-item">
+          <a class="nav-link" href="/">Home</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/about">About</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/posts">Posts</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/contact">Contact</a>
+        </li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+
+  <!-- Page Header -->
+
+<header class="masthead">
+
+  <div class="overlay"></div>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <div class="post-heading">
+          <h1>Volcano Iterator Model</h1>
+          
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="container space-grotesk">
+  <div class="row">
+    <div class="col-lg-8 col-md-10 mx-auto">
+
+      <!-- Breadcrumb -->
+      <nav aria-label="breadcrumb" style="margin-bottom: 1.5rem;">
+        <ol class="breadcrumb" style="background: transparent; padding: 0;">
+          
+            <li class="breadcrumb-item"><a href="/postgresql-internals/">PostgreSQL Internals Deep Dive</a></li>
+          
+          
+            
+              <li class="breadcrumb-item"><a href="/postgresql/08-executor/">Executor</a></li>
+            
+          
+          <li class="breadcrumb-item active" aria-current="page">Volcano Iterator Model</li>
+        </ol>
+      </nav>
+
+      <h1 id="volcano-iterator-model">Volcano Iterator Model</h1>
+
+<h2 id="summary">Summary</h2>
+
+<p>PostgreSQL’s executor uses the Volcano (iterator) model, where every plan node
+implements the same three-method interface: <strong>init</strong>, <strong>get-next-tuple</strong>, and
+<strong>cleanup</strong>. Nodes form a tree, and tuples flow upward on demand – the root
+node “pulls” tuples from its children, which pull from their children, all the
+way down to the leaf scan nodes. This uniform interface makes it trivial to
+compose arbitrary plan shapes, and it allows pipelined execution where most
+tuples never materialize in full intermediate result sets.</p>
+
+<hr />
+
+<h2 id="overview">Overview</h2>
+
+<p>The Volcano model (named after Goetz Graefe’s 1994 paper) is a
+demand-driven evaluation strategy. Each operator in the query plan behaves
+like an iterator with three operations:</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>Operation</th>
+      <th>PostgreSQL Function</th>
+      <th>Purpose</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><strong>Open</strong></td>
+      <td><code class="language-plaintext highlighter-rouge">ExecInitNode()</code></td>
+      <td>Allocate state, open relations, recurse into children</td>
+    </tr>
+    <tr>
+      <td><strong>Next</strong></td>
+      <td><code class="language-plaintext highlighter-rouge">ExecProcNode()</code></td>
+      <td>Return the next result tuple, or NULL when exhausted</td>
+    </tr>
+    <tr>
+      <td><strong>Close</strong></td>
+      <td><code class="language-plaintext highlighter-rouge">ExecEndNode()</code></td>
+      <td>Release resources, close relations, recurse into children</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>The key insight is that <strong>every node has the same signature</strong>. A Sort node, a
+HashJoin node, and a SeqScan node all return a <code class="language-plaintext highlighter-rouge">TupleTableSlot *</code> from their
+<code class="language-plaintext highlighter-rouge">ExecProcNode</code> call. This uniformity means the executor does not need to know
+what type of node it is calling – it simply invokes the function pointer.</p>
+
+<hr />
+
+<h2 id="key-source-files">Key Source Files</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>File</th>
+      <th>Purpose</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/executor/execProcnode.c</code></td>
+      <td>Central dispatch: <code class="language-plaintext highlighter-rouge">ExecInitNode</code>, <code class="language-plaintext highlighter-rouge">ExecEndNode</code>, and first-call trampoline</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/executor/execMain.c</code></td>
+      <td><code class="language-plaintext highlighter-rouge">ExecutePlan()</code> loop that calls <code class="language-plaintext highlighter-rouge">ExecProcNode</code> on root</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/executor/execScan.c</code></td>
+      <td>Generic scan loop used by all scan nodes</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/nodes/execnodes.h</code></td>
+      <td><code class="language-plaintext highlighter-rouge">PlanState</code> base struct with <code class="language-plaintext highlighter-rouge">ExecProcNode</code> function pointer</td>
+    </tr>
+  </tbody>
+</table>
+
+<hr />
+
+<h2 id="how-it-works">How It Works</h2>
+
+<h3 id="the-execprocnode-function-pointer">The ExecProcNode Function Pointer</h3>
+
+<p>Every <code class="language-plaintext highlighter-rouge">PlanState</code> carries a function pointer that implements its get-next-tuple
+logic:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="cm">/* From execnodes.h */</span>
+<span class="k">typedef</span> <span class="n">TupleTableSlot</span> <span class="o">*</span><span class="p">(</span><span class="o">*</span><span class="n">ExecProcNodeMtd</span><span class="p">)(</span><span class="n">PlanState</span> <span class="o">*</span><span class="n">pstate</span><span class="p">);</span>
+
+<span class="k">typedef</span> <span class="k">struct</span> <span class="n">PlanState</span> <span class="p">{</span>
+    <span class="p">...</span>
+    <span class="n">ExecProcNodeMtd</span> <span class="n">ExecProcNode</span><span class="p">;</span>       <span class="cm">/* function to return next tuple */</span>
+    <span class="n">ExecProcNodeMtd</span> <span class="n">ExecProcNodeReal</span><span class="p">;</span>   <span class="cm">/* actual implementation */</span>
+    <span class="p">...</span>
+<span class="p">}</span> <span class="n">PlanState</span><span class="p">;</span>
+</code></pre></div></div>
+
+<p>During <code class="language-plaintext highlighter-rouge">ExecInitNode()</code>, each node type sets this pointer to its own
+implementation:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="cm">/* In ExecInitSeqScan() */</span>
+<span class="n">scanstate</span><span class="o">-&gt;</span><span class="n">ss</span><span class="p">.</span><span class="n">ps</span><span class="p">.</span><span class="n">ExecProcNode</span> <span class="o">=</span> <span class="n">ExecSeqScan</span><span class="p">;</span>
+
+<span class="cm">/* In ExecInitHashJoin() */</span>
+<span class="n">hjstate</span><span class="o">-&gt;</span><span class="n">js</span><span class="p">.</span><span class="n">ps</span><span class="p">.</span><span class="n">ExecProcNode</span> <span class="o">=</span> <span class="n">ExecHashJoin</span><span class="p">;</span>
+
+<span class="cm">/* In ExecInitSort() */</span>
+<span class="n">sortstate</span><span class="o">-&gt;</span><span class="n">ss</span><span class="p">.</span><span class="n">ps</span><span class="p">.</span><span class="n">ExecProcNode</span> <span class="o">=</span> <span class="n">ExecSort</span><span class="p">;</span>
+</code></pre></div></div>
+
+<h3 id="the-first-call-trampoline">The First-Call Trampoline</h3>
+
+<p>To avoid branching on every tuple for instrumentation setup, PostgreSQL uses a
+trampoline pattern. Initially, <code class="language-plaintext highlighter-rouge">ExecProcNode</code> is set to <code class="language-plaintext highlighter-rouge">ExecProcNodeFirst()</code>:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="cm">/* execProcnode.c */</span>
+<span class="k">static</span> <span class="n">TupleTableSlot</span> <span class="o">*</span>
+<span class="nf">ExecProcNodeFirst</span><span class="p">(</span><span class="n">PlanState</span> <span class="o">*</span><span class="n">node</span><span class="p">)</span>
+<span class="p">{</span>
+    <span class="cm">/* If instrumentation is active, wrap with ExecProcNodeInstr */</span>
+    <span class="k">if</span> <span class="p">(</span><span class="n">node</span><span class="o">-&gt;</span><span class="n">instrument</span><span class="p">)</span>
+        <span class="n">node</span><span class="o">-&gt;</span><span class="n">ExecProcNode</span> <span class="o">=</span> <span class="n">ExecProcNodeInstr</span><span class="p">;</span>
+    <span class="k">else</span>
+        <span class="n">node</span><span class="o">-&gt;</span><span class="n">ExecProcNode</span> <span class="o">=</span> <span class="n">node</span><span class="o">-&gt;</span><span class="n">ExecProcNodeReal</span><span class="p">;</span>
+
+    <span class="k">return</span> <span class="n">node</span><span class="o">-&gt;</span><span class="n">ExecProcNode</span><span class="p">(</span><span class="n">node</span><span class="p">);</span>
+<span class="p">}</span>
+</code></pre></div></div>
+
+<p>After the first call, subsequent calls go directly to the real implementation
+(or the instrumentation wrapper), with zero overhead from the trampoline.</p>
+
+<h3 id="the-instrumentation-wrapper">The Instrumentation Wrapper</h3>
+
+<p>When <code class="language-plaintext highlighter-rouge">EXPLAIN ANALYZE</code> is active, <code class="language-plaintext highlighter-rouge">ExecProcNodeInstr()</code> wraps the real function
+to capture timing and row counts:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">static</span> <span class="n">TupleTableSlot</span> <span class="o">*</span>
+<span class="nf">ExecProcNodeInstr</span><span class="p">(</span><span class="n">PlanState</span> <span class="o">*</span><span class="n">node</span><span class="p">)</span>
+<span class="p">{</span>
+    <span class="n">TupleTableSlot</span> <span class="o">*</span><span class="n">result</span><span class="p">;</span>
+
+    <span class="n">InstrStartNode</span><span class="p">(</span><span class="n">node</span><span class="o">-&gt;</span><span class="n">instrument</span><span class="p">);</span>
+    <span class="n">result</span> <span class="o">=</span> <span class="n">node</span><span class="o">-&gt;</span><span class="n">ExecProcNodeReal</span><span class="p">(</span><span class="n">node</span><span class="p">);</span>
+    <span class="n">InstrStopNode</span><span class="p">(</span><span class="n">node</span><span class="o">-&gt;</span><span class="n">instrument</span><span class="p">,</span> <span class="n">TupIsNull</span><span class="p">(</span><span class="n">result</span><span class="p">)</span> <span class="o">?</span> <span class="mi">0</span><span class="p">.</span><span class="mi">0</span> <span class="o">:</span> <span class="mi">1</span><span class="p">.</span><span class="mi">0</span><span class="p">);</span>
+
+    <span class="k">return</span> <span class="n">result</span><span class="p">;</span>
+<span class="p">}</span>
+</code></pre></div></div>
+
+<h3 id="the-execinitnode-dispatch">The ExecInitNode Dispatch</h3>
+
+<p><code class="language-plaintext highlighter-rouge">ExecInitNode()</code> is a large switch statement that maps <code class="language-plaintext highlighter-rouge">Plan</code> node tags to
+their initialization functions:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="n">PlanState</span> <span class="o">*</span>
+<span class="nf">ExecInitNode</span><span class="p">(</span><span class="n">Plan</span> <span class="o">*</span><span class="n">node</span><span class="p">,</span> <span class="n">EState</span> <span class="o">*</span><span class="n">estate</span><span class="p">,</span> <span class="kt">int</span> <span class="n">eflags</span><span class="p">)</span>
+<span class="p">{</span>
+    <span class="n">PlanState</span> <span class="o">*</span><span class="n">result</span><span class="p">;</span>
+
+    <span class="k">if</span> <span class="p">(</span><span class="n">node</span> <span class="o">==</span> <span class="nb">NULL</span><span class="p">)</span>
+        <span class="k">return</span> <span class="nb">NULL</span><span class="p">;</span>
+
+    <span class="n">check_stack_depth</span><span class="p">();</span>
+
+    <span class="k">switch</span> <span class="p">(</span><span class="n">nodeTag</span><span class="p">(</span><span class="n">node</span><span class="p">))</span>
+    <span class="p">{</span>
+        <span class="cm">/* Control nodes */</span>
+        <span class="k">case</span> <span class="n">T_Result</span><span class="p">:</span>
+            <span class="n">result</span> <span class="o">=</span> <span class="p">(</span><span class="n">PlanState</span> <span class="o">*</span><span class="p">)</span> <span class="n">ExecInitResult</span><span class="p">(...);</span>
+            <span class="k">break</span><span class="p">;</span>
+
+        <span class="cm">/* Scan nodes */</span>
+        <span class="k">case</span> <span class="n">T_SeqScan</span><span class="p">:</span>
+            <span class="n">result</span> <span class="o">=</span> <span class="p">(</span><span class="n">PlanState</span> <span class="o">*</span><span class="p">)</span> <span class="n">ExecInitSeqScan</span><span class="p">(...);</span>
+            <span class="k">break</span><span class="p">;</span>
+        <span class="k">case</span> <span class="n">T_IndexScan</span><span class="p">:</span>
+            <span class="n">result</span> <span class="o">=</span> <span class="p">(</span><span class="n">PlanState</span> <span class="o">*</span><span class="p">)</span> <span class="n">ExecInitIndexScan</span><span class="p">(...);</span>
+            <span class="k">break</span><span class="p">;</span>
+
+        <span class="cm">/* Join nodes */</span>
+        <span class="k">case</span> <span class="n">T_NestLoop</span><span class="p">:</span>
+            <span class="n">result</span> <span class="o">=</span> <span class="p">(</span><span class="n">PlanState</span> <span class="o">*</span><span class="p">)</span> <span class="n">ExecInitNestLoop</span><span class="p">(...);</span>
+            <span class="k">break</span><span class="p">;</span>
+        <span class="k">case</span> <span class="n">T_HashJoin</span><span class="p">:</span>
+            <span class="n">result</span> <span class="o">=</span> <span class="p">(</span><span class="n">PlanState</span> <span class="o">*</span><span class="p">)</span> <span class="n">ExecInitHashJoin</span><span class="p">(...);</span>
+            <span class="k">break</span><span class="p">;</span>
+
+        <span class="cm">/* Materialization nodes */</span>
+        <span class="k">case</span> <span class="n">T_Sort</span><span class="p">:</span>
+            <span class="n">result</span> <span class="o">=</span> <span class="p">(</span><span class="n">PlanState</span> <span class="o">*</span><span class="p">)</span> <span class="n">ExecInitSort</span><span class="p">(...);</span>
+            <span class="k">break</span><span class="p">;</span>
+        <span class="k">case</span> <span class="n">T_Agg</span><span class="p">:</span>
+            <span class="n">result</span> <span class="o">=</span> <span class="p">(</span><span class="n">PlanState</span> <span class="o">*</span><span class="p">)</span> <span class="n">ExecInitAgg</span><span class="p">(...);</span>
+            <span class="k">break</span><span class="p">;</span>
+
+        <span class="cm">/* ... ~40 node types total ... */</span>
+    <span class="p">}</span>
+
+    <span class="cm">/* Initialize any subPlan expressions (correlated subqueries) */</span>
+    <span class="p">...</span>
+    <span class="k">return</span> <span class="n">result</span><span class="p">;</span>
+<span class="p">}</span>
+</code></pre></div></div>
+
+<h3 id="the-demand-driven-pipeline">The Demand-Driven Pipeline</h3>
+
+<p>Consider this plan for <code class="language-plaintext highlighter-rouge">SELECT * FROM t1 JOIN t2 ON t1.id = t2.id WHERE t1.x &gt; 10</code>:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>            Limit
+              |
+          Hash Join
+          /        \
+     Seq Scan      Hash
+      (t1)          |
+                  Seq Scan
+                   (t2)
+</code></pre></div></div>
+
+<p>Execution proceeds as follows:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>1. ExecutePlan() calls ExecProcNode(Limit)
+2. Limit calls ExecProcNode(HashJoin)
+3. HashJoin needs to build hash table first:
+   a. Calls ExecProcNode(Hash) repeatedly
+   b. Hash calls ExecProcNode(SeqScan-t2) repeatedly
+   c. Each tuple from t2 is inserted into the hash table
+   d. When SeqScan-t2 returns NULL, hash table is complete
+4. HashJoin enters probe phase:
+   a. Calls ExecProcNode(SeqScan-t1) for outer tuple
+   b. Hashes the join key, probes the hash table
+   c. If match found and quals pass, returns joined tuple
+5. Limit receives tuple, decrements count
+6. If count &gt; 0, repeat from step 1
+</code></pre></div></div>
+
+<p>The critical point is that <strong>steps 4a-4c happen one tuple at a time</strong>. The
+SeqScan on t1 does not materialize all its tuples – it returns them one by one
+as the HashJoin requests them. This is the pipelining property.</p>
+
+<h3 id="pipeline-breakers">Pipeline Breakers</h3>
+
+<p>Some nodes must consume all input before producing any output. These are called
+<strong>pipeline breakers</strong> or <strong>blocking operators</strong>:</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>Node</th>
+      <th>Why it blocks</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><strong>Sort</strong></td>
+      <td>Must see all tuples to determine ordering</td>
+    </tr>
+    <tr>
+      <td><strong>Hash</strong> (build side)</td>
+      <td>Must build complete hash table before probing</td>
+    </tr>
+    <tr>
+      <td><strong>Agg</strong> (hash strategy)</td>
+      <td>Must hash all groups before returning results</td>
+    </tr>
+    <tr>
+      <td><strong>Material</strong></td>
+      <td>Buffers all input for potential rescans</td>
+    </tr>
+    <tr>
+      <td><strong>WindowAgg</strong></td>
+      <td>Must buffer entire partition</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>Non-blocking (pipelined) nodes like SeqScan, NestLoop, Limit, and the probe
+side of HashJoin can begin returning tuples immediately.</p>
+
+<hr />
+
+<h2 id="key-data-structures">Key Data Structures</h2>
+
+<h3 id="the-execscan-loop">The ExecScan Loop</h3>
+
+<p>All scan nodes share a common loop implemented in <code class="language-plaintext highlighter-rouge">execScan.c</code>:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="n">TupleTableSlot</span> <span class="o">*</span>
+<span class="nf">ExecScan</span><span class="p">(</span><span class="n">ScanState</span> <span class="o">*</span><span class="n">node</span><span class="p">,</span>
+         <span class="n">ExecScanAccessMtd</span> <span class="n">accessMtd</span><span class="p">,</span>    <span class="cm">/* e.g., SeqNext */</span>
+         <span class="n">ExecScanRecheckMtd</span> <span class="n">recheckMtd</span><span class="p">)</span>  <span class="cm">/* e.g., SeqRecheck */</span>
+<span class="p">{</span>
+    <span class="n">ExprContext</span> <span class="o">*</span><span class="n">econtext</span> <span class="o">=</span> <span class="n">node</span><span class="o">-&gt;</span><span class="n">ps</span><span class="p">.</span><span class="n">ps_ExprContext</span><span class="p">;</span>
+    <span class="n">ExprState</span>  <span class="o">*</span><span class="n">qual</span> <span class="o">=</span> <span class="n">node</span><span class="o">-&gt;</span><span class="n">ps</span><span class="p">.</span><span class="n">qual</span><span class="p">;</span>
+
+    <span class="k">for</span> <span class="p">(;;)</span>
+    <span class="p">{</span>
+        <span class="n">TupleTableSlot</span> <span class="o">*</span><span class="n">slot</span><span class="p">;</span>
+
+        <span class="n">slot</span> <span class="o">=</span> <span class="n">ExecScanFetch</span><span class="p">(</span><span class="n">node</span><span class="p">,</span> <span class="n">accessMtd</span><span class="p">,</span> <span class="n">recheckMtd</span><span class="p">);</span>
+        <span class="k">if</span> <span class="p">(</span><span class="n">TupIsNull</span><span class="p">(</span><span class="n">slot</span><span class="p">))</span>
+            <span class="k">return</span> <span class="nb">NULL</span><span class="p">;</span>
+
+        <span class="cm">/* Place tuple in scan context for qual evaluation */</span>
+        <span class="n">econtext</span><span class="o">-&gt;</span><span class="n">ecxt_scantuple</span> <span class="o">=</span> <span class="n">slot</span><span class="p">;</span>
+
+        <span class="cm">/* Check quals */</span>
+        <span class="k">if</span> <span class="p">(</span><span class="n">qual</span> <span class="o">==</span> <span class="nb">NULL</span> <span class="o">||</span> <span class="n">ExecQual</span><span class="p">(</span><span class="n">qual</span><span class="p">,</span> <span class="n">econtext</span><span class="p">))</span>
+        <span class="p">{</span>
+            <span class="cm">/* Project if needed, otherwise return scan tuple */</span>
+            <span class="k">if</span> <span class="p">(</span><span class="n">node</span><span class="o">-&gt;</span><span class="n">ps</span><span class="p">.</span><span class="n">ps_ProjInfo</span><span class="p">)</span>
+                <span class="k">return</span> <span class="n">ExecProject</span><span class="p">(</span><span class="n">node</span><span class="o">-&gt;</span><span class="n">ps</span><span class="p">.</span><span class="n">ps_ProjInfo</span><span class="p">);</span>
+            <span class="k">else</span>
+                <span class="k">return</span> <span class="n">slot</span><span class="p">;</span>
+        <span class="p">}</span>
+
+        <span class="cm">/* Tuple failed qual -- reset and try next */</span>
+        <span class="n">ResetExprContext</span><span class="p">(</span><span class="n">econtext</span><span class="p">);</span>
+    <span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div></div>
+
+<p>This loop encapsulates the universal scan pattern: fetch, filter, project. Each
+scan type only needs to supply its own <code class="language-plaintext highlighter-rouge">accessMtd</code> (how to get the next raw
+tuple) and <code class="language-plaintext highlighter-rouge">recheckMtd</code> (for recheck after index-based filtering).</p>
+
+<h3 id="tupletableslot">TupleTableSlot</h3>
+
+<p>The universal container for tuples flowing between nodes:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">typedef</span> <span class="k">struct</span> <span class="n">TupleTableSlot</span> <span class="p">{</span>
+    <span class="n">NodeTag</span>          <span class="n">type</span><span class="p">;</span>              <span class="cm">/* slot type tag */</span>
+    <span class="n">uint16</span>           <span class="n">tts_flags</span><span class="p">;</span>         <span class="cm">/* TTS_FLAG_EMPTY, TTS_FLAG_SHOULDFREE, etc. */</span>
+    <span class="n">AttrNumber</span>       <span class="n">tts_nvalid</span><span class="p">;</span>        <span class="cm">/* number of valid Datum columns */</span>
+    <span class="k">const</span> <span class="n">TupleTableSlotOps</span> <span class="o">*</span><span class="n">tts_ops</span><span class="p">;</span>   <span class="cm">/* virtual method table */</span>
+    <span class="n">TupleDesc</span>        <span class="n">tts_tupleDescriptor</span><span class="p">;</span>
+    <span class="n">Datum</span>           <span class="o">*</span><span class="n">tts_values</span><span class="p">;</span>        <span class="cm">/* column values */</span>
+    <span class="n">bool</span>            <span class="o">*</span><span class="n">tts_isnull</span><span class="p">;</span>        <span class="cm">/* column null flags */</span>
+    <span class="n">MemoryContext</span>    <span class="n">tts_mcxt</span><span class="p">;</span>          <span class="cm">/* memory context owning the slot */</span>
+    <span class="p">...</span>
+<span class="p">}</span> <span class="n">TupleTableSlot</span><span class="p">;</span>
+</code></pre></div></div>
+
+<p>Three slot implementations exist:</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>Type</th>
+      <th>Storage</th>
+      <th>Use Case</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">HeapTupleTableSlot</code></td>
+      <td>On-disk heap tuple</td>
+      <td>SeqScan, IndexScan results</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">MinimalTupleTableSlot</code></td>
+      <td>Headerless tuple</td>
+      <td>Hash tables, tuple stores, inter-node transfer</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">VirtualTupleTableSlot</code></td>
+      <td>Datum/isnull arrays</td>
+      <td>Projections, computed results</td>
+    </tr>
+  </tbody>
+</table>
+
+<hr />
+
+<h2 id="diagram-demand-driven-tuple-flow">Diagram: Demand-Driven Tuple Flow</h2>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>    Client
+      ^
+      | receiveSlot()
+      |
+  ExecutePlan
+      ^
+      | ExecProcNode()
+      |
+   [Limit]  -----&gt; returns tuple or NULL
+      ^
+      | ExecProcNode()
+      |
+  [Hash Join]
+      ^           ^
+      |           |
+  ExecProcNode  ExecProcNode
+      |           |
+  [Seq Scan]   [Hash]
+    (outer)      ^
+                 | ExecProcNode()
+                 |
+              [Seq Scan]
+               (inner)
+
+  Data flows UP (demand-driven)
+  Control flows DOWN (recursive calls)
+</code></pre></div></div>
+
+<pre><code class="language-mermaid">graph BT
+    subgraph "Tuple Flow (upward)"
+        SeqScan1["SeqScan (t1)"] -- "tuple" --&gt; HashJoin
+        SeqScan2["SeqScan (t2)"] -- "tuple" --&gt; Hash
+        Hash -- "hash table ready" --&gt; HashJoin
+        HashJoin -- "joined tuple" --&gt; Sort
+        Sort -- "sorted tuple" --&gt; Gather
+        Gather -- "tuple" --&gt; Client["Client / ExecutePlan"]
+    end
+
+    subgraph "ExecProcNode Calls (downward)"
+        Client -. "ExecProcNode()" .-&gt; Gather
+        Gather -. "ExecProcNode()" .-&gt; Sort
+        Sort -. "ExecProcNode()" .-&gt; HashJoin
+        HashJoin -. "ExecProcNode()" .-&gt; SeqScan1
+        HashJoin -. "ExecProcNode()" .-&gt; Hash
+        Hash -. "ExecProcNode()" .-&gt; SeqScan2
+    end
+</code></pre>
+
+<h3 id="rescan-protocol">Rescan Protocol</h3>
+
+<p>When a node needs to re-read its input (for example, the inner side of a nested
+loop on each new outer tuple), it calls <code class="language-plaintext highlighter-rouge">ExecReScan()</code>:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="kt">void</span> <span class="nf">ExecReScan</span><span class="p">(</span><span class="n">PlanState</span> <span class="o">*</span><span class="n">node</span><span class="p">)</span>
+<span class="p">{</span>
+    <span class="k">if</span> <span class="p">(</span><span class="n">node</span><span class="o">-&gt;</span><span class="n">chgParam</span> <span class="o">!=</span> <span class="nb">NULL</span><span class="p">)</span>     <span class="cm">/* parameter changed? */</span>
+        <span class="cm">/* propagate rescan to children that depend on the param */</span>
+
+    <span class="k">switch</span> <span class="p">(</span><span class="n">nodeTag</span><span class="p">(</span><span class="n">node</span><span class="o">-&gt;</span><span class="n">plan</span><span class="p">))</span>
+    <span class="p">{</span>
+        <span class="k">case</span> <span class="n">T_SeqScan</span><span class="p">:</span>
+            <span class="n">ExecReScanSeqScan</span><span class="p">((</span><span class="n">SeqScanState</span> <span class="o">*</span><span class="p">)</span> <span class="n">node</span><span class="p">);</span>
+            <span class="k">break</span><span class="p">;</span>
+        <span class="k">case</span> <span class="n">T_IndexScan</span><span class="p">:</span>
+            <span class="n">ExecReScanIndexScan</span><span class="p">((</span><span class="n">IndexScanState</span> <span class="o">*</span><span class="p">)</span> <span class="n">node</span><span class="p">);</span>
+            <span class="k">break</span><span class="p">;</span>
+        <span class="cm">/* ... */</span>
+    <span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div></div>
+
+<p>For parameterized nodes (like an inner IndexScan in a NestLoop), the parameter
+change propagates through <code class="language-plaintext highlighter-rouge">chgParam</code> bitmapsets. A node only rescans if a
+parameter it depends on has actually changed.</p>
+
+<hr />
+
+<h2 id="performance-considerations">Performance Considerations</h2>
+
+<p><strong>Function pointer overhead.</strong> Calling through a function pointer prevents the
+compiler from inlining the callee. For very simple nodes (Result, Limit), this
+overhead is measurable. PostgreSQL mitigates this by using <code class="language-plaintext highlighter-rouge">pg_attribute_always_inline</code>
+on hot-path internal functions like <code class="language-plaintext highlighter-rouge">SeqNext()</code>.</p>
+
+<p><strong>Pipeline depth.</strong> Deep plan trees mean deep call stacks. Each <code class="language-plaintext highlighter-rouge">ExecProcNode</code>
+call adds a frame. PostgreSQL checks <code class="language-plaintext highlighter-rouge">check_stack_depth()</code> during init to guard
+against stack overflow on pathologically deep plans.</p>
+
+<p><strong>Tuple slot materialization.</strong> When tuples cross node boundaries, they may need
+to be “materialized” from virtual form into minimal tuples (for hash tables) or
+heap tuples (for sorting). The <code class="language-plaintext highlighter-rouge">tts_ops-&gt;materialize</code> virtual method handles
+this transparently.</p>
+
+<hr />
+
+<h2 id="connections">Connections</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>Topic</th>
+      <th>Link</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Executor overview and lifecycle</td>
+      <td><a href="index">Query Executor</a></td>
+    </tr>
+    <tr>
+      <td>Scan node implementations</td>
+      <td><a href="scan-nodes">Scan Nodes</a></td>
+    </tr>
+    <tr>
+      <td>Join algorithm details</td>
+      <td><a href="join-nodes">Join Nodes</a></td>
+    </tr>
+    <tr>
+      <td>Expression evaluation in qual checks</td>
+      <td><a href="expression-eval">Expression Evaluation</a></td>
+    </tr>
+    <tr>
+      <td>Parallel query extensions to the model</td>
+      <td><a href="parallel-query">Parallel Query</a></td>
+    </tr>
+    <tr>
+      <td>Plan tree construction</td>
+      <td><a href="../07-query-optimizer/">Query Optimizer</a></td>
+    </tr>
+  </tbody>
+</table>
+
+
+      <hr>
+
+      <!-- Prev / Next / Up navigation -->
+      
+      
+      
+
+      <div class="clearfix" style="margin-top: 2rem;">
+        
+          
+          
+
+          
+            
+            <a class="btn btn-primary float-left" href="/postgresql/08-executor/sort-and-materialize.html" title="Sort and Materialize">&larr; Previous</a>
+          
+
+          
+            
+            <a class="btn btn-primary float-right" href="/postgresql/09-caches/" title="Caches">Next &rarr;</a>
+          
+        
+      </div>
+
+      
+      <div style="text-align: center; margin-top: 1rem;">
+        <a href="/postgresql-internals/">&uarr; Back to Table of Contents</a>
+      </div>
+      
+
+    </div>
+  </div>
+</div>
+
+
+  <!-- Footer -->
+
+<hr>
+
+<footer>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <ul class="list-inline text-center">
+          
+          <li class="list-inline-item">
+            <a href="mailto:amitava.dev@proton.me" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="far fa-envelope fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          
+          
+          <li class="list-inline-item">
+            <a href="https://www.linkedin.com/in/amitavaag" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-linkedin fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          <li class="list-inline-item">
+            <a href="https://github.com/ikouchiha47" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-github fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+        </ul>
+
+        <p class="copyright text-muted">
+          Build with: 
+          <a 
+            href="https://github.com/StartBootstrap/startbootstrap-clean-blog-jekyll"
+            class="text-gray"
+            target="_blank">startbootstrap-clean-blog-jekyll</a></p>
+      </div>
+    </div>
+  </div>
+</footer>
+
+
+  <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="/assets/vendor/blog/js/scripts.js"></script>
+
+<script src="/assets/scripts.js"></script>
+
+
+
+
+
+  <script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+
+    document.querySelectorAll('pre > code.language-mermaid').forEach((codeBlock) => {
+      codeBlock.parentElement.outerHTML = `<pre class="mermaid">${codeBlock.textContent}</pre>`;
+    });
+
+
+    mermaid.initialize({ startOnLoad: true, theme: 'forest' });
+</script>
+
+
+  
+
+</body>
+
+</html>

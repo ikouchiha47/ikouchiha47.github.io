@@ -1,0 +1,552 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+  <title>
+    CLOG and Subtransactions - iko&#39;s logs
+    
+  </title>
+
+  <meta name="description" content="">
+  <meta property="og:description" content="">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="CLOG and Subtransactions">
+  <meta property="og:url" content="https://ikouchiha47.github.io/postgresql/03-transactions/clog-and-subtrans.html">
+
+  
+
+  <link href='https://fonts.googleapis.com/css?family=Lora:400,700,400italic,700italic' rel='stylesheet' type='text/css'>
+  <link href='https://fonts.googleapis.com/css?family=Open+Sans:300italic,400italic,600italic,700italic,800italic,400,300,600,700,800' rel='stylesheet' type='text/css'>
+
+  <!-- <script src="https://use.fontawesome.com/releases/v5.15.3/js/all.js" crossorigin="anonymous"></script> -->
+  <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.15.4/css/all.css" integrity="sha384-DyZ88mC6Up2uqS4h/KRgHuoeGwBcD4Ng9SiP4dIRy0EXTlnuz47vAwmeGwVChigm" crossorigin="anonymous"/>
+
+  <link rel="stylesheet" href="/assets/main.css">
+  <link rel="canonical" href="https://ikouchiha47.github.io/postgresql/03-transactions/clog-and-subtrans.html">
+  <link rel="alternate" type="application/rss+xml" title="iko&#39;s logs" href="/feed.xml">
+
+  <meta name="google-site-verification" content="lWkg6gIxJgzEKX_5XnhcxCtPE9QknaimFWWos_dTvPM" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fira+Sans:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Inconsolata:wght@200..900&family=Jersey+25&family=Kanit:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Merriweather+Sans:ital,wght@0,300..800;1,300..800&family=Nanum+Gothic+Coding&family=Space+Grotesk:wght@300..700&family=Titillium+Web:ital,wght@0,200;0,300;0,400;0,600;0,700;0,900;1,200;1,300;1,400;1,600;1,700&display=swap" rel="stylesheet">
+
+</head>
+
+
+<body>
+
+  <!-- Navigation -->
+<nav class="navbar navbar-expand-lg navbar-light fixed-top" id="mainNav">
+  <div class="container">
+    <a class="navbar-brand" href="/">iko&#39;s logs</a>
+    <button class="navbar-toggler navbar-toggler-right" type="button" data-toggle="collapse" data-target="#navbarResponsive" aria-controls="navbarResponsive" aria-expanded="false" aria-label="Toggle navigation">
+      Menu
+      <i class="fa fa-bars"></i>
+    </button>
+    <div class="collapse navbar-collapse" id="navbarResponsive">
+      <ul class="navbar-nav ml-auto">
+        <li class="nav-item">
+          <a class="nav-link" href="/">Home</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/about">About</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/posts">Posts</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/contact">Contact</a>
+        </li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+
+  <!-- Page Header -->
+
+<header class="masthead">
+
+  <div class="overlay"></div>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <div class="post-heading">
+          <h1>CLOG and Subtransactions</h1>
+          
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="container space-grotesk">
+  <div class="row">
+    <div class="col-lg-8 col-md-10 mx-auto">
+
+      <!-- Breadcrumb -->
+      <nav aria-label="breadcrumb" style="margin-bottom: 1.5rem;">
+        <ol class="breadcrumb" style="background: transparent; padding: 0;">
+          
+            <li class="breadcrumb-item"><a href="/postgresql-internals/">PostgreSQL Internals Deep Dive</a></li>
+          
+          
+            
+              <li class="breadcrumb-item"><a href="/postgresql/03-transactions/">Transactions & MVCC</a></li>
+            
+          
+          <li class="breadcrumb-item active" aria-current="page">CLOG and Subtransactions</li>
+        </ol>
+      </nav>
+
+      <h1 id="clog-and-subtransactions">CLOG and Subtransactions</h1>
+
+<p>The Commit Log (CLOG, stored in <code class="language-plaintext highlighter-rouge">pg_xact/</code>) records the final status of every transaction: in-progress, committed, aborted, or sub-committed. The subtransaction log (<code class="language-plaintext highlighter-rouge">pg_subtrans/</code>) maps each subtransaction to its parent. Both are implemented using the SLRU (Simple LRU) buffered access mechanism.</p>
+
+<h2 id="key-source-files">Key Source Files</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>File</th>
+      <th>Purpose</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/access/transam/clog.c</code></td>
+      <td>CLOG read/write implementation</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/access/clog.h</code></td>
+      <td>Transaction status constants, API</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/access/transam/subtrans.c</code></td>
+      <td>Subtransaction parent mapping</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/access/subtrans.h</code></td>
+      <td>SubTransSetParent(), SubTransGetTopmostTransaction()</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/access/transam/slru.c</code></td>
+      <td>SLRU buffer management framework</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/access/slru.h</code></td>
+      <td>SlruSharedData, page status enum</td>
+    </tr>
+  </tbody>
+</table>
+
+<h2 id="clog-the-commit-log">CLOG: The Commit Log</h2>
+
+<h3 id="transaction-status-values">Transaction Status Values</h3>
+
+<p>Each transaction gets a 2-bit status in the CLOG:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="cp">#define TRANSACTION_STATUS_IN_PROGRESS      0x00
+#define TRANSACTION_STATUS_COMMITTED        0x01
+#define TRANSACTION_STATUS_ABORTED          0x02
+#define TRANSACTION_STATUS_SUB_COMMITTED    0x03
+</span></code></pre></div></div>
+
+<p>The <code class="language-plaintext highlighter-rouge">SUB_COMMITTED</code> status is special: it means a subtransaction has committed locally, but its parent transaction has not yet committed. The subtransaction’s effects only become visible when the top-level transaction commits.</p>
+
+<h3 id="physical-layout">Physical Layout</h3>
+
+<p>With 2 bits per transaction, each 8 KB CLOG page holds status for <strong>32,768 transactions</strong> (8192 bytes x 4 statuses per byte). Pages are stored as files in <code class="language-plaintext highlighter-rouge">pg_xact/</code> (historically <code class="language-plaintext highlighter-rouge">pg_clog/</code>), named as zero-padded hex segment numbers (e.g., <code class="language-plaintext highlighter-rouge">0000</code>, <code class="language-plaintext highlighter-rouge">0001</code>).</p>
+
+<pre><code class="language-mermaid">flowchart TD
+    subgraph "CLOG Page (8 KB)"
+        BYTE1["Byte 0:&lt;br/&gt;XID 0-3&lt;br/&gt;(2 bits each)"]
+        BYTE2["Byte 1:&lt;br/&gt;XID 4-7"]
+        DOTS["..."]
+        BYTEN["Byte 8191:&lt;br/&gt;XID 32764-32767"]
+    end
+
+    subgraph "On Disk: pg_xact/"
+        SEG0["0000&lt;br/&gt;(XIDs 0 - ~8M)"]
+        SEG1["0001&lt;br/&gt;(XIDs ~8M - ~16M)"]
+        SEG2["0002&lt;br/&gt;(...)"]
+    end
+</code></pre>
+
+<h3 id="clog-operations">CLOG Operations</h3>
+
+<p><strong>Writing</strong>: When a transaction commits, <code class="language-plaintext highlighter-rouge">TransactionIdSetTreeStatus()</code> sets the status for the top-level XID and all its subtransaction XIDs atomically (from CLOG’s perspective). Subtransactions are set to <code class="language-plaintext highlighter-rouge">COMMITTED</code>, and the top-level transaction is set last. The order matters for crash safety – if the system crashes after setting subtransactions but before setting the parent, the parent defaults to <code class="language-plaintext highlighter-rouge">IN_PROGRESS</code> (initial zero state), and recovery treats everything as aborted.</p>
+
+<p><strong>Reading</strong>: <code class="language-plaintext highlighter-rouge">TransactionIdGetStatus()</code> reads the 2-bit status for a given XID. This is called during visibility checks when hint bits are not yet set on the tuple.</p>
+
+<h3 id="interaction-with-hint-bits">Interaction with Hint Bits</h3>
+
+<p>The first time a visibility check encounters a tuple without hint bits, it calls <code class="language-plaintext highlighter-rouge">TransactionIdDidCommit()</code> which reads from CLOG. Once the status is known, hint bits are set on the tuple header, avoiding future CLOG lookups for that tuple:</p>
+
+<pre><code class="language-mermaid">flowchart TD
+    VIS["Visibility check"] --&gt; HINTS{"Hint bits set?"}
+    HINTS --&gt;|Yes| DONE["Use cached status"]
+    HINTS --&gt;|No| CLOG["TransactionIdGetStatus() from CLOG"]
+    CLOG --&gt; STATUS{"Status?"}
+    STATUS --&gt;|COMMITTED| SET_COMMITTED["Set HEAP_XMIN_COMMITTED"]
+    STATUS --&gt;|ABORTED| SET_ABORTED["Set HEAP_XMIN_INVALID"]
+    STATUS --&gt;|IN_PROGRESS| WAIT["Cannot set hints yet"]
+    STATUS --&gt;|SUB_COMMITTED| PARENT["Look up parent via pg_subtrans"]
+    PARENT --&gt; STATUS
+    SET_COMMITTED --&gt; DONE
+    SET_ABORTED --&gt; DONE
+</code></pre>
+
+<h2 id="subtransaction-log-pg_subtrans">Subtransaction Log (pg_subtrans)</h2>
+
+<h3 id="purpose">Purpose</h3>
+
+<p>The subtransaction log maps each subtransaction XID to its <strong>immediate parent</strong> XID. This allows PostgreSQL to walk up the parent chain to find the top-level transaction for any given XID.</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="kt">void</span> <span class="nf">SubTransSetParent</span><span class="p">(</span><span class="n">TransactionId</span> <span class="n">xid</span><span class="p">,</span> <span class="n">TransactionId</span> <span class="n">parent</span><span class="p">);</span>
+<span class="n">TransactionId</span> <span class="nf">SubTransGetParent</span><span class="p">(</span><span class="n">TransactionId</span> <span class="n">xid</span><span class="p">);</span>
+<span class="n">TransactionId</span> <span class="nf">SubTransGetTopmostTransaction</span><span class="p">(</span><span class="n">TransactionId</span> <span class="n">xid</span><span class="p">);</span>
+</code></pre></div></div>
+
+<h3 id="physical-layout-1">Physical Layout</h3>
+
+<p>Each entry is a 4-byte <code class="language-plaintext highlighter-rouge">TransactionId</code> (the parent XID). With 8 KB pages, each page holds <strong>2048 entries</strong>. Files are stored in <code class="language-plaintext highlighter-rouge">pg_subtrans/</code>.</p>
+
+<h3 id="when-it-is-used">When It Is Used</h3>
+
+<p>Subtransaction parent lookups are needed when:</p>
+
+<ol>
+  <li>
+    <p>A snapshot’s <code class="language-plaintext highlighter-rouge">subxip[]</code> array has overflowed (<code class="language-plaintext highlighter-rouge">suboverflowed = true</code>) and a visibility check encounters an XID not in the main <code class="language-plaintext highlighter-rouge">xip[]</code> array. The check must determine whether the XID is a subtransaction of a known in-progress transaction.</p>
+  </li>
+  <li>
+    <p>The CLOG status is <code class="language-plaintext highlighter-rouge">SUB_COMMITTED</code> and the system needs to find the top-level transaction to check its commit status.</p>
+  </li>
+</ol>
+
+<h3 id="pgproc-subxid-cache">PGPROC Subxid Cache</h3>
+
+<p>Each backend caches up to <code class="language-plaintext highlighter-rouge">PGPROC_MAX_CACHED_SUBXIDS</code> (64) subtransaction XIDs in its PGPROC struct:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="cp">#define PGPROC_MAX_CACHED_SUBXIDS 64
+</span>
+<span class="k">struct</span> <span class="n">XidCache</span>
+<span class="p">{</span>
+    <span class="n">TransactionId</span> <span class="n">xids</span><span class="p">[</span><span class="n">PGPROC_MAX_CACHED_SUBXIDS</span><span class="p">];</span>
+<span class="p">};</span>
+</code></pre></div></div>
+
+<p>When a snapshot is taken, these cached XIDs are copied into the snapshot’s <code class="language-plaintext highlighter-rouge">subxip[]</code> array. If any backend has more than 64 active subtransactions, <code class="language-plaintext highlighter-rouge">suboverflowed</code> is set, and all backends that take snapshots after that point must be prepared to fall back to <code class="language-plaintext highlighter-rouge">pg_subtrans</code> lookups.</p>
+
+<h2 id="slru-simple-lru-buffer">SLRU: Simple LRU Buffer</h2>
+
+<p>Both CLOG and subtrans are built on the SLRU framework, which provides a simple LRU buffer pool for page-structured data stored on disk.</p>
+
+<h3 id="slrushareddata">SlruSharedData</h3>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">typedef</span> <span class="k">struct</span> <span class="n">SlruSharedData</span>
+<span class="p">{</span>
+    <span class="kt">int</span>          <span class="n">num_slots</span><span class="p">;</span>        <span class="cm">/* number of buffer slots */</span>
+    <span class="kt">char</span>       <span class="o">**</span><span class="n">page_buffer</span><span class="p">;</span>      <span class="cm">/* page data arrays */</span>
+    <span class="n">SlruPageStatus</span> <span class="o">*</span><span class="n">page_status</span><span class="p">;</span>   <span class="cm">/* EMPTY, READ_IN_PROGRESS, VALID, WRITE_IN_PROGRESS */</span>
+    <span class="n">bool</span>        <span class="o">*</span><span class="n">page_dirty</span><span class="p">;</span>
+    <span class="n">int64</span>       <span class="o">*</span><span class="n">page_number</span><span class="p">;</span>
+    <span class="kt">int</span>         <span class="o">*</span><span class="n">page_lru_count</span><span class="p">;</span>
+
+    <span class="n">LWLockPadded</span> <span class="o">*</span><span class="n">buffer_locks</span><span class="p">;</span>    <span class="cm">/* per-buffer I/O locks */</span>
+    <span class="n">LWLockPadded</span> <span class="o">*</span><span class="n">bank_locks</span><span class="p">;</span>      <span class="cm">/* bank-level access locks */</span>
+
+    <span class="n">pg_atomic_uint64</span> <span class="n">latest_page_number</span><span class="p">;</span>
+<span class="p">}</span> <span class="n">SlruSharedData</span><span class="p">;</span>
+</code></pre></div></div>
+
+<h3 id="slru-page-states">SLRU Page States</h3>
+
+<table>
+  <thead>
+    <tr>
+      <th>State</th>
+      <th>Meaning</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">SLRU_PAGE_EMPTY</code></td>
+      <td>Slot not in use</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">SLRU_PAGE_READ_IN_PROGRESS</code></td>
+      <td>I/O in progress reading page from disk</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">SLRU_PAGE_VALID</code></td>
+      <td>Page loaded and available</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">SLRU_PAGE_WRITE_IN_PROGRESS</code></td>
+      <td>Being written to disk</td>
+    </tr>
+  </tbody>
+</table>
+
+<h3 id="bank-based-lru">Bank-Based LRU</h3>
+
+<p>Modern PostgreSQL partitions SLRU slots into banks, each with its own LWLock. This reduces contention compared to the original single-lock design. Victim selection happens within a bank, using per-bank LRU counters.</p>
+
+<pre><code class="language-mermaid">flowchart TD
+    subgraph "SLRU Buffer Pool"
+        subgraph "Bank 0"
+            S0["Slot 0&lt;br/&gt;Page 42"]
+            S1["Slot 1&lt;br/&gt;Page 17"]
+            S2["Slot 2&lt;br/&gt;EMPTY"]
+        end
+        subgraph "Bank 1"
+            S3["Slot 3&lt;br/&gt;Page 99"]
+            S4["Slot 4&lt;br/&gt;Page 3"]
+            S5["Slot 5&lt;br/&gt;Page 55"]
+        end
+    end
+
+    DISK["pg_xact/ files on disk"]
+    S0 -.-&gt;|"read/write"| DISK
+    S3 -.-&gt;|"read/write"| DISK
+</code></pre>
+
+<h3 id="slru-users-in-postgresql">SLRU Users in PostgreSQL</h3>
+
+<table>
+  <thead>
+    <tr>
+      <th>SLRU Instance</th>
+      <th>Directory</th>
+      <th>Entry Size</th>
+      <th>Purpose</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>CLOG</td>
+      <td><code class="language-plaintext highlighter-rouge">pg_xact/</code></td>
+      <td>2 bits</td>
+      <td>Transaction commit status</td>
+    </tr>
+    <tr>
+      <td>Subtrans</td>
+      <td><code class="language-plaintext highlighter-rouge">pg_subtrans/</code></td>
+      <td>4 bytes</td>
+      <td>Parent XID mapping</td>
+    </tr>
+    <tr>
+      <td>MultiXact Offsets</td>
+      <td><code class="language-plaintext highlighter-rouge">pg_multixact/offsets/</code></td>
+      <td>4 bytes</td>
+      <td>MultiXactId to offset</td>
+    </tr>
+    <tr>
+      <td>MultiXact Members</td>
+      <td><code class="language-plaintext highlighter-rouge">pg_multixact/members/</code></td>
+      <td>variable</td>
+      <td>Members of a MultiXact</td>
+    </tr>
+    <tr>
+      <td>Commit Timestamp</td>
+      <td><code class="language-plaintext highlighter-rouge">pg_commit_ts/</code></td>
+      <td>12 bytes</td>
+      <td>Commit timestamps</td>
+    </tr>
+  </tbody>
+</table>
+
+<h2 id="truncation">Truncation</h2>
+
+<p>CLOG and subtrans pages for XIDs older than the global xmin horizon are no longer needed. PostgreSQL truncates them during VACUUM:</p>
+
+<ol>
+  <li><code class="language-plaintext highlighter-rouge">TruncateCLOG(oldestXact)</code> removes pages for transactions older than <code class="language-plaintext highlighter-rouge">oldestXact</code></li>
+  <li><code class="language-plaintext highlighter-rouge">TruncateSUBTRANS(oldestXact)</code> does the same for the subtransaction log</li>
+  <li>Truncation is WAL-logged for crash recovery</li>
+</ol>
+
+<h2 id="wal-logging">WAL Logging</h2>
+
+<p>CLOG page creation and truncation are WAL-logged:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="cp">#define CLOG_ZEROPAGE  0x00   </span><span class="cm">/* new page initialized to zeros */</span><span class="cp">
+#define CLOG_TRUNCATE  0x10   </span><span class="cm">/* old pages removed */</span><span class="cp">
+</span></code></pre></div></div>
+
+<p>However, individual status changes (marking a transaction committed) within an existing page are <strong>not</strong> separately WAL-logged. The commit status is recoverable from the transaction’s commit WAL record – during recovery, PostgreSQL replays commit records and sets the CLOG status accordingly.</p>
+
+<h2 id="key-data-structures-summary">Key Data Structures Summary</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>Structure</th>
+      <th>Location</th>
+      <th>Role</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">XidStatus</code></td>
+      <td><code class="language-plaintext highlighter-rouge">clog.h</code></td>
+      <td>2-bit transaction status (int typedef)</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">xl_clog_truncate</code></td>
+      <td><code class="language-plaintext highlighter-rouge">clog.h</code></td>
+      <td>WAL record for CLOG truncation</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">SlruSharedData</code></td>
+      <td><code class="language-plaintext highlighter-rouge">slru.h</code></td>
+      <td>Shared-memory SLRU buffer pool</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">XidCacheStatus</code></td>
+      <td><code class="language-plaintext highlighter-rouge">proc.h</code></td>
+      <td>Per-backend: count + overflow flag for subxids</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">XidCache</code></td>
+      <td><code class="language-plaintext highlighter-rouge">proc.h</code></td>
+      <td>Per-backend: cached subtransaction XIDs</td>
+    </tr>
+  </tbody>
+</table>
+
+<h2 id="connections">Connections</h2>
+
+<ul>
+  <li><strong>MVCC Visibility</strong>: Hint bits are set by reading CLOG, then cached on the tuple to avoid repeated lookups. See <a href="mvcc.html">MVCC</a>.</li>
+  <li><strong>Snapshots</strong>: When <code class="language-plaintext highlighter-rouge">suboverflowed</code> is true, visibility falls back to <code class="language-plaintext highlighter-rouge">pg_subtrans</code> lookups. See <a href="snapshots.html">Snapshots</a>.</li>
+  <li><strong>VACUUM</strong>: Truncates old CLOG and subtrans pages. Freezing tuples (setting HEAP_XMIN_FROZEN) eliminates the need for their CLOG entries.</li>
+  <li><strong>WAL</strong>: Transaction commit records drive CLOG state during recovery. See Chapter 5 (WAL).</li>
+</ul>
+
+
+      <hr>
+
+      <!-- Prev / Next / Up navigation -->
+      
+      
+      
+
+      <div class="clearfix" style="margin-top: 2rem;">
+        
+          
+          
+
+          
+            
+            <a class="btn btn-primary float-left" href="/postgresql/03-transactions/" title="Transactions & MVCC">&larr; Previous</a>
+          
+
+          
+            
+            <a class="btn btn-primary float-right" href="/postgresql/03-transactions/isolation-levels.html" title="Isolation Levels">Next &rarr;</a>
+          
+        
+      </div>
+
+      
+      <div style="text-align: center; margin-top: 1rem;">
+        <a href="/postgresql-internals/">&uarr; Back to Table of Contents</a>
+      </div>
+      
+
+    </div>
+  </div>
+</div>
+
+
+  <!-- Footer -->
+
+<hr>
+
+<footer>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <ul class="list-inline text-center">
+          
+          <li class="list-inline-item">
+            <a href="mailto:amitava.dev@proton.me" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="far fa-envelope fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          
+          
+          <li class="list-inline-item">
+            <a href="https://www.linkedin.com/in/amitavaag" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-linkedin fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          <li class="list-inline-item">
+            <a href="https://github.com/ikouchiha47" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-github fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+        </ul>
+
+        <p class="copyright text-muted">
+          Build with: 
+          <a 
+            href="https://github.com/StartBootstrap/startbootstrap-clean-blog-jekyll"
+            class="text-gray"
+            target="_blank">startbootstrap-clean-blog-jekyll</a></p>
+      </div>
+    </div>
+  </div>
+</footer>
+
+
+  <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="/assets/vendor/blog/js/scripts.js"></script>
+
+<script src="/assets/scripts.js"></script>
+
+
+
+
+
+  <script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+
+    document.querySelectorAll('pre > code.language-mermaid').forEach((codeBlock) => {
+      codeBlock.parentElement.outerHTML = `<pre class="mermaid">${codeBlock.textContent}</pre>`;
+    });
+
+
+    mermaid.initialize({ startOnLoad: true, theme: 'forest' });
+</script>
+
+
+  
+
+</body>
+
+</html>

@@ -1,0 +1,37 @@
+// Import variables
+@import "./variables";
+
+// Import Fonts
+@import "./fonts/fonts";
+
+// Import Bootstrap
+@import "../../bootstrap/scss/bootstrap";
+
+// Global CSS
+@import "./global";
+
+// Components
+@import "./components/buttons";
+@import "./components/navbar";
+
+// Sections
+@import "./sections/contact";
+@import "./sections/footer";
+@import "./sections/masthead";
+@import "./sections/post";
+
+// Syntax Highlighter
+@import "./syntax/github";
+@import "./syntax/overrides";
+
+@import "./components/linkpreview";
+
+// Overrides:
+
+ol, ul, dl {
+    padding-left: 20px;
+}
+
+a {
+    font-family: "Jersey 25", sans serif;
+}

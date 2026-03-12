@@ -1,0 +1,716 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+  <title>
+    Join Nodes - iko&#39;s logs
+    
+  </title>
+
+  <meta name="description" content="">
+  <meta property="og:description" content="">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Join Nodes">
+  <meta property="og:url" content="https://ikouchiha47.github.io/postgresql/08-executor/join-nodes.html">
+
+  
+
+  <link href='https://fonts.googleapis.com/css?family=Lora:400,700,400italic,700italic' rel='stylesheet' type='text/css'>
+  <link href='https://fonts.googleapis.com/css?family=Open+Sans:300italic,400italic,600italic,700italic,800italic,400,300,600,700,800' rel='stylesheet' type='text/css'>
+
+  <!-- <script src="https://use.fontawesome.com/releases/v5.15.3/js/all.js" crossorigin="anonymous"></script> -->
+  <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.15.4/css/all.css" integrity="sha384-DyZ88mC6Up2uqS4h/KRgHuoeGwBcD4Ng9SiP4dIRy0EXTlnuz47vAwmeGwVChigm" crossorigin="anonymous"/>
+
+  <link rel="stylesheet" href="/assets/main.css">
+  <link rel="canonical" href="https://ikouchiha47.github.io/postgresql/08-executor/join-nodes.html">
+  <link rel="alternate" type="application/rss+xml" title="iko&#39;s logs" href="/feed.xml">
+
+  <meta name="google-site-verification" content="lWkg6gIxJgzEKX_5XnhcxCtPE9QknaimFWWos_dTvPM" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fira+Sans:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Inconsolata:wght@200..900&family=Jersey+25&family=Kanit:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Merriweather+Sans:ital,wght@0,300..800;1,300..800&family=Nanum+Gothic+Coding&family=Space+Grotesk:wght@300..700&family=Titillium+Web:ital,wght@0,200;0,300;0,400;0,600;0,700;0,900;1,200;1,300;1,400;1,600;1,700&display=swap" rel="stylesheet">
+
+</head>
+
+
+<body>
+
+  <!-- Navigation -->
+<nav class="navbar navbar-expand-lg navbar-light fixed-top" id="mainNav">
+  <div class="container">
+    <a class="navbar-brand" href="/">iko&#39;s logs</a>
+    <button class="navbar-toggler navbar-toggler-right" type="button" data-toggle="collapse" data-target="#navbarResponsive" aria-controls="navbarResponsive" aria-expanded="false" aria-label="Toggle navigation">
+      Menu
+      <i class="fa fa-bars"></i>
+    </button>
+    <div class="collapse navbar-collapse" id="navbarResponsive">
+      <ul class="navbar-nav ml-auto">
+        <li class="nav-item">
+          <a class="nav-link" href="/">Home</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/about">About</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/posts">Posts</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/contact">Contact</a>
+        </li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+
+  <!-- Page Header -->
+
+<header class="masthead">
+
+  <div class="overlay"></div>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <div class="post-heading">
+          <h1>Join Nodes</h1>
+          
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="container space-grotesk">
+  <div class="row">
+    <div class="col-lg-8 col-md-10 mx-auto">
+
+      <!-- Breadcrumb -->
+      <nav aria-label="breadcrumb" style="margin-bottom: 1.5rem;">
+        <ol class="breadcrumb" style="background: transparent; padding: 0;">
+          
+            <li class="breadcrumb-item"><a href="/postgresql-internals/">PostgreSQL Internals Deep Dive</a></li>
+          
+          
+            
+              <li class="breadcrumb-item"><a href="/postgresql/08-executor/">Executor</a></li>
+            
+          
+          <li class="breadcrumb-item active" aria-current="page">Join Nodes</li>
+        </ol>
+      </nav>
+
+      <h1 id="join-nodes">Join Nodes</h1>
+
+<h2 id="summary">Summary</h2>
+
+<p>PostgreSQL implements three physical join algorithms: <strong>Nested Loop</strong>, <strong>Hash
+Join</strong>, and <strong>Merge Join</strong>. Each supports all logical join types (inner, left,
+right, full, semi, anti). The planner chooses the algorithm based on cost
+estimates considering data size, available indexes, sort order, and memory. All
+three follow the Volcano iterator model – they pull tuples from their outer
+(left) and inner (right) child nodes and return joined result tuples one at a
+time.</p>
+
+<hr />
+
+<h2 id="overview">Overview</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>Algorithm</th>
+      <th>Best When</th>
+      <th>Complexity</th>
+      <th>Memory</th>
+      <th>Preserves Order</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><strong>Nested Loop</strong></td>
+      <td>Small inner, or indexed inner lookup</td>
+      <td>O(N * M) worst case</td>
+      <td>Minimal</td>
+      <td>Outer order preserved</td>
+    </tr>
+    <tr>
+      <td><strong>Hash Join</strong></td>
+      <td>Equi-joins on large unsorted inputs</td>
+      <td>O(N + M)</td>
+      <td>O(M) for hash table</td>
+      <td>No</td>
+    </tr>
+    <tr>
+      <td><strong>Merge Join</strong></td>
+      <td>Equi-joins on pre-sorted inputs</td>
+      <td>O(N + M)</td>
+      <td>Minimal</td>
+      <td>Yes (merge order)</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>All three are implemented as <code class="language-plaintext highlighter-rouge">JoinState</code> subtypes sharing a common base:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">typedef</span> <span class="k">struct</span> <span class="n">JoinState</span> <span class="p">{</span>
+    <span class="n">PlanState</span>   <span class="n">ps</span><span class="p">;</span>             <span class="cm">/* base PlanState */</span>
+    <span class="n">JoinType</span>    <span class="n">jointype</span><span class="p">;</span>       <span class="cm">/* INNER, LEFT, RIGHT, FULL, SEMI, ANTI */</span>
+    <span class="n">bool</span>        <span class="n">single_match</span><span class="p">;</span>   <span class="cm">/* at most one match per outer? (semi-join opt) */</span>
+    <span class="n">ExprState</span>  <span class="o">*</span><span class="n">joinqual</span><span class="p">;</span>       <span class="cm">/* join condition */</span>
+    <span class="n">ExprState</span>  <span class="o">*</span><span class="n">ps</span><span class="p">.</span><span class="n">qual</span><span class="p">;</span>        <span class="cm">/* additional filter ("other qual") */</span>
+<span class="p">}</span> <span class="n">JoinState</span><span class="p">;</span>
+</code></pre></div></div>
+
+<hr />
+
+<h2 id="key-source-files">Key Source Files</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>File</th>
+      <th>Purpose</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/executor/nodeNestloop.c</code></td>
+      <td>Nested loop join</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/executor/nodeHashjoin.c</code></td>
+      <td>Hash join (serial and parallel-aware)</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/executor/nodeMergejoin.c</code></td>
+      <td>Merge join with state machine</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/executor/nodeHash.c</code></td>
+      <td>Hash table build node (child of HashJoin)</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/executor/hashjoin.h</code></td>
+      <td><code class="language-plaintext highlighter-rouge">HashJoinTable</code>, <code class="language-plaintext highlighter-rouge">HashJoinTupleData</code> structs</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/nodes/execnodes.h</code></td>
+      <td><code class="language-plaintext highlighter-rouge">NestLoopState</code>, <code class="language-plaintext highlighter-rouge">HashJoinState</code>, <code class="language-plaintext highlighter-rouge">MergeJoinState</code></td>
+    </tr>
+  </tbody>
+</table>
+
+<hr />
+
+<h2 id="how-it-works">How It Works</h2>
+
+<h3 id="nested-loop-join">Nested Loop Join</h3>
+
+<p>The simplest join algorithm. For each outer tuple, it scans the entire inner
+side looking for matches. In practice, the inner side is almost always an
+index scan parameterized by the outer tuple’s join key.</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">static</span> <span class="n">TupleTableSlot</span> <span class="o">*</span>
+<span class="nf">ExecNestLoop</span><span class="p">(</span><span class="n">PlanState</span> <span class="o">*</span><span class="n">pstate</span><span class="p">)</span>
+<span class="p">{</span>
+    <span class="n">NestLoopState</span> <span class="o">*</span><span class="n">node</span> <span class="o">=</span> <span class="n">castNode</span><span class="p">(</span><span class="n">NestLoopState</span><span class="p">,</span> <span class="n">pstate</span><span class="p">);</span>
+
+    <span class="k">for</span> <span class="p">(;;)</span>
+    <span class="p">{</span>
+        <span class="cm">/* Need a new outer tuple? */</span>
+        <span class="k">if</span> <span class="p">(</span><span class="n">node</span><span class="o">-&gt;</span><span class="n">nl_NeedNewOuter</span><span class="p">)</span>
+        <span class="p">{</span>
+            <span class="n">outerTupleSlot</span> <span class="o">=</span> <span class="n">ExecProcNode</span><span class="p">(</span><span class="n">outerPlan</span><span class="p">);</span>
+            <span class="k">if</span> <span class="p">(</span><span class="n">TupIsNull</span><span class="p">(</span><span class="n">outerTupleSlot</span><span class="p">))</span>
+                <span class="k">return</span> <span class="nb">NULL</span><span class="p">;</span>            <span class="cm">/* outer exhausted */</span>
+
+            <span class="cm">/* Set outer tuple in expression context */</span>
+            <span class="n">econtext</span><span class="o">-&gt;</span><span class="n">ecxt_outertuple</span> <span class="o">=</span> <span class="n">outerTupleSlot</span><span class="p">;</span>
+
+            <span class="cm">/* Pass join key as parameter to inner (parameterized) scan */</span>
+            <span class="n">node</span><span class="o">-&gt;</span><span class="n">nl_NeedNewOuter</span> <span class="o">=</span> <span class="nb">false</span><span class="p">;</span>
+            <span class="n">node</span><span class="o">-&gt;</span><span class="n">nl_MatchedOuter</span> <span class="o">=</span> <span class="nb">false</span><span class="p">;</span>
+            <span class="n">ExecReScan</span><span class="p">(</span><span class="n">innerPlan</span><span class="p">);</span>       <span class="cm">/* restart inner for new outer */</span>
+        <span class="p">}</span>
+
+        <span class="cm">/* Get next inner tuple */</span>
+        <span class="n">innerTupleSlot</span> <span class="o">=</span> <span class="n">ExecProcNode</span><span class="p">(</span><span class="n">innerPlan</span><span class="p">);</span>
+
+        <span class="k">if</span> <span class="p">(</span><span class="n">TupIsNull</span><span class="p">(</span><span class="n">innerTupleSlot</span><span class="p">))</span>
+        <span class="p">{</span>
+            <span class="cm">/* Inner exhausted for this outer tuple */</span>
+            <span class="k">if</span> <span class="p">(</span><span class="o">!</span><span class="n">node</span><span class="o">-&gt;</span><span class="n">nl_MatchedOuter</span> <span class="o">&amp;&amp;</span> <span class="p">(</span><span class="n">jointype</span> <span class="o">==</span> <span class="n">JOIN_LEFT</span> <span class="o">||</span>
+                                            <span class="n">jointype</span> <span class="o">==</span> <span class="n">JOIN_ANTI</span><span class="p">))</span>
+            <span class="p">{</span>
+                <span class="cm">/* Emit outer + NULLs for unmatched LEFT/ANTI */</span>
+                <span class="p">...</span>
+                <span class="k">return</span> <span class="n">result</span><span class="p">;</span>
+            <span class="p">}</span>
+            <span class="n">node</span><span class="o">-&gt;</span><span class="n">nl_NeedNewOuter</span> <span class="o">=</span> <span class="nb">true</span><span class="p">;</span>
+            <span class="k">continue</span><span class="p">;</span>
+        <span class="p">}</span>
+
+        <span class="cm">/* Test join qual */</span>
+        <span class="n">econtext</span><span class="o">-&gt;</span><span class="n">ecxt_innertuple</span> <span class="o">=</span> <span class="n">innerTupleSlot</span><span class="p">;</span>
+        <span class="k">if</span> <span class="p">(</span><span class="n">ExecQual</span><span class="p">(</span><span class="n">joinqual</span><span class="p">,</span> <span class="n">econtext</span><span class="p">))</span>
+        <span class="p">{</span>
+            <span class="n">node</span><span class="o">-&gt;</span><span class="n">nl_MatchedOuter</span> <span class="o">=</span> <span class="nb">true</span><span class="p">;</span>
+
+            <span class="k">if</span> <span class="p">(</span><span class="n">jointype</span> <span class="o">==</span> <span class="n">JOIN_ANTI</span><span class="p">)</span>
+                <span class="k">continue</span><span class="p">;</span>               <span class="cm">/* anti-join: skip matches */</span>
+
+            <span class="cm">/* Apply other qual and project */</span>
+            <span class="k">if</span> <span class="p">(</span><span class="n">otherqual</span> <span class="o">==</span> <span class="nb">NULL</span> <span class="o">||</span> <span class="n">ExecQual</span><span class="p">(</span><span class="n">otherqual</span><span class="p">,</span> <span class="n">econtext</span><span class="p">))</span>
+                <span class="k">return</span> <span class="n">ExecProject</span><span class="p">(</span><span class="n">node</span><span class="o">-&gt;</span><span class="n">js</span><span class="p">.</span><span class="n">ps</span><span class="p">.</span><span class="n">ps_ProjInfo</span><span class="p">);</span>
+        <span class="p">}</span>
+    <span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div></div>
+
+<p><strong>Key optimization:</strong> When the inner plan is a parameterized IndexScan, each
+rescan is an efficient index lookup rather than a full table scan. The planner
+uses <code class="language-plaintext highlighter-rouge">nestloop_params</code> to pass the outer tuple’s join key as a parameter.</p>
+
+<h3 id="hash-join">Hash Join</h3>
+
+<p>A two-phase algorithm: <strong>build</strong> the hash table from the inner (smaller) side,
+then <strong>probe</strong> with each outer tuple.</p>
+
+<pre><code class="language-mermaid">graph LR
+    subgraph "Phase 1: Build"
+        InnerScan["Inner SeqScan"] -- "all tuples" --&gt; HashNode["Hash Node"]
+        HashNode -- "insert each tuple" --&gt; HT["Hash Table\n(buckets + chains)"]
+    end
+
+    subgraph "Phase 2: Probe"
+        OuterScan["Outer SeqScan"] -- "one tuple at a time" --&gt; Probe["HashJoin Probe"]
+        HT -. "lookup by hash key" .-&gt; Probe
+        Probe -- "matched + joined tuple" --&gt; Emit["Emit Result"]
+    end
+</code></pre>
+
+<h4 id="phase-1-build">Phase 1: Build</h4>
+
+<p>The <code class="language-plaintext highlighter-rouge">Hash</code> node (a child of <code class="language-plaintext highlighter-rouge">HashJoin</code>) reads all inner tuples and inserts
+them into an in-memory hash table:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>ExecHashJoin (first call)
+  |
+  +-- ExecProcNode(Hash)
+        |
+        +-- ExecHash builds the hash table:
+              loop:
+                slot = ExecProcNode(inner_scan)
+                if NULL, done building
+                hashvalue = ExecHashGetHashValue(slot, ...)
+                ExecHashTableInsert(hashtable, slot, hashvalue)
+</code></pre></div></div>
+
+<p>The hash table is organized as:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>+------------------+
+| Bucket Array     |    nbuckets entries (power of 2)
+|  [0] --&gt; tuple --&gt; tuple --&gt; NULL
+|  [1] --&gt; NULL
+|  [2] --&gt; tuple --&gt; NULL
+|  ...
++------------------+
+
+bucket = hashvalue &amp; (nbuckets - 1)  (for current batch)
+batch  = (hashvalue &gt;&gt; nbits) &amp; (nbatch - 1)
+</code></pre></div></div>
+
+<h4 id="multi-batch-hybrid-hash-join">Multi-Batch (Hybrid Hash Join)</h4>
+
+<p>When the inner side exceeds <code class="language-plaintext highlighter-rouge">work_mem</code>, the hash join switches to multiple
+batches. Tuples are partitioned by higher bits of the hash value:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>                      hash value bits
+               +------------------------+
+               | batch bits | bucket bits|
+               +------------------------+
+                     |            |
+                     v            v
+               select batch   select bucket
+               (0..nbatch-1)  (0..nbuckets-1)
+
+Batch 0: built in memory, probed immediately
+Batch 1..N: spilled to temp files, processed later
+</code></pre></div></div>
+
+<p>For each subsequent batch:</p>
+<ol>
+  <li>Read inner tuples from inner batch temp file, build hash table</li>
+  <li>Read outer tuples from outer batch temp file, probe</li>
+  <li>Output matches</li>
+</ol>
+
+<p>The number of batches is always a power of two and can be <strong>increased
+dynamically</strong> if the in-memory hash table grows too large. Increasing batches
+only moves tuples to later batches, never earlier ones.</p>
+
+<h4 id="phase-2-probe">Phase 2: Probe</h4>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>ExecHashJoin (subsequent calls, probe phase)
+  |
+  +-- outer_slot = ExecProcNode(outer_plan)
+  +-- hashvalue = ExecHashGetHashValue(outer_slot, ...)
+  +-- batch = CALC_BATCH(hashvalue)
+  |
+  +-- if batch == current_batch:
+  |     +-- bucket = hashvalue &amp; (nbuckets - 1)
+  |     +-- walk bucket chain, test join quals
+  |     +-- if match: return joined tuple
+  |
+  +-- else:
+        +-- save outer tuple to batch temp file for later
+</code></pre></div></div>
+
+<h4 id="skew-optimization">Skew Optimization</h4>
+
+<p>When the outer relation has highly skewed values (from MCV statistics), the
+matching inner tuples are placed in a separate <strong>skew hash table</strong> that stays
+in memory as part of batch 0. This prevents the most common values from causing
+large batch files:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">typedef</span> <span class="k">struct</span> <span class="n">HashSkewBucket</span> <span class="p">{</span>
+    <span class="n">uint32</span>        <span class="n">hashvalue</span><span class="p">;</span>
+    <span class="n">HashJoinTuple</span> <span class="n">tuples</span><span class="p">;</span>       <span class="cm">/* chain of inner tuples */</span>
+<span class="p">}</span> <span class="n">HashSkewBucket</span><span class="p">;</span>
+</code></pre></div></div>
+
+<h3 id="merge-join">Merge Join</h3>
+
+<p>Requires both inputs sorted on the join keys. Walks both sides in lockstep
+using a <strong>state machine</strong> with 11 states:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>State Machine:
+  INITIALIZE_OUTER  --&gt; get first outer tuple
+  INITIALIZE_INNER  --&gt; get first inner tuple
+  SKIP_TEST         --&gt; compare outer vs inner key
+    outer &lt; inner   --&gt; SKIPOUTER_ADVANCE
+    outer &gt; inner   --&gt; SKIPINNER_ADVANCE
+    outer == inner  --&gt; mark inner position, enter match loop
+  JOINTUPLES        --&gt; emit joined tuple
+  NEXTINNER         --&gt; advance inner, check still equal
+  NEXTOUTER         --&gt; advance outer
+  TESTOUTER         --&gt; if outer == mark, restore inner to mark
+  ENDOUTER/ENDINNER --&gt; one side exhausted
+</code></pre></div></div>
+
+<p>The mark/restore mechanism handles duplicate keys. When multiple outer tuples
+match the same inner key range, the executor marks the first matching inner
+tuple and restores to it for each new outer tuple with the same key.</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="cm">/* Simplified merge join logic */</span>
+<span class="k">for</span> <span class="p">(;;)</span>
+<span class="p">{</span>
+    <span class="k">switch</span> <span class="p">(</span><span class="n">node</span><span class="o">-&gt;</span><span class="n">mj_JoinState</span><span class="p">)</span>
+    <span class="p">{</span>
+        <span class="k">case</span> <span class="n">EXEC_MJ_SKIP_TEST</span><span class="p">:</span>
+            <span class="n">compareResult</span> <span class="o">=</span> <span class="n">MJCompare</span><span class="p">(</span><span class="n">outerKey</span><span class="p">,</span> <span class="n">innerKey</span><span class="p">);</span>
+            <span class="k">if</span> <span class="p">(</span><span class="n">compareResult</span> <span class="o">==</span> <span class="mi">0</span><span class="p">)</span>
+            <span class="p">{</span>
+                <span class="n">ExecMarkPos</span><span class="p">(</span><span class="n">inner</span><span class="p">);</span>     <span class="cm">/* mark for restore */</span>
+                <span class="n">node</span><span class="o">-&gt;</span><span class="n">mj_JoinState</span> <span class="o">=</span> <span class="n">EXEC_MJ_JOINTUPLES</span><span class="p">;</span>
+            <span class="p">}</span>
+            <span class="k">else</span> <span class="k">if</span> <span class="p">(</span><span class="n">compareResult</span> <span class="o">&lt;</span> <span class="mi">0</span><span class="p">)</span>
+                <span class="n">node</span><span class="o">-&gt;</span><span class="n">mj_JoinState</span> <span class="o">=</span> <span class="n">EXEC_MJ_SKIPOUTER_ADVANCE</span><span class="p">;</span>
+            <span class="k">else</span>
+                <span class="n">node</span><span class="o">-&gt;</span><span class="n">mj_JoinState</span> <span class="o">=</span> <span class="n">EXEC_MJ_SKIPINNER_ADVANCE</span><span class="p">;</span>
+            <span class="k">break</span><span class="p">;</span>
+
+        <span class="k">case</span> <span class="n">EXEC_MJ_JOINTUPLES</span><span class="p">:</span>
+            <span class="cm">/* emit the joined tuple */</span>
+            <span class="k">return</span> <span class="n">result</span><span class="p">;</span>
+
+        <span class="k">case</span> <span class="n">EXEC_MJ_NEXTINNER</span><span class="p">:</span>
+            <span class="n">innerTuple</span> <span class="o">=</span> <span class="n">ExecProcNode</span><span class="p">(</span><span class="n">inner</span><span class="p">);</span>
+            <span class="k">if</span> <span class="p">(</span><span class="n">innerKey</span> <span class="o">==</span> <span class="n">outerKey</span><span class="p">)</span>
+                <span class="n">node</span><span class="o">-&gt;</span><span class="n">mj_JoinState</span> <span class="o">=</span> <span class="n">EXEC_MJ_JOINTUPLES</span><span class="p">;</span>
+            <span class="k">else</span>
+                <span class="n">node</span><span class="o">-&gt;</span><span class="n">mj_JoinState</span> <span class="o">=</span> <span class="n">EXEC_MJ_NEXTOUTER</span><span class="p">;</span>
+            <span class="k">break</span><span class="p">;</span>
+
+        <span class="k">case</span> <span class="n">EXEC_MJ_NEXTOUTER</span><span class="p">:</span>
+            <span class="n">outerTuple</span> <span class="o">=</span> <span class="n">ExecProcNode</span><span class="p">(</span><span class="n">outer</span><span class="p">);</span>
+            <span class="k">if</span> <span class="p">(</span><span class="n">outerKey</span> <span class="o">==</span> <span class="n">markKey</span><span class="p">)</span>
+            <span class="p">{</span>
+                <span class="n">ExecRestrPos</span><span class="p">(</span><span class="n">inner</span><span class="p">);</span>    <span class="cm">/* back to marked position */</span>
+                <span class="n">node</span><span class="o">-&gt;</span><span class="n">mj_JoinState</span> <span class="o">=</span> <span class="n">EXEC_MJ_JOINTUPLES</span><span class="p">;</span>
+            <span class="p">}</span>
+            <span class="k">else</span>
+                <span class="n">node</span><span class="o">-&gt;</span><span class="n">mj_JoinState</span> <span class="o">=</span> <span class="n">EXEC_MJ_SKIP_TEST</span><span class="p">;</span>
+            <span class="k">break</span><span class="p">;</span>
+        <span class="cm">/* ... */</span>
+    <span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div></div>
+
+<p><strong>Merge join advantages:</strong></p>
+<ul>
+  <li>O(N + M) with no memory overhead beyond sort buffers</li>
+  <li>Input sort order is often “free” from index scans or prior Sort nodes</li>
+  <li>Naturally handles FULL OUTER JOIN (both sides advance together)</li>
+</ul>
+
+<hr />
+
+<h2 id="key-data-structures">Key Data Structures</h2>
+
+<h3 id="hashjointabledata">HashJoinTableData</h3>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">typedef</span> <span class="k">struct</span> <span class="n">HashJoinTableData</span> <span class="p">{</span>
+    <span class="kt">int</span>             <span class="n">nbuckets</span><span class="p">;</span>           <span class="cm">/* number of hash buckets (power of 2) */</span>
+    <span class="kt">int</span>             <span class="n">log2_nbuckets</span><span class="p">;</span>      <span class="cm">/* for fast modulo */</span>
+    <span class="n">HashJoinTuple</span>  <span class="o">*</span><span class="n">buckets</span><span class="p">;</span>            <span class="cm">/* bucket chain heads */</span>
+
+    <span class="kt">int</span>             <span class="n">nbatch</span><span class="p">;</span>             <span class="cm">/* number of batches (power of 2) */</span>
+    <span class="kt">int</span>             <span class="n">curbatch</span><span class="p">;</span>           <span class="cm">/* current batch being processed */</span>
+    <span class="n">BufFile</span>       <span class="o">**</span><span class="n">innerBatchFile</span><span class="p">;</span>     <span class="cm">/* temp files for inner batches */</span>
+    <span class="n">BufFile</span>       <span class="o">**</span><span class="n">outerBatchFile</span><span class="p">;</span>     <span class="cm">/* temp files for outer batches */</span>
+
+    <span class="cm">/* Skew optimization */</span>
+    <span class="n">HashSkewBucket</span> <span class="o">*</span><span class="n">skewBucket</span><span class="p">;</span>         <span class="cm">/* skew hash table */</span>
+    <span class="kt">int</span>             <span class="n">skewBucketLen</span><span class="p">;</span>
+
+    <span class="cm">/* Memory accounting */</span>
+    <span class="n">Size</span>            <span class="n">spaceUsed</span><span class="p">;</span>          <span class="cm">/* current memory usage */</span>
+    <span class="n">Size</span>            <span class="n">spaceAllowed</span><span class="p">;</span>       <span class="cm">/* work_mem budget */</span>
+    <span class="n">Size</span>            <span class="n">spacePeak</span><span class="p">;</span>          <span class="cm">/* peak memory usage */</span>
+
+    <span class="cm">/* Memory contexts */</span>
+    <span class="n">MemoryContext</span>    <span class="n">hashCxt</span><span class="p">;</span>           <span class="cm">/* long-lived hash table storage */</span>
+    <span class="n">MemoryContext</span>    <span class="n">batchCxt</span><span class="p">;</span>          <span class="cm">/* per-batch storage, reset between batches */</span>
+    <span class="n">MemoryContext</span>    <span class="n">spillCxt</span><span class="p">;</span>          <span class="cm">/* temp file buffer storage */</span>
+    <span class="p">...</span>
+<span class="p">}</span> <span class="n">HashJoinTableData</span><span class="p">;</span>
+</code></pre></div></div>
+
+<h3 id="nestloopstate">NestLoopState</h3>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">typedef</span> <span class="k">struct</span> <span class="n">NestLoopState</span> <span class="p">{</span>
+    <span class="n">JoinState</span>   <span class="n">js</span><span class="p">;</span>                     <span class="cm">/* base JoinState */</span>
+    <span class="n">bool</span>        <span class="n">nl_NeedNewOuter</span><span class="p">;</span>        <span class="cm">/* need to fetch next outer? */</span>
+    <span class="n">bool</span>        <span class="n">nl_MatchedOuter</span><span class="p">;</span>        <span class="cm">/* current outer has a match? */</span>
+    <span class="n">TupleTableSlot</span> <span class="o">*</span><span class="n">nl_NullInnerTupleSlot</span><span class="p">;</span>  <span class="cm">/* for LEFT joins */</span>
+<span class="p">}</span> <span class="n">NestLoopState</span><span class="p">;</span>
+</code></pre></div></div>
+
+<h3 id="mergejoinstate">MergeJoinState</h3>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">typedef</span> <span class="k">struct</span> <span class="n">MergeJoinState</span> <span class="p">{</span>
+    <span class="n">JoinState</span>   <span class="n">js</span><span class="p">;</span>
+    <span class="kt">int</span>         <span class="n">mj_JoinState</span><span class="p">;</span>           <span class="cm">/* state machine position */</span>
+    <span class="n">bool</span>        <span class="n">mj_MatchedOuter</span><span class="p">;</span>
+    <span class="n">bool</span>        <span class="n">mj_MatchedInner</span><span class="p">;</span>
+    <span class="n">TupleTableSlot</span> <span class="o">*</span><span class="n">mj_MarkedTupleSlot</span><span class="p">;</span> <span class="cm">/* marked inner position */</span>
+    <span class="n">MergeJoinClauseData</span> <span class="o">*</span><span class="n">mj_Clauses</span><span class="p">;</span>    <span class="cm">/* per-key comparison info */</span>
+    <span class="kt">int</span>         <span class="n">mj_NumClauses</span><span class="p">;</span>
+    <span class="p">...</span>
+<span class="p">}</span> <span class="n">MergeJoinState</span><span class="p">;</span>
+</code></pre></div></div>
+
+<hr />
+
+<h2 id="diagram-join-algorithm-comparison">Diagram: Join Algorithm Comparison</h2>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>NESTED LOOP                    HASH JOIN                    MERGE JOIN
+
+outer  inner                   inner   outer                outer    inner
+  |      |                       |       |                    |        |
+  v      v                       v       v                    v        v
++---+  +---+                  +------+ +---+              (sorted)  (sorted)
+| a |-&gt;| x | scan all         |build | | a |                |        |
+| b |-&gt;| x | for each         |hash  | | b | probe         a == 1? advance
+| c |-&gt;| x | outer            |table | | c | table         b == 2? match!
++---+  +---+                  +------+ +---+               c == 3? advance
+
+O(N*M)                         O(N+M)                      O(N+M)
+best: indexed inner            best: equi-join              best: pre-sorted
+</code></pre></div></div>
+
+<h3 id="parallel-hash-join">Parallel Hash Join</h3>
+
+<p>In parallel-aware hash join, workers cooperatively build a <strong>shared</strong> hash
+table in DSM (dynamic shared memory). The build phase uses a Barrier IPC
+primitive to synchronize:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>PHJ_BUILD_ELECT            -- one worker elected to set up
+PHJ_BUILD_ALLOCATE         -- elected worker allocates shared buckets
+PHJ_BUILD_HASH_INNER       -- all workers hash inner tuples in parallel
+PHJ_BUILD_HASH_OUTER       -- (multi-batch) all workers partition outer
+PHJ_BUILD_RUN              -- build complete, all workers probe in parallel
+PHJ_BUILD_FREE             -- one worker frees shared resources
+</code></pre></div></div>
+
+<p>Each worker probes independent outer tuples against the shared hash table,
+producing non-overlapping result sets that the Gather node merges.</p>
+
+<hr />
+
+<h2 id="connections">Connections</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>Topic</th>
+      <th>Link</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Volcano model and tuple flow</td>
+      <td><a href="volcano-model">Volcano Model</a></td>
+    </tr>
+    <tr>
+      <td>Scan nodes that feed joins</td>
+      <td><a href="scan-nodes">Scan Nodes</a></td>
+    </tr>
+    <tr>
+      <td>Parallel hash join coordination</td>
+      <td><a href="parallel-query">Parallel Query</a></td>
+    </tr>
+    <tr>
+      <td>Sort order enabling merge join</td>
+      <td><a href="sort-and-materialize">Sort and Materialize</a></td>
+    </tr>
+    <tr>
+      <td>Join qual expression evaluation</td>
+      <td><a href="expression-eval">Expression Evaluation</a></td>
+    </tr>
+    <tr>
+      <td>Planner join strategy selection</td>
+      <td><a href="../07-query-optimizer/">Query Optimizer</a></td>
+    </tr>
+    <tr>
+      <td>Memory contexts for hash tables</td>
+      <td><a href="../10-memory/">Memory Management</a></td>
+    </tr>
+  </tbody>
+</table>
+
+
+      <hr>
+
+      <!-- Prev / Next / Up navigation -->
+      
+      
+      
+
+      <div class="clearfix" style="margin-top: 2rem;">
+        
+          
+          
+
+          
+            
+            <a class="btn btn-primary float-left" href="/postgresql/08-executor/expression-eval.html" title="Expression Evaluation">&larr; Previous</a>
+          
+
+          
+            
+            <a class="btn btn-primary float-right" href="/postgresql/08-executor/parallel-query.html" title="Parallel Query">Next &rarr;</a>
+          
+        
+      </div>
+
+      
+      <div style="text-align: center; margin-top: 1rem;">
+        <a href="/postgresql-internals/">&uarr; Back to Table of Contents</a>
+      </div>
+      
+
+    </div>
+  </div>
+</div>
+
+
+  <!-- Footer -->
+
+<hr>
+
+<footer>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <ul class="list-inline text-center">
+          
+          <li class="list-inline-item">
+            <a href="mailto:amitava.dev@proton.me" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="far fa-envelope fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          
+          
+          <li class="list-inline-item">
+            <a href="https://www.linkedin.com/in/amitavaag" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-linkedin fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          <li class="list-inline-item">
+            <a href="https://github.com/ikouchiha47" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-github fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+        </ul>
+
+        <p class="copyright text-muted">
+          Build with: 
+          <a 
+            href="https://github.com/StartBootstrap/startbootstrap-clean-blog-jekyll"
+            class="text-gray"
+            target="_blank">startbootstrap-clean-blog-jekyll</a></p>
+      </div>
+    </div>
+  </div>
+</footer>
+
+
+  <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="/assets/vendor/blog/js/scripts.js"></script>
+
+<script src="/assets/scripts.js"></script>
+
+
+
+
+
+  <script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+
+    document.querySelectorAll('pre > code.language-mermaid').forEach((codeBlock) => {
+      codeBlock.parentElement.outerHTML = `<pre class="mermaid">${codeBlock.textContent}</pre>`;
+    });
+
+
+    mermaid.initialize({ startOnLoad: true, theme: 'forest' });
+</script>
+
+
+  
+
+</body>
+
+</html>

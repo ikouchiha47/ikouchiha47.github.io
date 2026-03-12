@@ -1,0 +1,700 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+  <title>
+    Foreign Data Wrappers - iko&#39;s logs
+    
+  </title>
+
+  <meta name="description" content="">
+  <meta property="og:description" content="">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Foreign Data Wrappers">
+  <meta property="og:url" content="https://ikouchiha47.github.io/postgresql/15-extensions/fdw.html">
+
+  
+
+  <link href='https://fonts.googleapis.com/css?family=Lora:400,700,400italic,700italic' rel='stylesheet' type='text/css'>
+  <link href='https://fonts.googleapis.com/css?family=Open+Sans:300italic,400italic,600italic,700italic,800italic,400,300,600,700,800' rel='stylesheet' type='text/css'>
+
+  <!-- <script src="https://use.fontawesome.com/releases/v5.15.3/js/all.js" crossorigin="anonymous"></script> -->
+  <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.15.4/css/all.css" integrity="sha384-DyZ88mC6Up2uqS4h/KRgHuoeGwBcD4Ng9SiP4dIRy0EXTlnuz47vAwmeGwVChigm" crossorigin="anonymous"/>
+
+  <link rel="stylesheet" href="/assets/main.css">
+  <link rel="canonical" href="https://ikouchiha47.github.io/postgresql/15-extensions/fdw.html">
+  <link rel="alternate" type="application/rss+xml" title="iko&#39;s logs" href="/feed.xml">
+
+  <meta name="google-site-verification" content="lWkg6gIxJgzEKX_5XnhcxCtPE9QknaimFWWos_dTvPM" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fira+Sans:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Inconsolata:wght@200..900&family=Jersey+25&family=Kanit:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Merriweather+Sans:ital,wght@0,300..800;1,300..800&family=Nanum+Gothic+Coding&family=Space+Grotesk:wght@300..700&family=Titillium+Web:ital,wght@0,200;0,300;0,400;0,600;0,700;0,900;1,200;1,300;1,400;1,600;1,700&display=swap" rel="stylesheet">
+
+</head>
+
+
+<body>
+
+  <!-- Navigation -->
+<nav class="navbar navbar-expand-lg navbar-light fixed-top" id="mainNav">
+  <div class="container">
+    <a class="navbar-brand" href="/">iko&#39;s logs</a>
+    <button class="navbar-toggler navbar-toggler-right" type="button" data-toggle="collapse" data-target="#navbarResponsive" aria-controls="navbarResponsive" aria-expanded="false" aria-label="Toggle navigation">
+      Menu
+      <i class="fa fa-bars"></i>
+    </button>
+    <div class="collapse navbar-collapse" id="navbarResponsive">
+      <ul class="navbar-nav ml-auto">
+        <li class="nav-item">
+          <a class="nav-link" href="/">Home</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/about">About</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/posts">Posts</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/contact">Contact</a>
+        </li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+
+  <!-- Page Header -->
+
+<header class="masthead">
+
+  <div class="overlay"></div>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <div class="post-heading">
+          <h1>Foreign Data Wrappers</h1>
+          
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="container space-grotesk">
+  <div class="row">
+    <div class="col-lg-8 col-md-10 mx-auto">
+
+      <!-- Breadcrumb -->
+      <nav aria-label="breadcrumb" style="margin-bottom: 1.5rem;">
+        <ol class="breadcrumb" style="background: transparent; padding: 0;">
+          
+            <li class="breadcrumb-item"><a href="/postgresql-internals/">PostgreSQL Internals Deep Dive</a></li>
+          
+          
+            
+              <li class="breadcrumb-item"><a href="/postgresql/15-extensions/">Extensions</a></li>
+            
+          
+          <li class="breadcrumb-item active" aria-current="page">Foreign Data Wrappers</li>
+        </ol>
+      </nav>
+
+      <h1 id="foreign-data-wrappers-the-fdw-api">Foreign Data Wrappers: The FDW API</h1>
+
+<blockquote>
+  <p><em>A Foreign Data Wrapper makes any external data source – another PostgreSQL instance, a CSV file, a REST API, Redis, MongoDB – look like a local table. The FDW API is the most complex extension interface in PostgreSQL, spanning planning, execution, modification, EXPLAIN, ANALYZE, parallel scan, and asynchronous execution.</em></p>
+</blockquote>
+
+<h2 id="overview">Overview</h2>
+
+<p>The SQL/MED (Management of External Data) standard defines the concept of foreign tables – tables whose data lives outside the local database. PostgreSQL implements this through the Foreign Data Wrapper API, a callback-based protocol defined by the <code class="language-plaintext highlighter-rouge">FdwRoutine</code> struct. An FDW handler function returns this struct, and the planner and executor call its function pointers at each stage of query processing.</p>
+
+<p>The API is divided into required and optional callbacks. At minimum, an FDW must implement seven functions: three for planning (<code class="language-plaintext highlighter-rouge">GetForeignRelSize</code>, <code class="language-plaintext highlighter-rouge">GetForeignPaths</code>, <code class="language-plaintext highlighter-rouge">GetForeignPlan</code>) and four for execution (<code class="language-plaintext highlighter-rouge">BeginForeignScan</code>, <code class="language-plaintext highlighter-rouge">IterateForeignScan</code>, <code class="language-plaintext highlighter-rouge">ReScanForeignScan</code>, <code class="language-plaintext highlighter-rouge">EndForeignScan</code>). Optional callbacks add support for DML operations, join pushdown, aggregate pushdown, parallel scans, EXPLAIN output, ANALYZE statistics, and asynchronous execution.</p>
+
+<pre><code class="language-mermaid">flowchart TD
+    subgraph Planning["Planning Phase"]
+        GRS["GetForeignRelSize&lt;br/&gt;estimate rows, width"]
+        GFP["GetForeignPaths&lt;br/&gt;create ForeignPath nodes"]
+        GFPlan["GetForeignPlan&lt;br/&gt;convert path to ForeignScan node,&lt;br/&gt;decide clause pushdown"]
+        GRS --&gt; GFP --&gt; GFPlan
+    end
+
+    subgraph Execution["Execution Phase"]
+        BFS["BeginForeignScan&lt;br/&gt;open connections, prepare queries"]
+        IFS["IterateForeignScan&lt;br/&gt;fetch next tuple"]
+        IFS --&gt;|"more rows"| IFS
+        EFS["EndForeignScan&lt;br/&gt;close connections, free resources"]
+        BFS --&gt; IFS --&gt; EFS
+    end
+
+    Planning --&gt; Execution
+</code></pre>
+
+<h2 id="key-source-files">Key Source Files</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>File</th>
+      <th>Purpose</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/foreign/fdwapi.h</code></td>
+      <td><code class="language-plaintext highlighter-rouge">FdwRoutine</code> struct and all callback typedefs</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/foreign/foreign.h</code></td>
+      <td><code class="language-plaintext highlighter-rouge">ForeignServer</code>, <code class="language-plaintext highlighter-rouge">ForeignTable</code>, <code class="language-plaintext highlighter-rouge">UserMapping</code> structs</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/foreign/foreign.c</code></td>
+      <td><code class="language-plaintext highlighter-rouge">GetFdwRoutine</code>, catalog lookups</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/optimizer/plan/createplan.c</code></td>
+      <td>Calls <code class="language-plaintext highlighter-rouge">GetForeignPlan</code> to create <code class="language-plaintext highlighter-rouge">ForeignScan</code> nodes</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/executor/nodeForeignscan.c</code></td>
+      <td>Drives <code class="language-plaintext highlighter-rouge">BeginForeignScan</code>/<code class="language-plaintext highlighter-rouge">IterateForeignScan</code>/<code class="language-plaintext highlighter-rouge">EndForeignScan</code></td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">contrib/postgres_fdw/</code></td>
+      <td>Reference implementation (remote PostgreSQL access)</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">contrib/file_fdw/</code></td>
+      <td>Simple example (CSV file access)</td>
+    </tr>
+  </tbody>
+</table>
+
+<h2 id="how-it-works">How It Works</h2>
+
+<h3 id="sql-setup">SQL Setup</h3>
+
+<div class="language-sql highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="c1">-- 1. Create the FDW (references the handler shared library)</span>
+<span class="k">CREATE</span> <span class="k">FOREIGN</span> <span class="k">DATA</span> <span class="n">WRAPPER</span> <span class="n">my_fdw</span>
+    <span class="k">HANDLER</span> <span class="n">my_fdw_handler</span>
+    <span class="k">VALIDATOR</span> <span class="n">my_fdw_validator</span><span class="p">;</span>
+
+<span class="c1">-- 2. Create a server (connection parameters)</span>
+<span class="k">CREATE</span> <span class="n">SERVER</span> <span class="n">remote_srv</span>
+    <span class="k">FOREIGN</span> <span class="k">DATA</span> <span class="n">WRAPPER</span> <span class="n">my_fdw</span>
+    <span class="k">OPTIONS</span> <span class="p">(</span><span class="k">host</span> <span class="s1">'remote.example.com'</span><span class="p">,</span> <span class="n">port</span> <span class="s1">'5432'</span><span class="p">,</span> <span class="n">dbname</span> <span class="s1">'mydb'</span><span class="p">);</span>
+
+<span class="c1">-- 3. Create user mapping (authentication)</span>
+<span class="k">CREATE</span> <span class="k">USER</span> <span class="n">MAPPING</span> <span class="k">FOR</span> <span class="k">current_user</span>
+    <span class="n">SERVER</span> <span class="n">remote_srv</span>
+    <span class="k">OPTIONS</span> <span class="p">(</span><span class="k">user</span> <span class="s1">'remote_user'</span><span class="p">,</span> <span class="n">password</span> <span class="s1">'secret'</span><span class="p">);</span>
+
+<span class="c1">-- 4. Create foreign table</span>
+<span class="k">CREATE</span> <span class="k">FOREIGN</span> <span class="k">TABLE</span> <span class="n">remote_orders</span> <span class="p">(</span>
+    <span class="n">id</span> <span class="nb">integer</span><span class="p">,</span>
+    <span class="n">customer_id</span> <span class="nb">integer</span><span class="p">,</span>
+    <span class="n">total</span> <span class="nb">numeric</span>
+<span class="p">)</span> <span class="n">SERVER</span> <span class="n">remote_srv</span>
+  <span class="k">OPTIONS</span> <span class="p">(</span><span class="k">schema_name</span> <span class="s1">'public'</span><span class="p">,</span> <span class="k">table_name</span> <span class="s1">'orders'</span><span class="p">);</span>
+
+<span class="c1">-- Now use it like a local table</span>
+<span class="k">SELECT</span> <span class="o">*</span> <span class="k">FROM</span> <span class="n">remote_orders</span> <span class="k">WHERE</span> <span class="n">customer_id</span> <span class="o">=</span> <span class="mi">42</span><span class="p">;</span>
+</code></pre></div></div>
+
+<h3 id="the-handler-function">The Handler Function</h3>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="n">PG_FUNCTION_INFO_V1</span><span class="p">(</span><span class="n">my_fdw_handler</span><span class="p">);</span>
+<span class="n">Datum</span>
+<span class="nf">my_fdw_handler</span><span class="p">(</span><span class="n">PG_FUNCTION_ARGS</span><span class="p">)</span>
+<span class="p">{</span>
+    <span class="n">FdwRoutine</span> <span class="o">*</span><span class="n">routine</span> <span class="o">=</span> <span class="n">makeNode</span><span class="p">(</span><span class="n">FdwRoutine</span><span class="p">);</span>
+
+    <span class="cm">/* Required scan callbacks */</span>
+    <span class="n">routine</span><span class="o">-&gt;</span><span class="n">GetForeignRelSize</span> <span class="o">=</span> <span class="n">myGetForeignRelSize</span><span class="p">;</span>
+    <span class="n">routine</span><span class="o">-&gt;</span><span class="n">GetForeignPaths</span> <span class="o">=</span> <span class="n">myGetForeignPaths</span><span class="p">;</span>
+    <span class="n">routine</span><span class="o">-&gt;</span><span class="n">GetForeignPlan</span> <span class="o">=</span> <span class="n">myGetForeignPlan</span><span class="p">;</span>
+    <span class="n">routine</span><span class="o">-&gt;</span><span class="n">BeginForeignScan</span> <span class="o">=</span> <span class="n">myBeginForeignScan</span><span class="p">;</span>
+    <span class="n">routine</span><span class="o">-&gt;</span><span class="n">IterateForeignScan</span> <span class="o">=</span> <span class="n">myIterateForeignScan</span><span class="p">;</span>
+    <span class="n">routine</span><span class="o">-&gt;</span><span class="n">ReScanForeignScan</span> <span class="o">=</span> <span class="n">myReScanForeignScan</span><span class="p">;</span>
+    <span class="n">routine</span><span class="o">-&gt;</span><span class="n">EndForeignScan</span> <span class="o">=</span> <span class="n">myEndForeignScan</span><span class="p">;</span>
+
+    <span class="cm">/* Optional: DML support */</span>
+    <span class="n">routine</span><span class="o">-&gt;</span><span class="n">AddForeignUpdateTargets</span> <span class="o">=</span> <span class="n">myAddForeignUpdateTargets</span><span class="p">;</span>
+    <span class="n">routine</span><span class="o">-&gt;</span><span class="n">PlanForeignModify</span> <span class="o">=</span> <span class="n">myPlanForeignModify</span><span class="p">;</span>
+    <span class="n">routine</span><span class="o">-&gt;</span><span class="n">BeginForeignModify</span> <span class="o">=</span> <span class="n">myBeginForeignModify</span><span class="p">;</span>
+    <span class="n">routine</span><span class="o">-&gt;</span><span class="n">ExecForeignInsert</span> <span class="o">=</span> <span class="n">myExecForeignInsert</span><span class="p">;</span>
+    <span class="n">routine</span><span class="o">-&gt;</span><span class="n">ExecForeignUpdate</span> <span class="o">=</span> <span class="n">myExecForeignUpdate</span><span class="p">;</span>
+    <span class="n">routine</span><span class="o">-&gt;</span><span class="n">ExecForeignDelete</span> <span class="o">=</span> <span class="n">myExecForeignDelete</span><span class="p">;</span>
+    <span class="n">routine</span><span class="o">-&gt;</span><span class="n">EndForeignModify</span> <span class="o">=</span> <span class="n">myEndForeignModify</span><span class="p">;</span>
+
+    <span class="cm">/* Optional: join and aggregate pushdown */</span>
+    <span class="n">routine</span><span class="o">-&gt;</span><span class="n">GetForeignJoinPaths</span> <span class="o">=</span> <span class="n">myGetForeignJoinPaths</span><span class="p">;</span>
+    <span class="n">routine</span><span class="o">-&gt;</span><span class="n">GetForeignUpperPaths</span> <span class="o">=</span> <span class="n">myGetForeignUpperPaths</span><span class="p">;</span>
+
+    <span class="cm">/* Optional: EXPLAIN */</span>
+    <span class="n">routine</span><span class="o">-&gt;</span><span class="n">ExplainForeignScan</span> <span class="o">=</span> <span class="n">myExplainForeignScan</span><span class="p">;</span>
+
+    <span class="n">PG_RETURN_POINTER</span><span class="p">(</span><span class="n">routine</span><span class="p">);</span>
+<span class="p">}</span>
+</code></pre></div></div>
+
+<h3 id="query-lifecycle-through-the-fdw-api">Query Lifecycle Through the FDW API</h3>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>SQL: SELECT * FROM remote_orders WHERE customer_id = 42
+
+PLANNING PHASE
+==============
+
+1. GetForeignRelSize(root, baserel, foreigntableid)
+   |
+   |  Purpose: Estimate the size of the foreign table scan.
+   |  The FDW sets baserel-&gt;rows, baserel-&gt;reltarget-&gt;width,
+   |  and stores private state in baserel-&gt;fdw_private.
+   |
+   |  postgres_fdw: Opens a connection, runs EXPLAIN on the remote
+   |  server to get row estimates.
+   |
+   v
+
+2. GetForeignPaths(root, baserel, foreigntableid)
+   |
+   |  Purpose: Create one or more ForeignPath nodes representing
+   |  different ways to scan the foreign table.
+   |
+   |  The FDW calls add_path() for each alternative. A typical
+   |  FDW creates one path for a full remote scan and possibly
+   |  a parameterized path for nested-loop joins.
+   |
+   v
+
+3. GetForeignPlan(root, baserel, foreigntableid, best_path, tlist, scan_clauses, outer_plan)
+   |
+   |  Purpose: Convert the chosen ForeignPath into a ForeignScan
+   |  plan node. The FDW decides which WHERE clauses to push down
+   |  to the remote side and which to evaluate locally.
+   |
+   |  Returns: ForeignScan node with fdw_private data encoding
+   |  the remote query to execute.
+   |
+   v
+
+EXECUTION PHASE
+===============
+
+4. BeginForeignScan(node, eflags)
+   |
+   |  Purpose: Initialize execution state. Open remote connections,
+   |  prepare remote queries, allocate buffers.
+   |
+   |  The FDW stores its state in node-&gt;fdw_state.
+   |
+   v
+
+5. IterateForeignScan(node)  [called repeatedly]
+   |
+   |  Purpose: Fetch the next tuple from the foreign source.
+   |  Returns a TupleTableSlot with data, or an empty slot
+   |  when the scan is complete.
+   |
+   |  postgres_fdw: Fetches batches of rows from the remote cursor,
+   |  returns them one at a time.
+   |
+   v
+
+6. ReScanForeignScan(node)
+   |
+   |  Purpose: Restart the scan, possibly with new parameters
+   |  (for parameterized nested-loop joins).
+   |
+   v
+
+7. EndForeignScan(node)
+   |
+   |  Purpose: Release resources. Close remote connections/cursors,
+   |  free buffers.
+   |
+   v
+   Done.
+</code></pre></div></div>
+
+<h3 id="dml-callbacks">DML Callbacks</h3>
+
+<p>For <code class="language-plaintext highlighter-rouge">INSERT</code>, <code class="language-plaintext highlighter-rouge">UPDATE</code>, and <code class="language-plaintext highlighter-rouge">DELETE</code> on foreign tables:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>INSERT INTO remote_orders VALUES (1, 42, 99.99)
+
+Planning:
+  AddForeignUpdateTargets(root, rtindex, rte, relation)
+    --&gt; Add junk columns needed to identify rows (e.g., ctid)
+  PlanForeignModify(root, plan, resultRelation, subplan_index)
+    --&gt; Return fdw_private list with remote DML plan
+
+Execution:
+  BeginForeignModify(mtstate, rinfo, fdw_private, subplan_index, eflags)
+    --&gt; Prepare remote INSERT/UPDATE/DELETE statement
+  ExecForeignInsert(estate, rinfo, slot, planSlot)
+    --&gt; Execute remote INSERT, return result slot
+  EndForeignModify(estate, rinfo)
+    --&gt; Close remote statement
+</code></pre></div></div>
+
+<p>For batch inserts, <code class="language-plaintext highlighter-rouge">ExecForeignBatchInsert</code> and <code class="language-plaintext highlighter-rouge">GetForeignModifyBatchSize</code> allow the FDW to insert multiple rows in a single round-trip:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">typedef</span> <span class="n">TupleTableSlot</span> <span class="o">**</span><span class="p">(</span><span class="o">*</span><span class="n">ExecForeignBatchInsert_function</span><span class="p">)</span> <span class="p">(</span>
+    <span class="n">EState</span> <span class="o">*</span><span class="n">estate</span><span class="p">,</span> <span class="n">ResultRelInfo</span> <span class="o">*</span><span class="n">rinfo</span><span class="p">,</span>
+    <span class="n">TupleTableSlot</span> <span class="o">**</span><span class="n">slots</span><span class="p">,</span> <span class="n">TupleTableSlot</span> <span class="o">**</span><span class="n">planSlots</span><span class="p">,</span>
+    <span class="kt">int</span> <span class="o">*</span><span class="n">numSlots</span><span class="p">);</span>
+
+<span class="k">typedef</span> <span class="nf">int</span> <span class="p">(</span><span class="o">*</span><span class="n">GetForeignModifyBatchSize_function</span><span class="p">)</span> <span class="p">(</span><span class="n">ResultRelInfo</span> <span class="o">*</span><span class="n">rinfo</span><span class="p">);</span>
+</code></pre></div></div>
+
+<h3 id="join-pushdown">Join Pushdown</h3>
+
+<p>The <code class="language-plaintext highlighter-rouge">GetForeignJoinPaths</code> callback lets an FDW push joins to the remote server:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">typedef</span> <span class="nf">void</span> <span class="p">(</span><span class="o">*</span><span class="n">GetForeignJoinPaths_function</span><span class="p">)</span> <span class="p">(</span>
+    <span class="n">PlannerInfo</span> <span class="o">*</span><span class="n">root</span><span class="p">,</span>
+    <span class="n">RelOptInfo</span> <span class="o">*</span><span class="n">joinrel</span><span class="p">,</span>
+    <span class="n">RelOptInfo</span> <span class="o">*</span><span class="n">outerrel</span><span class="p">,</span>
+    <span class="n">RelOptInfo</span> <span class="o">*</span><span class="n">innerrel</span><span class="p">,</span>
+    <span class="n">JoinType</span> <span class="n">jointype</span><span class="p">,</span>
+    <span class="n">JoinPathExtraData</span> <span class="o">*</span><span class="n">extra</span><span class="p">);</span>
+</code></pre></div></div>
+
+<p>When both sides of a join are foreign tables on the same remote server, <code class="language-plaintext highlighter-rouge">postgres_fdw</code> creates a <code class="language-plaintext highlighter-rouge">ForeignPath</code> that represents executing the entire join remotely. The planner compares this path’s cost against local join alternatives and picks the cheapest.</p>
+
+<h3 id="upper-relation-pushdown-aggregates-sorts-limits">Upper Relation Pushdown (Aggregates, Sorts, Limits)</h3>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">typedef</span> <span class="nf">void</span> <span class="p">(</span><span class="o">*</span><span class="n">GetForeignUpperPaths_function</span><span class="p">)</span> <span class="p">(</span>
+    <span class="n">PlannerInfo</span> <span class="o">*</span><span class="n">root</span><span class="p">,</span>
+    <span class="n">UpperRelationKind</span> <span class="n">stage</span><span class="p">,</span>   <span class="cm">/* GROUP_AGG, ORDERED, FINAL, etc. */</span>
+    <span class="n">RelOptInfo</span> <span class="o">*</span><span class="n">input_rel</span><span class="p">,</span>
+    <span class="n">RelOptInfo</span> <span class="o">*</span><span class="n">output_rel</span><span class="p">,</span>
+    <span class="kt">void</span> <span class="o">*</span><span class="n">extra</span><span class="p">);</span>
+</code></pre></div></div>
+
+<p>This allows FDWs to push <code class="language-plaintext highlighter-rouge">GROUP BY</code>, <code class="language-plaintext highlighter-rouge">ORDER BY</code>, <code class="language-plaintext highlighter-rouge">LIMIT</code>, and other post-scan operations to the remote server. <code class="language-plaintext highlighter-rouge">postgres_fdw</code> uses this to generate remote queries like <code class="language-plaintext highlighter-rouge">SELECT customer_id, SUM(total) FROM orders GROUP BY customer_id ORDER BY 1 LIMIT 10</code>.</p>
+
+<h3 id="parallel-foreign-scans">Parallel Foreign Scans</h3>
+
+<p>FDWs can participate in parallel query execution:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>IsForeignScanParallelSafe(root, rel, rte)
+  --&gt; Return true if this scan can run in parallel workers
+
+EstimateDSMForeignScan(node, pcxt)
+  --&gt; Return shared memory needed for parallel coordination
+
+InitializeDSMForeignScan(node, pcxt, coordinate)
+  --&gt; Set up shared state in DSM segment (leader process)
+
+InitializeWorkerForeignScan(node, toc, coordinate)
+  --&gt; Attach to shared state (worker processes)
+
+ReInitializeDSMForeignScan(node, pcxt, coordinate)
+  --&gt; Reset for rescan in parallel context
+
+ShutdownForeignScan(node)
+  --&gt; Cleanup before DSM is destroyed
+</code></pre></div></div>
+
+<h3 id="asynchronous-execution">Asynchronous Execution</h3>
+
+<p>Added in PostgreSQL 14, async execution allows the executor to request data from multiple foreign scans concurrently:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>IsForeignPathAsyncCapable(path)
+  --&gt; Return true if this path supports async execution
+
+ForeignAsyncRequest(areq)
+  --&gt; Initiate an asynchronous data fetch
+
+ForeignAsyncConfigureWait(areq)
+  --&gt; Register wait events (socket fd) with the wait event set
+
+ForeignAsyncNotify(areq)
+  --&gt; Process completed async request, provide result tuple
+</code></pre></div></div>
+
+<p>This enables the Append node to issue concurrent requests to multiple foreign servers, overlapping network latency.</p>
+
+<h2 id="key-data-structures">Key Data Structures</h2>
+
+<h3 id="fdwroutine">FdwRoutine</h3>
+
+<p>The complete callback struct (approximately 40 function pointers):</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>FdwRoutine
+ +-- type: NodeTag (T_FdwRoutine)
+ |
+ +-- REQUIRED: Scan Planning &amp; Execution
+ |    +-- GetForeignRelSize
+ |    +-- GetForeignPaths
+ |    +-- GetForeignPlan
+ |    +-- BeginForeignScan
+ |    +-- IterateForeignScan
+ |    +-- ReScanForeignScan
+ |    +-- EndForeignScan
+ |
+ +-- OPTIONAL: Join &amp; Upper Pushdown
+ |    +-- GetForeignJoinPaths
+ |    +-- GetForeignUpperPaths
+ |
+ +-- OPTIONAL: DML
+ |    +-- AddForeignUpdateTargets
+ |    +-- PlanForeignModify
+ |    +-- BeginForeignModify
+ |    +-- ExecForeignInsert / ExecForeignBatchInsert
+ |    +-- GetForeignModifyBatchSize
+ |    +-- ExecForeignUpdate
+ |    +-- ExecForeignDelete
+ |    +-- EndForeignModify
+ |    +-- BeginForeignInsert / EndForeignInsert
+ |    +-- IsForeignRelUpdatable
+ |
+ +-- OPTIONAL: Direct Modify (UPDATE/DELETE pushdown)
+ |    +-- PlanDirectModify
+ |    +-- BeginDirectModify
+ |    +-- IterateDirectModify
+ |    +-- EndDirectModify
+ |
+ +-- OPTIONAL: Row Locking
+ |    +-- GetForeignRowMarkType
+ |    +-- RefetchForeignRow
+ |    +-- RecheckForeignScan
+ |
+ +-- OPTIONAL: EXPLAIN
+ |    +-- ExplainForeignScan
+ |    +-- ExplainForeignModify
+ |    +-- ExplainDirectModify
+ |
+ +-- OPTIONAL: ANALYZE
+ |    +-- AnalyzeForeignTable
+ |
+ +-- OPTIONAL: IMPORT FOREIGN SCHEMA
+ |    +-- ImportForeignSchema
+ |
+ +-- OPTIONAL: TRUNCATE
+ |    +-- ExecForeignTruncate
+ |
+ +-- OPTIONAL: Parallel Execution
+ |    +-- IsForeignScanParallelSafe
+ |    +-- EstimateDSMForeignScan
+ |    +-- InitializeDSMForeignScan
+ |    +-- ReInitializeDSMForeignScan
+ |    +-- InitializeWorkerForeignScan
+ |    +-- ShutdownForeignScan
+ |
+ +-- OPTIONAL: Path Reparameterization
+ |    +-- ReparameterizeForeignPathByChild
+ |
+ +-- OPTIONAL: Async Execution
+      +-- IsForeignPathAsyncCapable
+      +-- ForeignAsyncRequest
+      +-- ForeignAsyncConfigureWait
+      +-- ForeignAsyncNotify
+</code></pre></div></div>
+
+<h3 id="foreignscanstate-execution-state">ForeignScanState (execution state)</h3>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>ForeignScanState
+ +-- ss (ScanState)       : base scan state with result slot, projection, quals
+ +-- fdw_state (void*)    : FDW-private execution state
+ +-- fdw_recheck_quals    : quals needing recheck for RecheckForeignScan
+ +-- pscan_len            : parallel scan descriptor size
+ +-- resultRelInfo        : for DML operations
+</code></pre></div></div>
+
+<h3 id="catalog-objects">Catalog Objects</h3>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>SQL Object                  Catalog Table          C Struct
+-----------                 -------------          --------
+FOREIGN DATA WRAPPER        pg_foreign_data_wrapper ForeignDataWrapper
+SERVER                      pg_foreign_server       ForeignServer
+USER MAPPING                pg_user_mapping         UserMapping
+FOREIGN TABLE               pg_foreign_table        ForeignTable
+                            (+ pg_class for columns)
+</code></pre></div></div>
+
+<h2 id="clause-pushdown-decision-flow">Clause Pushdown Decision Flow</h2>
+
+<p>The most important design decision for an FDW is which clauses to push down to the remote source:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>GetForeignPlan receives scan_clauses (all applicable WHERE clauses)
+  |
+  For each clause:
+  |
+  +-- Can remote evaluate this expression?
+  |    +-- Only built-in operators?
+  |    +-- No local functions?
+  |    +-- No volatile expressions?
+  |    +-- Collation compatible?
+  |
+  +-- YES: Add to remote_conds (pushed down)
+  |         --&gt; Deparse into remote SQL WHERE clause
+  |         --&gt; Remove from local execution
+  |
+  +-- NO:  Add to local_conds (evaluated locally)
+            --&gt; Keep in scan_clauses for local filtering
+            --&gt; extract_actual_clauses() to get executable form
+</code></pre></div></div>
+
+<p><code class="language-plaintext highlighter-rouge">postgres_fdw</code> implements this in <code class="language-plaintext highlighter-rouge">classifyConditions()</code> and <code class="language-plaintext highlighter-rouge">is_foreign_expr()</code>, which walk the expression tree checking that every node is safe to send to the remote server.</p>
+
+<h2 id="connections-to-other-chapters">Connections to Other Chapters</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>Chapter</th>
+      <th>Connection</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><a href="../07-query-optimizer/">Chapter 7: Query Optimizer</a></td>
+      <td><code class="language-plaintext highlighter-rouge">GetForeignRelSize</code>/<code class="language-plaintext highlighter-rouge">GetForeignPaths</code> integrate with the optimizer’s path-based planning; <code class="language-plaintext highlighter-rouge">GetForeignJoinPaths</code> and <code class="language-plaintext highlighter-rouge">GetForeignUpperPaths</code> participate in join and upper planning</td>
+    </tr>
+    <tr>
+      <td><a href="../08-executor/">Chapter 8: Executor</a></td>
+      <td><code class="language-plaintext highlighter-rouge">ForeignScan</code> is an executor node driven by <code class="language-plaintext highlighter-rouge">nodeForeignscan.c</code>, following the same Init/Execute/End pattern as all plan nodes</td>
+    </tr>
+    <tr>
+      <td><a href="../03-transactions/">Chapter 3: Transactions</a></td>
+      <td><code class="language-plaintext highlighter-rouge">postgres_fdw</code> manages remote transactions coordinated with local transaction boundaries, including two-phase commit support</td>
+    </tr>
+    <tr>
+      <td><a href="../12-replication/">Chapter 12: Replication</a></td>
+      <td>Logical replication can target foreign tables; FDW-based replication solutions use the same callback infrastructure</td>
+    </tr>
+    <tr>
+      <td><a href="../13-statistics/">Chapter 13: Statistics</a></td>
+      <td><code class="language-plaintext highlighter-rouge">AnalyzeForeignTable</code> lets FDWs provide statistics to the planner, enabling accurate cost estimation for foreign scans</td>
+    </tr>
+  </tbody>
+</table>
+
+
+      <hr>
+
+      <!-- Prev / Next / Up navigation -->
+      
+      
+      
+
+      <div class="clearfix" style="margin-top: 2rem;">
+        
+          
+          
+
+          
+            
+            <a class="btn btn-primary float-left" href="/postgresql/15-extensions/custom-access-methods.html" title="Custom Access Methods">&larr; Previous</a>
+          
+
+          
+            
+            <a class="btn btn-primary float-right" href="/postgresql/15-extensions/hooks.html" title="Hooks">Next &rarr;</a>
+          
+        
+      </div>
+
+      
+      <div style="text-align: center; margin-top: 1rem;">
+        <a href="/postgresql-internals/">&uarr; Back to Table of Contents</a>
+      </div>
+      
+
+    </div>
+  </div>
+</div>
+
+
+  <!-- Footer -->
+
+<hr>
+
+<footer>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <ul class="list-inline text-center">
+          
+          <li class="list-inline-item">
+            <a href="mailto:amitava.dev@proton.me" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="far fa-envelope fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          
+          
+          <li class="list-inline-item">
+            <a href="https://www.linkedin.com/in/amitavaag" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-linkedin fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          <li class="list-inline-item">
+            <a href="https://github.com/ikouchiha47" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-github fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+        </ul>
+
+        <p class="copyright text-muted">
+          Build with: 
+          <a 
+            href="https://github.com/StartBootstrap/startbootstrap-clean-blog-jekyll"
+            class="text-gray"
+            target="_blank">startbootstrap-clean-blog-jekyll</a></p>
+      </div>
+    </div>
+  </div>
+</footer>
+
+
+  <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="/assets/vendor/blog/js/scripts.js"></script>
+
+<script src="/assets/scripts.js"></script>
+
+
+
+
+
+  <script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+
+    document.querySelectorAll('pre > code.language-mermaid').forEach((codeBlock) => {
+      codeBlock.parentElement.outerHTML = `<pre class="mermaid">${codeBlock.textContent}</pre>`;
+    });
+
+
+    mermaid.initialize({ startOnLoad: true, theme: 'forest' });
+</script>
+
+
+  
+
+</body>
+
+</html>

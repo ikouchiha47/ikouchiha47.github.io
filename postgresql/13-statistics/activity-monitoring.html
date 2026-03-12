@@ -1,0 +1,730 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+  <title>
+    Activity Monitoring - iko&#39;s logs
+    
+  </title>
+
+  <meta name="description" content="">
+  <meta property="og:description" content="">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Activity Monitoring">
+  <meta property="og:url" content="https://ikouchiha47.github.io/postgresql/13-statistics/activity-monitoring.html">
+
+  
+
+  <link href='https://fonts.googleapis.com/css?family=Lora:400,700,400italic,700italic' rel='stylesheet' type='text/css'>
+  <link href='https://fonts.googleapis.com/css?family=Open+Sans:300italic,400italic,600italic,700italic,800italic,400,300,600,700,800' rel='stylesheet' type='text/css'>
+
+  <!-- <script src="https://use.fontawesome.com/releases/v5.15.3/js/all.js" crossorigin="anonymous"></script> -->
+  <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.15.4/css/all.css" integrity="sha384-DyZ88mC6Up2uqS4h/KRgHuoeGwBcD4Ng9SiP4dIRy0EXTlnuz47vAwmeGwVChigm" crossorigin="anonymous"/>
+
+  <link rel="stylesheet" href="/assets/main.css">
+  <link rel="canonical" href="https://ikouchiha47.github.io/postgresql/13-statistics/activity-monitoring.html">
+  <link rel="alternate" type="application/rss+xml" title="iko&#39;s logs" href="/feed.xml">
+
+  <meta name="google-site-verification" content="lWkg6gIxJgzEKX_5XnhcxCtPE9QknaimFWWos_dTvPM" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fira+Sans:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Inconsolata:wght@200..900&family=Jersey+25&family=Kanit:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Merriweather+Sans:ital,wght@0,300..800;1,300..800&family=Nanum+Gothic+Coding&family=Space+Grotesk:wght@300..700&family=Titillium+Web:ital,wght@0,200;0,300;0,400;0,600;0,700;0,900;1,200;1,300;1,400;1,600;1,700&display=swap" rel="stylesheet">
+
+</head>
+
+
+<body>
+
+  <!-- Navigation -->
+<nav class="navbar navbar-expand-lg navbar-light fixed-top" id="mainNav">
+  <div class="container">
+    <a class="navbar-brand" href="/">iko&#39;s logs</a>
+    <button class="navbar-toggler navbar-toggler-right" type="button" data-toggle="collapse" data-target="#navbarResponsive" aria-controls="navbarResponsive" aria-expanded="false" aria-label="Toggle navigation">
+      Menu
+      <i class="fa fa-bars"></i>
+    </button>
+    <div class="collapse navbar-collapse" id="navbarResponsive">
+      <ul class="navbar-nav ml-auto">
+        <li class="nav-item">
+          <a class="nav-link" href="/">Home</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/about">About</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/posts">Posts</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/contact">Contact</a>
+        </li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+
+  <!-- Page Header -->
+
+<header class="masthead">
+
+  <div class="overlay"></div>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <div class="post-heading">
+          <h1>Activity Monitoring</h1>
+          
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="container space-grotesk">
+  <div class="row">
+    <div class="col-lg-8 col-md-10 mx-auto">
+
+      <!-- Breadcrumb -->
+      <nav aria-label="breadcrumb" style="margin-bottom: 1.5rem;">
+        <ol class="breadcrumb" style="background: transparent; padding: 0;">
+          
+            <li class="breadcrumb-item"><a href="/postgresql-internals/">PostgreSQL Internals Deep Dive</a></li>
+          
+          
+            
+              <li class="breadcrumb-item"><a href="/postgresql/13-statistics/">Statistics & Monitoring</a></li>
+            
+          
+          <li class="breadcrumb-item active" aria-current="page">Activity Monitoring</li>
+        </ol>
+      </nav>
+
+      <h1 id="activity-monitoring">Activity Monitoring</h1>
+
+<h2 id="summary">Summary</h2>
+
+<p>PostgreSQL provides three complementary mechanisms for runtime observability. <strong>Backend status reporting</strong> (<code class="language-plaintext highlighter-rouge">pg_stat_activity</code>) shows what every backend is doing right now – its current query, transaction state, and wait event. <strong>Wait events</strong> classify exactly what a process is blocked on, from lock acquisition to client I/O to disk reads. <strong>Progress reporting</strong> tracks the completion percentage of long-running commands like VACUUM, ANALYZE, CREATE INDEX, COPY, and CLUSTER. All three share the same architecture: each backend writes to a pre-allocated slot in shared memory, and monitoring queries take a consistent snapshot of all slots.</p>
+
+<hr />
+
+<h2 id="overview">Overview</h2>
+
+<p>Before PostgreSQL 9.6, diagnosing “what is this backend waiting for?” required external tools like <code class="language-plaintext highlighter-rouge">strace</code>, <code class="language-plaintext highlighter-rouge">perf</code>, or OS-level wait analysis. The wait event infrastructure changed this by embedding lightweight instrumentation directly into the server. A backend sets its wait event before entering any potentially blocking operation and clears it upon return. Since setting a wait event is just writing an integer to a shared-memory field, the overhead is negligible even at high throughput.</p>
+
+<p>The cumulative statistics system (pg_stat_user_tables, pg_stat_bgwriter, pg_stat_io, and others) complements the real-time view by tracking aggregate counters over the lifetime of the server. Since PostgreSQL 15, these counters live in shared memory hash tables rather than being managed by a separate stats collector process.</p>
+
+<hr />
+
+<h2 id="key-source-files">Key Source Files</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>File</th>
+      <th>Purpose</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/utils/backend_status.h</code></td>
+      <td><code class="language-plaintext highlighter-rouge">PgBackendStatus</code> struct, <code class="language-plaintext highlighter-rouge">BackendState</code> enum</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/utils/backend_progress.h</code></td>
+      <td><code class="language-plaintext highlighter-rouge">ProgressCommandType</code>, progress parameter API</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/utils/wait_event.h</code></td>
+      <td>Wait event type definitions, set/reset macros</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/utils/activity/backend_status.c</code></td>
+      <td>Shared memory allocation, status read/write</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/utils/activity/backend_progress.c</code></td>
+      <td>Progress counter update functions</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/utils/activity/wait_event.c</code></td>
+      <td>Wait event name resolution</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/utils/activity/wait_event_names.txt</code></td>
+      <td>Master list of all wait events with descriptions</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/utils/activity/pgstat.c</code></td>
+      <td>Cumulative statistics infrastructure</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/utils/activity/pgstat_relation.c</code></td>
+      <td>Per-relation cumulative stats</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/utils/activity/pgstat_database.c</code></td>
+      <td>Per-database cumulative stats</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/utils/activity/pgstat_io.c</code></td>
+      <td>I/O statistics</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/pgstat.h</code></td>
+      <td>Top-level cumulative stats types and functions</td>
+    </tr>
+  </tbody>
+</table>
+
+<hr />
+
+<h2 id="how-it-works">How It Works</h2>
+
+<h3 id="backend-status-reporting">Backend Status Reporting</h3>
+
+<p>Every backend (and auxiliary process) has a <code class="language-plaintext highlighter-rouge">PgBackendStatus</code> slot in shared memory, allocated at startup in <code class="language-plaintext highlighter-rouge">BackendStatusShmemInit()</code>. The total number of slots is <code class="language-plaintext highlighter-rouge">MaxBackends + NUM_AUXILIARY_PROCS</code>.</p>
+
+<pre><code class="language-mermaid">flowchart TD
+    subgraph "Shared Memory"
+        ARRAY["BackendStatusArray\n(PgBackendStatus slots)"]
+        APP["BackendAppnameBuffer"]
+        QUERY["BackendActivityBuffer"]
+        HOST["BackendClientHostnameBuffer"]
+    end
+
+    BACKEND["Backend process"] --&gt;|"writes to own slot"| ARRAY
+    BACKEND --&gt;|"copies query text"| QUERY
+
+    MONITOR["SELECT * FROM\npg_stat_activity"] --&gt;|"snapshots all slots"| ARRAY
+    MONITOR --&gt;|"reads"| QUERY
+</code></pre>
+
+<p><strong>Lock-free reads via st_changecount</strong>: To avoid locking overhead, backends use a sequence-number protocol:</p>
+
+<ol>
+  <li>Before modifying its slot, the backend increments <code class="language-plaintext highlighter-rouge">st_changecount</code> (making it odd).</li>
+  <li>After finishing the modification, it increments <code class="language-plaintext highlighter-rouge">st_changecount</code> again (making it even).</li>
+  <li>A reader copies the entire slot into local memory, then checks <code class="language-plaintext highlighter-rouge">st_changecount</code>. If the value changed during the copy, or if it is odd, the reader retries.</li>
+</ol>
+
+<p>This protocol requires memory barriers (provided by macros <code class="language-plaintext highlighter-rouge">pgstat_begin_changecount_write/read</code>) to prevent CPU reordering from violating the invariants.</p>
+
+<h3 id="pgbackendstatus-structure">PgBackendStatus Structure</h3>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">typedef</span> <span class="k">struct</span> <span class="n">PgBackendStatus</span> <span class="p">{</span>
+    <span class="kt">int</span>             <span class="n">st_changecount</span><span class="p">;</span>     <span class="cm">/* lock-free protocol counter */</span>
+    <span class="kt">int</span>             <span class="n">st_procpid</span><span class="p">;</span>         <span class="cm">/* backend PID (0 = unused slot) */</span>
+    <span class="n">ProcNumber</span>      <span class="n">st_procno</span><span class="p">;</span>          <span class="cm">/* ProcNumber for this backend */</span>
+    <span class="n">TimestampTz</span>     <span class="n">st_proc_start_timestamp</span><span class="p">;</span>
+    <span class="n">TimestampTz</span>     <span class="n">st_xact_start_timestamp</span><span class="p">;</span>
+    <span class="n">TimestampTz</span>     <span class="n">st_activity_start_timestamp</span><span class="p">;</span>
+    <span class="n">TimestampTz</span>     <span class="n">st_state_start_timestamp</span><span class="p">;</span>
+
+    <span class="n">BackendState</span>    <span class="n">st_state</span><span class="p">;</span>           <span class="cm">/* idle, active, idle-in-transaction, etc. */</span>
+    <span class="n">Oid</span>             <span class="n">st_databaseid</span><span class="p">;</span>
+    <span class="n">Oid</span>             <span class="n">st_userid</span><span class="p">;</span>
+
+    <span class="cm">/* Wait event info (packed into a single uint32) */</span>
+    <span class="n">uint32</span>          <span class="n">st_wait_event_info</span><span class="p">;</span>
+
+    <span class="cm">/* Progress reporting */</span>
+    <span class="n">ProgressCommandType</span> <span class="n">st_progress_command</span><span class="p">;</span>
+    <span class="n">Oid</span>             <span class="n">st_progress_command_target</span><span class="p">;</span>
+    <span class="n">int64</span>           <span class="n">st_progress_param</span><span class="p">[</span><span class="n">PGSTAT_NUM_PROGRESS_PARAM</span><span class="p">];</span> <span class="cm">/* 20 slots */</span>
+
+    <span class="cm">/* Pointers into separate buffers */</span>
+    <span class="kt">char</span>           <span class="o">*</span><span class="n">st_appname</span><span class="p">;</span>
+    <span class="kt">char</span>           <span class="o">*</span><span class="n">st_clienthostname</span><span class="p">;</span>
+    <span class="kt">char</span>           <span class="o">*</span><span class="n">st_activity</span><span class="p">;</span>        <span class="cm">/* current query string */</span>
+
+    <span class="cm">/* Connection info */</span>
+    <span class="n">SockAddr</span>        <span class="n">st_clientaddr</span><span class="p">;</span>
+    <span class="n">BackendType</span>     <span class="n">st_backendType</span><span class="p">;</span>
+<span class="p">}</span> <span class="n">PgBackendStatus</span><span class="p">;</span>
+</code></pre></div></div>
+
+<p>The <code class="language-plaintext highlighter-rouge">BackendState</code> enum maps directly to the <code class="language-plaintext highlighter-rouge">state</code> column in <code class="language-plaintext highlighter-rouge">pg_stat_activity</code>:</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>Enum Value</th>
+      <th>pg_stat_activity.state</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">STATE_IDLE</code></td>
+      <td><code class="language-plaintext highlighter-rouge">idle</code></td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">STATE_RUNNING</code></td>
+      <td><code class="language-plaintext highlighter-rouge">active</code></td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">STATE_IDLEINTRANSACTION</code></td>
+      <td><code class="language-plaintext highlighter-rouge">idle in transaction</code></td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">STATE_IDLEINTRANSACTION_ABORTED</code></td>
+      <td><code class="language-plaintext highlighter-rouge">idle in transaction (aborted)</code></td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">STATE_FASTPATH</code></td>
+      <td><code class="language-plaintext highlighter-rouge">fastpath function call</code></td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">STATE_DISABLED</code></td>
+      <td><code class="language-plaintext highlighter-rouge">disabled</code></td>
+    </tr>
+  </tbody>
+</table>
+
+<h3 id="wait-events">Wait Events</h3>
+
+<p>Wait events are categorized into classes, each covering a different kind of blocking:</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>Class</th>
+      <th>Description</th>
+      <th>Examples</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><strong>Activity</strong></td>
+      <td>Background process idle loops</td>
+      <td><code class="language-plaintext highlighter-rouge">AutoVacuumMain</code>, <code class="language-plaintext highlighter-rouge">BgWriterMain</code>, <code class="language-plaintext highlighter-rouge">WalWriterMain</code></td>
+    </tr>
+    <tr>
+      <td><strong>Client</strong></td>
+      <td>Waiting for client I/O</td>
+      <td><code class="language-plaintext highlighter-rouge">ClientRead</code>, <code class="language-plaintext highlighter-rouge">ClientWrite</code></td>
+    </tr>
+    <tr>
+      <td><strong>IPC</strong></td>
+      <td>Waiting for another process</td>
+      <td><code class="language-plaintext highlighter-rouge">BufferIO</code>, <code class="language-plaintext highlighter-rouge">CheckpointDone</code>, <code class="language-plaintext highlighter-rouge">ExecuteGather</code></td>
+    </tr>
+    <tr>
+      <td><strong>Timeout</strong></td>
+      <td>Sleeping on a timer</td>
+      <td><code class="language-plaintext highlighter-rouge">PgSleep</code>, <code class="language-plaintext highlighter-rouge">VacuumDelay</code>, <code class="language-plaintext highlighter-rouge">CheckpointWriteDelay</code></td>
+    </tr>
+    <tr>
+      <td><strong>IO</strong></td>
+      <td>Waiting for disk I/O</td>
+      <td><code class="language-plaintext highlighter-rouge">AioIOCompletion</code>, <code class="language-plaintext highlighter-rouge">DataFileRead</code>, <code class="language-plaintext highlighter-rouge">WALWrite</code></td>
+    </tr>
+    <tr>
+      <td><strong>LWLock</strong></td>
+      <td>Lightweight lock waits</td>
+      <td>Named per lwlock tranche (buffer mapping, WAL insert, etc.)</td>
+    </tr>
+    <tr>
+      <td><strong>Lock</strong></td>
+      <td>Heavyweight (relation) lock waits</td>
+      <td>Row, relation, transaction locks</td>
+    </tr>
+    <tr>
+      <td><strong>BufferPin</strong></td>
+      <td>Waiting for a buffer pin</td>
+      <td>Another backend holds a pin on needed buffer</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>The wait event is packed into a single <code class="language-plaintext highlighter-rouge">uint32</code> in <code class="language-plaintext highlighter-rouge">st_wait_event_info</code>, with the high bits encoding the class and the low bits encoding the specific event within that class. Setting a wait event is a single memory store:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="cm">/* Simplified from wait_event.h */</span>
+<span class="k">static</span> <span class="kr">inline</span> <span class="kt">void</span>
+<span class="nf">pgstat_report_wait_start</span><span class="p">(</span><span class="n">uint32</span> <span class="n">wait_event_info</span><span class="p">)</span>
+<span class="p">{</span>
+    <span class="n">MyProc</span><span class="o">-&gt;</span><span class="n">wait_event_info</span> <span class="o">=</span> <span class="n">wait_event_info</span><span class="p">;</span>
+    <span class="n">MyBEEntry</span><span class="o">-&gt;</span><span class="n">st_wait_event_info</span> <span class="o">=</span> <span class="n">wait_event_info</span><span class="p">;</span>
+<span class="p">}</span>
+
+<span class="k">static</span> <span class="kr">inline</span> <span class="kt">void</span>
+<span class="nf">pgstat_report_wait_end</span><span class="p">(</span><span class="kt">void</span><span class="p">)</span>
+<span class="p">{</span>
+    <span class="n">MyProc</span><span class="o">-&gt;</span><span class="n">wait_event_info</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span>
+    <span class="n">MyBEEntry</span><span class="o">-&gt;</span><span class="n">st_wait_event_info</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span>
+<span class="p">}</span>
+</code></pre></div></div>
+
+<p>The <code class="language-plaintext highlighter-rouge">wait_event_names.txt</code> file is the master source of truth. A Perl script (<code class="language-plaintext highlighter-rouge">generate-wait_event_types.pl</code>) generates C header files, C name-lookup functions, and SGML documentation from this single file.</p>
+
+<pre><code class="language-mermaid">flowchart LR
+    TXT["wait_event_names.txt"] --&gt; PERL["generate-wait_event_types.pl"]
+    PERL --&gt; HDR["wait_event_types.h\n(enum definitions)"]
+    PERL --&gt; CFUNC["pgstat_wait_event.c\n(name lookup functions)"]
+    PERL --&gt; SGML["wait_event_types.sgml\n(documentation)"]
+</code></pre>
+
+<h3 id="progress-reporting">Progress Reporting</h3>
+
+<p>Long-running commands report progress through a fixed array of 20 <code class="language-plaintext highlighter-rouge">int64</code> counters in <code class="language-plaintext highlighter-rouge">PgBackendStatus</code>. Each command type defines its own mapping of counter indices to meanings.</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">typedef</span> <span class="k">enum</span> <span class="n">ProgressCommandType</span> <span class="p">{</span>
+    <span class="n">PROGRESS_COMMAND_INVALID</span><span class="p">,</span>
+    <span class="n">PROGRESS_COMMAND_VACUUM</span><span class="p">,</span>
+    <span class="n">PROGRESS_COMMAND_ANALYZE</span><span class="p">,</span>
+    <span class="n">PROGRESS_COMMAND_CLUSTER</span><span class="p">,</span>
+    <span class="n">PROGRESS_COMMAND_CREATE_INDEX</span><span class="p">,</span>
+    <span class="n">PROGRESS_COMMAND_BASEBACKUP</span><span class="p">,</span>
+    <span class="n">PROGRESS_COMMAND_COPY</span><span class="p">,</span>
+<span class="p">}</span> <span class="n">ProgressCommandType</span><span class="p">;</span>
+</code></pre></div></div>
+
+<p>The API is straightforward:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="cm">/* At command start */</span>
+<span class="n">pgstat_progress_start_command</span><span class="p">(</span><span class="n">PROGRESS_COMMAND_VACUUM</span><span class="p">,</span> <span class="n">relid</span><span class="p">);</span>
+
+<span class="cm">/* During execution */</span>
+<span class="n">pgstat_progress_update_param</span><span class="p">(</span><span class="n">PROGRESS_VACUUM_PHASE</span><span class="p">,</span> <span class="n">phase</span><span class="p">);</span>
+<span class="n">pgstat_progress_update_param</span><span class="p">(</span><span class="n">PROGRESS_VACUUM_HEAP_BLKS_SCANNED</span><span class="p">,</span> <span class="n">blks</span><span class="p">);</span>
+
+<span class="cm">/* At command end */</span>
+<span class="n">pgstat_progress_end_command</span><span class="p">();</span>
+</code></pre></div></div>
+
+<p>Corresponding views expose these counters with meaningful column names:</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>View</th>
+      <th>Command</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">pg_stat_progress_vacuum</code></td>
+      <td>VACUUM</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">pg_stat_progress_analyze</code></td>
+      <td>ANALYZE</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">pg_stat_progress_create_index</code></td>
+      <td>CREATE INDEX / REINDEX</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">pg_stat_progress_cluster</code></td>
+      <td>CLUSTER / VACUUM FULL</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">pg_stat_progress_basebackup</code></td>
+      <td>pg_basebackup</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">pg_stat_progress_copy</code></td>
+      <td>COPY</td>
+    </tr>
+  </tbody>
+</table>
+
+<h3 id="cumulative-statistics-infrastructure">Cumulative Statistics Infrastructure</h3>
+
+<p>Since PostgreSQL 15, cumulative statistics are stored in shared memory hash tables, replacing the old stats collector process. The architecture:</p>
+
+<pre><code class="language-mermaid">flowchart TD
+    subgraph "Backend Process"
+        LOCAL["PgStat_TableCounts\n(local counters)"]
+        LOCAL --&gt;|"pgstat_report_stat()\nat transaction end"| FLUSH["Flush to shared memory"]
+    end
+
+    subgraph "Shared Memory"
+        HASH["dshash table\n(keyed by kind + OID)"]
+        FLUSH --&gt; HASH
+    end
+
+    subgraph "Monitoring Queries"
+        VIEW["pg_stat_user_tables\npg_stat_bgwriter\npg_stat_io ..."]
+        VIEW --&gt;|"read snapshot"| HASH
+    end
+
+    RESET["pg_stat_reset()\npg_stat_reset_single_table_counters()"]
+    RESET --&gt;|"zeroes"| HASH
+</code></pre>
+
+<p>Each backend accumulates counters locally in <code class="language-plaintext highlighter-rouge">PgStat_TableCounts</code> (for relations) or similar per-kind structures. At transaction commit (or periodically for long transactions), counters are flushed to the shared hash table. This batching reduces contention on the shared data structures.</p>
+
+<p>Key counter categories:</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>Stats Kind</th>
+      <th>View</th>
+      <th>Key Counters</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Relations</td>
+      <td><code class="language-plaintext highlighter-rouge">pg_stat_user_tables</code></td>
+      <td><code class="language-plaintext highlighter-rouge">seq_scan</code>, <code class="language-plaintext highlighter-rouge">idx_scan</code>, <code class="language-plaintext highlighter-rouge">n_tup_ins/upd/del</code>, <code class="language-plaintext highlighter-rouge">n_live_tup</code>, <code class="language-plaintext highlighter-rouge">n_dead_tup</code></td>
+    </tr>
+    <tr>
+      <td>Indexes</td>
+      <td><code class="language-plaintext highlighter-rouge">pg_stat_user_indexes</code></td>
+      <td><code class="language-plaintext highlighter-rouge">idx_scan</code>, <code class="language-plaintext highlighter-rouge">idx_tup_read</code>, <code class="language-plaintext highlighter-rouge">idx_tup_fetch</code></td>
+    </tr>
+    <tr>
+      <td>Database</td>
+      <td><code class="language-plaintext highlighter-rouge">pg_stat_database</code></td>
+      <td><code class="language-plaintext highlighter-rouge">xact_commit</code>, <code class="language-plaintext highlighter-rouge">xact_rollback</code>, <code class="language-plaintext highlighter-rouge">blks_read</code>, <code class="language-plaintext highlighter-rouge">blks_hit</code></td>
+    </tr>
+    <tr>
+      <td>IO</td>
+      <td><code class="language-plaintext highlighter-rouge">pg_stat_io</code></td>
+      <td><code class="language-plaintext highlighter-rouge">reads</code>, <code class="language-plaintext highlighter-rouge">writes</code>, <code class="language-plaintext highlighter-rouge">extends</code>, <code class="language-plaintext highlighter-rouge">hits</code>, <code class="language-plaintext highlighter-rouge">evictions</code> by backend type and context</td>
+    </tr>
+    <tr>
+      <td>WAL</td>
+      <td><code class="language-plaintext highlighter-rouge">pg_stat_wal</code></td>
+      <td><code class="language-plaintext highlighter-rouge">wal_records</code>, <code class="language-plaintext highlighter-rouge">wal_bytes</code>, <code class="language-plaintext highlighter-rouge">wal_buffers_full</code></td>
+    </tr>
+    <tr>
+      <td>BGWriter</td>
+      <td><code class="language-plaintext highlighter-rouge">pg_stat_bgwriter</code></td>
+      <td><code class="language-plaintext highlighter-rouge">buffers_clean</code>, <code class="language-plaintext highlighter-rouge">buffers_alloc</code></td>
+    </tr>
+    <tr>
+      <td>Checkpointer</td>
+      <td><code class="language-plaintext highlighter-rouge">pg_stat_checkpointer</code></td>
+      <td><code class="language-plaintext highlighter-rouge">num_timed</code>, <code class="language-plaintext highlighter-rouge">num_requested</code>, <code class="language-plaintext highlighter-rouge">buffers_written</code></td>
+    </tr>
+  </tbody>
+</table>
+
+<hr />
+
+<h2 id="key-data-structures">Key Data Structures</h2>
+
+<h3 id="pgstat_tablecounts">PgStat_TableCounts</h3>
+
+<p>The per-table counters accumulated locally in each backend:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">typedef</span> <span class="k">struct</span> <span class="n">PgStat_TableCounts</span> <span class="p">{</span>
+    <span class="n">PgStat_Counter</span> <span class="n">numscans</span><span class="p">;</span>
+    <span class="n">PgStat_Counter</span> <span class="n">tuples_returned</span><span class="p">;</span>
+    <span class="n">PgStat_Counter</span> <span class="n">tuples_fetched</span><span class="p">;</span>
+    <span class="n">PgStat_Counter</span> <span class="n">tuples_inserted</span><span class="p">;</span>
+    <span class="n">PgStat_Counter</span> <span class="n">tuples_updated</span><span class="p">;</span>
+    <span class="n">PgStat_Counter</span> <span class="n">tuples_deleted</span><span class="p">;</span>
+    <span class="n">PgStat_Counter</span> <span class="n">tuples_hot_updated</span><span class="p">;</span>
+    <span class="n">PgStat_Counter</span> <span class="n">tuples_newpage_updated</span><span class="p">;</span>
+    <span class="n">PgStat_Counter</span> <span class="n">delta_live_tuples</span><span class="p">;</span>
+    <span class="n">PgStat_Counter</span> <span class="n">delta_dead_tuples</span><span class="p">;</span>
+    <span class="n">PgStat_Counter</span> <span class="n">changed_tuples</span><span class="p">;</span>
+    <span class="cm">/* ... block-level counters ... */</span>
+<span class="p">}</span> <span class="n">PgStat_TableCounts</span><span class="p">;</span>
+</code></pre></div></div>
+
+<p>The <code class="language-plaintext highlighter-rouge">delta_live_tuples</code> and <code class="language-plaintext highlighter-rouge">delta_dead_tuples</code> fields can be negative. They are set at commit or abort time to reflect the net change. The <code class="language-plaintext highlighter-rouge">changed_tuples</code> counter drives autovacuum’s decision to trigger ANALYZE.</p>
+
+<hr />
+
+<h2 id="practical-monitoring-patterns">Practical Monitoring Patterns</h2>
+
+<h3 id="finding-blocked-queries">Finding Blocked Queries</h3>
+
+<div class="language-sql highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">SELECT</span> <span class="n">pid</span><span class="p">,</span> <span class="n">wait_event_type</span><span class="p">,</span> <span class="n">wait_event</span><span class="p">,</span> <span class="k">state</span><span class="p">,</span>
+       <span class="k">left</span><span class="p">(</span><span class="n">query</span><span class="p">,</span> <span class="mi">80</span><span class="p">)</span> <span class="k">AS</span> <span class="n">query</span>
+<span class="k">FROM</span> <span class="n">pg_stat_activity</span>
+<span class="k">WHERE</span> <span class="n">wait_event</span> <span class="k">IS</span> <span class="k">NOT</span> <span class="k">NULL</span>
+  <span class="k">AND</span> <span class="k">state</span> <span class="o">=</span> <span class="s1">'active'</span>
+<span class="k">ORDER</span> <span class="k">BY</span> <span class="n">query_start</span><span class="p">;</span>
+</code></pre></div></div>
+
+<h3 id="identifying-lock-waiters-and-blockers">Identifying Lock Waiters and Blockers</h3>
+
+<div class="language-sql highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">SELECT</span> <span class="n">blocked</span><span class="p">.</span><span class="n">pid</span> <span class="k">AS</span> <span class="n">blocked_pid</span><span class="p">,</span>
+       <span class="n">blocked</span><span class="p">.</span><span class="n">query</span> <span class="k">AS</span> <span class="n">blocked_query</span><span class="p">,</span>
+       <span class="n">blocking</span><span class="p">.</span><span class="n">pid</span> <span class="k">AS</span> <span class="n">blocking_pid</span><span class="p">,</span>
+       <span class="n">blocking</span><span class="p">.</span><span class="n">query</span> <span class="k">AS</span> <span class="n">blocking_query</span>
+<span class="k">FROM</span> <span class="n">pg_stat_activity</span> <span class="n">blocked</span>
+<span class="k">JOIN</span> <span class="n">pg_locks</span> <span class="n">bl</span> <span class="k">ON</span> <span class="n">bl</span><span class="p">.</span><span class="n">pid</span> <span class="o">=</span> <span class="n">blocked</span><span class="p">.</span><span class="n">pid</span> <span class="k">AND</span> <span class="k">NOT</span> <span class="n">bl</span><span class="p">.</span><span class="k">granted</span>
+<span class="k">JOIN</span> <span class="n">pg_locks</span> <span class="n">gl</span> <span class="k">ON</span> <span class="n">gl</span><span class="p">.</span><span class="n">locktype</span> <span class="o">=</span> <span class="n">bl</span><span class="p">.</span><span class="n">locktype</span>
+    <span class="k">AND</span> <span class="n">gl</span><span class="p">.</span><span class="k">database</span> <span class="k">IS</span> <span class="k">NOT</span> <span class="k">DISTINCT</span> <span class="k">FROM</span> <span class="n">bl</span><span class="p">.</span><span class="k">database</span>
+    <span class="k">AND</span> <span class="n">gl</span><span class="p">.</span><span class="n">relation</span> <span class="k">IS</span> <span class="k">NOT</span> <span class="k">DISTINCT</span> <span class="k">FROM</span> <span class="n">bl</span><span class="p">.</span><span class="n">relation</span>
+    <span class="k">AND</span> <span class="n">gl</span><span class="p">.</span><span class="k">granted</span>
+<span class="k">JOIN</span> <span class="n">pg_stat_activity</span> <span class="n">blocking</span> <span class="k">ON</span> <span class="n">blocking</span><span class="p">.</span><span class="n">pid</span> <span class="o">=</span> <span class="n">gl</span><span class="p">.</span><span class="n">pid</span>
+<span class="k">WHERE</span> <span class="n">blocked</span><span class="p">.</span><span class="n">pid</span> <span class="o">!=</span> <span class="n">blocking</span><span class="p">.</span><span class="n">pid</span><span class="p">;</span>
+</code></pre></div></div>
+
+<h3 id="monitoring-vacuum-progress">Monitoring VACUUM Progress</h3>
+
+<div class="language-sql highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">SELECT</span> <span class="n">p</span><span class="p">.</span><span class="n">relid</span><span class="p">::</span><span class="n">regclass</span> <span class="k">AS</span> <span class="k">table_name</span><span class="p">,</span>
+       <span class="n">p</span><span class="p">.</span><span class="n">phase</span><span class="p">,</span>
+       <span class="n">p</span><span class="p">.</span><span class="n">heap_blks_total</span><span class="p">,</span>
+       <span class="n">p</span><span class="p">.</span><span class="n">heap_blks_scanned</span><span class="p">,</span>
+       <span class="n">p</span><span class="p">.</span><span class="n">heap_blks_vacuumed</span><span class="p">,</span>
+       <span class="k">CASE</span> <span class="k">WHEN</span> <span class="n">p</span><span class="p">.</span><span class="n">heap_blks_total</span> <span class="o">&gt;</span> <span class="mi">0</span>
+            <span class="k">THEN</span> <span class="n">round</span><span class="p">(</span><span class="mi">100</span><span class="p">.</span><span class="mi">0</span> <span class="o">*</span> <span class="n">p</span><span class="p">.</span><span class="n">heap_blks_vacuumed</span> <span class="o">/</span> <span class="n">p</span><span class="p">.</span><span class="n">heap_blks_total</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
+            <span class="k">ELSE</span> <span class="mi">0</span> <span class="k">END</span> <span class="k">AS</span> <span class="n">pct_complete</span>
+<span class="k">FROM</span> <span class="n">pg_stat_progress_vacuum</span> <span class="n">p</span><span class="p">;</span>
+</code></pre></div></div>
+
+<h3 id="finding-long-running-idle-in-transaction-sessions">Finding Long-Running Idle-in-Transaction Sessions</h3>
+
+<div class="language-sql highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">SELECT</span> <span class="n">pid</span><span class="p">,</span> <span class="n">usename</span><span class="p">,</span> <span class="k">state</span><span class="p">,</span>
+       <span class="n">now</span><span class="p">()</span> <span class="o">-</span> <span class="n">xact_start</span> <span class="k">AS</span> <span class="n">xact_duration</span><span class="p">,</span>
+       <span class="n">now</span><span class="p">()</span> <span class="o">-</span> <span class="n">state_start</span> <span class="k">AS</span> <span class="n">state_duration</span><span class="p">,</span>
+       <span class="k">left</span><span class="p">(</span><span class="n">query</span><span class="p">,</span> <span class="mi">80</span><span class="p">)</span> <span class="k">AS</span> <span class="n">last_query</span>
+<span class="k">FROM</span> <span class="n">pg_stat_activity</span>
+<span class="k">WHERE</span> <span class="k">state</span> <span class="o">=</span> <span class="s1">'idle in transaction'</span>
+  <span class="k">AND</span> <span class="n">now</span><span class="p">()</span> <span class="o">-</span> <span class="n">state_start</span> <span class="o">&gt;</span> <span class="n">interval</span> <span class="s1">'5 minutes'</span>
+<span class="k">ORDER</span> <span class="k">BY</span> <span class="n">state_start</span><span class="p">;</span>
+</code></pre></div></div>
+
+<hr />
+
+<h2 id="the-pg_stat_statements-extension">The pg_stat_statements Extension</h2>
+
+<p>While not part of core, <code class="language-plaintext highlighter-rouge">pg_stat_statements</code> is the most important monitoring extension. It tracks per-query-pattern statistics (total time, calls, rows, block I/O, WAL usage) by normalizing query text into parameterized forms. It stores its data in shared memory with a configurable maximum number of entries (<code class="language-plaintext highlighter-rouge">pg_stat_statements.max</code>).</p>
+
+<p>This extension fills the gap between “what is happening now” (<code class="language-plaintext highlighter-rouge">pg_stat_activity</code>) and “what has been happening over time” (cumulative stats), providing the query-level granularity needed for performance analysis.</p>
+
+<hr />
+
+<h2 id="connections-to-other-chapters">Connections to Other Chapters</h2>
+
+<ul>
+  <li><strong>Chapter 2 (Shared Memory)</strong>: All activity monitoring data lives in shared memory. <code class="language-plaintext highlighter-rouge">BackendStatusShmemInit()</code> allocates the arrays during postmaster startup. The cumulative stats hash tables are also in shared memory (via DSA/dshash since PostgreSQL 15).</li>
+  <li><strong>Chapter 6 (Locking)</strong>: Wait events for <code class="language-plaintext highlighter-rouge">Lock</code> and <code class="language-plaintext highlighter-rouge">LWLock</code> classes directly expose the locking subsystem. The <code class="language-plaintext highlighter-rouge">pg_locks</code> view complements <code class="language-plaintext highlighter-rouge">pg_stat_activity</code> for lock analysis.</li>
+  <li><strong>Chapter 8 (VACUUM)</strong>: Progress reporting for VACUUM is the primary way to track long-running vacuum operations. The <code class="language-plaintext highlighter-rouge">n_dead_tup</code> counter from cumulative stats drives autovacuum scheduling.</li>
+  <li><strong>Chapter 13 (pg_statistic)</strong>: The <code class="language-plaintext highlighter-rouge">changed_tuples</code> counter in cumulative stats triggers autovacuum-initiated ANALYZE, which populates the planner statistics described in the preceding sections.</li>
+  <li><strong>Chapter 5 (WAL)</strong>: WAL-related wait events (<code class="language-plaintext highlighter-rouge">WALWrite</code>, <code class="language-plaintext highlighter-rouge">WALSync</code>, <code class="language-plaintext highlighter-rouge">WALSenderMain</code>) are critical for diagnosing replication lag and write bottlenecks.</li>
+</ul>
+
+
+      <hr>
+
+      <!-- Prev / Next / Up navigation -->
+      
+      
+      
+
+      <div class="clearfix" style="margin-top: 2rem;">
+        
+          
+          
+
+          
+            
+            <a class="btn btn-primary float-left" href="/postgresql/13-statistics/" title="Statistics & Monitoring">&larr; Previous</a>
+          
+
+          
+            
+            <a class="btn btn-primary float-right" href="/postgresql/13-statistics/extended-stats.html" title="Extended Statistics">Next &rarr;</a>
+          
+        
+      </div>
+
+      
+      <div style="text-align: center; margin-top: 1rem;">
+        <a href="/postgresql-internals/">&uarr; Back to Table of Contents</a>
+      </div>
+      
+
+    </div>
+  </div>
+</div>
+
+
+  <!-- Footer -->
+
+<hr>
+
+<footer>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <ul class="list-inline text-center">
+          
+          <li class="list-inline-item">
+            <a href="mailto:amitava.dev@proton.me" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="far fa-envelope fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          
+          
+          <li class="list-inline-item">
+            <a href="https://www.linkedin.com/in/amitavaag" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-linkedin fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          <li class="list-inline-item">
+            <a href="https://github.com/ikouchiha47" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-github fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+        </ul>
+
+        <p class="copyright text-muted">
+          Build with: 
+          <a 
+            href="https://github.com/StartBootstrap/startbootstrap-clean-blog-jekyll"
+            class="text-gray"
+            target="_blank">startbootstrap-clean-blog-jekyll</a></p>
+      </div>
+    </div>
+  </div>
+</footer>
+
+
+  <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="/assets/vendor/blog/js/scripts.js"></script>
+
+<script src="/assets/scripts.js"></script>
+
+
+
+
+
+  <script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+
+    document.querySelectorAll('pre > code.language-mermaid').forEach((codeBlock) => {
+      codeBlock.parentElement.outerHTML = `<pre class="mermaid">${codeBlock.textContent}</pre>`;
+    });
+
+
+    mermaid.initialize({ startOnLoad: true, theme: 'forest' });
+</script>
+
+
+  
+
+</body>
+
+</html>

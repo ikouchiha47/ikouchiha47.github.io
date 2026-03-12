@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+  <title>
+    Statistics &amp; Monitoring - iko&#39;s logs
+    
+  </title>
+
+  <meta name="description" content="">
+  <meta property="og:description" content="">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Statistics &amp; Monitoring">
+  <meta property="og:url" content="https://ikouchiha47.github.io/postgresql/13-statistics/">
+
+  
+
+  <link href='https://fonts.googleapis.com/css?family=Lora:400,700,400italic,700italic' rel='stylesheet' type='text/css'>
+  <link href='https://fonts.googleapis.com/css?family=Open+Sans:300italic,400italic,600italic,700italic,800italic,400,300,600,700,800' rel='stylesheet' type='text/css'>
+
+  <!-- <script src="https://use.fontawesome.com/releases/v5.15.3/js/all.js" crossorigin="anonymous"></script> -->
+  <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.15.4/css/all.css" integrity="sha384-DyZ88mC6Up2uqS4h/KRgHuoeGwBcD4Ng9SiP4dIRy0EXTlnuz47vAwmeGwVChigm" crossorigin="anonymous"/>
+
+  <link rel="stylesheet" href="/assets/main.css">
+  <link rel="canonical" href="https://ikouchiha47.github.io/postgresql/13-statistics/">
+  <link rel="alternate" type="application/rss+xml" title="iko&#39;s logs" href="/feed.xml">
+
+  <meta name="google-site-verification" content="lWkg6gIxJgzEKX_5XnhcxCtPE9QknaimFWWos_dTvPM" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fira+Sans:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Inconsolata:wght@200..900&family=Jersey+25&family=Kanit:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Merriweather+Sans:ital,wght@0,300..800;1,300..800&family=Nanum+Gothic+Coding&family=Space+Grotesk:wght@300..700&family=Titillium+Web:ital,wght@0,200;0,300;0,400;0,600;0,700;0,900;1,200;1,300;1,400;1,600;1,700&display=swap" rel="stylesheet">
+
+</head>
+
+
+<body>
+
+  <!-- Navigation -->
+<nav class="navbar navbar-expand-lg navbar-light fixed-top" id="mainNav">
+  <div class="container">
+    <a class="navbar-brand" href="/">iko&#39;s logs</a>
+    <button class="navbar-toggler navbar-toggler-right" type="button" data-toggle="collapse" data-target="#navbarResponsive" aria-controls="navbarResponsive" aria-expanded="false" aria-label="Toggle navigation">
+      Menu
+      <i class="fa fa-bars"></i>
+    </button>
+    <div class="collapse navbar-collapse" id="navbarResponsive">
+      <ul class="navbar-nav ml-auto">
+        <li class="nav-item">
+          <a class="nav-link" href="/">Home</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/about">About</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/posts">Posts</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/contact">Contact</a>
+        </li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+
+  <!-- Page Header -->
+
+<header class="masthead">
+
+  <div class="overlay"></div>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <div class="post-heading">
+          <h1>Statistics & Monitoring</h1>
+          
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="container space-grotesk">
+  <div class="row">
+    <div class="col-lg-8 col-md-10 mx-auto">
+
+      <!-- Breadcrumb -->
+      <nav aria-label="breadcrumb" style="margin-bottom: 1.5rem;">
+        <ol class="breadcrumb" style="background: transparent; padding: 0;">
+          
+            <li class="breadcrumb-item"><a href="/postgresql-internals/">PostgreSQL Internals Deep Dive</a></li>
+          
+          
+          <li class="breadcrumb-item active" aria-current="page">Statistics & Monitoring</li>
+        </ol>
+      </nav>
+
+      <h1 id="chapter-13-statistics--monitoring">Chapter 13: Statistics &amp; Monitoring</h1>
+
+<p>PostgreSQL relies on two fundamentally different kinds of statistics. <strong>Planner statistics</strong> describe the shape of data inside tables – how many distinct values a column has, which values appear most often, how values are distributed – and the query optimizer uses them to choose between sequential scans, index scans, hash joins, merge joins, and other plan alternatives. <strong>Activity statistics</strong> describe what the server is doing right now – which queries are running, what each backend is waiting on, how far along a long-running VACUUM has progressed – and they are the primary tool for operational monitoring and troubleshooting.</p>
+
+<p>Both systems are read-heavy by design. Planner statistics are written only during ANALYZE (or autovacuum-triggered analysis) and read on every query planning cycle. Activity statistics are written continuously by every backend into shared memory and read by monitoring queries against <code class="language-plaintext highlighter-rouge">pg_stat_activity</code> and related views.</p>
+
+<h2 id="why-statistics-matter">Why Statistics Matter</h2>
+
+<p>Without accurate planner statistics, PostgreSQL falls back on hardcoded constants (selectivity of 0.005 for equality on an unknown column, for example) and produces plans that can be orders of magnitude slower than necessary. A missing ANALYZE after bulk loading a table is one of the most common causes of sudden performance regressions in production.</p>
+
+<p>Without activity monitoring, operators cannot answer the most basic questions: “What is this backend doing?” and “Why is it slow?” The wait event infrastructure, introduced incrementally from PostgreSQL 9.6 onward, finally gave PostgreSQL a lightweight, always-on mechanism to answer those questions without resorting to external profiling tools.</p>
+
+<h2 id="chapter-overview">Chapter Overview</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>Section</th>
+      <th>What It Covers</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><a href="pg-statistic.html">pg_statistic and Single-Column Statistics</a></td>
+      <td>Histograms, MCVs, correlation, ndistinct, the slot system, ANALYZE sampling</td>
+    </tr>
+    <tr>
+      <td><a href="extended-stats.html">Extended Statistics</a></td>
+      <td>Multi-column dependencies, ndistinct, MCV lists, CREATE STATISTICS</td>
+    </tr>
+    <tr>
+      <td><a href="activity-monitoring.html">Activity Monitoring</a></td>
+      <td>pg_stat_activity, wait events, progress reporting, cumulative stats</td>
+    </tr>
+  </tbody>
+</table>
+
+<h2 id="key-source-files-at-a-glance">Key Source Files at a Glance</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>File</th>
+      <th>Purpose</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/catalog/pg_statistic.h</code></td>
+      <td>Single-column statistics catalog definition, slot kinds</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/catalog/pg_statistic_ext.h</code></td>
+      <td>Extended statistics object definitions</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/catalog/pg_statistic_ext_data.h</code></td>
+      <td>Extended statistics data storage</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/statistics/statistics.h</code></td>
+      <td>MVNDistinct, MVDependency, MCVList structs</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/statistics/extended_stats_internal.h</code></td>
+      <td>Internal build/serialize/deserialize functions</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/commands/analyze.c</code></td>
+      <td>ANALYZE command, sampling, per-column stats computation</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/statistics/extended_stats.c</code></td>
+      <td>Extended statistics build orchestration</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/statistics/dependencies.c</code></td>
+      <td>Functional dependency mining and estimation</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/statistics/mcv.c</code></td>
+      <td>Multi-column MCV list build and selectivity</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/statistics/mvdistinct.c</code></td>
+      <td>Multi-column ndistinct computation</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/utils/activity/backend_status.c</code></td>
+      <td>PgBackendStatus shared memory management</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/utils/activity/wait_event.c</code></td>
+      <td>Wait event reporting</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/utils/activity/backend_progress.c</code></td>
+      <td>Progress reporting for long-running commands</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/utils/activity/pgstat.c</code></td>
+      <td>Cumulative statistics collector infrastructure</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/utils/backend_status.h</code></td>
+      <td>PgBackendStatus, BackendState enum</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/utils/backend_progress.h</code></td>
+      <td>ProgressCommandType, progress parameter API</td>
+    </tr>
+  </tbody>
+</table>
+
+<h2 id="how-the-pieces-fit-together">How the Pieces Fit Together</h2>
+
+<pre><code class="language-mermaid">flowchart TD
+    subgraph "Planner Statistics (Data Shape)"
+        ANALYZE["ANALYZE / autovacuum"]
+        ANALYZE --&gt; SAMPLE["Sample 300 * statistics_target rows"]
+        SAMPLE --&gt; SINGLE["Compute per-column stats"]
+        SINGLE --&gt; PG_STAT["pg_statistic catalog"]
+        SAMPLE --&gt; EXTENDED["Compute extended stats"]
+        EXTENDED --&gt; PG_EXT["pg_statistic_ext_data catalog"]
+
+        PLANNER["Query Planner"] --&gt;|"reads"| PG_STAT
+        PLANNER --&gt;|"reads"| PG_EXT
+        PLANNER --&gt; PLAN["Chosen query plan"]
+    end
+
+    subgraph "Activity Statistics (Runtime Behavior)"
+        BACKEND["Backend process"]
+        BACKEND --&gt;|"updates"| SHMEM["PgBackendStatus\nin shared memory"]
+        BACKEND --&gt;|"sets"| WAIT["Wait event ID"]
+        BACKEND --&gt;|"updates"| PROGRESS["Progress counters"]
+
+        MON["pg_stat_activity\nquery"] --&gt;|"reads snapshot"| SHMEM
+        MON --&gt;|"reads"| WAIT
+        MON --&gt;|"reads"| PROGRESS
+    end
+
+    subgraph "Cumulative Statistics"
+        BACKEND --&gt;|"accumulates"| LOCAL["Local stat counters"]
+        LOCAL --&gt;|"flushes to"| STATS_SHMEM["pgstat shared memory\n(hash table)"]
+        VIEWS["pg_stat_user_tables\npg_stat_bgwriter\npg_stat_io ..."] --&gt;|"reads"| STATS_SHMEM
+    end
+</code></pre>
+
+<h2 id="the-two-statistics-architectures">The Two Statistics Architectures</h2>
+
+<p>PostgreSQL has two separate architectures for statistics, and confusing them is a common source of misunderstanding.</p>
+
+<p><strong>Planner statistics</strong> (pg_statistic, pg_statistic_ext_data) are stored as regular catalog rows, updated only by ANALYZE, and cached in the relcache/syscache. They describe data distributions and are consumed exclusively by the planner’s selectivity estimation functions.</p>
+
+<p><strong>Activity/cumulative statistics</strong> (pgstat infrastructure) live in shared memory as of PostgreSQL 15. Before that, they were maintained by a separate stats collector process that communicated via temporary files. The shared-memory approach eliminates the stats collector process and provides instant visibility into counters. These statistics track operational metrics: row counts, block hits, sequential scans, function call counts, and so on.</p>
+
+<h2 id="the-default_statistics_target-guc">The default_statistics_target GUC</h2>
+
+<p>The <code class="language-plaintext highlighter-rouge">default_statistics_target</code> parameter (default: 100) controls how many entries appear in MCV lists and histogram bins for single-column stats. It also determines the ANALYZE sample size: <code class="language-plaintext highlighter-rouge">300 * statistics_target</code> rows. Per-column overrides are possible via <code class="language-plaintext highlighter-rouge">ALTER TABLE ... ALTER COLUMN ... SET STATISTICS</code>. Extended statistics objects can have their own target set via <code class="language-plaintext highlighter-rouge">ALTER STATISTICS ... SET STATISTICS</code>.</p>
+
+<p>Higher targets produce more accurate statistics at the cost of longer ANALYZE times, more catalog storage, and slightly slower planning (more MCV entries to scan).</p>
+
+<h2 id="connections-to-other-chapters">Connections to Other Chapters</h2>
+
+<ul>
+  <li><strong>Chapter 5 (WAL)</strong>: Catalog updates from ANALYZE are WAL-logged like any other catalog modification.</li>
+  <li><strong>Chapter 7 (Query Planner)</strong>: The planner is the primary consumer of pg_statistic data; selectivity estimation drives join order, access method, and join strategy choices.</li>
+  <li><strong>Chapter 8 (VACUUM)</strong>: Autovacuum triggers ANALYZE when the number of modified tuples exceeds a threshold. VACUUM and ANALYZE share the same sampling infrastructure.</li>
+  <li><strong>Chapter 2 (Shared Memory)</strong>: Activity statistics and backend status live in shared memory structures allocated at startup.</li>
+  <li><strong>Chapter 3 (Transactions)</strong>: Planner statistics are catalog rows subject to MVCC; a long-running transaction sees the statistics that were current when its snapshot was taken.</li>
+</ul>
+
+
+      <hr>
+
+      <!-- Prev / Next / Up navigation -->
+      
+      
+      
+
+      <div class="clearfix" style="margin-top: 2rem;">
+        
+          
+          
+
+          
+            
+            <a class="btn btn-primary float-left" href="/postgresql/12-replication/synchronous.html" title="Synchronous Replication">&larr; Previous</a>
+          
+
+          
+            
+            <a class="btn btn-primary float-right" href="/postgresql/13-statistics/activity-monitoring.html" title="Activity Monitoring">Next &rarr;</a>
+          
+        
+      </div>
+
+      
+      <div style="text-align: center; margin-top: 1rem;">
+        <a href="/postgresql-internals/">&uarr; Back to Table of Contents</a>
+      </div>
+      
+
+    </div>
+  </div>
+</div>
+
+
+  <!-- Footer -->
+
+<hr>
+
+<footer>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <ul class="list-inline text-center">
+          
+          <li class="list-inline-item">
+            <a href="mailto:amitava.dev@proton.me" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="far fa-envelope fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          
+          
+          <li class="list-inline-item">
+            <a href="https://www.linkedin.com/in/amitavaag" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-linkedin fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          <li class="list-inline-item">
+            <a href="https://github.com/ikouchiha47" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-github fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+        </ul>
+
+        <p class="copyright text-muted">
+          Build with: 
+          <a 
+            href="https://github.com/StartBootstrap/startbootstrap-clean-blog-jekyll"
+            class="text-gray"
+            target="_blank">startbootstrap-clean-blog-jekyll</a></p>
+      </div>
+    </div>
+  </div>
+</footer>
+
+
+  <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="/assets/vendor/blog/js/scripts.js"></script>
+
+<script src="/assets/scripts.js"></script>
+
+
+
+
+
+  <script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+
+    document.querySelectorAll('pre > code.language-mermaid').forEach((codeBlock) => {
+      codeBlock.parentElement.outerHTML = `<pre class="mermaid">${codeBlock.textContent}</pre>`;
+    });
+
+
+    mermaid.initialize({ startOnLoad: true, theme: 'forest' });
+</script>
+
+
+  
+
+</body>
+
+</html>

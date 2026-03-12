@@ -1,0 +1,680 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+  <title>
+    Query Lifecycle - iko&#39;s logs
+    
+  </title>
+
+  <meta name="description" content="">
+  <meta property="og:description" content="">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Query Lifecycle">
+  <meta property="og:url" content="https://ikouchiha47.github.io/postgresql/00-architecture/query-lifecycle.html">
+
+  
+
+  <link href='https://fonts.googleapis.com/css?family=Lora:400,700,400italic,700italic' rel='stylesheet' type='text/css'>
+  <link href='https://fonts.googleapis.com/css?family=Open+Sans:300italic,400italic,600italic,700italic,800italic,400,300,600,700,800' rel='stylesheet' type='text/css'>
+
+  <!-- <script src="https://use.fontawesome.com/releases/v5.15.3/js/all.js" crossorigin="anonymous"></script> -->
+  <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.15.4/css/all.css" integrity="sha384-DyZ88mC6Up2uqS4h/KRgHuoeGwBcD4Ng9SiP4dIRy0EXTlnuz47vAwmeGwVChigm" crossorigin="anonymous"/>
+
+  <link rel="stylesheet" href="/assets/main.css">
+  <link rel="canonical" href="https://ikouchiha47.github.io/postgresql/00-architecture/query-lifecycle.html">
+  <link rel="alternate" type="application/rss+xml" title="iko&#39;s logs" href="/feed.xml">
+
+  <meta name="google-site-verification" content="lWkg6gIxJgzEKX_5XnhcxCtPE9QknaimFWWos_dTvPM" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fira+Sans:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Inconsolata:wght@200..900&family=Jersey+25&family=Kanit:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Merriweather+Sans:ital,wght@0,300..800;1,300..800&family=Nanum+Gothic+Coding&family=Space+Grotesk:wght@300..700&family=Titillium+Web:ital,wght@0,200;0,300;0,400;0,600;0,700;0,900;1,200;1,300;1,400;1,600;1,700&display=swap" rel="stylesheet">
+
+</head>
+
+
+<body>
+
+  <!-- Navigation -->
+<nav class="navbar navbar-expand-lg navbar-light fixed-top" id="mainNav">
+  <div class="container">
+    <a class="navbar-brand" href="/">iko&#39;s logs</a>
+    <button class="navbar-toggler navbar-toggler-right" type="button" data-toggle="collapse" data-target="#navbarResponsive" aria-controls="navbarResponsive" aria-expanded="false" aria-label="Toggle navigation">
+      Menu
+      <i class="fa fa-bars"></i>
+    </button>
+    <div class="collapse navbar-collapse" id="navbarResponsive">
+      <ul class="navbar-nav ml-auto">
+        <li class="nav-item">
+          <a class="nav-link" href="/">Home</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/about">About</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/posts">Posts</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/contact">Contact</a>
+        </li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+
+  <!-- Page Header -->
+
+<header class="masthead">
+
+  <div class="overlay"></div>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <div class="post-heading">
+          <h1>Query Lifecycle</h1>
+          
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="container space-grotesk">
+  <div class="row">
+    <div class="col-lg-8 col-md-10 mx-auto">
+
+      <!-- Breadcrumb -->
+      <nav aria-label="breadcrumb" style="margin-bottom: 1.5rem;">
+        <ol class="breadcrumb" style="background: transparent; padding: 0;">
+          
+            <li class="breadcrumb-item"><a href="/postgresql-internals/">PostgreSQL Internals Deep Dive</a></li>
+          
+          
+            
+              <li class="breadcrumb-item"><a href="/postgresql/00-architecture/">Architecture</a></li>
+            
+          
+          <li class="breadcrumb-item active" aria-current="page">Query Lifecycle</li>
+        </ol>
+      </nav>
+
+      <h1 id="query-lifecycle">Query Lifecycle</h1>
+
+<blockquote>
+  <p><em>A SQL string travels through five distinct stages — parse, analyze, rewrite, plan, execute — each with its own data structure, its own memory context, and its own set of source files.</em></p>
+</blockquote>
+
+<h2 id="overview">Overview</h2>
+
+<p>When a client sends <code class="language-plaintext highlighter-rouge">SELECT name FROM users WHERE id = 42</code>, the backend process does
+not simply “run” it. The query passes through a structured pipeline that transforms a
+flat string into a tree of physical operations, executes those operations one tuple at
+a time, and streams results back over the wire. Understanding this pipeline is essential
+because every performance problem, every planner misestimate, and every strange error
+message maps to a specific stage.</p>
+
+<p>The five stages are: <strong>Parse</strong> (SQL text to raw parse tree), <strong>Analyze</strong> (raw tree to
+Query with resolved names and types), <strong>Rewrite</strong> (apply rules, including views),
+<strong>Plan</strong> (Query to executable Plan tree), and <strong>Execute</strong> (Plan tree to result tuples).
+In the simple query protocol, all five stages run in sequence for each statement. In the
+extended query protocol (used by most client libraries), parsing and planning can be
+separated from execution, enabling prepared statements.</p>
+
+<p>The entire pipeline is orchestrated by the “traffic cop” in <code class="language-plaintext highlighter-rouge">postgres.c</code>. For a simple
+query, the entry point is <code class="language-plaintext highlighter-rouge">exec_simple_query()</code>. For the extended protocol, there are
+separate message handlers: <code class="language-plaintext highlighter-rouge">exec_parse_message()</code>, <code class="language-plaintext highlighter-rouge">exec_bind_message()</code>, and
+<code class="language-plaintext highlighter-rouge">exec_execute_message()</code>.</p>
+
+<h2 id="key-source-files">Key Source Files</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>File</th>
+      <th>Purpose</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/tcop/postgres.c</code></td>
+      <td>Traffic cop: <code class="language-plaintext highlighter-rouge">PostgresMain()</code>, <code class="language-plaintext highlighter-rouge">exec_simple_query()</code></td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/tcop/pquery.c</code></td>
+      <td>Portal execution: <code class="language-plaintext highlighter-rouge">PortalStart()</code>, <code class="language-plaintext highlighter-rouge">PortalRun()</code></td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/tcop/utility.c</code></td>
+      <td>Utility command dispatch (DDL, COPY, etc.)</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/parser/parser.c</code></td>
+      <td><code class="language-plaintext highlighter-rouge">raw_parser()</code> — flex/bison entry point</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/parser/analyze.c</code></td>
+      <td><code class="language-plaintext highlighter-rouge">parse_analyze_fixedparams()</code> — semantic analysis</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/parser/gram.y</code></td>
+      <td>The SQL grammar (bison)</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/parser/scan.l</code></td>
+      <td>The SQL lexer (flex)</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/rewrite/rewriteHandler.c</code></td>
+      <td><code class="language-plaintext highlighter-rouge">QueryRewrite()</code> — rule system / view expansion</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/optimizer/plan/planner.c</code></td>
+      <td><code class="language-plaintext highlighter-rouge">planner()</code> — optimizer entry point</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/optimizer/plan/planmain.c</code></td>
+      <td><code class="language-plaintext highlighter-rouge">query_planner()</code> — core path generation</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/optimizer/path/allpaths.c</code></td>
+      <td><code class="language-plaintext highlighter-rouge">make_one_rel()</code> — generate access paths for all relations</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/executor/execMain.c</code></td>
+      <td><code class="language-plaintext highlighter-rouge">ExecutorStart()</code>, <code class="language-plaintext highlighter-rouge">ExecutorRun()</code>, <code class="language-plaintext highlighter-rouge">ExecutorFinish()</code>, <code class="language-plaintext highlighter-rouge">ExecutorEnd()</code></td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/executor/execProcnode.c</code></td>
+      <td><code class="language-plaintext highlighter-rouge">ExecInitNode()</code>, <code class="language-plaintext highlighter-rouge">ExecProcNode()</code> — node dispatch</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/commands/explain.c</code></td>
+      <td><code class="language-plaintext highlighter-rouge">EXPLAIN</code> uses the same pipeline but collects stats</td>
+    </tr>
+  </tbody>
+</table>
+
+<h2 id="how-it-works">How It Works</h2>
+
+<h3 id="high-level">High Level</h3>
+
+<pre><code class="language-mermaid">flowchart LR
+    SQL["SQL String"]
+    PARSE["1. Parse&lt;br/&gt;&lt;i&gt;raw_parser()&lt;/i&gt;"]
+    ANALYZE["2. Analyze&lt;br/&gt;&lt;i&gt;parse_analyze()&lt;/i&gt;"]
+    REWRITE["3. Rewrite&lt;br/&gt;&lt;i&gt;QueryRewrite()&lt;/i&gt;"]
+    PLAN["4. Plan&lt;br/&gt;&lt;i&gt;planner()&lt;/i&gt;"]
+    EXEC["5. Execute&lt;br/&gt;&lt;i&gt;ExecutorRun()&lt;/i&gt;"]
+    RESULT["Result Rows"]
+
+    SQL --&gt; PARSE
+    PARSE -- "RawStmt (parse tree)" --&gt; ANALYZE
+    ANALYZE -- "Query" --&gt; REWRITE
+    REWRITE -- "List of Query" --&gt; PLAN
+    PLAN -- "PlannedStmt" --&gt; EXEC
+    EXEC --&gt; RESULT
+</code></pre>
+
+<h3 id="deep-dive">Deep Dive</h3>
+
+<h4 id="stage-1-parse">Stage 1: Parse</h4>
+
+<p><strong>Entry point:</strong> <code class="language-plaintext highlighter-rouge">raw_parser()</code> in <code class="language-plaintext highlighter-rouge">src/backend/parser/parser.c</code></p>
+
+<p>The parser is a standard flex/bison combination. The lexer (<code class="language-plaintext highlighter-rouge">scan.l</code>) tokenizes the SQL
+string, and the grammar (<code class="language-plaintext highlighter-rouge">gram.y</code>) reduces those tokens into a <strong>raw parse tree</strong> — a
+tree of <code class="language-plaintext highlighter-rouge">Node</code> structs that represents the syntactic structure of the statement.</p>
+
+<p>At this stage, no catalog lookups have occurred. Table names are just strings.
+Column references are unresolved. Type information is absent.</p>
+
+<p><strong>Output:</strong> A <code class="language-plaintext highlighter-rouge">RawStmt</code> containing a statement-specific node (e.g., <code class="language-plaintext highlighter-rouge">SelectStmt</code>,
+<code class="language-plaintext highlighter-rouge">InsertStmt</code>, <code class="language-plaintext highlighter-rouge">CreateStmt</code>).</p>
+
+<p><strong>Error example:</strong> <code class="language-plaintext highlighter-rouge">ERROR: syntax error at or near "FORM"</code> — this comes from the
+parser stage.</p>
+
+<h4 id="stage-2-analyze-semantic-analysis">Stage 2: Analyze (Semantic Analysis)</h4>
+
+<p><strong>Entry point:</strong> <code class="language-plaintext highlighter-rouge">parse_analyze_fixedparams()</code> in <code class="language-plaintext highlighter-rouge">src/backend/parser/analyze.c</code></p>
+
+<p>The analyzer transforms the raw parse tree into a <strong>Query</strong> struct by resolving all
+names against the system catalogs:</p>
+
+<ul>
+  <li>Table names are resolved to OIDs via <code class="language-plaintext highlighter-rouge">pg_class</code></li>
+  <li>Column names are resolved to attribute numbers</li>
+  <li>Function calls are resolved to <code class="language-plaintext highlighter-rouge">pg_proc</code> entries (with overload resolution)</li>
+  <li>Type coercions are inserted where needed</li>
+  <li>Subqueries are recursively analyzed</li>
+  <li><code class="language-plaintext highlighter-rouge">*</code> is expanded into the actual column list</li>
+</ul>
+
+<p><strong>Output:</strong> A <code class="language-plaintext highlighter-rouge">Query</code> struct (<code class="language-plaintext highlighter-rouge">src/include/nodes/parsenodes.h</code>) with fully resolved
+range tables, target lists, and quals.</p>
+
+<p><strong>Error example:</strong> <code class="language-plaintext highlighter-rouge">ERROR: column "naem" does not exist</code> — this comes from the
+analyze stage.</p>
+
+<h4 id="stage-3-rewrite">Stage 3: Rewrite</h4>
+
+<p><strong>Entry point:</strong> <code class="language-plaintext highlighter-rouge">QueryRewrite()</code> in <code class="language-plaintext highlighter-rouge">src/backend/rewrite/rewriteHandler.c</code></p>
+
+<p>The rewriter applies the <strong>rule system</strong>. The most common use of rules is view
+expansion: a query against a view is rewritten to a query against the view’s
+underlying tables. <code class="language-plaintext highlighter-rouge">INSERT</code>/<code class="language-plaintext highlighter-rouge">UPDATE</code>/<code class="language-plaintext highlighter-rouge">DELETE</code> rules (including <code class="language-plaintext highlighter-rouge">INSTEAD OF</code> triggers
+on views) are also applied here.</p>
+
+<p>The rewriter can produce zero, one, or many <code class="language-plaintext highlighter-rouge">Query</code> structs from a single input.
+For example, a <code class="language-plaintext highlighter-rouge">NOTIFY</code> rule can add extra queries. An <code class="language-plaintext highlighter-rouge">INSTEAD</code> rule can replace
+the original entirely.</p>
+
+<p><strong>Output:</strong> A <code class="language-plaintext highlighter-rouge">List</code> of <code class="language-plaintext highlighter-rouge">Query</code> structs.</p>
+
+<h4 id="stage-4-plan-optimize">Stage 4: Plan (Optimize)</h4>
+
+<p><strong>Entry point:</strong> <code class="language-plaintext highlighter-rouge">planner()</code> in <code class="language-plaintext highlighter-rouge">src/backend/optimizer/plan/planner.c</code></p>
+
+<p>The planner (also called the optimizer) transforms a <code class="language-plaintext highlighter-rouge">Query</code> into an executable
+<strong>PlannedStmt</strong>. This is the most computationally expensive stage and involves:</p>
+
+<ol>
+  <li>
+    <p><strong>Path generation</strong> (<code class="language-plaintext highlighter-rouge">make_one_rel()</code> in <code class="language-plaintext highlighter-rouge">allpaths.c</code>): For each relation,
+generate candidate access paths (sequential scan, index scan, bitmap scan). For
+joins, consider nested loop, hash join, and merge join strategies.</p>
+  </li>
+  <li>
+    <p><strong>Cost estimation</strong>: Each path is assigned an estimated startup cost and total cost
+based on statistics from <code class="language-plaintext highlighter-rouge">pg_statistic</code> and table size from <code class="language-plaintext highlighter-rouge">pg_class</code>.</p>
+  </li>
+  <li>
+    <p><strong>Path selection</strong>: The cheapest path (or set of paths, considering different sort
+orders) is chosen.</p>
+  </li>
+  <li>
+    <p><strong>Plan creation</strong> (<code class="language-plaintext highlighter-rouge">create_plan()</code> in <code class="language-plaintext highlighter-rouge">createplan.c</code>): The chosen path is converted
+into a tree of <code class="language-plaintext highlighter-rouge">Plan</code> nodes (e.g., <code class="language-plaintext highlighter-rouge">SeqScan</code>, <code class="language-plaintext highlighter-rouge">IndexScan</code>, <code class="language-plaintext highlighter-rouge">HashJoin</code>, <code class="language-plaintext highlighter-rouge">Sort</code>,
+<code class="language-plaintext highlighter-rouge">Agg</code>).</p>
+  </li>
+</ol>
+
+<p><strong>Output:</strong> A <code class="language-plaintext highlighter-rouge">PlannedStmt</code> wrapping a tree of <code class="language-plaintext highlighter-rouge">Plan</code> nodes.</p>
+
+<p><strong>Key insight:</strong> The planner does not choose “the best plan.” It chooses the cheapest
+plan it can find within its search budget. For queries with many joins, it switches from
+exhaustive search to the Genetic Query Optimizer (GEQO) when the number of relations
+exceeds <code class="language-plaintext highlighter-rouge">geqo_threshold</code> (default: 12).</p>
+
+<h4 id="stage-5-execute">Stage 5: Execute</h4>
+
+<p><strong>Entry point:</strong> <code class="language-plaintext highlighter-rouge">ExecutorStart()</code>, <code class="language-plaintext highlighter-rouge">ExecutorRun()</code>, <code class="language-plaintext highlighter-rouge">ExecutorFinish()</code>, <code class="language-plaintext highlighter-rouge">ExecutorEnd()</code>
+in <code class="language-plaintext highlighter-rouge">src/backend/executor/execMain.c</code></p>
+
+<p>The executor uses a <strong>demand-pull (Volcano/iterator) model</strong>. Each plan node implements
+three functions: <code class="language-plaintext highlighter-rouge">Init</code>, <code class="language-plaintext highlighter-rouge">Next</code> (called <code class="language-plaintext highlighter-rouge">ExecProcNode</code>), and <code class="language-plaintext highlighter-rouge">End</code>. The top node
+repeatedly calls <code class="language-plaintext highlighter-rouge">ExecProcNode</code> on its child, which recursively calls its children,
+pulling one tuple at a time up through the tree.</p>
+
+<pre><code class="language-mermaid">graph TD
+    SEND["SendTuples&lt;br/&gt;(send to client)"]
+    SORT["Sort"]
+    HASH["HashJoin"]
+    SEQ["SeqScan: users"]
+    IDX["IndexScan: orders"]
+
+    SEND --&gt;|"next tuple"| SORT
+    SORT --&gt;|"next tuple"| HASH
+    HASH --&gt;|"next outer"| SEQ
+    HASH --&gt;|"next inner"| IDX
+</code></pre>
+
+<p>The executor interacts with the <strong>buffer manager</strong> to read pages from shared buffers
+(or disk), the <strong>lock manager</strong> to acquire row and table locks, and the <strong>WAL subsystem</strong>
+to log modifications.</p>
+
+<p><strong>Portal abstraction:</strong> In practice, the executor does not run directly from the
+traffic cop. Instead, each statement is wrapped in a <strong>Portal</strong> (managed in
+<code class="language-plaintext highlighter-rouge">src/backend/tcop/pquery.c</code> and <code class="language-plaintext highlighter-rouge">src/backend/utils/mmgr/portalmem.c</code>). Portals handle
+cursor semantics: a portal can be executed partially (fetching N rows at a time), which
+is how <code class="language-plaintext highlighter-rouge">DECLARE CURSOR</code> / <code class="language-plaintext highlighter-rouge">FETCH</code> and the extended query protocol work.</p>
+
+<h3 id="the-simple-query-protocol-in-detail">The Simple Query Protocol in Detail</h3>
+
+<p>When <code class="language-plaintext highlighter-rouge">exec_simple_query()</code> runs in <code class="language-plaintext highlighter-rouge">postgres.c</code>, the sequence is:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>1. raw_parser(query_string)            --&gt; list of RawStmt
+2. for each RawStmt:
+   a. parse_analyze_fixedparams(raw)   --&gt; Query
+   b. QueryRewrite(query)              --&gt; list of Query
+   c. for each Query:
+      i.   pg_plan_query(query)        --&gt; PlannedStmt
+      ii.  CreatePortal(...)
+      iii. PortalStart(portal, ...)
+      iv.  PortalRun(portal, ...)      --&gt; sends rows to client
+      v.   PortalDrop(portal, ...)
+</code></pre></div></div>
+
+<p>Note that a single query string can contain multiple statements (separated by
+semicolons), and the rewriter can expand one statement into many. Each resulting
+PlannedStmt gets its own portal.</p>
+
+<h2 id="key-data-structures">Key Data Structures</h2>
+
+<h3 id="query-srcincludenodesparsenodesh">Query (<code class="language-plaintext highlighter-rouge">src/include/nodes/parsenodes.h</code>)</h3>
+
+<p>The output of the analyze stage. Represents a fully resolved query.</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>Field</th>
+      <th>Type</th>
+      <th>Description</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">commandType</code></td>
+      <td><code class="language-plaintext highlighter-rouge">CmdType</code></td>
+      <td>SELECT, INSERT, UPDATE, DELETE, UTILITY</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">rtable</code></td>
+      <td><code class="language-plaintext highlighter-rouge">List *</code></td>
+      <td>Range table (list of <code class="language-plaintext highlighter-rouge">RangeTblEntry</code>)</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">jointree</code></td>
+      <td><code class="language-plaintext highlighter-rouge">FromExpr *</code></td>
+      <td>FROM clause and WHERE clause</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">targetList</code></td>
+      <td><code class="language-plaintext highlighter-rouge">List *</code></td>
+      <td>Target list (output columns)</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">sortClause</code></td>
+      <td><code class="language-plaintext highlighter-rouge">List *</code></td>
+      <td>ORDER BY specification</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">groupClause</code></td>
+      <td><code class="language-plaintext highlighter-rouge">List *</code></td>
+      <td>GROUP BY specification</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">havingQual</code></td>
+      <td><code class="language-plaintext highlighter-rouge">Node *</code></td>
+      <td>HAVING clause</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">limitCount</code></td>
+      <td><code class="language-plaintext highlighter-rouge">Node *</code></td>
+      <td>LIMIT expression</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">limitOffset</code></td>
+      <td><code class="language-plaintext highlighter-rouge">Node *</code></td>
+      <td>OFFSET expression</td>
+    </tr>
+  </tbody>
+</table>
+
+<h3 id="plannedstmt-srcincludenodesplannodesh">PlannedStmt (<code class="language-plaintext highlighter-rouge">src/include/nodes/plannodes.h</code>)</h3>
+
+<p>Wraps a Plan tree for execution.</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>Field</th>
+      <th>Type</th>
+      <th>Description</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">commandType</code></td>
+      <td><code class="language-plaintext highlighter-rouge">CmdType</code></td>
+      <td>Same as Query</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">planTree</code></td>
+      <td><code class="language-plaintext highlighter-rouge">Plan *</code></td>
+      <td>Root of the plan node tree</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">rtable</code></td>
+      <td><code class="language-plaintext highlighter-rouge">List *</code></td>
+      <td>Range table carried forward from Query</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">paramExecTypes</code></td>
+      <td><code class="language-plaintext highlighter-rouge">List *</code></td>
+      <td>Types of executor-internal parameters</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">hasReturning</code></td>
+      <td><code class="language-plaintext highlighter-rouge">bool</code></td>
+      <td>Has a RETURNING clause</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">hasModifyingCTE</code></td>
+      <td><code class="language-plaintext highlighter-rouge">bool</code></td>
+      <td>Has data-modifying CTEs</td>
+    </tr>
+  </tbody>
+</table>
+
+<h3 id="plan-base-node-in-srcincludenodesplannodesh">Plan (base node in <code class="language-plaintext highlighter-rouge">src/include/nodes/plannodes.h</code>)</h3>
+
+<p>All plan nodes inherit from this base struct.</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>Field</th>
+      <th>Type</th>
+      <th>Description</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">type</code></td>
+      <td><code class="language-plaintext highlighter-rouge">NodeTag</code></td>
+      <td>T_SeqScan, T_IndexScan, T_HashJoin, etc.</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">startup_cost</code></td>
+      <td><code class="language-plaintext highlighter-rouge">Cost</code></td>
+      <td>Estimated cost before first tuple</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">total_cost</code></td>
+      <td><code class="language-plaintext highlighter-rouge">Cost</code></td>
+      <td>Estimated total cost</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">plan_rows</code></td>
+      <td><code class="language-plaintext highlighter-rouge">Cardinality</code></td>
+      <td>Estimated number of output rows</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">plan_width</code></td>
+      <td><code class="language-plaintext highlighter-rouge">int</code></td>
+      <td>Estimated average row width in bytes</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">targetlist</code></td>
+      <td><code class="language-plaintext highlighter-rouge">List *</code></td>
+      <td>Columns this node produces</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">qual</code></td>
+      <td><code class="language-plaintext highlighter-rouge">List *</code></td>
+      <td>Filter conditions applied at this node</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">lefttree</code></td>
+      <td><code class="language-plaintext highlighter-rouge">Plan *</code></td>
+      <td>Left (outer) child</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">righttree</code></td>
+      <td><code class="language-plaintext highlighter-rouge">Plan *</code></td>
+      <td>Right (inner) child</td>
+    </tr>
+  </tbody>
+</table>
+
+<h2 id="connections">Connections</h2>
+
+<p><strong>Depends on:</strong></p>
+<ul>
+  <li><a href="process-model">Process Model</a> — the query lifecycle runs inside a backend process</li>
+  <li><a href="memory-layout">Memory Layout</a> — each stage allocates in different memory contexts</li>
+  <li>System catalogs (<code class="language-plaintext highlighter-rouge">pg_class</code>, <code class="language-plaintext highlighter-rouge">pg_attribute</code>, <code class="language-plaintext highlighter-rouge">pg_proc</code>, <code class="language-plaintext highlighter-rouge">pg_statistic</code>) for name
+resolution and cost estimation</li>
+</ul>
+
+<p><strong>Used by:</strong></p>
+<ul>
+  <li><code class="language-plaintext highlighter-rouge">EXPLAIN</code> / <code class="language-plaintext highlighter-rouge">EXPLAIN ANALYZE</code> — runs the same pipeline but instruments it</li>
+  <li>Prepared statements — split the pipeline between <code class="language-plaintext highlighter-rouge">Prepare</code> (parse + plan) and
+<code class="language-plaintext highlighter-rouge">Execute</code></li>
+  <li>PL/pgSQL — calls into the SPI interface, which re-enters the query pipeline</li>
+</ul>
+
+<p><strong>See also:</strong></p>
+<ul>
+  <li>Chapter 4 (Query Planning) for a deep dive into the optimizer</li>
+  <li>Chapter 5 (Executor) for the Volcano model, join strategies, and parallel query</li>
+</ul>
+
+
+      <hr>
+
+      <!-- Prev / Next / Up navigation -->
+      
+      
+      
+
+      <div class="clearfix" style="margin-top: 2rem;">
+        
+          
+          
+
+          
+            
+            <a class="btn btn-primary float-left" href="/postgresql/00-architecture/process-model.html" title="Process Model">&larr; Previous</a>
+          
+
+          
+            
+            <a class="btn btn-primary float-right" href="/postgresql/01-storage/" title="Storage Engine">Next &rarr;</a>
+          
+        
+      </div>
+
+      
+      <div style="text-align: center; margin-top: 1rem;">
+        <a href="/postgresql-internals/">&uarr; Back to Table of Contents</a>
+      </div>
+      
+
+    </div>
+  </div>
+</div>
+
+
+  <!-- Footer -->
+
+<hr>
+
+<footer>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <ul class="list-inline text-center">
+          
+          <li class="list-inline-item">
+            <a href="mailto:amitava.dev@proton.me" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="far fa-envelope fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          
+          
+          <li class="list-inline-item">
+            <a href="https://www.linkedin.com/in/amitavaag" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-linkedin fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          <li class="list-inline-item">
+            <a href="https://github.com/ikouchiha47" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-github fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+        </ul>
+
+        <p class="copyright text-muted">
+          Build with: 
+          <a 
+            href="https://github.com/StartBootstrap/startbootstrap-clean-blog-jekyll"
+            class="text-gray"
+            target="_blank">startbootstrap-clean-blog-jekyll</a></p>
+      </div>
+    </div>
+  </div>
+</footer>
+
+
+  <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="/assets/vendor/blog/js/scripts.js"></script>
+
+<script src="/assets/scripts.js"></script>
+
+
+
+
+
+  <script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+
+    document.querySelectorAll('pre > code.language-mermaid').forEach((codeBlock) => {
+      codeBlock.parentElement.outerHTML = `<pre class="mermaid">${codeBlock.textContent}</pre>`;
+    });
+
+
+    mermaid.initialize({ startOnLoad: true, theme: 'forest' });
+</script>
+
+
+  
+
+</body>
+
+</html>

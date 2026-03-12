@@ -1,0 +1,663 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+  <title>
+    Shared Memory - iko&#39;s logs
+    
+  </title>
+
+  <meta name="description" content="">
+  <meta property="og:description" content="">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Shared Memory">
+  <meta property="og:url" content="https://ikouchiha47.github.io/postgresql/11-ipc/shared-memory.html">
+
+  
+
+  <link href='https://fonts.googleapis.com/css?family=Lora:400,700,400italic,700italic' rel='stylesheet' type='text/css'>
+  <link href='https://fonts.googleapis.com/css?family=Open+Sans:300italic,400italic,600italic,700italic,800italic,400,300,600,700,800' rel='stylesheet' type='text/css'>
+
+  <!-- <script src="https://use.fontawesome.com/releases/v5.15.3/js/all.js" crossorigin="anonymous"></script> -->
+  <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.15.4/css/all.css" integrity="sha384-DyZ88mC6Up2uqS4h/KRgHuoeGwBcD4Ng9SiP4dIRy0EXTlnuz47vAwmeGwVChigm" crossorigin="anonymous"/>
+
+  <link rel="stylesheet" href="/assets/main.css">
+  <link rel="canonical" href="https://ikouchiha47.github.io/postgresql/11-ipc/shared-memory.html">
+  <link rel="alternate" type="application/rss+xml" title="iko&#39;s logs" href="/feed.xml">
+
+  <meta name="google-site-verification" content="lWkg6gIxJgzEKX_5XnhcxCtPE9QknaimFWWos_dTvPM" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fira+Sans:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Inconsolata:wght@200..900&family=Jersey+25&family=Kanit:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Merriweather+Sans:ital,wght@0,300..800;1,300..800&family=Nanum+Gothic+Coding&family=Space+Grotesk:wght@300..700&family=Titillium+Web:ital,wght@0,200;0,300;0,400;0,600;0,700;0,900;1,200;1,300;1,400;1,600;1,700&display=swap" rel="stylesheet">
+
+</head>
+
+
+<body>
+
+  <!-- Navigation -->
+<nav class="navbar navbar-expand-lg navbar-light fixed-top" id="mainNav">
+  <div class="container">
+    <a class="navbar-brand" href="/">iko&#39;s logs</a>
+    <button class="navbar-toggler navbar-toggler-right" type="button" data-toggle="collapse" data-target="#navbarResponsive" aria-controls="navbarResponsive" aria-expanded="false" aria-label="Toggle navigation">
+      Menu
+      <i class="fa fa-bars"></i>
+    </button>
+    <div class="collapse navbar-collapse" id="navbarResponsive">
+      <ul class="navbar-nav ml-auto">
+        <li class="nav-item">
+          <a class="nav-link" href="/">Home</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/about">About</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/posts">Posts</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/contact">Contact</a>
+        </li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+
+  <!-- Page Header -->
+
+<header class="masthead">
+
+  <div class="overlay"></div>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <div class="post-heading">
+          <h1>Shared Memory</h1>
+          
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="container space-grotesk">
+  <div class="row">
+    <div class="col-lg-8 col-md-10 mx-auto">
+
+      <!-- Breadcrumb -->
+      <nav aria-label="breadcrumb" style="margin-bottom: 1.5rem;">
+        <ol class="breadcrumb" style="background: transparent; padding: 0;">
+          
+            <li class="breadcrumb-item"><a href="/postgresql-internals/">PostgreSQL Internals Deep Dive</a></li>
+          
+          
+            
+              <li class="breadcrumb-item"><a href="/postgresql/11-ipc/">IPC</a></li>
+            
+          
+          <li class="breadcrumb-item active" aria-current="page">Shared Memory</li>
+        </ol>
+      </nav>
+
+      <h1 id="shared-memory">Shared Memory</h1>
+
+<p>PostgreSQL allocates a single large shared memory region at postmaster startup.
+Every backend inherits a mapping to this region via <code class="language-plaintext highlighter-rouge">fork()</code>. The region holds
+the buffer pool, lock tables, ProcArray, PGPROC slots, and dozens of other
+structures. For parallel queries and background workers, a second mechanism –
+dynamic shared memory (DSM) – creates additional segments on demand.</p>
+
+<p>This page covers both the fixed shared memory allocator and the dynamic shared
+memory subsystem.</p>
+
+<hr />
+
+<h2 id="overview">Overview</h2>
+
+<p>Shared memory in PostgreSQL has two layers:</p>
+
+<ol>
+  <li>
+    <p><strong>Fixed shared memory</strong> (<code class="language-plaintext highlighter-rouge">shmem.c</code>) – A bump allocator that carves the startup
+region into named chunks. Allocations are permanent; there is no <code class="language-plaintext highlighter-rouge">free</code>. Every
+subsystem requests its space during <code class="language-plaintext highlighter-rouge">CreateOrAttachShmemStructs()</code>.</p>
+  </li>
+  <li>
+    <p><strong>Dynamic shared memory</strong> (<code class="language-plaintext highlighter-rouge">dsm.c</code>, <code class="language-plaintext highlighter-rouge">dsm_impl.c</code>) – On-demand segments created
+after startup, primarily for parallel query. These segments have explicit
+lifetimes and are cleaned up automatically when all mappings are removed.</p>
+  </li>
+</ol>
+
+<pre><code class="language-mermaid">graph TD
+    subgraph "Main Shared Memory Region"
+        Header["PGShmemHeader"]
+        ShmIdx["Shmem Index (Hash Table)"]
+        BufDesc["Buffer Descriptors"]
+        BufBlk["Buffer Blocks\n(NBuffers x 8KB)"]
+        Locks["Lock Partition\nHash Tables"]
+        PGP["PGPROC Array"]
+        PA["ProcArray +\nDense Arrays"]
+        CLOG["CLOG / Subtrans /\nMultixact Buffers"]
+        WAL["WAL Buffers"]
+        DSMCtrl["DSM Control Segment"]
+        Ext["Extension Shmem\n(pg_stat_statements, etc.)"]
+
+        Header --&gt; ShmIdx --&gt; BufDesc --&gt; BufBlk --&gt; Locks --&gt; PGP --&gt; PA --&gt; CLOG --&gt; WAL --&gt; DSMCtrl --&gt; Ext
+    end
+
+    subgraph "Dynamic Shared Memory"
+        DSMA["DSM Segment A\n(parallel query 1)\nshm_mq + plan state"]
+        DSMB["DSM Segment B\n(parallel query 2)\nshm_mq + plan state"]
+    end
+
+    DSMCtrl -. "tracks" .-&gt; DSMA
+    DSMCtrl -. "tracks" .-&gt; DSMB
+</code></pre>
+
+<hr />
+
+<h2 id="key-source-files">Key Source Files</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>File</th>
+      <th>Role</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/storage/ipc/shmem.c</code></td>
+      <td>Bump allocator, Shmem Index hash table</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/storage/ipc/ipci.c</code></td>
+      <td>Startup orchestration, <code class="language-plaintext highlighter-rouge">CalculateShmemSize()</code></td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/storage/shmem.h</code></td>
+      <td>Public API: <code class="language-plaintext highlighter-rouge">ShmemAlloc</code>, <code class="language-plaintext highlighter-rouge">ShmemInitStruct</code>, <code class="language-plaintext highlighter-rouge">ShmemInitHash</code></td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/storage/pg_shmem.h</code></td>
+      <td>OS-level segment header (<code class="language-plaintext highlighter-rouge">PGShmemHeader</code>)</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/port/sysv_shmem.c</code></td>
+      <td>System V / mmap shared memory creation (Unix)</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/storage/ipc/dsm.c</code></td>
+      <td>DSM segment lifecycle management</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/storage/ipc/dsm_impl.c</code></td>
+      <td>Platform backends for DSM</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/storage/dsm.h</code></td>
+      <td>DSM public API</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/storage/dsm_impl.h</code></td>
+      <td>DSM backend constants and <code class="language-plaintext highlighter-rouge">dsm_op</code> enum</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/storage/ipc/dsm_registry.c</code></td>
+      <td>Named DSM segments that persist across backends</td>
+    </tr>
+  </tbody>
+</table>
+
+<hr />
+
+<h2 id="how-it-works-fixed-shared-memory">How It Works: Fixed Shared Memory</h2>
+
+<h3 id="the-bump-allocator">The Bump Allocator</h3>
+
+<p>The shared memory region starts with a <code class="language-plaintext highlighter-rouge">PGShmemHeader</code> at address zero, followed
+by a contiguous pool of unallocated bytes. A global pointer (<code class="language-plaintext highlighter-rouge">ShmemFreeStart</code>)
+advances monotonically as subsystems claim space:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>PGShmemHeader
++------------------+
+| totalsize        |    Total bytes in the region
+| freeoffset       | -&gt; Points to first free byte (bump pointer)
+| ...              |
++------------------+
+| Shmem Index (HT) |    Hash table mapping names -&gt; {location, size}
++------------------+
+| Buffer Descs     |    Allocated by BufferShmemInit
++------------------+
+| Buffer Blocks    |    The actual 8 KB pages
++------------------+
+| Lock Tables      |
++------------------+
+| PGPROC Array     |
++------------------+
+| ProcArray        |
++------------------+
+| ...more...       |
++------------------+
+| (free space)     |
++------------------+
+</code></pre></div></div>
+
+<p><code class="language-plaintext highlighter-rouge">ShmemAlloc(size)</code> simply advances the free pointer by <code class="language-plaintext highlighter-rouge">size</code> (aligned to
+<code class="language-plaintext highlighter-rouge">MAXIMUM_ALIGNOF</code>) and returns the old pointer. The spinlock <code class="language-plaintext highlighter-rouge">ShmemLock</code> protects
+concurrent allocation, but in practice allocations only happen during startup
+in the postmaster (single-threaded).</p>
+
+<h3 id="the-shmem-index">The Shmem Index</h3>
+
+<p>Each named structure is registered in the <strong>Shmem Index</strong>, a shared hash table
+whose entries are <code class="language-plaintext highlighter-rouge">ShmemIndexEnt</code>:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="cm">/* src/include/storage/shmem.h */</span>
+<span class="k">typedef</span> <span class="k">struct</span>
+<span class="p">{</span>
+    <span class="kt">char</span>    <span class="n">key</span><span class="p">[</span><span class="n">SHMEM_INDEX_KEYSIZE</span><span class="p">];</span>   <span class="cm">/* 48-byte string name */</span>
+    <span class="kt">void</span>   <span class="o">*</span><span class="n">location</span><span class="p">;</span>                    <span class="cm">/* address in shared memory */</span>
+    <span class="n">Size</span>    <span class="n">size</span><span class="p">;</span>                         <span class="cm">/* requested size */</span>
+    <span class="n">Size</span>    <span class="n">allocated_size</span><span class="p">;</span>               <span class="cm">/* actual allocated size */</span>
+<span class="p">}</span> <span class="n">ShmemIndexEnt</span><span class="p">;</span>
+</code></pre></div></div>
+
+<p><code class="language-plaintext highlighter-rouge">ShmemInitStruct(name, size, &amp;found)</code> looks up <code class="language-plaintext highlighter-rouge">name</code> in the index. If the
+entry does not exist, it allocates <code class="language-plaintext highlighter-rouge">size</code> bytes and inserts the entry. If it
+already exists, it returns the existing pointer and sets <code class="language-plaintext highlighter-rouge">found = true</code>. This
+two-phase pattern allows both the postmaster (which creates) and forked backends
+(which attach) to use identical code paths. It is especially important on
+<code class="language-plaintext highlighter-rouge">EXEC_BACKEND</code> platforms (Windows) where backends cannot inherit pointers from
+the postmaster.</p>
+
+<h3 id="startup-orchestration">Startup Orchestration</h3>
+
+<p><code class="language-plaintext highlighter-rouge">ipci.c</code> contains <code class="language-plaintext highlighter-rouge">CalculateShmemSize()</code>, which calls every subsystem’s size
+estimation function:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="cm">/* Abbreviated from src/backend/storage/ipc/ipci.c */</span>
+<span class="n">size</span> <span class="o">=</span> <span class="mi">100000</span><span class="p">;</span>                          <span class="cm">/* base overhead */</span>
+<span class="n">size</span> <span class="o">=</span> <span class="n">add_size</span><span class="p">(</span><span class="n">size</span><span class="p">,</span> <span class="n">shmem_cache_size</span><span class="p">());</span>
+<span class="n">size</span> <span class="o">=</span> <span class="n">add_size</span><span class="p">(</span><span class="n">size</span><span class="p">,</span> <span class="n">BufferShmemSize</span><span class="p">());</span>
+<span class="n">size</span> <span class="o">=</span> <span class="n">add_size</span><span class="p">(</span><span class="n">size</span><span class="p">,</span> <span class="n">LockShmemSize</span><span class="p">());</span>
+<span class="n">size</span> <span class="o">=</span> <span class="n">add_size</span><span class="p">(</span><span class="n">size</span><span class="p">,</span> <span class="n">ProcGlobalShmemSize</span><span class="p">());</span>
+<span class="n">size</span> <span class="o">=</span> <span class="n">add_size</span><span class="p">(</span><span class="n">size</span><span class="p">,</span> <span class="n">ProcArrayShmemSize</span><span class="p">());</span>
+<span class="cm">/* ... dozens more ... */</span>
+<span class="n">size</span> <span class="o">=</span> <span class="n">add_size</span><span class="p">(</span><span class="n">size</span><span class="p">,</span> <span class="n">total_addin_request</span><span class="p">);</span>  <span class="cm">/* extensions */</span>
+</code></pre></div></div>
+
+<p><code class="language-plaintext highlighter-rouge">add_size()</code> checks for overflow at each step. The resulting total is passed to
+<code class="language-plaintext highlighter-rouge">PGSharedMemoryCreate()</code>, which allocates the OS-level segment.</p>
+
+<hr />
+
+<h2 id="how-it-works-dynamic-shared-memory">How It Works: Dynamic Shared Memory</h2>
+
+<h3 id="motivation">Motivation</h3>
+
+<p>The fixed region is sized at startup and cannot grow. Parallel queries need
+per-query memory (tuple queues, worker state, hash tables) that varies wildly
+in size and lifetime. DSM provides this.</p>
+
+<h3 id="the-dsm-control-segment">The DSM Control Segment</h3>
+
+<p>A small area of the fixed shared memory holds the <strong>DSM control segment</strong>: an
+array of <code class="language-plaintext highlighter-rouge">dsm_control_item</code> slots, one per active DSM segment:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="cm">/* src/backend/storage/ipc/dsm.c */</span>
+<span class="k">typedef</span> <span class="k">struct</span> <span class="n">dsm_control_item</span>
+<span class="p">{</span>
+    <span class="n">dsm_handle</span>  <span class="n">handle</span><span class="p">;</span>           <span class="cm">/* Randomly generated 32-bit ID */</span>
+    <span class="n">uint32</span>      <span class="n">control_slot</span><span class="p">;</span>
+    <span class="kt">void</span>       <span class="o">*</span><span class="n">impl_private_pm_handle</span><span class="p">;</span>
+    <span class="n">bool</span>        <span class="n">pinned</span><span class="p">;</span>           <span class="cm">/* Pinned to postmaster lifetime? */</span>
+<span class="p">}</span> <span class="n">dsm_control_item</span><span class="p">;</span>
+</code></pre></div></div>
+
+<p>The number of slots is <code class="language-plaintext highlighter-rouge">PG_DYNSHMEM_FIXED_SLOTS + PG_DYNSHMEM_SLOTS_PER_BACKEND * MaxBackends</code>.</p>
+
+<h3 id="segment-lifecycle">Segment Lifecycle</h3>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>  dsm_create(size)
+      |
+      |  1. Pick a random dsm_handle
+      |  2. Call dsm_impl_op(DSM_OP_CREATE, ...) to create OS segment
+      |  3. Map the segment into our address space
+      |  4. Register in DSM control array
+      |  5. Register resource-owner cleanup callback
+      |
+      v
+  dsm_segment *seg  --&gt;  seg-&gt;mapped_address  (usable memory)
+      |
+      |  Share seg-&gt;handle with workers (via bgworker args or shm_toc)
+      |
+  dsm_attach(handle)  [in worker]
+      |
+      |  1. Find handle in DSM control array
+      |  2. Call dsm_impl_op(DSM_OP_ATTACH, ...)
+      |  3. Map into worker's address space
+      |
+      v
+  dsm_segment *seg  --&gt;  same physical memory, different virtual address
+      |
+  dsm_detach(seg)  [automatic or explicit]
+      |
+      |  1. Run on_dsm_detach callbacks
+      |  2. Call dsm_impl_op(DSM_OP_DETACH, ...)
+      |  3. When last mapping removed: DSM_OP_DESTROY
+</code></pre></div></div>
+
+<h3 id="pinning">Pinning</h3>
+
+<p>By default, a DSM segment is destroyed when its creator’s resource owner is
+released. Two pinning mechanisms extend the lifetime:</p>
+
+<ul>
+  <li><strong><code class="language-plaintext highlighter-rouge">dsm_pin_mapping(seg)</code></strong> – Pins the mapping to the session. The segment stays
+mapped even after the current resource owner is released.</li>
+  <li><strong><code class="language-plaintext highlighter-rouge">dsm_pin_segment(seg)</code></strong> – Pins the segment to the postmaster. It survives
+until explicit <code class="language-plaintext highlighter-rouge">dsm_unpin_segment()</code> or postmaster shutdown.</li>
+</ul>
+
+<h3 id="the-min_dynamic_shared_memory-guc">The <code class="language-plaintext highlighter-rouge">min_dynamic_shared_memory</code> GUC</h3>
+
+<p>When set to a nonzero value, PostgreSQL pre-allocates a pool of DSM space inside
+the main shared memory region. Small DSM requests are carved from this pool using
+a free-page manager (<code class="language-plaintext highlighter-rouge">FreePageManager</code>), avoiding the overhead of OS-level segment
+creation. This is especially beneficial on systems where <code class="language-plaintext highlighter-rouge">shm_open()</code> or <code class="language-plaintext highlighter-rouge">shmget()</code>
+has high latency.</p>
+
+<hr />
+
+<h2 id="key-data-structures">Key Data Structures</h2>
+
+<h3 id="dsm_segment-backend-local">dsm_segment (Backend-Local)</h3>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="cm">/* src/backend/storage/ipc/dsm.c */</span>
+<span class="k">struct</span> <span class="n">dsm_segment</span>
+<span class="p">{</span>
+    <span class="n">dlist_node</span>  <span class="n">node</span><span class="p">;</span>              <span class="cm">/* Link in backend-local list */</span>
+    <span class="n">ResourceOwner</span> <span class="n">resowner</span><span class="p">;</span>        <span class="cm">/* Owning resource owner */</span>
+    <span class="n">dsm_handle</span>  <span class="n">handle</span><span class="p">;</span>            <span class="cm">/* 32-bit segment identifier */</span>
+    <span class="n">uint32</span>      <span class="n">control_slot</span><span class="p">;</span>      <span class="cm">/* Slot in DSM control array */</span>
+    <span class="kt">void</span>       <span class="o">*</span><span class="n">impl_private</span><span class="p">;</span>      <span class="cm">/* OS-level handle (fd, shmid, etc.) */</span>
+    <span class="kt">void</span>       <span class="o">*</span><span class="n">mapped_address</span><span class="p">;</span>    <span class="cm">/* Virtual address of mapping */</span>
+    <span class="n">Size</span>        <span class="n">mapped_size</span><span class="p">;</span>       <span class="cm">/* Size of the mapping */</span>
+    <span class="n">slist_head</span>  <span class="n">on_detach</span><span class="p">;</span>         <span class="cm">/* Cleanup callback chain */</span>
+<span class="p">};</span>
+</code></pre></div></div>
+
+<h3 id="dsm_impl-backends">dsm_impl Backends</h3>
+
+<p>The <code class="language-plaintext highlighter-rouge">dsm_impl_op()</code> function dispatches to one of four platform backends:</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>Constant</th>
+      <th>Mechanism</th>
+      <th>Notes</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">DSM_IMPL_POSIX</code></td>
+      <td><code class="language-plaintext highlighter-rouge">shm_open()</code> / <code class="language-plaintext highlighter-rouge">mmap()</code></td>
+      <td>Default on Linux, macOS, FreeBSD. Uses <code class="language-plaintext highlighter-rouge">/dev/shm</code> on Linux.</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">DSM_IMPL_SYSV</code></td>
+      <td><code class="language-plaintext highlighter-rouge">shmget()</code> / <code class="language-plaintext highlighter-rouge">shmat()</code></td>
+      <td>Fallback on older Unix systems. Subject to kernel <code class="language-plaintext highlighter-rouge">SHMMAX</code>/<code class="language-plaintext highlighter-rouge">SHMALL</code> limits.</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">DSM_IMPL_MMAP</code></td>
+      <td><code class="language-plaintext highlighter-rouge">open()</code> / <code class="language-plaintext highlighter-rouge">mmap()</code> on files in <code class="language-plaintext highlighter-rouge">pg_dynshmem/</code></td>
+      <td>Filesystem-backed. Useful when POSIX shm and SysV are unavailable.</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">DSM_IMPL_WINDOWS</code></td>
+      <td><code class="language-plaintext highlighter-rouge">CreateFileMapping()</code></td>
+      <td>Windows-only.</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>The GUC <code class="language-plaintext highlighter-rouge">dynamic_shared_memory_type</code> selects which backend to use. The default
+is determined at compile time by <code class="language-plaintext highlighter-rouge">DEFAULT_DYNAMIC_SHARED_MEMORY_TYPE</code>.</p>
+
+<h3 id="dsm-registry">DSM Registry</h3>
+
+<p><code class="language-plaintext highlighter-rouge">dsm_registry.c</code> provides <strong>named DSM segments</strong> that any backend can look up
+by name. This is useful for extensions that need a shared memory region but
+cannot predict which backend will create it first. The registry stores
+<code class="language-plaintext highlighter-rouge">{name -&gt; dsm_handle}</code> mappings in a hash table in the main shared memory region.</p>
+
+<hr />
+
+<h2 id="diagram-shared-memory-layout">Diagram: Shared Memory Layout</h2>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>+==============================================================+
+|                  Main Shared Memory Region                    |
+|                                                               |
+|  PGShmemHeader                                                |
+|  +----------------------------------------------------------+ |
+|  | Shmem Index (hash table)                                 | |
+|  +----------------------------------------------------------+ |
+|  | Buffer Descriptors  (NBuffers * sizeof(BufferDesc))      | |
+|  +----------------------------------------------------------+ |
+|  | Buffer Blocks       (NBuffers * BLCKSZ)                  | |
+|  +----------------------------------------------------------+ |
+|  | Lock Partition Hash Tables                                | |
+|  +----------------------------------------------------------+ |
+|  | PGPROC Array        (MaxBackends + aux + prepared)       | |
+|  +----------------------------------------------------------+ |
+|  | ProcArray + Dense Arrays (xids[], statusFlags[], ...)    | |
+|  +----------------------------------------------------------+ |
+|  | CLOG Buffers, Subtrans Buffers, Multixact Buffers        | |
+|  +----------------------------------------------------------+ |
+|  | WAL Buffers                                               | |
+|  +----------------------------------------------------------+ |
+|  | DSM Control Segment                                       | |
+|  +----------------------------------------------------------+ |
+|  | Pre-allocated DSM Pool (if min_dynamic_shared_memory &gt; 0)| |
+|  +----------------------------------------------------------+ |
+|  | Extension shmem (pg_stat_statements, etc.)               | |
+|  +----------------------------------------------------------+ |
+|  | Free space (unused)                                       | |
+|  +----------------------------------------------------------+ |
++==============================================================+
+
++========================+     +========================+
+| DSM Segment A          |     | DSM Segment B          |
+| (parallel query 1)     |     | (parallel query 2)     |
+|                        |     |                        |
+| shm_toc -&gt; shm_mq x N |     | shm_toc -&gt; shm_mq x M |
+| query state, params    |     | query state, params    |
++========================+     +========================+
+</code></pre></div></div>
+
+<hr />
+
+<h2 id="important-invariants">Important Invariants</h2>
+
+<ol>
+  <li>
+    <p><strong>Fixed shmem never shrinks.</strong> Once allocated, a chunk in the main region is
+permanent. There is no deallocation. This simplifies the allocator to a single
+atomic bump pointer but means the region must be sized correctly at startup.</p>
+  </li>
+  <li>
+    <p><strong>Same virtual address in every process.</strong> The main shared memory region is
+mapped at the same address in every backend. This allows raw pointers to be
+stored in shared structures (e.g., linked lists of <code class="language-plaintext highlighter-rouge">PGPROC</code> nodes).</p>
+  </li>
+  <li>
+    <p><strong>DSM segments may map at different addresses.</strong> Unlike the main region, DSM
+segments can appear at different virtual addresses in different processes. Code
+that uses DSM must use offsets or <code class="language-plaintext highlighter-rouge">shm_toc</code> lookups, not raw pointers.</p>
+  </li>
+  <li>
+    <p><strong>Cleanup is automatic.</strong> DSM segments are tied to resource owners. If a backend
+crashes, the postmaster detects the crash and cleans up orphaned segments at the
+next startup (or immediately if using the DSM control segment).</p>
+  </li>
+</ol>
+
+<hr />
+
+<h2 id="connections">Connections</h2>
+
+<ul>
+  <li>
+    <p><strong><a href="latches-and-events.md">Latches and Wait Events</a></strong> – Latches (stored in PGPROC,
+which lives in fixed shared memory) are the signaling mechanism between processes.</p>
+  </li>
+  <li>
+    <p><strong><a href="procarray.md">ProcArray</a></strong> – The PGPROC array and ProcArray dense arrays are
+allocated from fixed shared memory during startup.</p>
+  </li>
+  <li>
+    <p><strong><a href="message-queues.md">Message Queues</a></strong> – <code class="language-plaintext highlighter-rouge">shm_mq</code> queues are laid out inside
+DSM segments, organized by <code class="language-plaintext highlighter-rouge">shm_toc</code>.</p>
+  </li>
+  <li>
+    <p><strong>Chapter 1 (Storage)</strong> – The buffer pool is the single largest consumer of
+shared memory, often 90%+ of the total.</p>
+  </li>
+  <li>
+    <p><strong>Chapter 5 (Locking)</strong> – LWLock tranches and heavyweight lock hash tables are
+allocated from fixed shared memory.</p>
+  </li>
+  <li>
+    <p><strong>Chapter 10 (Memory)</strong> – DSA (Dynamic Shared Area) provides a <code class="language-plaintext highlighter-rouge">palloc</code>-style
+allocator on top of DSM segments, used by parallel hash joins and other consumers.</p>
+  </li>
+</ul>
+
+
+      <hr>
+
+      <!-- Prev / Next / Up navigation -->
+      
+      
+      
+
+      <div class="clearfix" style="margin-top: 2rem;">
+        
+          
+          
+
+          
+            
+            <a class="btn btn-primary float-left" href="/postgresql/11-ipc/procarray.html" title="ProcArray and PGPROC">&larr; Previous</a>
+          
+
+          
+            
+            <a class="btn btn-primary float-right" href="/postgresql/12-replication/" title="Replication">Next &rarr;</a>
+          
+        
+      </div>
+
+      
+      <div style="text-align: center; margin-top: 1rem;">
+        <a href="/postgresql-internals/">&uarr; Back to Table of Contents</a>
+      </div>
+      
+
+    </div>
+  </div>
+</div>
+
+
+  <!-- Footer -->
+
+<hr>
+
+<footer>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <ul class="list-inline text-center">
+          
+          <li class="list-inline-item">
+            <a href="mailto:amitava.dev@proton.me" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="far fa-envelope fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          
+          
+          <li class="list-inline-item">
+            <a href="https://www.linkedin.com/in/amitavaag" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-linkedin fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          <li class="list-inline-item">
+            <a href="https://github.com/ikouchiha47" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-github fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+        </ul>
+
+        <p class="copyright text-muted">
+          Build with: 
+          <a 
+            href="https://github.com/StartBootstrap/startbootstrap-clean-blog-jekyll"
+            class="text-gray"
+            target="_blank">startbootstrap-clean-blog-jekyll</a></p>
+      </div>
+    </div>
+  </div>
+</footer>
+
+
+  <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="/assets/vendor/blog/js/scripts.js"></script>
+
+<script src="/assets/scripts.js"></script>
+
+
+
+
+
+  <script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+
+    document.querySelectorAll('pre > code.language-mermaid').forEach((codeBlock) => {
+      codeBlock.parentElement.outerHTML = `<pre class="mermaid">${codeBlock.textContent}</pre>`;
+    });
+
+
+    mermaid.initialize({ startOnLoad: true, theme: 'forest' });
+</script>
+
+
+  
+
+</body>
+
+</html>

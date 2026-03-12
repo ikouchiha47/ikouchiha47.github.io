@@ -1,0 +1,784 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+  <title>
+    Memory Contexts - iko&#39;s logs
+    
+  </title>
+
+  <meta name="description" content="">
+  <meta property="og:description" content="">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Memory Contexts">
+  <meta property="og:url" content="https://ikouchiha47.github.io/postgresql/10-memory/memory-contexts.html">
+
+  
+
+  <link href='https://fonts.googleapis.com/css?family=Lora:400,700,400italic,700italic' rel='stylesheet' type='text/css'>
+  <link href='https://fonts.googleapis.com/css?family=Open+Sans:300italic,400italic,600italic,700italic,800italic,400,300,600,700,800' rel='stylesheet' type='text/css'>
+
+  <!-- <script src="https://use.fontawesome.com/releases/v5.15.3/js/all.js" crossorigin="anonymous"></script> -->
+  <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.15.4/css/all.css" integrity="sha384-DyZ88mC6Up2uqS4h/KRgHuoeGwBcD4Ng9SiP4dIRy0EXTlnuz47vAwmeGwVChigm" crossorigin="anonymous"/>
+
+  <link rel="stylesheet" href="/assets/main.css">
+  <link rel="canonical" href="https://ikouchiha47.github.io/postgresql/10-memory/memory-contexts.html">
+  <link rel="alternate" type="application/rss+xml" title="iko&#39;s logs" href="/feed.xml">
+
+  <meta name="google-site-verification" content="lWkg6gIxJgzEKX_5XnhcxCtPE9QknaimFWWos_dTvPM" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fira+Sans:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Inconsolata:wght@200..900&family=Jersey+25&family=Kanit:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Merriweather+Sans:ital,wght@0,300..800;1,300..800&family=Nanum+Gothic+Coding&family=Space+Grotesk:wght@300..700&family=Titillium+Web:ital,wght@0,200;0,300;0,400;0,600;0,700;0,900;1,200;1,300;1,400;1,600;1,700&display=swap" rel="stylesheet">
+
+</head>
+
+
+<body>
+
+  <!-- Navigation -->
+<nav class="navbar navbar-expand-lg navbar-light fixed-top" id="mainNav">
+  <div class="container">
+    <a class="navbar-brand" href="/">iko&#39;s logs</a>
+    <button class="navbar-toggler navbar-toggler-right" type="button" data-toggle="collapse" data-target="#navbarResponsive" aria-controls="navbarResponsive" aria-expanded="false" aria-label="Toggle navigation">
+      Menu
+      <i class="fa fa-bars"></i>
+    </button>
+    <div class="collapse navbar-collapse" id="navbarResponsive">
+      <ul class="navbar-nav ml-auto">
+        <li class="nav-item">
+          <a class="nav-link" href="/">Home</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/about">About</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/posts">Posts</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/contact">Contact</a>
+        </li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+
+  <!-- Page Header -->
+
+<header class="masthead">
+
+  <div class="overlay"></div>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <div class="post-heading">
+          <h1>Memory Contexts</h1>
+          
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="container space-grotesk">
+  <div class="row">
+    <div class="col-lg-8 col-md-10 mx-auto">
+
+      <!-- Breadcrumb -->
+      <nav aria-label="breadcrumb" style="margin-bottom: 1.5rem;">
+        <ol class="breadcrumb" style="background: transparent; padding: 0;">
+          
+            <li class="breadcrumb-item"><a href="/postgresql-internals/">PostgreSQL Internals Deep Dive</a></li>
+          
+          
+            
+              <li class="breadcrumb-item"><a href="/postgresql/10-memory/">Memory Management</a></li>
+            
+          
+          <li class="breadcrumb-item active" aria-current="page">Memory Contexts</li>
+        </ol>
+      </nav>
+
+      <h1 id="memory-contexts">Memory Contexts</h1>
+
+<blockquote>
+  <p><em>Every palloc’d byte belongs to a context, every context belongs to a tree, and resetting a node in that tree frees the entire subtree — giving PostgreSQL deterministic, bulk memory reclamation in plain C.</em></p>
+</blockquote>
+
+<h2 id="summary">Summary</h2>
+
+<p>PostgreSQL’s memory context system is an arena allocator with a tree structure. Each
+<code class="language-plaintext highlighter-rouge">MemoryContext</code> is an abstract node whose concrete behavior is determined by one of four
+allocator implementations: <strong>AllocSet</strong> (general-purpose, power-of-two freelists),
+<strong>Slab</strong> (fixed-size objects), <strong>Generation</strong> (FIFO-lifetime batches), and <strong>Bump</strong>
+(headerless, append-only). All four share the same <code class="language-plaintext highlighter-rouge">palloc</code>/<code class="language-plaintext highlighter-rouge">pfree</code> API via a virtual
+function table stored in <code class="language-plaintext highlighter-rouge">MemoryContextMethods</code>.</p>
+
+<p>The context tree mirrors lifetime nesting: <code class="language-plaintext highlighter-rouge">TopMemoryContext</code> at the root lives forever;
+<code class="language-plaintext highlighter-rouge">TopTransactionContext</code> and its children die at transaction end; per-tuple
+<code class="language-plaintext highlighter-rouge">ExprContext</code> contexts reset after every row. When any context is reset or deleted, all
+its children are recursively deleted first, guaranteeing that no child allocation
+outlives its parent.</p>
+
+<h2 id="overview">Overview</h2>
+
+<h3 id="the-problem">The Problem</h3>
+
+<p>A database backend executing queries must allocate memory for parse trees, plan trees,
+executor state, expression results, sort buffers, and temporary strings. Many of these
+allocations are small, numerous, and short-lived. Others persist for the lifetime of a
+transaction or even a session. Using raw <code class="language-plaintext highlighter-rouge">malloc</code>/<code class="language-plaintext highlighter-rouge">free</code> requires:</p>
+
+<ul>
+  <li>Pairing every allocation with a corresponding free, even across error paths.</li>
+  <li>Knowing the exact lifetime of each object at the point of allocation.</li>
+  <li>Handling out-of-memory gracefully, including during error recovery.</li>
+</ul>
+
+<p>Memory contexts solve all three problems.</p>
+
+<h3 id="the-solution">The Solution</h3>
+
+<ol>
+  <li><strong>Allocate into a context</strong> with <code class="language-plaintext highlighter-rouge">palloc()</code> (uses <code class="language-plaintext highlighter-rouge">CurrentMemoryContext</code>) or
+<code class="language-plaintext highlighter-rouge">MemoryContextAlloc(ctx, size)</code>.</li>
+  <li><strong>Reset or delete the context</strong> when its lifetime ends. This frees all contained
+memory in one operation, regardless of how many chunks were allocated.</li>
+  <li><strong>Organize contexts into a tree</strong> so that parent lifetimes always encompass child
+lifetimes. Deleting a parent cascades to all children.</li>
+</ol>
+
+<p>The API never returns NULL on failure. <code class="language-plaintext highlighter-rouge">palloc()</code> raises <code class="language-plaintext highlighter-rouge">ERROR</code> on out-of-memory, which
+triggers the error recovery path that resets the current transaction’s context tree.
+The pre-allocated <code class="language-plaintext highlighter-rouge">ErrorContext</code> ensures that even the error reporting code has memory
+to work with.</p>
+
+<h2 id="key-source-files">Key Source Files</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>File</th>
+      <th>Role</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/utils/palloc.h</code></td>
+      <td><code class="language-plaintext highlighter-rouge">palloc</code>, <code class="language-plaintext highlighter-rouge">pfree</code>, <code class="language-plaintext highlighter-rouge">MemoryContextSwitchTo</code>, <code class="language-plaintext highlighter-rouge">MemoryContextCallback</code></td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/nodes/memnodes.h</code></td>
+      <td><code class="language-plaintext highlighter-rouge">MemoryContextData</code>, <code class="language-plaintext highlighter-rouge">MemoryContextMethods</code>, <code class="language-plaintext highlighter-rouge">MemoryContextCounters</code></td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/utils/memutils.h</code></td>
+      <td>Well-known contexts, <code class="language-plaintext highlighter-rouge">AllocSetContextCreate</code>, size presets</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/utils/memutils_internal.h</code></td>
+      <td><code class="language-plaintext highlighter-rouge">MemoryContextMethodID</code> enum, internal function prototypes</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/utils/memutils_memorychunk.h</code></td>
+      <td><code class="language-plaintext highlighter-rouge">MemoryChunk</code> header bit layout</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/utils/mmgr/mcxt.c</code></td>
+      <td>Context tree operations, <code class="language-plaintext highlighter-rouge">palloc</code>/<code class="language-plaintext highlighter-rouge">pfree</code> dispatch</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/utils/mmgr/aset.c</code></td>
+      <td>AllocSet implementation</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/utils/mmgr/slab.c</code></td>
+      <td>Slab implementation</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/utils/mmgr/generation.c</code></td>
+      <td>Generation implementation</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/utils/mmgr/bump.c</code></td>
+      <td>Bump implementation</td>
+    </tr>
+  </tbody>
+</table>
+
+<h2 id="how-it-works">How It Works</h2>
+
+<h3 id="the-context-tree">The Context Tree</h3>
+
+<p>At backend startup, <code class="language-plaintext highlighter-rouge">MemoryContextInit()</code> creates two contexts:</p>
+
+<ul>
+  <li><strong>TopMemoryContext</strong> — the root of the entire tree. Never reset, never deleted.
+Equivalent to a session-lifetime arena.</li>
+  <li><strong>ErrorContext</strong> — a sibling or child of Top, pre-allocated with a few KB so that
+error reporting can function even when main memory is exhausted.</li>
+</ul>
+
+<p>As the backend processes queries, additional contexts are created and attached to the
+tree:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>TopMemoryContext
++-- CacheMemoryContext           (relcache, catcache; lives for session)
+|     +-- CacheMemoryContext:    (per-relation subsidiary storage)
++-- MessageContext               (current command string; reset per command)
++-- TopTransactionContext        (lives until top-level COMMIT/ROLLBACK)
+|     +-- CurTransactionContext  (current subtransaction)
+|           +-- Portal context   (per-portal)
+|                 +-- ExecutorState
+|                       +-- ExprContext   (per-tuple, reset each row)
+|                       +-- ExprContext   (aggregate ping-pong)
++-- ErrorContext                 (reserved for OOM recovery)
+</code></pre></div></div>
+
+<pre><code class="language-mermaid">graph TD
+    Top["TopMemoryContext\n(session lifetime)"]
+    Top --&gt; Cache["CacheMemoryContext\n(relcache, catcache)"]
+    Cache --&gt; CacheSub["per-relation\nsubsidiary storage"]
+    Top --&gt; Msg["MessageContext\n(reset per command)"]
+    Top --&gt; TxnTop["TopTransactionContext\n(until COMMIT/ROLLBACK)"]
+    TxnTop --&gt; CurTxn["CurTransactionContext\n(current subtransaction)"]
+    CurTxn --&gt; Portal["Portal Context\n(per-portal)"]
+    Portal --&gt; Exec["ExecutorState"]
+    Exec --&gt; Expr1["ExprContext\n(per-tuple, reset each row)"]
+    Exec --&gt; Expr2["ExprContext\n(aggregate ping-pong)"]
+    Top --&gt; Err["ErrorContext\n(reserved for OOM recovery)"]
+</code></pre>
+
+<p>The tree is maintained through linked-list pointers in <code class="language-plaintext highlighter-rouge">MemoryContextData</code>:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">typedef</span> <span class="k">struct</span> <span class="n">MemoryContextData</span>
+<span class="p">{</span>
+    <span class="n">NodeTag</span>     <span class="n">type</span><span class="p">;</span>               <span class="cm">/* AllocSetContext, SlabContext, etc. */</span>
+    <span class="n">bool</span>        <span class="n">isReset</span><span class="p">;</span>            <span class="cm">/* true if no allocations since last reset */</span>
+    <span class="n">bool</span>        <span class="n">allowInCritSection</span><span class="p">;</span> <span class="cm">/* allow palloc in critical sections */</span>
+    <span class="n">Size</span>        <span class="n">mem_allocated</span><span class="p">;</span>      <span class="cm">/* total bytes obtained from malloc for this context */</span>
+    <span class="k">const</span> <span class="n">MemoryContextMethods</span> <span class="o">*</span><span class="n">methods</span><span class="p">;</span>  <span class="cm">/* virtual function table */</span>
+    <span class="n">MemoryContext</span> <span class="n">parent</span><span class="p">;</span>           <span class="cm">/* NULL for TopMemoryContext */</span>
+    <span class="n">MemoryContext</span> <span class="n">firstchild</span><span class="p">;</span>       <span class="cm">/* head of child linked list */</span>
+    <span class="n">MemoryContext</span> <span class="n">prevchild</span><span class="p">;</span>        <span class="cm">/* sibling linkage */</span>
+    <span class="n">MemoryContext</span> <span class="n">nextchild</span><span class="p">;</span>        <span class="cm">/* sibling linkage */</span>
+    <span class="k">const</span> <span class="kt">char</span>  <span class="o">*</span><span class="n">name</span><span class="p">;</span>             <span class="cm">/* constant string, e.g. "ExecutorState" */</span>
+    <span class="k">const</span> <span class="kt">char</span>  <span class="o">*</span><span class="n">ident</span><span class="p">;</span>            <span class="cm">/* optional variable identifier */</span>
+    <span class="n">MemoryContextCallback</span> <span class="o">*</span><span class="n">reset_cbs</span><span class="p">;</span>  <span class="cm">/* callbacks invoked before reset/delete */</span>
+<span class="p">}</span> <span class="n">MemoryContextData</span><span class="p">;</span>
+</code></pre></div></div>
+
+<p><strong>Key invariant:</strong> Every context except <code class="language-plaintext highlighter-rouge">TopMemoryContext</code> has exactly one parent.
+<code class="language-plaintext highlighter-rouge">MemoryContextDelete(ctx)</code> first recursively deletes all children, then invokes
+reset callbacks, then calls the implementation’s <code class="language-plaintext highlighter-rouge">delete_context</code> method.</p>
+
+<h3 id="the-memorychunk-header">The MemoryChunk Header</h3>
+
+<p>Every allocated chunk (except in Bump contexts) is preceded by an 8-byte
+<code class="language-plaintext highlighter-rouge">MemoryChunk</code> header. This single <code class="language-plaintext highlighter-rouge">uint64</code> value (<code class="language-plaintext highlighter-rouge">hdrmask</code>) encodes three fields
+using bit packing:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code> 63                   34  33           5  4    1   0
++----------------------+---------------+------+---+
+|   block offset (30)  |  value (30)   | ext  | method ID (4) |
++----------------------+---------------+------+---+
+</code></pre></div></div>
+
+<ul>
+  <li><strong>Bits 0-3: MemoryContextMethodID</strong> — identifies which allocator type owns this
+chunk. Used by <code class="language-plaintext highlighter-rouge">pfree</code> to dispatch to the correct free function via
+<code class="language-plaintext highlighter-rouge">mcxt_methods[id]</code>.</li>
+  <li><strong>Bit 4: external flag</strong> — when set, bits 5-63 store a magic number instead of
+offset/value. The context must find the block through its own mechanism.</li>
+  <li><strong>Bits 5-34: value</strong> — typically the chunk size or freelist index (30 bits, max
+~1 GB).</li>
+  <li><strong>Bits 34-63: block offset</strong> — byte distance from chunk to the start of its
+containing block (30 bits, shared lowest bit with value field since both are
+MAXALIGN’d).</li>
+</ul>
+
+<p>This design means <code class="language-plaintext highlighter-rouge">pfree(ptr)</code> can determine the allocator type, the owning block,
+and the chunk size by reading a single 8-byte value immediately before the pointer,
+without any external lookup.</p>
+
+<h3 id="the-virtual-function-table">The Virtual Function Table</h3>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">typedef</span> <span class="k">struct</span> <span class="n">MemoryContextMethods</span>
+<span class="p">{</span>
+    <span class="kt">void</span> <span class="o">*</span><span class="p">(</span><span class="o">*</span><span class="n">alloc</span><span class="p">)(</span><span class="n">MemoryContext</span> <span class="n">context</span><span class="p">,</span> <span class="n">Size</span> <span class="n">size</span><span class="p">,</span> <span class="kt">int</span> <span class="n">flags</span><span class="p">);</span>
+    <span class="kt">void</span>  <span class="p">(</span><span class="o">*</span><span class="n">free_p</span><span class="p">)(</span><span class="kt">void</span> <span class="o">*</span><span class="n">pointer</span><span class="p">);</span>
+    <span class="kt">void</span> <span class="o">*</span><span class="p">(</span><span class="o">*</span><span class="n">realloc</span><span class="p">)(</span><span class="kt">void</span> <span class="o">*</span><span class="n">pointer</span><span class="p">,</span> <span class="n">Size</span> <span class="n">size</span><span class="p">,</span> <span class="kt">int</span> <span class="n">flags</span><span class="p">);</span>
+    <span class="kt">void</span>  <span class="p">(</span><span class="o">*</span><span class="n">reset</span><span class="p">)(</span><span class="n">MemoryContext</span> <span class="n">context</span><span class="p">);</span>
+    <span class="kt">void</span>  <span class="p">(</span><span class="o">*</span><span class="n">delete_context</span><span class="p">)(</span><span class="n">MemoryContext</span> <span class="n">context</span><span class="p">);</span>
+    <span class="n">MemoryContext</span> <span class="p">(</span><span class="o">*</span><span class="n">get_chunk_context</span><span class="p">)(</span><span class="kt">void</span> <span class="o">*</span><span class="n">pointer</span><span class="p">);</span>
+    <span class="n">Size</span>  <span class="p">(</span><span class="o">*</span><span class="n">get_chunk_space</span><span class="p">)(</span><span class="kt">void</span> <span class="o">*</span><span class="n">pointer</span><span class="p">);</span>
+    <span class="n">bool</span>  <span class="p">(</span><span class="o">*</span><span class="n">is_empty</span><span class="p">)(</span><span class="n">MemoryContext</span> <span class="n">context</span><span class="p">);</span>
+    <span class="kt">void</span>  <span class="p">(</span><span class="o">*</span><span class="n">stats</span><span class="p">)(</span><span class="n">MemoryContext</span> <span class="n">context</span><span class="p">,</span> <span class="p">...);</span>
+<span class="cp">#ifdef MEMORY_CONTEXT_CHECKING
+</span>    <span class="kt">void</span>  <span class="p">(</span><span class="o">*</span><span class="n">check</span><span class="p">)(</span><span class="n">MemoryContext</span> <span class="n">context</span><span class="p">);</span>
+<span class="cp">#endif
+</span><span class="p">}</span> <span class="n">MemoryContextMethods</span><span class="p">;</span>
+</code></pre></div></div>
+
+<p>The <code class="language-plaintext highlighter-rouge">mcxt_methods[]</code> array in <code class="language-plaintext highlighter-rouge">mcxt.c</code> maps <code class="language-plaintext highlighter-rouge">MemoryContextMethodID</code> values to the
+corresponding methods struct. When <code class="language-plaintext highlighter-rouge">pfree(ptr)</code> is called:</p>
+
+<ol>
+  <li>Read the <code class="language-plaintext highlighter-rouge">uint64</code> at <code class="language-plaintext highlighter-rouge">(ptr - 8)</code>.</li>
+  <li>Extract the low 4 bits to get the method ID.</li>
+  <li>Call <code class="language-plaintext highlighter-rouge">mcxt_methods[id].free_p(ptr)</code>.</li>
+</ol>
+
+<p>No context pointer is needed. This is how <code class="language-plaintext highlighter-rouge">pfree</code> works on any chunk regardless of
+which context it belongs to.</p>
+
+<h3 id="palloc-and-currentmemorycontext">palloc and CurrentMemoryContext</h3>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="kt">void</span> <span class="o">*</span>
+<span class="nf">palloc</span><span class="p">(</span><span class="n">Size</span> <span class="n">size</span><span class="p">)</span>
+<span class="p">{</span>
+    <span class="cm">/* Dispatch: CurrentMemoryContext-&gt;methods-&gt;alloc(...) */</span>
+    <span class="k">return</span> <span class="n">MemoryContextAlloc</span><span class="p">(</span><span class="n">CurrentMemoryContext</span><span class="p">,</span> <span class="n">size</span><span class="p">);</span>
+<span class="p">}</span>
+</code></pre></div></div>
+
+<p><code class="language-plaintext highlighter-rouge">MemoryContextSwitchTo()</code> is an inline function that swaps <code class="language-plaintext highlighter-rouge">CurrentMemoryContext</code>
+and returns the old value:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">static</span> <span class="kr">inline</span> <span class="n">MemoryContext</span>
+<span class="nf">MemoryContextSwitchTo</span><span class="p">(</span><span class="n">MemoryContext</span> <span class="n">context</span><span class="p">)</span>
+<span class="p">{</span>
+    <span class="n">MemoryContext</span> <span class="n">old</span> <span class="o">=</span> <span class="n">CurrentMemoryContext</span><span class="p">;</span>
+    <span class="n">CurrentMemoryContext</span> <span class="o">=</span> <span class="n">context</span><span class="p">;</span>
+    <span class="k">return</span> <span class="n">old</span><span class="p">;</span>
+<span class="p">}</span>
+</code></pre></div></div>
+
+<p>The typical pattern for short-lived work:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="n">MemoryContext</span> <span class="n">oldctx</span> <span class="o">=</span> <span class="n">MemoryContextSwitchTo</span><span class="p">(</span><span class="n">short_lived_ctx</span><span class="p">);</span>
+<span class="cm">/* ... do work, palloc temporary data ... */</span>
+<span class="n">MemoryContextSwitchTo</span><span class="p">(</span><span class="n">oldctx</span><span class="p">);</span>
+<span class="n">MemoryContextReset</span><span class="p">(</span><span class="n">short_lived_ctx</span><span class="p">);</span>  <span class="cm">/* free all temp data */</span>
+</code></pre></div></div>
+
+<h3 id="reset-callbacks">Reset Callbacks</h3>
+
+<p>Contexts support callbacks that fire just before a reset or delete. This enables
+non-memory resources (open files, reference counts, malloc’d buffers from external
+libraries) to be cleaned up when the context is reclaimed:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">typedef</span> <span class="k">struct</span> <span class="n">MemoryContextCallback</span>
+<span class="p">{</span>
+    <span class="n">MemoryContextCallbackFunction</span> <span class="n">func</span><span class="p">;</span>
+    <span class="kt">void</span>       <span class="o">*</span><span class="n">arg</span><span class="p">;</span>
+    <span class="k">struct</span> <span class="n">MemoryContextCallback</span> <span class="o">*</span><span class="n">next</span><span class="p">;</span>
+<span class="p">}</span> <span class="n">MemoryContextCallback</span><span class="p">;</span>
+</code></pre></div></div>
+
+<p>Callbacks are called in reverse registration order. Child context callbacks fire
+before parent callbacks.</p>
+
+<hr />
+
+<h2 id="the-four-allocator-implementations">The Four Allocator Implementations</h2>
+
+<h3 id="1-allocset-asetc--general-purpose">1. AllocSet (aset.c) — General Purpose</h3>
+
+<p>AllocSet is the default and most widely used allocator. It uses a <strong>power-of-two
+freelist</strong> design with 11 size classes ranging from 8 bytes to 8 KB.</p>
+
+<p><strong>Key data structure:</strong></p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">typedef</span> <span class="k">struct</span> <span class="n">AllocSetContext</span>
+<span class="p">{</span>
+    <span class="n">MemoryContextData</span> <span class="n">header</span><span class="p">;</span>
+    <span class="n">AllocBlock</span>  <span class="n">blocks</span><span class="p">;</span>                          <span class="cm">/* linked list of blocks */</span>
+    <span class="n">MemoryChunk</span> <span class="o">*</span><span class="n">freelist</span><span class="p">[</span><span class="n">ALLOCSET_NUM_FREELISTS</span><span class="p">];</span> <span class="cm">/* 11 freelists */</span>
+    <span class="n">uint32</span>      <span class="n">initBlockSize</span><span class="p">;</span>                   <span class="cm">/* e.g. 8192 */</span>
+    <span class="n">uint32</span>      <span class="n">maxBlockSize</span><span class="p">;</span>                    <span class="cm">/* e.g. 8388608 (8 MB) */</span>
+    <span class="n">uint32</span>      <span class="n">nextBlockSize</span><span class="p">;</span>                   <span class="cm">/* doubles each time */</span>
+    <span class="n">uint32</span>      <span class="n">allocChunkLimit</span><span class="p">;</span>                 <span class="cm">/* max chunk for freelists */</span>
+    <span class="kt">int</span>         <span class="n">freeListIndex</span><span class="p">;</span>                   <span class="cm">/* context recycling, or -1 */</span>
+<span class="p">}</span> <span class="n">AllocSetContext</span><span class="p">;</span>
+</code></pre></div></div>
+
+<p><strong>Allocation algorithm:</strong></p>
+
+<ol>
+  <li>Round the requested size up to the next power of two (minimum 8 bytes).</li>
+  <li>Determine the freelist index: <code class="language-plaintext highlighter-rouge">idx = pg_leftmost_one_pos(size) - ALLOC_MINBITS</code>.</li>
+  <li>If a free chunk exists on <code class="language-plaintext highlighter-rouge">freelist[idx]</code>, pop it and return.</li>
+  <li>Otherwise, carve a new chunk from the current block’s free space.</li>
+  <li>If the current block is exhausted, allocate a new block (doubling size up to
+<code class="language-plaintext highlighter-rouge">maxBlockSize</code>).</li>
+  <li>If the request exceeds <code class="language-plaintext highlighter-rouge">allocChunkLimit</code> (8 KB), allocate a dedicated block from
+<code class="language-plaintext highlighter-rouge">malloc()</code>. This block is freed immediately on <code class="language-plaintext highlighter-rouge">pfree</code>, not held in a freelist.</li>
+</ol>
+
+<p><strong>Block structure:</strong></p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>+-----------------+
+| AllocBlockData  |  (header: owning set, prev/next, freeptr, endptr)
++-----------------+
+| MemoryChunk hdr |  chunk 1
+| user data ...   |
++-----------------+
+| MemoryChunk hdr |  chunk 2
+| user data ...   |
++-----------------+
+| ... free space  |
++-----------------+
+      ^
+      freeptr
+</code></pre></div></div>
+
+<p><strong>The keeper block:</strong> The first block is allocated in the same <code class="language-plaintext highlighter-rouge">malloc()</code> call as the
+<code class="language-plaintext highlighter-rouge">AllocSetContext</code> struct itself. On <code class="language-plaintext highlighter-rouge">MemoryContextReset</code>, this keeper block is cleared
+but not freed, avoiding malloc thrashing for contexts that are repeatedly reset (such
+as per-tuple contexts).</p>
+
+<p><strong>Context freelists:</strong> Small, frequently-created-and-destroyed AllocSet contexts (such
+as per-tuple contexts) can be recycled through a global freelist
+(<code class="language-plaintext highlighter-rouge">context_freelists[]</code>), avoiding repeated malloc/free of the context struct itself.</p>
+
+<h3 id="2-slab-slabc--fixed-size-objects">2. Slab (slab.c) — Fixed-Size Objects</h3>
+
+<p>Slab is optimized for allocating many objects of exactly the same size. The chunk
+size is fixed at context creation time.</p>
+
+<p><strong>Use cases:</strong> WAL record reconstruction buffers, reorder buffer tuples, and other
+scenarios where all allocations are the same size.</p>
+
+<p><strong>Key design:</strong></p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">typedef</span> <span class="k">struct</span> <span class="n">SlabContext</span>
+<span class="p">{</span>
+    <span class="n">MemoryContextData</span> <span class="n">header</span><span class="p">;</span>
+    <span class="n">uint32</span>      <span class="n">chunkSize</span><span class="p">;</span>       <span class="cm">/* fixed allocation size */</span>
+    <span class="n">uint32</span>      <span class="n">fullChunkSize</span><span class="p">;</span>   <span class="cm">/* chunkSize + alignment + header */</span>
+    <span class="n">uint32</span>      <span class="n">blockSize</span><span class="p">;</span>       <span class="cm">/* bytes per block */</span>
+    <span class="n">int32</span>       <span class="n">chunksPerBlock</span><span class="p">;</span>  <span class="cm">/* how many chunks fit in one block */</span>
+    <span class="n">int32</span>       <span class="n">curBlocklistIdx</span><span class="p">;</span> <span class="cm">/* lowest non-empty blocklist index */</span>
+    <span class="n">int32</span>       <span class="n">blocklist_shift</span><span class="p">;</span> <span class="cm">/* for mapping nfree to blocklist index */</span>
+    <span class="n">dlist_head</span>  <span class="n">blocklist</span><span class="p">[</span><span class="n">SLAB_BLOCKLIST_COUNT</span><span class="p">];</span>  <span class="cm">/* blocks by fullness */</span>
+    <span class="n">dlist_head</span>  <span class="n">emptyblocks</span><span class="p">;</span>     <span class="cm">/* completely empty blocks for reuse */</span>
+    <span class="kt">long</span>        <span class="n">nemptyblocks</span><span class="p">;</span>    <span class="cm">/* number of empty blocks kept */</span>
+<span class="p">}</span> <span class="n">SlabContext</span><span class="p">;</span>
+</code></pre></div></div>
+
+<p><strong>Allocation strategy:</strong></p>
+
+<ol>
+  <li>Look at the lowest-indexed non-empty <code class="language-plaintext highlighter-rouge">blocklist[]</code> entry (blocks with fewest free
+chunks).</li>
+  <li>Allocate from that block, preferring the free list over unused chunks.</li>
+  <li>If the block’s fullness changes range, move it to the appropriate blocklist.</li>
+</ol>
+
+<p><strong>Why fullest-first?</strong> By allocating from the fullest blocks first, Slab encourages
+empty blocks to stay empty (and be returned to the OS), rather than distributing
+allocations evenly across all blocks and preventing any from becoming fully empty.</p>
+
+<h3 id="3-generation-generationc--fifo-lifetimes">3. Generation (generation.c) — FIFO Lifetimes</h3>
+
+<p>Generation is designed for workloads where chunks are freed in roughly the same order
+they were allocated, or in generational batches.</p>
+
+<p><strong>Use cases:</strong> Tuple processing pipelines, logical replication message handling —
+anywhere objects are produced, consumed, and discarded in FIFO order.</p>
+
+<p><strong>Key data structure:</strong></p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">typedef</span> <span class="k">struct</span> <span class="n">GenerationContext</span>
+<span class="p">{</span>
+    <span class="n">MemoryContextData</span> <span class="n">header</span><span class="p">;</span>
+    <span class="n">uint32</span>      <span class="n">initBlockSize</span><span class="p">;</span>
+    <span class="n">uint32</span>      <span class="n">maxBlockSize</span><span class="p">;</span>
+    <span class="n">uint32</span>      <span class="n">nextBlockSize</span><span class="p">;</span>
+    <span class="n">uint32</span>      <span class="n">allocChunkLimit</span><span class="p">;</span>
+    <span class="n">GenerationBlock</span> <span class="o">*</span><span class="n">block</span><span class="p">;</span>      <span class="cm">/* current block being allocated from */</span>
+    <span class="n">GenerationBlock</span> <span class="o">*</span><span class="n">freeblock</span><span class="p">;</span>  <span class="cm">/* one recycled empty block, or NULL */</span>
+    <span class="n">dlist_head</span>  <span class="n">blocks</span><span class="p">;</span>          <span class="cm">/* all blocks */</span>
+<span class="p">}</span> <span class="n">GenerationContext</span><span class="p">;</span>
+
+<span class="k">struct</span> <span class="n">GenerationBlock</span>
+<span class="p">{</span>
+    <span class="n">dlist_node</span>  <span class="n">node</span><span class="p">;</span>
+    <span class="n">GenerationContext</span> <span class="o">*</span><span class="n">context</span><span class="p">;</span>
+    <span class="n">Size</span>        <span class="n">blksize</span><span class="p">;</span>
+    <span class="kt">int</span>         <span class="n">nchunks</span><span class="p">;</span>         <span class="cm">/* total chunks allocated on this block */</span>
+    <span class="kt">int</span>         <span class="n">nfree</span><span class="p">;</span>           <span class="cm">/* chunks freed so far */</span>
+    <span class="kt">char</span>       <span class="o">*</span><span class="n">freeptr</span><span class="p">;</span>         <span class="cm">/* next allocation point */</span>
+    <span class="kt">char</span>       <span class="o">*</span><span class="n">endptr</span><span class="p">;</span>          <span class="cm">/* end of block */</span>
+<span class="p">};</span>
+</code></pre></div></div>
+
+<p><strong>Key property:</strong> When <code class="language-plaintext highlighter-rouge">nfree == nchunks</code> for a block, the entire block is empty and
+can be freed (or recycled as <code class="language-plaintext highlighter-rouge">freeblock</code>). There is no freelist — freed space within
+a partially-used block is simply wasted. This trade-off works well when blocks empty
+in order.</p>
+
+<h3 id="4-bump-bumpc--headerless-append-only">4. Bump (bump.c) — Headerless Append-Only</h3>
+
+<p>Bump is the most minimal allocator. Chunks have <strong>no header at all</strong> (except in
+<code class="language-plaintext highlighter-rouge">MEMORY_CONTEXT_CHECKING</code> builds). This means <code class="language-plaintext highlighter-rouge">pfree()</code>, <code class="language-plaintext highlighter-rouge">repalloc()</code>,
+<code class="language-plaintext highlighter-rouge">GetMemoryChunkContext()</code>, and <code class="language-plaintext highlighter-rouge">GetMemoryChunkSpace()</code> are all unsupported operations
+that will raise an ERROR.</p>
+
+<p><strong>Use cases:</strong> Building large numbers of small, short-lived allocations that are all
+freed at once by resetting the context. The executor uses this for some internal node
+state.</p>
+
+<p><strong>Key data structure:</strong></p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">typedef</span> <span class="k">struct</span> <span class="n">BumpContext</span>
+<span class="p">{</span>
+    <span class="n">MemoryContextData</span> <span class="n">header</span><span class="p">;</span>
+    <span class="n">uint32</span>      <span class="n">initBlockSize</span><span class="p">;</span>
+    <span class="n">uint32</span>      <span class="n">maxBlockSize</span><span class="p">;</span>
+    <span class="n">uint32</span>      <span class="n">nextBlockSize</span><span class="p">;</span>
+    <span class="n">uint32</span>      <span class="n">allocChunkLimit</span><span class="p">;</span>
+    <span class="n">dlist_head</span>  <span class="n">blocks</span><span class="p">;</span>     <span class="cm">/* block list, current block at head */</span>
+<span class="p">}</span> <span class="n">BumpContext</span><span class="p">;</span>
+
+<span class="k">struct</span> <span class="n">BumpBlock</span>
+<span class="p">{</span>
+    <span class="n">dlist_node</span>  <span class="n">node</span><span class="p">;</span>
+    <span class="kt">char</span>       <span class="o">*</span><span class="n">freeptr</span><span class="p">;</span>    <span class="cm">/* next allocation point */</span>
+    <span class="kt">char</span>       <span class="o">*</span><span class="n">endptr</span><span class="p">;</span>     <span class="cm">/* end of block */</span>
+<span class="p">};</span>
+</code></pre></div></div>
+
+<p><strong>Why no header?</strong> Without the 8-byte <code class="language-plaintext highlighter-rouge">MemoryChunk</code> header per allocation, Bump can
+pack more data per cache line, which matters when allocating millions of tiny objects.
+The cost is that you cannot free individual chunks — only reset the whole context.</p>
+
+<hr />
+
+<h2 id="key-data-structures-at-a-glance">Key Data Structures at a Glance</h2>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>MemoryContextData (abstract base)
+    |
+    +-- AllocSetContext   (method ID = MCTX_ASET_ID = 3)
+    |     blocks -&gt; AllocBlockData -&gt; AllocBlockData -&gt; ...
+    |     freelist[0..10] -&gt; MemoryChunk -&gt; MemoryChunk -&gt; ...
+    |
+    +-- SlabContext       (method ID = MCTX_SLAB_ID = 5)
+    |     blocklist[0..2] -&gt; SlabBlock -&gt; SlabBlock -&gt; ...
+    |     Each SlabBlock has a per-block freelist of fixed-size chunks
+    |
+    +-- GenerationContext (method ID = MCTX_GENERATION_ID = 4)
+    |     blocks (dlist) -&gt; GenerationBlock -&gt; GenerationBlock -&gt; ...
+    |     block -&gt; current GenerationBlock (append point)
+    |
+    +-- BumpContext       (method ID = MCTX_BUMP_ID = 7)
+          blocks (dlist) -&gt; BumpBlock -&gt; BumpBlock -&gt; ...
+          No chunk headers, no freelists
+</code></pre></div></div>
+
+<h2 id="diagrams">Diagrams</h2>
+
+<h3 id="allocset-allocation-flow">AllocSet Allocation Flow</h3>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>palloc(120)
+    |
+    v
+Round to power-of-2 --&gt; 128 bytes
+    |
+    v
+freelist index = log2(128) - 3 = 4
+    |
+    v
+freelist[4] non-empty?
+   /        \
+  YES        NO
+  |           |
+  v           v
+Pop chunk   Current block has space?
+return ptr     /         \
+             YES          NO
+              |            |
+              v            v
+        Carve from     malloc new block
+        freeptr        (size = nextBlockSize)
+              |            |
+              v            v
+         Return ptr   Set freeptr, carve, return
+</code></pre></div></div>
+
+<h3 id="context-reset-cascade">Context Reset Cascade</h3>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>MemoryContextReset(TopTransactionContext)
+    |
+    v
+For each child of TopTransactionContext:
+    MemoryContextDelete(child)     &lt;-- recursive
+        |
+        v
+    Delete grandchildren first
+        |
+        v
+    Call reset callbacks (reverse order)
+        |
+        v
+    child-&gt;methods-&gt;delete_context(child)
+        |
+        v
+    Unlink from parent's child list
+    |
+    v
+Call TopTransactionContext reset callbacks
+    |
+    v
+TopTransactionContext-&gt;methods-&gt;reset(TopTransactionContext)
+    |
+    v
+Free all blocks except keeper block
+Clear keeper block, set isReset = true
+</code></pre></div></div>
+
+<h2 id="connections">Connections</h2>
+
+<ul>
+  <li><strong>Resource Owners</strong> (<a href="resource-owners.md">resource-owners.md</a>): Resource owners track
+non-memory resources with the same tree structure. Often, a resource owner and a
+memory context have corresponding lifetimes (e.g., both exist per-portal), but they
+are separate objects.</li>
+  <li><strong>DSA</strong> (<a href="dsa.md">dsa.md</a>): For shared memory, process-local memory contexts are not
+usable. DSA provides a different allocator that works across process boundaries.</li>
+  <li><strong>Executor (ExprContext):</strong> Each expression evaluation context has a private
+<code class="language-plaintext highlighter-rouge">MemoryContext</code> that is reset at the start of each tuple cycle, preventing per-tuple
+memory leaks.</li>
+  <li><strong>Error Handling:</strong> On <code class="language-plaintext highlighter-rouge">ERROR</code>, <code class="language-plaintext highlighter-rouge">AbortTransaction</code> calls <code class="language-plaintext highlighter-rouge">MemoryContextResetAndDeleteChildren</code>
+on <code class="language-plaintext highlighter-rouge">TopTransactionContext</code>, reclaiming all transient memory. <code class="language-plaintext highlighter-rouge">ErrorContext</code> is
+pre-allocated so that the error reporting path itself never runs out of memory.</li>
+  <li><strong>Catalog Cache:</strong> <code class="language-plaintext highlighter-rouge">CacheMemoryContext</code> persists for the session lifetime. Cache entries
+are allocated here, with per-entry child contexts for subsidiary data that can be
+freed independently when a cache entry is invalidated.</li>
+</ul>
+
+
+      <hr>
+
+      <!-- Prev / Next / Up navigation -->
+      
+      
+      
+
+      <div class="clearfix" style="margin-top: 2rem;">
+        
+          
+          
+
+          
+            
+            <a class="btn btn-primary float-left" href="/postgresql/10-memory/dsa.html" title="Dynamic Shared Areas">&larr; Previous</a>
+          
+
+          
+            
+            <a class="btn btn-primary float-right" href="/postgresql/10-memory/resource-owners.html" title="Resource Owners">Next &rarr;</a>
+          
+        
+      </div>
+
+      
+      <div style="text-align: center; margin-top: 1rem;">
+        <a href="/postgresql-internals/">&uarr; Back to Table of Contents</a>
+      </div>
+      
+
+    </div>
+  </div>
+</div>
+
+
+  <!-- Footer -->
+
+<hr>
+
+<footer>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <ul class="list-inline text-center">
+          
+          <li class="list-inline-item">
+            <a href="mailto:amitava.dev@proton.me" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="far fa-envelope fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          
+          
+          <li class="list-inline-item">
+            <a href="https://www.linkedin.com/in/amitavaag" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-linkedin fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          <li class="list-inline-item">
+            <a href="https://github.com/ikouchiha47" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-github fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+        </ul>
+
+        <p class="copyright text-muted">
+          Build with: 
+          <a 
+            href="https://github.com/StartBootstrap/startbootstrap-clean-blog-jekyll"
+            class="text-gray"
+            target="_blank">startbootstrap-clean-blog-jekyll</a></p>
+      </div>
+    </div>
+  </div>
+</footer>
+
+
+  <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="/assets/vendor/blog/js/scripts.js"></script>
+
+<script src="/assets/scripts.js"></script>
+
+
+
+
+
+  <script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+
+    document.querySelectorAll('pre > code.language-mermaid').forEach((codeBlock) => {
+      codeBlock.parentElement.outerHTML = `<pre class="mermaid">${codeBlock.textContent}</pre>`;
+    });
+
+
+    mermaid.initialize({ startOnLoad: true, theme: 'forest' });
+</script>
+
+
+  
+
+</body>
+
+</html>

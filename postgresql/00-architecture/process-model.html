@@ -1,0 +1,567 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+  <title>
+    Process Model - iko&#39;s logs
+    
+  </title>
+
+  <meta name="description" content="">
+  <meta property="og:description" content="">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Process Model">
+  <meta property="og:url" content="https://ikouchiha47.github.io/postgresql/00-architecture/process-model.html">
+
+  
+
+  <link href='https://fonts.googleapis.com/css?family=Lora:400,700,400italic,700italic' rel='stylesheet' type='text/css'>
+  <link href='https://fonts.googleapis.com/css?family=Open+Sans:300italic,400italic,600italic,700italic,800italic,400,300,600,700,800' rel='stylesheet' type='text/css'>
+
+  <!-- <script src="https://use.fontawesome.com/releases/v5.15.3/js/all.js" crossorigin="anonymous"></script> -->
+  <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.15.4/css/all.css" integrity="sha384-DyZ88mC6Up2uqS4h/KRgHuoeGwBcD4Ng9SiP4dIRy0EXTlnuz47vAwmeGwVChigm" crossorigin="anonymous"/>
+
+  <link rel="stylesheet" href="/assets/main.css">
+  <link rel="canonical" href="https://ikouchiha47.github.io/postgresql/00-architecture/process-model.html">
+  <link rel="alternate" type="application/rss+xml" title="iko&#39;s logs" href="/feed.xml">
+
+  <meta name="google-site-verification" content="lWkg6gIxJgzEKX_5XnhcxCtPE9QknaimFWWos_dTvPM" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fira+Sans:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Inconsolata:wght@200..900&family=Jersey+25&family=Kanit:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Merriweather+Sans:ital,wght@0,300..800;1,300..800&family=Nanum+Gothic+Coding&family=Space+Grotesk:wght@300..700&family=Titillium+Web:ital,wght@0,200;0,300;0,400;0,600;0,700;0,900;1,200;1,300;1,400;1,600;1,700&display=swap" rel="stylesheet">
+
+</head>
+
+
+<body>
+
+  <!-- Navigation -->
+<nav class="navbar navbar-expand-lg navbar-light fixed-top" id="mainNav">
+  <div class="container">
+    <a class="navbar-brand" href="/">iko&#39;s logs</a>
+    <button class="navbar-toggler navbar-toggler-right" type="button" data-toggle="collapse" data-target="#navbarResponsive" aria-controls="navbarResponsive" aria-expanded="false" aria-label="Toggle navigation">
+      Menu
+      <i class="fa fa-bars"></i>
+    </button>
+    <div class="collapse navbar-collapse" id="navbarResponsive">
+      <ul class="navbar-nav ml-auto">
+        <li class="nav-item">
+          <a class="nav-link" href="/">Home</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/about">About</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/posts">Posts</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/contact">Contact</a>
+        </li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+
+  <!-- Page Header -->
+
+<header class="masthead">
+
+  <div class="overlay"></div>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <div class="post-heading">
+          <h1>Process Model</h1>
+          
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="container space-grotesk">
+  <div class="row">
+    <div class="col-lg-8 col-md-10 mx-auto">
+
+      <!-- Breadcrumb -->
+      <nav aria-label="breadcrumb" style="margin-bottom: 1.5rem;">
+        <ol class="breadcrumb" style="background: transparent; padding: 0;">
+          
+            <li class="breadcrumb-item"><a href="/postgresql-internals/">PostgreSQL Internals Deep Dive</a></li>
+          
+          
+            
+              <li class="breadcrumb-item"><a href="/postgresql/00-architecture/">Architecture</a></li>
+            
+          
+          <li class="breadcrumb-item active" aria-current="page">Process Model</li>
+        </ol>
+      </nav>
+
+      <h1 id="process-model">Process Model</h1>
+
+<blockquote>
+  <p><em>PostgreSQL uses one OS process per connection — no thread pools, no coroutines, just <code class="language-plaintext highlighter-rouge">fork()</code>.</em></p>
+</blockquote>
+
+<h2 id="overview">Overview</h2>
+
+<p>PostgreSQL follows a classic multi-process architecture. A single long-lived daemon
+called the <strong>postmaster</strong> listens for incoming connections and spawns a new child process
+for each one. These child processes — called <strong>backends</strong> — handle the full lifecycle
+of a client session: authentication, SQL parsing, planning, execution, and result
+delivery. When the client disconnects, the backend exits.</p>
+
+<p>In addition to client backends, the postmaster also launches several <strong>auxiliary
+processes</strong> that perform essential housekeeping: flushing dirty buffers to disk
+(bgwriter, checkpointer), writing WAL (walwriter), archiving WAL segments (archiver),
+and cleaning up dead tuples (autovacuum launcher and workers). All of these processes
+share a single region of shared memory, but the postmaster itself deliberately avoids
+touching that shared memory so it can survive backend crashes and orchestrate recovery.</p>
+
+<p>The process-per-connection model has a clear trade-off. It provides robust isolation —
+a crash in one backend does not bring down others — at the cost of higher memory usage
+and connection overhead compared to threaded architectures. This is why connection
+poolers like PgBouncer are common in production deployments with hundreds of concurrent
+clients.</p>
+
+<h2 id="key-source-files">Key Source Files</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>File</th>
+      <th>Purpose</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/postmaster/postmaster.c</code></td>
+      <td>Postmaster main loop: listens, accepts, forks</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/postmaster/launch_backend.c</code></td>
+      <td><code class="language-plaintext highlighter-rouge">postmaster_child_launch()</code> — fork + process setup</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/postmaster/fork_process.c</code></td>
+      <td>Thin wrapper around <code class="language-plaintext highlighter-rouge">fork()</code></td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/postmaster/pmchild.c</code></td>
+      <td><code class="language-plaintext highlighter-rouge">PMChild</code> slot management (assign, release, find by PID)</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/tcop/backend_startup.c</code></td>
+      <td>Backend initialization after fork</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/tcop/postgres.c</code></td>
+      <td>Backend main loop (the “traffic cop”)</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/postmaster/postmaster.h</code></td>
+      <td><code class="language-plaintext highlighter-rouge">PMChild</code> struct, postmaster exports</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/libpq/libpq-be.h</code></td>
+      <td><code class="language-plaintext highlighter-rouge">Port</code> struct (per-connection state)</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/storage/proc.h</code></td>
+      <td><code class="language-plaintext highlighter-rouge">PGPROC</code> struct (per-backend shared memory slot)</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/miscadmin.h</code></td>
+      <td><code class="language-plaintext highlighter-rouge">BackendType</code> enum</td>
+    </tr>
+  </tbody>
+</table>
+
+<h2 id="how-it-works">How It Works</h2>
+
+<h3 id="high-level">High Level</h3>
+
+<pre><code class="language-mermaid">sequenceDiagram
+    participant C as Client
+    participant PM as Postmaster
+    participant BE as Backend
+
+    C-&gt;&gt;PM: TCP connect (port 5432)
+    PM-&gt;&gt;PM: accept() on listening socket
+    PM-&gt;&gt;PM: AssignPostmasterChildSlot()
+    PM-&gt;&gt;BE: fork() via postmaster_child_launch()
+    BE-&gt;&gt;BE: ClosePostmasterPorts()
+    BE-&gt;&gt;BE: BackendInitialize() --- auth, set up Port
+    BE-&gt;&gt;C: AuthenticationOk
+    loop Query Loop
+        C-&gt;&gt;BE: Query message ("SELECT ...")
+        BE-&gt;&gt;BE: Parse, Analyze, Rewrite, Plan, Execute
+        BE-&gt;&gt;C: RowDescription + DataRow + CommandComplete
+    end
+    C-&gt;&gt;BE: Terminate
+    BE-&gt;&gt;BE: proc_exit(0)
+    PM-&gt;&gt;PM: waitpid() reaps child, ReleasePostmasterChildSlot()
+</code></pre>
+
+<ol>
+  <li>The postmaster calls <code class="language-plaintext highlighter-rouge">select()</code> (or <code class="language-plaintext highlighter-rouge">poll()</code>) on its listening sockets inside
+<code class="language-plaintext highlighter-rouge">ServerLoop()</code> in <code class="language-plaintext highlighter-rouge">postmaster.c</code>.</li>
+  <li>On a new connection, it calls <code class="language-plaintext highlighter-rouge">accept()</code>, allocates a <code class="language-plaintext highlighter-rouge">PMChild</code> slot via
+<code class="language-plaintext highlighter-rouge">AssignPostmasterChildSlot()</code>, and calls <code class="language-plaintext highlighter-rouge">postmaster_child_launch()</code> which
+invokes <code class="language-plaintext highlighter-rouge">fork()</code>.</li>
+  <li>The child process closes the postmaster’s listening sockets
+(<code class="language-plaintext highlighter-rouge">ClosePostmasterPorts()</code>), initializes its <code class="language-plaintext highlighter-rouge">Port</code> struct, performs
+authentication, and enters the main query loop in <code class="language-plaintext highlighter-rouge">PostgresMain()</code>.</li>
+  <li>When the backend exits, the postmaster detects it through <code class="language-plaintext highlighter-rouge">waitpid()</code> in its
+signal handler and releases the child’s <code class="language-plaintext highlighter-rouge">PMChild</code> slot.</li>
+</ol>
+
+<h3 id="deep-dive">Deep Dive</h3>
+
+<h4 id="the-postmaster-state-machine">The Postmaster State Machine</h4>
+
+<p>The postmaster tracks the cluster’s overall state using a state machine defined in
+<code class="language-plaintext highlighter-rouge">postmaster.c</code>. Key states include:</p>
+
+<ul>
+  <li><strong>PM_INIT</strong> — postmaster is starting up</li>
+  <li><strong>PM_STARTUP</strong> — startup process is running (WAL recovery)</li>
+  <li><strong>PM_RUN</strong> — normal operations, accepting connections</li>
+  <li><strong>PM_STOP_BACKENDS</strong> — shutting down, sending signals to backends</li>
+  <li><strong>PM_SHUTDOWN</strong> — all backends gone, running final checkpoint</li>
+</ul>
+
+<p>When a backend crashes, the postmaster transitions to a recovery state: it sends
+<code class="language-plaintext highlighter-rouge">SIGQUIT</code> to all surviving children, waits for them to exit, resets shared memory
+by launching a new startup process, and returns to <code class="language-plaintext highlighter-rouge">PM_RUN</code>.</p>
+
+<h4 id="backend-types">Backend Types</h4>
+
+<p>PostgreSQL classifies child processes using the <code class="language-plaintext highlighter-rouge">BackendType</code> enum (defined in
+<code class="language-plaintext highlighter-rouge">src/include/miscadmin.h</code>). The postmaster uses this to track which processes are
+running and apply type-specific policies (for example, autovacuum workers do not
+count against <code class="language-plaintext highlighter-rouge">max_connections</code>).</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>BackendType</th>
+      <th>Description</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">B_BACKEND</code></td>
+      <td>Regular client backend (or walsender before relabeling)</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">B_AUTOVAC_LAUNCHER</code></td>
+      <td>Autovacuum launcher (singleton)</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">B_AUTOVAC_WORKER</code></td>
+      <td>Autovacuum worker</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">B_BG_WORKER</code></td>
+      <td>Background worker (registered via <code class="language-plaintext highlighter-rouge">RegisterBackgroundWorker</code>)</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">B_BG_WRITER</code></td>
+      <td>Background writer</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">B_CHECKPOINTER</code></td>
+      <td>Checkpointer</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">B_STARTUP</code></td>
+      <td>Startup process (WAL recovery)</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">B_WAL_RECEIVER</code></td>
+      <td>WAL receiver (standby replication)</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">B_WAL_SENDER</code></td>
+      <td>WAL sender (primary replication)</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">B_WAL_WRITER</code></td>
+      <td>WAL writer</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">B_ARCHIVER</code></td>
+      <td>WAL archiver</td>
+    </tr>
+  </tbody>
+</table>
+
+<h4 id="how-fork-works-on-unix">How fork() Works on Unix</h4>
+
+<p><code class="language-plaintext highlighter-rouge">postmaster_child_launch()</code> in <code class="language-plaintext highlighter-rouge">launch_backend.c</code> calls <code class="language-plaintext highlighter-rouge">fork_process()</code>, which is
+a thin wrapper around <code class="language-plaintext highlighter-rouge">fork()</code>. After the fork:</p>
+
+<ul>
+  <li><strong>Parent (postmaster)</strong>: records the new child’s PID in the <code class="language-plaintext highlighter-rouge">PMChild</code> struct and
+continues accepting connections.</li>
+  <li><strong>Child (backend)</strong>: inherits the entire address space, including pointers to shared
+memory. It closes sockets it does not need, sets up its <code class="language-plaintext highlighter-rouge">PGPROC</code> entry in shared
+memory, and enters its type-specific main function.</li>
+</ul>
+
+<p>On Windows (EXEC_BACKEND mode), <code class="language-plaintext highlighter-rouge">fork()</code> is not available so PostgreSQL uses
+<code class="language-plaintext highlighter-rouge">CreateProcess()</code> + <code class="language-plaintext highlighter-rouge">exec()</code>. The child must re-attach to shared memory and
+re-initialize global state, which is why EXEC_BACKEND mode is also used for testing
+on Unix.</p>
+
+<h2 id="key-data-structures">Key Data Structures</h2>
+
+<h3 id="pmchild-srcincludepostmasterpostmasterh40">PMChild (<code class="language-plaintext highlighter-rouge">src/include/postmaster/postmaster.h:40</code>)</h3>
+
+<p>The postmaster’s record for each child process.</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">typedef</span> <span class="k">struct</span>
+<span class="p">{</span>
+    <span class="n">pid_t</span>       <span class="n">pid</span><span class="p">;</span>             <span class="cm">/* OS process ID of the child */</span>
+    <span class="kt">int</span>         <span class="n">child_slot</span><span class="p">;</span>      <span class="cm">/* index into PMChildFlags array (0 = dead-end child) */</span>
+    <span class="n">BackendType</span> <span class="n">bkend_type</span><span class="p">;</span>      <span class="cm">/* B_BACKEND, B_AUTOVAC_WORKER, etc. */</span>
+    <span class="k">struct</span> <span class="n">RegisteredBgWorker</span> <span class="o">*</span><span class="n">rw</span><span class="p">;</span> <span class="cm">/* bgworker info, if applicable */</span>
+    <span class="n">bool</span>        <span class="n">bgworker_notify</span><span class="p">;</span> <span class="cm">/* receives bgworker start/stop notifications */</span>
+    <span class="n">dlist_node</span>  <span class="n">elem</span><span class="p">;</span>            <span class="cm">/* link in ActiveChildList */</span>
+<span class="p">}</span> <span class="n">PMChild</span><span class="p">;</span>
+</code></pre></div></div>
+
+<ul>
+  <li><code class="language-plaintext highlighter-rouge">child_slot</code> is used as an index into the <code class="language-plaintext highlighter-rouge">PMChildFlags[]</code> array in shared memory,
+which allows backends to advertise their state to the postmaster without signals.</li>
+  <li>Dead-end children (launched only to send a rejection message) have <code class="language-plaintext highlighter-rouge">child_slot == 0</code>.</li>
+</ul>
+
+<h3 id="port-srcincludelibpqlibpq-beh128">Port (<code class="language-plaintext highlighter-rouge">src/include/libpq/libpq-be.h:128</code>)</h3>
+
+<p>Per-connection state, available in every backend as the global <code class="language-plaintext highlighter-rouge">MyProcPort</code>.</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">typedef</span> <span class="k">struct</span> <span class="n">Port</span>
+<span class="p">{</span>
+    <span class="n">pgsocket</span>    <span class="n">sock</span><span class="p">;</span>            <span class="cm">/* client socket file descriptor */</span>
+    <span class="n">bool</span>        <span class="n">noblock</span><span class="p">;</span>         <span class="cm">/* is the socket in non-blocking mode? */</span>
+    <span class="n">ProtocolVersion</span> <span class="n">proto</span><span class="p">;</span>       <span class="cm">/* FE/BE protocol version */</span>
+    <span class="n">SockAddr</span>    <span class="n">laddr</span><span class="p">;</span>           <span class="cm">/* local address (server side) */</span>
+    <span class="n">SockAddr</span>    <span class="n">raddr</span><span class="p">;</span>           <span class="cm">/* remote address (client side) */</span>
+    <span class="kt">char</span>       <span class="o">*</span><span class="n">remote_host</span><span class="p">;</span>     <span class="cm">/* client hostname or IP */</span>
+    <span class="kt">char</span>       <span class="o">*</span><span class="n">remote_hostname</span><span class="p">;</span> <span class="cm">/* resolved hostname, if available */</span>
+    <span class="kt">char</span>       <span class="o">*</span><span class="n">remote_port</span><span class="p">;</span>     <span class="cm">/* client port as text */</span>
+    <span class="kt">char</span>       <span class="o">*</span><span class="n">database_name</span><span class="p">;</span>   <span class="cm">/* from startup packet */</span>
+    <span class="kt">char</span>       <span class="o">*</span><span class="n">user_name</span><span class="p">;</span>       <span class="cm">/* from startup packet */</span>
+    <span class="kt">char</span>       <span class="o">*</span><span class="n">cmdline_options</span><span class="p">;</span> <span class="cm">/* from startup packet */</span>
+    <span class="n">List</span>       <span class="o">*</span><span class="n">guc_options</span><span class="p">;</span>     <span class="cm">/* GUC overrides from startup packet */</span>
+    <span class="n">HbaLine</span>    <span class="o">*</span><span class="n">hba</span><span class="p">;</span>             <span class="cm">/* matched pg_hba.conf line */</span>
+    <span class="cm">/* ... SSL, GSSAPI, keepalive fields omitted for brevity ... */</span>
+<span class="p">}</span> <span class="n">Port</span><span class="p">;</span>
+</code></pre></div></div>
+
+<h3 id="pgproc-srcincludestorageproch185">PGPROC (<code class="language-plaintext highlighter-rouge">src/include/storage/proc.h:185</code>)</h3>
+
+<p>Each backend’s slot in the shared <code class="language-plaintext highlighter-rouge">ProcArray</code>. This is how backends discover each
+other’s transaction state for MVCC visibility checks.</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">struct</span> <span class="n">PGPROC</span>
+<span class="p">{</span>
+    <span class="n">dlist_node</span>  <span class="n">links</span><span class="p">;</span>           <span class="cm">/* list link (free list or lock wait queue) */</span>
+    <span class="n">PGSemaphore</span> <span class="n">sem</span><span class="p">;</span>             <span class="cm">/* semaphore for sleeping on */</span>
+    <span class="n">ProcWaitStatus</span> <span class="n">waitStatus</span><span class="p">;</span>   <span class="cm">/* OK, WAITING, or ERROR */</span>
+    <span class="n">Latch</span>       <span class="n">procLatch</span><span class="p">;</span>       <span class="cm">/* generic latch for wakeups */</span>
+    <span class="n">TransactionId</span> <span class="n">xid</span><span class="p">;</span>           <span class="cm">/* current top-level transaction ID */</span>
+    <span class="n">TransactionId</span> <span class="n">xmin</span><span class="p">;</span>          <span class="cm">/* horizon: oldest xid this backend cares about */</span>
+    <span class="kt">int</span>         <span class="n">pid</span><span class="p">;</span>             <span class="cm">/* OS process ID (0 for prepared xacts) */</span>
+    <span class="kt">int</span>         <span class="n">pgxactoff</span><span class="p">;</span>       <span class="cm">/* offset into ProcGlobal mirrored arrays */</span>
+    <span class="cm">/* ... many more fields ... */</span>
+<span class="p">};</span>
+</code></pre></div></div>
+
+<ul>
+  <li><code class="language-plaintext highlighter-rouge">xid</code> and <code class="language-plaintext highlighter-rouge">xmin</code> are <strong>mirrored</strong> into dense arrays in <code class="language-plaintext highlighter-rouge">ProcGlobal</code> for fast
+snapshot computation. Writing these fields requires holding <code class="language-plaintext highlighter-rouge">ProcArrayLock</code> or
+<code class="language-plaintext highlighter-rouge">XidGenLock</code>.</li>
+  <li>The <code class="language-plaintext highlighter-rouge">procLatch</code> is used extensively for inter-process signaling without Unix signals.</li>
+</ul>
+
+<h2 id="process-tree-diagram">Process Tree Diagram</h2>
+
+<pre><code class="language-mermaid">graph TD
+    PM["postmaster (PID 1000)"]
+    STARTUP["startup (WAL recovery)"]
+    BG["bgwriter"]
+    CP["checkpointer"]
+    WW["walwriter"]
+    AL["autovacuum launcher"]
+    AW1["autovacuum worker"]
+    AR["archiver"]
+    BE1["backend (user: alice, db: app)"]
+    BE2["backend (user: bob, db: app)"]
+    WS["walsender (replica-1)"]
+
+    PM --&gt; STARTUP
+    PM --&gt; BG
+    PM --&gt; CP
+    PM --&gt; WW
+    PM --&gt; AL
+    AL -.-&gt;|"requests via postmaster"| AW1
+    PM --&gt; AW1
+    PM --&gt; AR
+    PM --&gt; BE1
+    PM --&gt; BE2
+    PM --&gt; WS
+</code></pre>
+
+<p>All processes are direct children of the postmaster. The autovacuum launcher requests
+new workers by signaling the postmaster (via the <code class="language-plaintext highlighter-rouge">AutoVacuumShmem</code> structure in shared
+memory), but the postmaster is the one that actually forks them.</p>
+
+<h2 id="connections">Connections</h2>
+
+<p><strong>Depends on:</strong></p>
+<ul>
+  <li>Operating system <code class="language-plaintext highlighter-rouge">fork()</code> / process management</li>
+  <li>Shared memory (initialized by postmaster before any child is launched)</li>
+</ul>
+
+<p><strong>Used by:</strong></p>
+<ul>
+  <li>Every other subsystem — the process model is the foundation of all concurrency in
+PostgreSQL</li>
+</ul>
+
+<p><strong>See also:</strong></p>
+<ul>
+  <li><a href="memory-layout">Memory Layout</a> — how memory is partitioned between processes</li>
+  <li><a href="query-lifecycle">Query Lifecycle</a> — what happens inside a backend process</li>
+</ul>
+
+
+      <hr>
+
+      <!-- Prev / Next / Up navigation -->
+      
+      
+      
+
+      <div class="clearfix" style="margin-top: 2rem;">
+        
+          
+          
+
+          
+            
+            <a class="btn btn-primary float-left" href="/postgresql/00-architecture/memory-layout.html" title="Memory Layout">&larr; Previous</a>
+          
+
+          
+            
+            <a class="btn btn-primary float-right" href="/postgresql/00-architecture/query-lifecycle.html" title="Query Lifecycle">Next &rarr;</a>
+          
+        
+      </div>
+
+      
+      <div style="text-align: center; margin-top: 1rem;">
+        <a href="/postgresql-internals/">&uarr; Back to Table of Contents</a>
+      </div>
+      
+
+    </div>
+  </div>
+</div>
+
+
+  <!-- Footer -->
+
+<hr>
+
+<footer>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <ul class="list-inline text-center">
+          
+          <li class="list-inline-item">
+            <a href="mailto:amitava.dev@proton.me" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="far fa-envelope fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          
+          
+          <li class="list-inline-item">
+            <a href="https://www.linkedin.com/in/amitavaag" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-linkedin fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          <li class="list-inline-item">
+            <a href="https://github.com/ikouchiha47" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-github fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+        </ul>
+
+        <p class="copyright text-muted">
+          Build with: 
+          <a 
+            href="https://github.com/StartBootstrap/startbootstrap-clean-blog-jekyll"
+            class="text-gray"
+            target="_blank">startbootstrap-clean-blog-jekyll</a></p>
+      </div>
+    </div>
+  </div>
+</footer>
+
+
+  <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="/assets/vendor/blog/js/scripts.js"></script>
+
+<script src="/assets/scripts.js"></script>
+
+
+
+
+
+  <script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+
+    document.querySelectorAll('pre > code.language-mermaid').forEach((codeBlock) => {
+      codeBlock.parentElement.outerHTML = `<pre class="mermaid">${codeBlock.textContent}</pre>`;
+    });
+
+
+    mermaid.initialize({ startOnLoad: true, theme: 'forest' });
+</script>
+
+
+  
+
+</body>
+
+</html>

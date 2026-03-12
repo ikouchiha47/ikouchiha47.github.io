@@ -1,0 +1,638 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+  <title>
+    Portability and OS Abstraction - iko&#39;s logs
+    
+  </title>
+
+  <meta name="description" content="">
+  <meta property="og:description" content="">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Portability and OS Abstraction">
+  <meta property="og:url" content="https://ikouchiha47.github.io/postgresql/14-platform/portability.html">
+
+  
+
+  <link href='https://fonts.googleapis.com/css?family=Lora:400,700,400italic,700italic' rel='stylesheet' type='text/css'>
+  <link href='https://fonts.googleapis.com/css?family=Open+Sans:300italic,400italic,600italic,700italic,800italic,400,300,600,700,800' rel='stylesheet' type='text/css'>
+
+  <!-- <script src="https://use.fontawesome.com/releases/v5.15.3/js/all.js" crossorigin="anonymous"></script> -->
+  <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.15.4/css/all.css" integrity="sha384-DyZ88mC6Up2uqS4h/KRgHuoeGwBcD4Ng9SiP4dIRy0EXTlnuz47vAwmeGwVChigm" crossorigin="anonymous"/>
+
+  <link rel="stylesheet" href="/assets/main.css">
+  <link rel="canonical" href="https://ikouchiha47.github.io/postgresql/14-platform/portability.html">
+  <link rel="alternate" type="application/rss+xml" title="iko&#39;s logs" href="/feed.xml">
+
+  <meta name="google-site-verification" content="lWkg6gIxJgzEKX_5XnhcxCtPE9QknaimFWWos_dTvPM" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fira+Sans:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Inconsolata:wght@200..900&family=Jersey+25&family=Kanit:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Merriweather+Sans:ital,wght@0,300..800;1,300..800&family=Nanum+Gothic+Coding&family=Space+Grotesk:wght@300..700&family=Titillium+Web:ital,wght@0,200;0,300;0,400;0,600;0,700;0,900;1,200;1,300;1,400;1,600;1,700&display=swap" rel="stylesheet">
+
+</head>
+
+
+<body>
+
+  <!-- Navigation -->
+<nav class="navbar navbar-expand-lg navbar-light fixed-top" id="mainNav">
+  <div class="container">
+    <a class="navbar-brand" href="/">iko&#39;s logs</a>
+    <button class="navbar-toggler navbar-toggler-right" type="button" data-toggle="collapse" data-target="#navbarResponsive" aria-controls="navbarResponsive" aria-expanded="false" aria-label="Toggle navigation">
+      Menu
+      <i class="fa fa-bars"></i>
+    </button>
+    <div class="collapse navbar-collapse" id="navbarResponsive">
+      <ul class="navbar-nav ml-auto">
+        <li class="nav-item">
+          <a class="nav-link" href="/">Home</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/about">About</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/posts">Posts</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/contact">Contact</a>
+        </li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+
+  <!-- Page Header -->
+
+<header class="masthead">
+
+  <div class="overlay"></div>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <div class="post-heading">
+          <h1>Portability and OS Abstraction</h1>
+          
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="container space-grotesk">
+  <div class="row">
+    <div class="col-lg-8 col-md-10 mx-auto">
+
+      <!-- Breadcrumb -->
+      <nav aria-label="breadcrumb" style="margin-bottom: 1.5rem;">
+        <ol class="breadcrumb" style="background: transparent; padding: 0;">
+          
+            <li class="breadcrumb-item"><a href="/postgresql-internals/">PostgreSQL Internals Deep Dive</a></li>
+          
+          
+            
+              <li class="breadcrumb-item"><a href="/postgresql/14-platform/">Platform Layer</a></li>
+            
+          
+          <li class="breadcrumb-item active" aria-current="page">Portability and OS Abstraction</li>
+        </ol>
+      </nav>
+
+      <h1 id="portability-win32-semaphore-backends-and-the-vfd-layer">Portability: Win32, Semaphore Backends, and the VFD Layer</h1>
+
+<h2 id="summary">Summary</h2>
+
+<p>PostgreSQL’s portability layer bridges the gap between its UNIX-native process
+model and the diverse operating systems it supports. Three subsystems carry most
+of the weight: the <strong>Virtual File Descriptor (VFD)</strong> cache that prevents
+file-descriptor exhaustion, the <strong>semaphore backends</strong> that abstract away the
+differences between POSIX, System V, and Win32 synchronization primitives, and
+the <strong>Win32 compatibility shims</strong> that emulate <code class="language-plaintext highlighter-rouge">fork()</code>, POSIX signals, and
+UNIX filesystem semantics on Windows.</p>
+
+<h2 id="overview">Overview</h2>
+
+<p>PostgreSQL was born on UNIX and its architecture reflects that heritage:
+multi-process (not multi-threaded), <code class="language-plaintext highlighter-rouge">fork()</code>-based, reliant on POSIX signals
+for inter-process communication, and assuming a filesystem that supports
+<code class="language-plaintext highlighter-rouge">fsync()</code>, <code class="language-plaintext highlighter-rouge">fdatasync()</code>, and file-descriptor inheritance across <code class="language-plaintext highlighter-rouge">fork()</code>.</p>
+
+<p>Porting this to Windows, and even accommodating differences between Linux,
+FreeBSD, and macOS, requires a substantial compatibility layer. The key
+challenges are:</p>
+
+<ol>
+  <li>
+    <p><strong>File descriptor limits.</strong> UNIX systems typically limit processes to 1024
+open FDs (or a configurable <code class="language-plaintext highlighter-rouge">ulimit</code>). A busy backend opening base tables,
+indexes, toast tables, sort temp files, and WAL segments can easily exceed
+this.</p>
+  </li>
+  <li>
+    <p><strong>Semaphore flavor wars.</strong> POSIX unnamed semaphores, POSIX named semaphores,
+System V semaphores, and Win32 Event objects all have different creation,
+limits, and cleanup semantics.</p>
+  </li>
+  <li>
+    <p><strong>Windows differences.</strong> No <code class="language-plaintext highlighter-rouge">fork()</code>, no POSIX signals, different path
+separators, different <code class="language-plaintext highlighter-rouge">stat()</code> behavior, different socket APIs, and
+case-insensitive filenames.</p>
+  </li>
+</ol>
+
+<h2 id="key-source-files">Key Source Files</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>File</th>
+      <th>Role</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/storage/file/fd.c</code></td>
+      <td>VFD cache: LRU pool of virtual file descriptors</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/port/posix_sema.c</code></td>
+      <td>POSIX semaphore backend</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/port/sysv_sema.c</code></td>
+      <td>System V semaphore backend</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/port/win32_sema.c</code></td>
+      <td>Win32 Event object semaphore backend</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/port/sysv_shmem.c</code></td>
+      <td>System V shared memory</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/port/win32_shmem.c</code></td>
+      <td>Win32 shared memory via file mappings</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/port/win32_port.h</code></td>
+      <td>Windows compatibility macros and includes</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/port/win32.h</code></td>
+      <td>Win32 signal emulation declarations</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/port/kill.c</code></td>
+      <td><code class="language-plaintext highlighter-rouge">kill()</code> emulation for Windows</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/port/open.c</code></td>
+      <td><code class="language-plaintext highlighter-rouge">open()</code> wrapper for Windows share modes</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/port/dirmod.c</code></td>
+      <td>Directory operations, <code class="language-plaintext highlighter-rouge">rename()</code> shims</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/port/darwin.h</code></td>
+      <td>macOS-specific defines</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/port/linux.h</code></td>
+      <td>Linux-specific defines</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/port/freebsd.h</code></td>
+      <td>FreeBSD-specific defines</td>
+    </tr>
+  </tbody>
+</table>
+
+<h2 id="how-it-works">How It Works</h2>
+
+<h3 id="the-virtual-file-descriptor-vfd-cache">The Virtual File Descriptor (VFD) Cache</h3>
+
+<p>The VFD layer interposes between PostgreSQL code and the OS <code class="language-plaintext highlighter-rouge">open()</code> /
+<code class="language-plaintext highlighter-rouge">close()</code> system calls. Every file opened through VFD APIs receives a <code class="language-plaintext highlighter-rouge">File</code>
+handle (an integer index into the <code class="language-plaintext highlighter-rouge">VfdCache</code> array) rather than a raw OS file
+descriptor. The VFD layer manages an LRU pool of actual OS file descriptors,
+transparently opening and closing them as needed.</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">typedef</span> <span class="k">struct</span> <span class="n">vfd</span>
+<span class="p">{</span>
+    <span class="kt">int</span>         <span class="n">fd</span><span class="p">;</span>               <span class="cm">/* Current OS FD, or VFD_CLOSED */</span>
+    <span class="kt">unsigned</span> <span class="kt">short</span> <span class="n">fdstate</span><span class="p">;</span>       <span class="cm">/* Bitflags: DELETE_AT_CLOSE, etc. */</span>
+    <span class="n">ResourceOwner</span> <span class="n">resowner</span><span class="p">;</span>       <span class="cm">/* For automatic cleanup */</span>
+    <span class="n">File</span>        <span class="n">nextFree</span><span class="p">;</span>         <span class="cm">/* Free-list link */</span>
+    <span class="n">File</span>        <span class="n">lruMoreRecently</span><span class="p">;</span>  <span class="cm">/* Doubly-linked LRU list */</span>
+    <span class="n">File</span>        <span class="n">lruLessRecently</span><span class="p">;</span>
+    <span class="n">pgoff_t</span>     <span class="n">fileSize</span><span class="p">;</span>         <span class="cm">/* Tracked for temp files */</span>
+    <span class="kt">char</span>       <span class="o">*</span><span class="n">fileName</span><span class="p">;</span>         <span class="cm">/* Path, for reopening */</span>
+    <span class="kt">int</span>         <span class="n">fileFlags</span><span class="p">;</span>        <span class="cm">/* open(2) flags, for reopening */</span>
+    <span class="n">mode_t</span>      <span class="n">fileMode</span><span class="p">;</span>         <span class="cm">/* mode, for reopening */</span>
+<span class="p">}</span> <span class="n">Vfd</span><span class="p">;</span>
+</code></pre></div></div>
+
+<p>The critical insight is that <code class="language-plaintext highlighter-rouge">fileName</code>, <code class="language-plaintext highlighter-rouge">fileFlags</code>, and <code class="language-plaintext highlighter-rouge">fileMode</code> are
+preserved so that a VFD whose OS descriptor has been reclaimed can be
+<strong>transparently reopened</strong> when next accessed:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>  Backend calls FileRead(vfd, buf, len)
+       |
+       v
+  Is VfdCache[vfd].fd == VFD_CLOSED?
+       |                    |
+      No                   Yes
+       |                    |
+       v                    v
+  Use fd directly      Need to reopen:
+                        1. If nfile &gt;= max_safe_fds:
+                           evict LRU VFD (close its OS fd)
+                        2. fd = open(fileName, fileFlags, fileMode)
+                        3. Insert into LRU as most-recently-used
+                        4. Now use fd
+</code></pre></div></div>
+
+<p><strong>FD budget management.</strong> The VFD layer tracks three categories of file
+descriptors:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>  max_safe_fds  (set by postmaster at startup via getrlimit)
+       |
+       +--- VFD pool (nfile): relation files, temp files, WAL segments
+       +--- Counted "external" FDs: ReserveExternalFD() / AcquireExternalFD()
+       +--- NUM_RESERVED_FDS (10): headroom for system(), dynamic loader, etc.
+</code></pre></div></div>
+
+<p>The <code class="language-plaintext highlighter-rouge">set_max_safe_fds()</code> function probes the actual FD limit at startup by
+repeatedly calling <code class="language-plaintext highlighter-rouge">open()</code> until it fails, then subtracts the reserved count.</p>
+
+<h3 id="semaphore-backends">Semaphore Backends</h3>
+
+<p>PostgreSQL uses semaphores as the “slow path” for its locking infrastructure.
+When a lightweight lock cannot be acquired on the fast path (via atomics), the
+backend sleeps on a per-process semaphore. Three implementations exist:</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>Backend</th>
+      <th>Platform</th>
+      <th>Mechanism</th>
+      <th>Limit</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">posix_sema.c</code></td>
+      <td>Linux, macOS, FreeBSD</td>
+      <td><code class="language-plaintext highlighter-rouge">sem_init()</code> (unnamed, in shmem)</td>
+      <td>Per-process: typically 256+</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">sysv_sema.c</code></td>
+      <td>Older UNIX, fallback</td>
+      <td><code class="language-plaintext highlighter-rouge">semget()</code> / <code class="language-plaintext highlighter-rouge">semop()</code></td>
+      <td>System-wide: often 128 sets of 250</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">win32_sema.c</code></td>
+      <td>Windows</td>
+      <td><code class="language-plaintext highlighter-rouge">CreateEvent()</code> + <code class="language-plaintext highlighter-rouge">SetEvent()</code> / <code class="language-plaintext highlighter-rouge">WaitForSingleObject()</code></td>
+      <td>Effectively unlimited</td>
+    </tr>
+  </tbody>
+</table>
+
+<p><strong>POSIX semaphores</strong> are preferred on modern systems. They are allocated in
+shared memory (using <code class="language-plaintext highlighter-rouge">sem_init()</code> with <code class="language-plaintext highlighter-rouge">pshared=1</code>) so they survive across
+<code class="language-plaintext highlighter-rouge">fork()</code>. Each backend gets one semaphore for sleeping on locks.</p>
+
+<p><strong>System V semaphores</strong> are a legacy fallback. They are allocated in sets
+(arrays), and PostgreSQL must carefully manage creation and cleanup because SysV
+semaphores persist in the kernel even after the creating process exits. The
+postmaster registers <code class="language-plaintext highlighter-rouge">on_shmem_exit</code> hooks to clean them up, and
+<code class="language-plaintext highlighter-rouge">IpcSemaphoreKill()</code> removes individual sets.</p>
+
+<p><strong>Win32</strong> uses auto-reset Event objects. <code class="language-plaintext highlighter-rouge">PGSemaphoreCreate()</code> calls
+<code class="language-plaintext highlighter-rouge">CreateEvent()</code>, <code class="language-plaintext highlighter-rouge">PGSemaphoreUnlock()</code> calls <code class="language-plaintext highlighter-rouge">SetEvent()</code>, and
+<code class="language-plaintext highlighter-rouge">PGSemaphoreTimedLock()</code> calls <code class="language-plaintext highlighter-rouge">WaitForSingleObjectEx()</code>. This integrates
+with the Win32 <code class="language-plaintext highlighter-rouge">EXEC_BACKEND</code> model where processes are created with
+<code class="language-plaintext highlighter-rouge">CreateProcess()</code> rather than <code class="language-plaintext highlighter-rouge">fork()</code>.</p>
+
+<h3 id="win32-compatibility-layer">Win32 Compatibility Layer</h3>
+
+<p>Windows support requires extensive shimming. The major areas:</p>
+
+<p><strong>Process creation.</strong> Windows has no <code class="language-plaintext highlighter-rouge">fork()</code>. PostgreSQL uses <code class="language-plaintext highlighter-rouge">EXEC_BACKEND</code>
+mode, where the postmaster calls <code class="language-plaintext highlighter-rouge">CreateProcess()</code> to spawn each backend as a
+new process that re-executes <code class="language-plaintext highlighter-rouge">postgres.exe</code> with special arguments. The child
+process re-attaches to shared memory and reconstructs its state from
+information passed via the command line and inherited handles.</p>
+
+<p><strong>Signal emulation.</strong> POSIX signals (<code class="language-plaintext highlighter-rouge">SIGHUP</code>, <code class="language-plaintext highlighter-rouge">SIGTERM</code>, <code class="language-plaintext highlighter-rouge">SIGINT</code>, etc.) do
+not exist on Windows. PostgreSQL emulates them using a per-process signal-
+handling thread and event objects:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>win32_port.h redefines:
+  kill(pid, sig)  --&gt;  pgkill(pid, sig)
+
+pgkill() on Windows:
+  1. Open the target process's named pipe or event
+  2. Write the signal number
+  3. The target's signal-handler thread reads it
+  4. Dispatches to the registered handler function
+</code></pre></div></div>
+
+<p><strong>File operations.</strong> Windows requires several wrappers:</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>POSIX</th>
+      <th>Windows issue</th>
+      <th>PostgreSQL workaround</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">open()</code></td>
+      <td>No <code class="language-plaintext highlighter-rouge">O_DSYNC</code>, sharing modes differ</td>
+      <td><code class="language-plaintext highlighter-rouge">pgwin32_open()</code> with <code class="language-plaintext highlighter-rouge">FILE_SHARE_*</code> flags</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">rename()</code></td>
+      <td>Fails if destination exists</td>
+      <td><code class="language-plaintext highlighter-rouge">pgrename()</code> with retry loop</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">unlink()</code></td>
+      <td>Fails on open files</td>
+      <td>Mark for delete-on-close</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">fsync()</code></td>
+      <td><code class="language-plaintext highlighter-rouge">_commit()</code> behavior differs</td>
+      <td><code class="language-plaintext highlighter-rouge">pg_fsync()</code> abstraction</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">ftruncate()</code></td>
+      <td><code class="language-plaintext highlighter-rouge">_chsize_s()</code> semantics</td>
+      <td>Wrapped in <code class="language-plaintext highlighter-rouge">src/port/</code></td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">mkdir(path, mode)</code></td>
+      <td>No mode argument</td>
+      <td><code class="language-plaintext highlighter-rouge">#define mkdir(a,b) mkdir(a)</code></td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">stat()</code></td>
+      <td>Different struct layout</td>
+      <td>Redefined in <code class="language-plaintext highlighter-rouge">win32_port.h</code></td>
+    </tr>
+  </tbody>
+</table>
+
+<p><strong>Socket operations.</strong> Winsock requires <code class="language-plaintext highlighter-rouge">WSAStartup()</code> initialization and uses
+<code class="language-plaintext highlighter-rouge">SOCKET</code> handles rather than file descriptors. PostgreSQL’s <code class="language-plaintext highlighter-rouge">pgsocket</code> type and
+the <code class="language-plaintext highlighter-rouge">pgwin32_*</code> socket wrappers handle the translation.</p>
+
+<h3 id="platform-detection-headers">Platform Detection Headers</h3>
+
+<p>Each supported OS has a header in <code class="language-plaintext highlighter-rouge">src/include/port/</code> that defines
+platform-specific quirks:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="cm">/* linux.h */</span>
+<span class="cp">#define DEFAULT_FILE_EXTEND_METHOD FILE_EXTEND_METHOD_FALLOCATE
+</span>
+<span class="cm">/* darwin.h */</span>
+<span class="cm">/* macOS-specific: shared memory and semaphore defaults */</span>
+
+<span class="cm">/* freebsd.h */</span>
+<span class="cm">/* FreeBSD-specific: POSIX semaphore config */</span>
+
+<span class="cm">/* win32_port.h */</span>
+<span class="cm">/* Massive: redefines half of POSIX for Windows */</span>
+</code></pre></div></div>
+
+<p>These headers are included early in the build, typically via <code class="language-plaintext highlighter-rouge">c.h</code> or
+<code class="language-plaintext highlighter-rouge">postgres.h</code>, and set preprocessor defines that the rest of the code checks.</p>
+
+<h3 id="data-sync-methods">Data Sync Methods</h3>
+
+<p>PostgreSQL must ensure data durability via <code class="language-plaintext highlighter-rouge">fsync()</code> or equivalent. The
+<code class="language-plaintext highlighter-rouge">recovery_init_sync_method</code> GUC and related code handle platform differences:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>  pg_fsync(fd)
+       |
+       +--- Linux: fdatasync(fd)  [if available, preferred over fsync]
+       +--- macOS: fcntl(fd, F_FULLFSYNC)  [ensures controller cache flush]
+       +--- Windows: _commit(fd) or FlushFileBuffers()
+       +--- FreeBSD: fsync(fd)
+
+  pg_flush_data(fd, offset, nbytes)
+       |
+       +--- Linux: sync_file_range(fd, offset, nbytes, WRITE)
+       +--- Others: msync() or posix_fadvise(DONTNEED) as fallback
+</code></pre></div></div>
+
+<p>The <code class="language-plaintext highlighter-rouge">F_FULLFSYNC</code> on macOS is particularly important: regular <code class="language-plaintext highlighter-rouge">fsync()</code> on
+macOS only flushes to the disk controller’s volatile write cache, not to
+persistent media. <code class="language-plaintext highlighter-rouge">F_FULLFSYNC</code> issues a cache-flush command to the drive.</p>
+
+<h2 id="key-data-structures">Key Data Structures</h2>
+
+<h3 id="vfd-cache-layout">VFD Cache Layout</h3>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>VfdCache[] (dynamically grown array)
+
+Index 0:  Sentinel / LRU list head (not a real file)
+           lruMoreRecently --&gt; most recently used VFD
+           lruLessRecently --&gt; least recently used VFD
+
+Index 1..N:  Actual VFD entries
+  +--------+----+----------+---------+--------+-------+
+  | fd     | st | fileName | flags   | lruMR  | lruLR |
+  +--------+----+----------+---------+--------+-------+
+  | 17     | 0  | base/... | O_RDWR  |  &lt;---&gt; |  VFD  |
+  | CLOSED | 0  | base/... | O_RDWR  |  (not in LRU)  |
+  | 23     | 1  | pg_wal/  | O_RDWR  |  &lt;---&gt; |  VFD  |
+  +--------+----+----------+---------+--------+-------+
+
+Free list: nextFree links chain unused VFD slots
+LRU list:  doubly-linked through lruMoreRecently/lruLessRecently
+           Only VFDs with fd != VFD_CLOSED are in the LRU
+</code></pre></div></div>
+
+<h3 id="semaphore-backend-selection">Semaphore Backend Selection</h3>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>  Configure / meson build
+       |
+       +--- HAVE_POSIX_SEMAPHORES --&gt; posix_sema.c (preferred)
+       +--- !HAVE_POSIX_SEMAPHORES
+       |       +--- USE_SYSV_SEMAPHORES --&gt; sysv_sema.c
+       |       +--- WIN32 --&gt; win32_sema.c
+       |
+       v
+  PGSemaphore (opaque type)
+       |
+       +--- PGSemaphoreCreate()   : allocate in shared memory
+       +--- PGSemaphoreReset()    : set to zero
+       +--- PGSemaphoreLock()     : decrement / wait
+       +--- PGSemaphoreUnlock()   : increment / signal
+       +--- PGSemaphoreTimedLock(): wait with timeout
+</code></pre></div></div>
+
+<h3 id="win32-process-model-vs-unix">Win32 Process Model vs UNIX</h3>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>  UNIX (default):                 Windows (EXEC_BACKEND):
+  ==============                  =======================
+
+  postmaster                      postmaster
+       |                               |
+       | fork()                        | CreateProcess("postgres.exe",
+       v                               |   "--fork=backend", ...)
+  child inherits:                      v
+  - shared memory mapping         child process:
+  - file descriptors               1. Parse command line
+  - signal handlers                 2. Re-attach to shared memory
+  - all process state                  (via named file mapping)
+                                    3. Reconstruct backend state
+                                    4. Resume execution
+</code></pre></div></div>
+
+<h2 id="connections">Connections</h2>
+
+<ul>
+  <li><strong>Chapter 4 (Buffer Manager):</strong> Every relation file access goes through the VFD layer. When the buffer manager reads a page, it calls <code class="language-plaintext highlighter-rouge">FileRead()</code> on a VFD, which may transparently reopen the file if its OS descriptor was reclaimed.</li>
+  <li><strong>Chapter 6 (Lock Manager):</strong> The semaphore backends provide the sleep/wake mechanism for <code class="language-plaintext highlighter-rouge">ProcSleep()</code> and <code class="language-plaintext highlighter-rouge">ProcWakeup()</code>. When an LWLock cannot be acquired via the atomic fast path, the backend calls <code class="language-plaintext highlighter-rouge">PGSemaphoreLock()</code> on its per-process semaphore.</li>
+  <li><strong>Chapter 5 (WAL):</strong> WAL segment files are opened through the VFD layer. The <code class="language-plaintext highlighter-rouge">pg_fsync()</code> / <code class="language-plaintext highlighter-rouge">pg_fdatasync()</code> wrappers ensure platform-correct durability guarantees for WAL flushes.</li>
+  <li><strong>Chapter 12 (Shared Memory):</strong> On UNIX, shared memory is inherited via <code class="language-plaintext highlighter-rouge">fork()</code>. On Windows, <code class="language-plaintext highlighter-rouge">win32_shmem.c</code> uses <code class="language-plaintext highlighter-rouge">CreateFileMapping()</code> / <code class="language-plaintext highlighter-rouge">MapViewOfFile()</code> to create a named mapping that child processes can attach to.</li>
+  <li><strong>Chapter 14 (this chapter), AIO:</strong> The AIO worker method’s file-reopening mechanism depends on the VFD layer storing <code class="language-plaintext highlighter-rouge">fileName</code> and <code class="language-plaintext highlighter-rouge">fileFlags</code>, since worker processes need to open their own file descriptors for I/O targets.</li>
+</ul>
+
+
+      <hr>
+
+      <!-- Prev / Next / Up navigation -->
+      
+      
+      
+
+      <div class="clearfix" style="margin-top: 2rem;">
+        
+          
+          
+
+          
+            
+            <a class="btn btn-primary float-left" href="/postgresql/14-platform/io-backends.html" title="I/O Backends">&larr; Previous</a>
+          
+
+          
+            
+            <a class="btn btn-primary float-right" href="/postgresql/14-platform/simd-and-crc.html" title="SIMD, CRC, and Hardware Acceleration">Next &rarr;</a>
+          
+        
+      </div>
+
+      
+      <div style="text-align: center; margin-top: 1rem;">
+        <a href="/postgresql-internals/">&uarr; Back to Table of Contents</a>
+      </div>
+      
+
+    </div>
+  </div>
+</div>
+
+
+  <!-- Footer -->
+
+<hr>
+
+<footer>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <ul class="list-inline text-center">
+          
+          <li class="list-inline-item">
+            <a href="mailto:amitava.dev@proton.me" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="far fa-envelope fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          
+          
+          <li class="list-inline-item">
+            <a href="https://www.linkedin.com/in/amitavaag" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-linkedin fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          <li class="list-inline-item">
+            <a href="https://github.com/ikouchiha47" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-github fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+        </ul>
+
+        <p class="copyright text-muted">
+          Build with: 
+          <a 
+            href="https://github.com/StartBootstrap/startbootstrap-clean-blog-jekyll"
+            class="text-gray"
+            target="_blank">startbootstrap-clean-blog-jekyll</a></p>
+      </div>
+    </div>
+  </div>
+</footer>
+
+
+  <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="/assets/vendor/blog/js/scripts.js"></script>
+
+<script src="/assets/scripts.js"></script>
+
+
+
+
+
+  <script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+
+    document.querySelectorAll('pre > code.language-mermaid').forEach((codeBlock) => {
+      codeBlock.parentElement.outerHTML = `<pre class="mermaid">${codeBlock.textContent}</pre>`;
+    });
+
+
+    mermaid.initialize({ startOnLoad: true, theme: 'forest' });
+</script>
+
+
+  
+
+</body>
+
+</html>

@@ -1,0 +1,672 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+  <title>
+    Resource Owners - iko&#39;s logs
+    
+  </title>
+
+  <meta name="description" content="">
+  <meta property="og:description" content="">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Resource Owners">
+  <meta property="og:url" content="https://ikouchiha47.github.io/postgresql/10-memory/resource-owners.html">
+
+  
+
+  <link href='https://fonts.googleapis.com/css?family=Lora:400,700,400italic,700italic' rel='stylesheet' type='text/css'>
+  <link href='https://fonts.googleapis.com/css?family=Open+Sans:300italic,400italic,600italic,700italic,800italic,400,300,600,700,800' rel='stylesheet' type='text/css'>
+
+  <!-- <script src="https://use.fontawesome.com/releases/v5.15.3/js/all.js" crossorigin="anonymous"></script> -->
+  <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.15.4/css/all.css" integrity="sha384-DyZ88mC6Up2uqS4h/KRgHuoeGwBcD4Ng9SiP4dIRy0EXTlnuz47vAwmeGwVChigm" crossorigin="anonymous"/>
+
+  <link rel="stylesheet" href="/assets/main.css">
+  <link rel="canonical" href="https://ikouchiha47.github.io/postgresql/10-memory/resource-owners.html">
+  <link rel="alternate" type="application/rss+xml" title="iko&#39;s logs" href="/feed.xml">
+
+  <meta name="google-site-verification" content="lWkg6gIxJgzEKX_5XnhcxCtPE9QknaimFWWos_dTvPM" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fira+Sans:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Inconsolata:wght@200..900&family=Jersey+25&family=Kanit:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Merriweather+Sans:ital,wght@0,300..800;1,300..800&family=Nanum+Gothic+Coding&family=Space+Grotesk:wght@300..700&family=Titillium+Web:ital,wght@0,200;0,300;0,400;0,600;0,700;0,900;1,200;1,300;1,400;1,600;1,700&display=swap" rel="stylesheet">
+
+</head>
+
+
+<body>
+
+  <!-- Navigation -->
+<nav class="navbar navbar-expand-lg navbar-light fixed-top" id="mainNav">
+  <div class="container">
+    <a class="navbar-brand" href="/">iko&#39;s logs</a>
+    <button class="navbar-toggler navbar-toggler-right" type="button" data-toggle="collapse" data-target="#navbarResponsive" aria-controls="navbarResponsive" aria-expanded="false" aria-label="Toggle navigation">
+      Menu
+      <i class="fa fa-bars"></i>
+    </button>
+    <div class="collapse navbar-collapse" id="navbarResponsive">
+      <ul class="navbar-nav ml-auto">
+        <li class="nav-item">
+          <a class="nav-link" href="/">Home</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/about">About</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/posts">Posts</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/contact">Contact</a>
+        </li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+
+  <!-- Page Header -->
+
+<header class="masthead">
+
+  <div class="overlay"></div>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <div class="post-heading">
+          <h1>Resource Owners</h1>
+          
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="container space-grotesk">
+  <div class="row">
+    <div class="col-lg-8 col-md-10 mx-auto">
+
+      <!-- Breadcrumb -->
+      <nav aria-label="breadcrumb" style="margin-bottom: 1.5rem;">
+        <ol class="breadcrumb" style="background: transparent; padding: 0;">
+          
+            <li class="breadcrumb-item"><a href="/postgresql-internals/">PostgreSQL Internals Deep Dive</a></li>
+          
+          
+            
+              <li class="breadcrumb-item"><a href="/postgresql/10-memory/">Memory Management</a></li>
+            
+          
+          <li class="breadcrumb-item active" aria-current="page">Resource Owners</li>
+        </ol>
+      </nav>
+
+      <h1 id="resource-owners">Resource Owners</h1>
+
+<blockquote>
+  <p><em>Memory contexts prevent memory leaks; resource owners prevent everything-else leaks — buffer pins, locks, file descriptors, cache references, and DSM segments are all guaranteed to be released at transaction end, even if the query fails mid-execution.</em></p>
+</blockquote>
+
+<h2 id="summary">Summary</h2>
+
+<p>A <code class="language-plaintext highlighter-rouge">ResourceOwner</code> is a container that tracks non-memory resources acquired during query
+execution. Just like memory contexts form a tree of lifetimes for memory, resource owners
+form a parallel tree of lifetimes for resources such as buffer pins, heavyweight and
+lightweight locks, relation cache references, catalog cache references, tuple
+descriptors, file descriptors, and DSM segments.</p>
+
+<p>When a portal closes or a transaction ends, <code class="language-plaintext highlighter-rouge">ResourceOwnerRelease()</code> walks the tree and
+releases all tracked resources in a well-defined three-phase order: first resources that
+are visible to other backends (buffer pins, DSM segments), then locks, then
+backend-internal resources (cache references, files). This guarantees that when a lock
+is released, no externally-visible state depends on it.</p>
+
+<h2 id="overview">Overview</h2>
+
+<h3 id="the-problem">The Problem</h3>
+
+<p>Consider a query that pins three buffers, acquires two locks, opens a file for a
+sort run, and grabs several catalog cache references. If the query fails at any point,
+all of these resources must be released. Without centralized tracking, every function in
+the call chain would need error-handling code to release the specific resources it
+acquired. This is fragile and error-prone.</p>
+
+<h3 id="the-solution">The Solution</h3>
+
+<p>The <code class="language-plaintext highlighter-rouge">ResourceOwner</code> acts as a ledger. When a buffer is pinned, the pin is registered
+with <code class="language-plaintext highlighter-rouge">CurrentResourceOwner</code>. When the pin is released normally, it is deregistered.
+If the transaction aborts before the pin is released, <code class="language-plaintext highlighter-rouge">ResourceOwnerRelease()</code> finds
+the orphaned pin and releases it, emitting a WARNING at commit (since resources should
+have been properly released).</p>
+
+<p>Resource owners mirror the transaction/subtransaction/portal nesting:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>TopTransactionResourceOwner
++-- CurTransactionResourceOwner (same as Top at top level)
+|     +-- Portal ResourceOwner
+|     +-- Portal ResourceOwner
++-- Subtransaction ResourceOwner
+      +-- Portal ResourceOwner
+</code></pre></div></div>
+
+<p>When a child resource owner is released (e.g., portal closes), its remaining resources
+transfer to the parent (for locks on commit) or are released outright (for most
+resources on abort).</p>
+
+<h2 id="key-source-files">Key Source Files</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>File</th>
+      <th>Role</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/utils/resowner.h</code></td>
+      <td>Public API: <code class="language-plaintext highlighter-rouge">ResourceOwnerDesc</code>, phases, priorities, <code class="language-plaintext highlighter-rouge">ResourceOwnerRemember</code>/<code class="language-plaintext highlighter-rouge">Forget</code></td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/utils/resowner/resowner.c</code></td>
+      <td>Implementation: <code class="language-plaintext highlighter-rouge">ResourceOwnerData</code>, hash table, release logic</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/utils/resowner/README</code></td>
+      <td>Design rationale and usage guide</td>
+    </tr>
+  </tbody>
+</table>
+
+<h2 id="how-it-works">How It Works</h2>
+
+<h3 id="registering-and-releasing-resources">Registering and Releasing Resources</h3>
+
+<p>Every tracked resource type is described by a <code class="language-plaintext highlighter-rouge">ResourceOwnerDesc</code>:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">typedef</span> <span class="k">struct</span> <span class="n">ResourceOwnerDesc</span>
+<span class="p">{</span>
+    <span class="k">const</span> <span class="kt">char</span> <span class="o">*</span><span class="n">name</span><span class="p">;</span>                       <span class="cm">/* for debugging */</span>
+    <span class="n">ResourceReleasePhase</span> <span class="n">release_phase</span><span class="p">;</span>     <span class="cm">/* BEFORE_LOCKS, LOCKS, or AFTER_LOCKS */</span>
+    <span class="n">ResourceReleasePriority</span> <span class="n">release_priority</span><span class="p">;</span> <span class="cm">/* ordering within phase */</span>
+    <span class="kt">void</span> <span class="p">(</span><span class="o">*</span><span class="n">ReleaseResource</span><span class="p">)(</span><span class="n">Datum</span> <span class="n">res</span><span class="p">);</span>     <span class="cm">/* cleanup callback */</span>
+    <span class="kt">char</span> <span class="o">*</span><span class="p">(</span><span class="o">*</span><span class="n">DebugPrint</span><span class="p">)(</span><span class="n">Datum</span> <span class="n">res</span><span class="p">);</span>         <span class="cm">/* optional: for leak warnings */</span>
+<span class="p">}</span> <span class="n">ResourceOwnerDesc</span><span class="p">;</span>
+</code></pre></div></div>
+
+<p>Resources are tracked through three operations:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="cm">/* Before acquiring a resource, ensure the hash table has space */</span>
+<span class="n">ResourceOwnerEnlarge</span><span class="p">(</span><span class="n">CurrentResourceOwner</span><span class="p">);</span>
+
+<span class="cm">/* After acquiring the resource, register it */</span>
+<span class="n">ResourceOwnerRemember</span><span class="p">(</span><span class="n">CurrentResourceOwner</span><span class="p">,</span> <span class="n">PointerGetDatum</span><span class="p">(</span><span class="n">myresource</span><span class="p">),</span> <span class="o">&amp;</span><span class="n">myresource_desc</span><span class="p">);</span>
+
+<span class="cm">/* When releasing the resource normally */</span>
+<span class="n">ResourceOwnerForget</span><span class="p">(</span><span class="n">CurrentResourceOwner</span><span class="p">,</span> <span class="n">PointerGetDatum</span><span class="p">(</span><span class="n">myresource</span><span class="p">),</span> <span class="o">&amp;</span><span class="n">myresource_desc</span><span class="p">);</span>
+</code></pre></div></div>
+
+<p>The <code class="language-plaintext highlighter-rouge">Enlarge</code> / <code class="language-plaintext highlighter-rouge">Remember</code> / <code class="language-plaintext highlighter-rouge">Forget</code> pattern exists because <code class="language-plaintext highlighter-rouge">Remember</code> must not fail
+(it may be called after a resource is already acquired), so <code class="language-plaintext highlighter-rouge">Enlarge</code> pre-allocates
+hash table space while failure is still safe.</p>
+
+<h3 id="the-three-release-phases">The Three Release Phases</h3>
+
+<p><code class="language-plaintext highlighter-rouge">ResourceOwnerRelease()</code> must be called three times, once per phase:</p>
+
+<p><strong>Phase 1: RESOURCE_RELEASE_BEFORE_LOCKS</strong></p>
+
+<p>Resources that are visible to other backends must be released before locks. If locks
+were released first, another backend could see inconsistent state.</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>Resource</th>
+      <th>Priority</th>
+      <th>Why Before Locks</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Buffer I/O (in-progress)</td>
+      <td>100</td>
+      <td>Must complete or cancel I/O before unpinning</td>
+    </tr>
+    <tr>
+      <td>Buffer pins</td>
+      <td>200</td>
+      <td>Other backends may be waiting to evict the page</td>
+    </tr>
+    <tr>
+      <td>Relcache references</td>
+      <td>300</td>
+      <td>Must close relation before releasing lock on it</td>
+    </tr>
+    <tr>
+      <td>DSM segments</td>
+      <td>400</td>
+      <td>Shared memory visible to other processes</td>
+    </tr>
+    <tr>
+      <td>JIT contexts</td>
+      <td>500</td>
+      <td>Backend-internal but involves shared state</td>
+    </tr>
+    <tr>
+      <td>Crypto/HMAC contexts</td>
+      <td>600-700</td>
+      <td>May hold OS resources</td>
+    </tr>
+  </tbody>
+</table>
+
+<p><strong>Phase 2: RESOURCE_RELEASE_LOCKS</strong></p>
+
+<p>Lock release is handled specially. On <strong>commit</strong>, locks transfer to the parent resource
+owner (they persist until end of transaction). On <strong>abort</strong>, locks are actually released.</p>
+
+<p><strong>Phase 3: RESOURCE_RELEASE_AFTER_LOCKS</strong></p>
+
+<p>Backend-internal resources that no other process can see:</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>Resource</th>
+      <th>Priority</th>
+      <th>Description</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Catcache references</td>
+      <td>100</td>
+      <td>Catalog cache entry reference counts</td>
+    </tr>
+    <tr>
+      <td>Catcache list references</td>
+      <td>200</td>
+      <td>Catalog cache list reference counts</td>
+    </tr>
+    <tr>
+      <td>Plan cache references</td>
+      <td>300</td>
+      <td>Cached plan reference counts</td>
+    </tr>
+    <tr>
+      <td>Tuple descriptor references</td>
+      <td>400</td>
+      <td>Reference-counted tuple descriptors</td>
+    </tr>
+    <tr>
+      <td>Snapshot references</td>
+      <td>500</td>
+      <td>Registered snapshots</td>
+    </tr>
+    <tr>
+      <td>Files</td>
+      <td>600</td>
+      <td>Open file descriptors</td>
+    </tr>
+    <tr>
+      <td>Wait event sets</td>
+      <td>700</td>
+      <td>Event monitoring handles</td>
+    </tr>
+  </tbody>
+</table>
+
+<h3 id="internal-data-structure">Internal Data Structure</h3>
+
+<p>The <code class="language-plaintext highlighter-rouge">ResourceOwnerData</code> struct uses a hybrid storage strategy optimized for the common
+case (few resources, short-lived):</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">struct</span> <span class="n">ResourceOwnerData</span>
+<span class="p">{</span>
+    <span class="n">ResourceOwner</span> <span class="n">parent</span><span class="p">;</span>
+    <span class="n">ResourceOwner</span> <span class="n">firstchild</span><span class="p">;</span>
+    <span class="n">ResourceOwner</span> <span class="n">nextchild</span><span class="p">;</span>
+    <span class="k">const</span> <span class="kt">char</span>   <span class="o">*</span><span class="n">name</span><span class="p">;</span>
+
+    <span class="n">bool</span>          <span class="n">releasing</span><span class="p">;</span>      <span class="cm">/* true during ResourceOwnerRelease */</span>
+    <span class="n">bool</span>          <span class="n">sorted</span><span class="p">;</span>         <span class="cm">/* true after sorting for release */</span>
+
+    <span class="n">uint8</span>         <span class="n">nlocks</span><span class="p">;</span>         <span class="cm">/* locks in the local cache */</span>
+    <span class="n">uint8</span>         <span class="n">narr</span><span class="p">;</span>           <span class="cm">/* items in the fixed array */</span>
+    <span class="n">uint32</span>        <span class="n">nhash</span><span class="p">;</span>          <span class="cm">/* items in the hash table */</span>
+
+    <span class="cm">/* Fixed-size array for most-recently-added resources (fast path) */</span>
+    <span class="n">ResourceElem</span>  <span class="n">arr</span><span class="p">[</span><span class="n">RESOWNER_ARRAY_SIZE</span><span class="p">];</span>   <span class="cm">/* 32 entries */</span>
+
+    <span class="cm">/* Open-addressing hash table for overflow */</span>
+    <span class="n">ResourceElem</span> <span class="o">*</span><span class="n">hash</span><span class="p">;</span>
+    <span class="n">uint32</span>        <span class="n">capacity</span><span class="p">;</span>       <span class="cm">/* allocated slots */</span>
+    <span class="n">uint32</span>        <span class="n">grow_at</span><span class="p">;</span>        <span class="cm">/* resize threshold */</span>
+
+    <span class="cm">/* Separate fast cache for local locks */</span>
+    <span class="n">LOCALLOCK</span>    <span class="o">*</span><span class="n">locks</span><span class="p">[</span><span class="n">MAX_RESOWNER_LOCKS</span><span class="p">];</span>  <span class="cm">/* 15 entries */</span>
+
+    <span class="cm">/* AIO handles (registered in critical sections) */</span>
+    <span class="n">dlist_head</span>    <span class="n">aio_handles</span><span class="p">;</span>
+<span class="p">};</span>
+</code></pre></div></div>
+
+<p><strong>Why a fixed array plus a hash table?</strong> The most common pattern is: acquire a
+resource, use it briefly, release it (e.g., pin a buffer, read a tuple, unpin).
+The fixed array of 32 entries handles this fast path with a simple linear scan.
+Only when the array fills up do entries spill into the hash table.</p>
+
+<p><strong>Why a separate lock cache?</strong> Lock operations are extremely frequent. Rather than
+storing locks in the general-purpose array/hash, each resource owner has a dedicated
+15-entry cache. When this overflows, the lock manager’s own hash table is used as
+fallback, but the per-owner cache speeds up the common case of a handful of locks
+per query.</p>
+
+<h3 id="release-ordering-within-a-tree">Release Ordering Within a Tree</h3>
+
+<p>When releasing, the tree is processed <strong>children before parents</strong> within each phase.
+The full sequence for a three-phase release of a parent with one child:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>Phase 1 (BEFORE_LOCKS):
+  child:  release buffer I/Os       (priority 100)
+  child:  release buffer pins       (priority 200)
+  child:  release relcache refs     (priority 300)
+  ...
+  parent: release buffer I/Os       (priority 100)
+  parent: release buffer pins       (priority 200)
+  parent: release relcache refs     (priority 300)
+  ...
+
+Phase 2 (LOCKS):
+  child:  release/transfer locks
+  parent: release/transfer locks
+
+Phase 3 (AFTER_LOCKS):
+  child:  release catcache refs     (priority 100)
+  child:  release plan cache refs   (priority 300)
+  child:  release files             (priority 600)
+  ...
+  parent: release catcache refs     (priority 100)
+  parent: release plan cache refs   (priority 300)
+  parent: release files             (priority 600)
+  ...
+</code></pre></div></div>
+
+<h3 id="leak-detection">Leak Detection</h3>
+
+<p>At <strong>commit</strong>, if <code class="language-plaintext highlighter-rouge">ResourceOwnerRelease</code> finds any resources still registered, it emits
+a WARNING for each one (using the <code class="language-plaintext highlighter-rouge">DebugPrint</code> callback if available). This indicates a
+bug: the code that acquired the resource should have released it before commit. At
+<strong>abort</strong>, finding unreleased resources is expected and normal — that is the entire
+point of the resource owner mechanism.</p>
+
+<h3 id="adding-a-new-resource-type">Adding a New Resource Type</h3>
+
+<p>Extensions can track custom resources by defining a <code class="language-plaintext highlighter-rouge">ResourceOwnerDesc</code>:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">static</span> <span class="k">const</span> <span class="n">ResourceOwnerDesc</span> <span class="n">myresource_desc</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="p">.</span><span class="n">name</span> <span class="o">=</span> <span class="s">"MyFancyResource"</span><span class="p">,</span>
+    <span class="p">.</span><span class="n">release_phase</span> <span class="o">=</span> <span class="n">RESOURCE_RELEASE_AFTER_LOCKS</span><span class="p">,</span>
+    <span class="p">.</span><span class="n">release_priority</span> <span class="o">=</span> <span class="n">RELEASE_PRIO_FIRST</span><span class="p">,</span>
+    <span class="p">.</span><span class="n">ReleaseResource</span> <span class="o">=</span> <span class="n">ReleaseMyFancyResource</span><span class="p">,</span>
+    <span class="p">.</span><span class="n">DebugPrint</span> <span class="o">=</span> <span class="nb">NULL</span>   <span class="cm">/* use default format */</span>
+<span class="p">};</span>
+</code></pre></div></div>
+
+<p>Then use <code class="language-plaintext highlighter-rouge">ResourceOwnerEnlarge</code>, <code class="language-plaintext highlighter-rouge">ResourceOwnerRemember</code>, and <code class="language-plaintext highlighter-rouge">ResourceOwnerForget</code>
+as shown above. The alternative <code class="language-plaintext highlighter-rouge">RegisterResourceReleaseCallback</code> API still exists
+for legacy compatibility but is less convenient.</p>
+
+<h2 id="key-data-structures">Key Data Structures</h2>
+
+<h3 id="resourceownerdata">ResourceOwnerData</h3>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>ResourceOwnerData
++-- parent / firstchild / nextchild   (tree linkage, same pattern as MemoryContextData)
++-- arr[32]                            (fixed array of ResourceElem)
+|     Each entry: { Datum item, const ResourceOwnerDesc *kind }
++-- hash (dynamically allocated)       (open-addressing hash table)
+|     Initial capacity: 64 slots
+|     Grows at 75% fill (minus array size headroom)
++-- locks[15]                          (LOCALLOCK* fast cache)
++-- aio_handles                        (dlist for async I/O handles)
+</code></pre></div></div>
+
+<h3 id="resourceelem">ResourceElem</h3>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">typedef</span> <span class="k">struct</span> <span class="n">ResourceElem</span>
+<span class="p">{</span>
+    <span class="n">Datum</span>                    <span class="n">item</span><span class="p">;</span>   <span class="cm">/* the tracked resource (pointer, fd, etc.) */</span>
+    <span class="k">const</span> <span class="n">ResourceOwnerDesc</span> <span class="o">*</span><span class="n">kind</span><span class="p">;</span>   <span class="cm">/* NULL means empty slot in hash table */</span>
+<span class="p">}</span> <span class="n">ResourceElem</span><span class="p">;</span>
+</code></pre></div></div>
+
+<h3 id="release-phase-and-priority">Release Phase and Priority</h3>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>RESOURCE_RELEASE_BEFORE_LOCKS
+    priority 100: Buffer I/Os
+    priority 200: Buffer Pins
+    priority 300: Relcache Refs
+    priority 400: DSM Segments
+    priority 500: JIT Contexts
+    priority 600: Crypto Hash Contexts
+    priority 700: HMAC Contexts
+
+RESOURCE_RELEASE_LOCKS
+    (locks handled specially: transfer on commit, release on abort)
+
+RESOURCE_RELEASE_AFTER_LOCKS
+    priority 100: Catcache Refs
+    priority 200: Catcache List Refs
+    priority 300: Plan Cache Refs
+    priority 400: Tuple Descriptor Refs
+    priority 500: Snapshot Refs
+    priority 600: Files
+    priority 700: Wait Event Sets
+</code></pre></div></div>
+
+<h2 id="diagrams">Diagrams</h2>
+
+<h3 id="resource-owner-tree-and-transaction-lifecycle">Resource Owner Tree and Transaction Lifecycle</h3>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>BEGIN;                                    TopTransactionResourceOwner
+                                           |
+  SAVEPOINT sp1;                           +-- SubtransactionResourceOwner
+                                           |     |
+    SELECT * FROM t WHERE ...;             |     +-- PortalResourceOwner
+    (pins buffers, acquires locks)         |     |     pins: [buf#42, buf#99]
+                                           |     |     locks: [rel 16384 AccessShareLock]
+    -- query completes normally --         |     |     (all forgotten on normal release)
+    -- portal closes --                    |     +-- (deleted, locks transfer to parent)
+                                           |
+  RELEASE SAVEPOINT sp1;                   +-- (subtxn resources merge into parent)
+                                           |
+COMMIT;                                    (release all: pins WARNING if leaked,
+                                            locks released, cache refs released)
+</code></pre></div></div>
+
+<h3 id="the-rememberforget-fast-path">The Remember/Forget Fast Path</h3>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>ReadBuffer(rel, blockno)
+    |
+    v
+PinBuffer(buf)
+    |
+    v
+ResourceOwnerEnlarge(CurrentResourceOwner)   &lt;-- pre-allocate space
+    |
+    v
+ResourceOwnerRemember(owner, buf, &amp;buffer_pin_desc)
+    |
+    v
+narr &lt; 32?
+   |
+  YES --&gt; arr[narr++] = {buf, &amp;buffer_pin_desc}   (fast path, no hashing)
+   |
+  NO  --&gt; move all arr entries to hash table, then arr[0] = {buf, &amp;buffer_pin_desc}
+    |
+    v
+... use buffer ...
+    |
+    v
+ReleaseBuffer(buf)
+    |
+    v
+ResourceOwnerForget(owner, buf, &amp;buffer_pin_desc)
+    |
+    v
+Scan arr[] for matching (buf, kind)
+   |
+  FOUND --&gt; swap with arr[narr-1], narr--    (fast path)
+   |
+  NOT FOUND --&gt; scan hash table, remove entry
+</code></pre></div></div>
+
+<h2 id="connections">Connections</h2>
+
+<ul>
+  <li><strong>Memory Contexts</strong> (<a href="memory-contexts.md">memory-contexts.md</a>): Resource owners and
+memory contexts are parallel hierarchies with corresponding lifetimes. A transaction
+has both a <code class="language-plaintext highlighter-rouge">TopTransactionContext</code> and a <code class="language-plaintext highlighter-rouge">TopTransactionResourceOwner</code>. They are
+separate because their usage patterns differ: memory contexts manage bulk allocation
+and deallocation; resource owners track individual countable resources.</li>
+  <li><strong>Buffer Manager:</strong> Every buffer pin is tracked by the current resource owner. This is
+the most frequent use of the resource owner system — a sequential scan pins and
+unpins thousands of buffers per second.</li>
+  <li><strong>Lock Manager:</strong> Lock ownership transfers to the parent resource owner on commit
+(locks persist until end of transaction) but actually releases on abort. This special
+behavior is why locks have their own release phase.</li>
+  <li><strong>DSA / DSM</strong> (<a href="dsa.md">dsa.md</a>): DSM segment attachments are tracked as
+BEFORE_LOCKS resources (priority 400). When a transaction that created a DSA area
+aborts, the DSM segments are automatically detached and freed.</li>
+  <li><strong>Catalog Cache:</strong> Catalog cache pins (<code class="language-plaintext highlighter-rouge">SearchSysCache</code> results) are tracked as
+AFTER_LOCKS resources. They must be released after locks because the cache entries
+are backend-local and invisible to other processes.</li>
+  <li><strong>Error Handling:</strong> <code class="language-plaintext highlighter-rouge">AbortTransaction</code> calls <code class="language-plaintext highlighter-rouge">ResourceOwnerRelease</code> in all three
+phases on <code class="language-plaintext highlighter-rouge">TopTransactionResourceOwner</code>, ensuring complete cleanup regardless of
+where the error occurred.</li>
+</ul>
+
+
+      <hr>
+
+      <!-- Prev / Next / Up navigation -->
+      
+      
+      
+
+      <div class="clearfix" style="margin-top: 2rem;">
+        
+          
+          
+
+          
+            
+            <a class="btn btn-primary float-left" href="/postgresql/10-memory/memory-contexts.html" title="Memory Contexts">&larr; Previous</a>
+          
+
+          
+            
+            <a class="btn btn-primary float-right" href="/postgresql/11-ipc/" title="IPC">Next &rarr;</a>
+          
+        
+      </div>
+
+      
+      <div style="text-align: center; margin-top: 1rem;">
+        <a href="/postgresql-internals/">&uarr; Back to Table of Contents</a>
+      </div>
+      
+
+    </div>
+  </div>
+</div>
+
+
+  <!-- Footer -->
+
+<hr>
+
+<footer>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <ul class="list-inline text-center">
+          
+          <li class="list-inline-item">
+            <a href="mailto:amitava.dev@proton.me" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="far fa-envelope fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          
+          
+          <li class="list-inline-item">
+            <a href="https://www.linkedin.com/in/amitavaag" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-linkedin fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          <li class="list-inline-item">
+            <a href="https://github.com/ikouchiha47" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-github fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+        </ul>
+
+        <p class="copyright text-muted">
+          Build with: 
+          <a 
+            href="https://github.com/StartBootstrap/startbootstrap-clean-blog-jekyll"
+            class="text-gray"
+            target="_blank">startbootstrap-clean-blog-jekyll</a></p>
+      </div>
+    </div>
+  </div>
+</footer>
+
+
+  <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="/assets/vendor/blog/js/scripts.js"></script>
+
+<script src="/assets/scripts.js"></script>
+
+
+
+
+
+  <script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+
+    document.querySelectorAll('pre > code.language-mermaid').forEach((codeBlock) => {
+      codeBlock.parentElement.outerHTML = `<pre class="mermaid">${codeBlock.textContent}</pre>`;
+    });
+
+
+    mermaid.initialize({ startOnLoad: true, theme: 'forest' });
+</script>
+
+
+  
+
+</body>
+
+</html>

@@ -1,0 +1,637 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+  <title>
+    Extended Statistics - iko&#39;s logs
+    
+  </title>
+
+  <meta name="description" content="">
+  <meta property="og:description" content="">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Extended Statistics">
+  <meta property="og:url" content="https://ikouchiha47.github.io/postgresql/13-statistics/extended-stats.html">
+
+  
+
+  <link href='https://fonts.googleapis.com/css?family=Lora:400,700,400italic,700italic' rel='stylesheet' type='text/css'>
+  <link href='https://fonts.googleapis.com/css?family=Open+Sans:300italic,400italic,600italic,700italic,800italic,400,300,600,700,800' rel='stylesheet' type='text/css'>
+
+  <!-- <script src="https://use.fontawesome.com/releases/v5.15.3/js/all.js" crossorigin="anonymous"></script> -->
+  <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.15.4/css/all.css" integrity="sha384-DyZ88mC6Up2uqS4h/KRgHuoeGwBcD4Ng9SiP4dIRy0EXTlnuz47vAwmeGwVChigm" crossorigin="anonymous"/>
+
+  <link rel="stylesheet" href="/assets/main.css">
+  <link rel="canonical" href="https://ikouchiha47.github.io/postgresql/13-statistics/extended-stats.html">
+  <link rel="alternate" type="application/rss+xml" title="iko&#39;s logs" href="/feed.xml">
+
+  <meta name="google-site-verification" content="lWkg6gIxJgzEKX_5XnhcxCtPE9QknaimFWWos_dTvPM" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fira+Sans:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Inconsolata:wght@200..900&family=Jersey+25&family=Kanit:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Merriweather+Sans:ital,wght@0,300..800;1,300..800&family=Nanum+Gothic+Coding&family=Space+Grotesk:wght@300..700&family=Titillium+Web:ital,wght@0,200;0,300;0,400;0,600;0,700;0,900;1,200;1,300;1,400;1,600;1,700&display=swap" rel="stylesheet">
+
+</head>
+
+
+<body>
+
+  <!-- Navigation -->
+<nav class="navbar navbar-expand-lg navbar-light fixed-top" id="mainNav">
+  <div class="container">
+    <a class="navbar-brand" href="/">iko&#39;s logs</a>
+    <button class="navbar-toggler navbar-toggler-right" type="button" data-toggle="collapse" data-target="#navbarResponsive" aria-controls="navbarResponsive" aria-expanded="false" aria-label="Toggle navigation">
+      Menu
+      <i class="fa fa-bars"></i>
+    </button>
+    <div class="collapse navbar-collapse" id="navbarResponsive">
+      <ul class="navbar-nav ml-auto">
+        <li class="nav-item">
+          <a class="nav-link" href="/">Home</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/about">About</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/posts">Posts</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/contact">Contact</a>
+        </li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+
+  <!-- Page Header -->
+
+<header class="masthead">
+
+  <div class="overlay"></div>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <div class="post-heading">
+          <h1>Extended Statistics</h1>
+          
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="container space-grotesk">
+  <div class="row">
+    <div class="col-lg-8 col-md-10 mx-auto">
+
+      <!-- Breadcrumb -->
+      <nav aria-label="breadcrumb" style="margin-bottom: 1.5rem;">
+        <ol class="breadcrumb" style="background: transparent; padding: 0;">
+          
+            <li class="breadcrumb-item"><a href="/postgresql-internals/">PostgreSQL Internals Deep Dive</a></li>
+          
+          
+            
+              <li class="breadcrumb-item"><a href="/postgresql/13-statistics/">Statistics & Monitoring</a></li>
+            
+          
+          <li class="breadcrumb-item active" aria-current="page">Extended Statistics</li>
+        </ol>
+      </nav>
+
+      <h1 id="extended-statistics">Extended Statistics</h1>
+
+<h2 id="summary">Summary</h2>
+
+<p>Single-column statistics assume independence between columns. When that assumption fails – a ZIP code determines a city, or two columns are strongly correlated – the planner can produce wildly wrong row estimates and choose terrible plans. Extended statistics, created via <code class="language-plaintext highlighter-rouge">CREATE STATISTICS</code>, let PostgreSQL track three kinds of multi-column relationships: <strong>functional dependencies</strong> (one column determines another), <strong>ndistinct coefficients</strong> (how many distinct combinations exist), and <strong>multi-column MCV lists</strong> (most common value combinations with their actual frequencies). These statistics are stored across two catalogs: <code class="language-plaintext highlighter-rouge">pg_statistic_ext</code> (the object definition) and <code class="language-plaintext highlighter-rouge">pg_statistic_ext_data</code> (the computed data, populated by ANALYZE).</p>
+
+<hr />
+
+<h2 id="overview">Overview</h2>
+
+<p>The extended statistics system addresses a fundamental limitation of the Attribute Value Independence Assumption (AVIA). Under AVIA, the selectivity of <code class="language-plaintext highlighter-rouge">WHERE city = 'Seattle' AND state = 'WA'</code> is estimated as <code class="language-plaintext highlighter-rouge">P(city='Seattle') * P(state='WA')</code>, which massively underestimates the true selectivity because knowing the city almost fully determines the state.</p>
+
+<p>PostgreSQL supports four kinds of extended statistics:</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>Kind Code</th>
+      <th>Character</th>
+      <th>What It Tracks</th>
+      <th>Used For</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>ndistinct</td>
+      <td><code class="language-plaintext highlighter-rouge">'d'</code></td>
+      <td>Number of distinct value combinations across column subsets</td>
+      <td>GROUP BY cardinality estimation</td>
+    </tr>
+    <tr>
+      <td>dependencies</td>
+      <td><code class="language-plaintext highlighter-rouge">'f'</code></td>
+      <td>Soft functional dependencies between columns</td>
+      <td>AND-ed equality clause selectivity</td>
+    </tr>
+    <tr>
+      <td>MCV</td>
+      <td><code class="language-plaintext highlighter-rouge">'m'</code></td>
+      <td>Most common value combinations with frequencies</td>
+      <td>Equality, inequality, IS NULL, OR clauses</td>
+    </tr>
+    <tr>
+      <td>expressions</td>
+      <td><code class="language-plaintext highlighter-rouge">'e'</code></td>
+      <td>Per-expression statistics (like single-column stats, but for expressions)</td>
+      <td>Expression-based conditions</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>Creating extended statistics:</p>
+
+<div class="language-sql highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="c1">-- All three kinds at once</span>
+<span class="k">CREATE</span> <span class="k">STATISTICS</span> <span class="n">s_city_state</span> <span class="p">(</span><span class="n">dependencies</span><span class="p">,</span> <span class="n">ndistinct</span><span class="p">,</span> <span class="n">mcv</span><span class="p">)</span>
+    <span class="k">ON</span> <span class="n">city</span><span class="p">,</span> <span class="k">state</span> <span class="k">FROM</span> <span class="n">addresses</span><span class="p">;</span>
+
+<span class="c1">-- Expression statistics</span>
+<span class="k">CREATE</span> <span class="k">STATISTICS</span> <span class="n">s_year</span> <span class="k">ON</span> <span class="p">(</span><span class="k">EXTRACT</span><span class="p">(</span><span class="nb">year</span> <span class="k">FROM</span> <span class="n">created_at</span><span class="p">))</span> <span class="k">FROM</span> <span class="n">orders</span><span class="p">;</span>
+
+<span class="k">ANALYZE</span> <span class="n">addresses</span><span class="p">;</span>
+<span class="k">ANALYZE</span> <span class="n">orders</span><span class="p">;</span>
+</code></pre></div></div>
+
+<hr />
+
+<h2 id="key-source-files">Key Source Files</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>File</th>
+      <th>Purpose</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/catalog/pg_statistic_ext.h</code></td>
+      <td>Extended statistics object catalog, kind codes</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/catalog/pg_statistic_ext_data.h</code></td>
+      <td>Data storage catalog</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/statistics/statistics.h</code></td>
+      <td>MVNDistinct, MVDependency, MCVList structs</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/statistics/extended_stats_internal.h</code></td>
+      <td>Internal build/serialize APIs, SortItem, StatsBuildData</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/statistics/extended_stats.c</code></td>
+      <td>Build orchestration, <code class="language-plaintext highlighter-rouge">BuildRelationExtStatistics()</code></td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/statistics/dependencies.c</code></td>
+      <td>Dependency mining and selectivity estimation</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/statistics/mcv.c</code></td>
+      <td>Multi-column MCV build and clause matching</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/statistics/mvdistinct.c</code></td>
+      <td>Ndistinct computation for column combinations</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/statistics/README</code></td>
+      <td>Architecture overview</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/statistics/README.dependencies</code></td>
+      <td>Functional dependency algorithm details</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/statistics/README.mcv</code></td>
+      <td>Multi-column MCV design notes</td>
+    </tr>
+  </tbody>
+</table>
+
+<hr />
+
+<h2 id="how-it-works">How It Works</h2>
+
+<h3 id="catalog-architecture">Catalog Architecture</h3>
+
+<p>Extended statistics use a two-catalog design that separates definition from data:</p>
+
+<pre><code class="language-mermaid">flowchart LR
+    CREATE["CREATE STATISTICS s1\n(dependencies, mcv)\nON a, b FROM t"] --&gt; EXT["pg_statistic_ext\n- oid, stxrelid, stxname\n- stxkeys = {a, b}\n- stxkind = {'f','m'}"]
+
+    ANALYZE["ANALYZE t"] --&gt; BUILD["BuildRelationExtStatistics()"]
+    BUILD --&gt; DATA["pg_statistic_ext_data\n- stxoid -&gt; s1\n- stxddependencies (bytea)\n- stxdmcv (bytea)"]
+
+    PLANNER["Planner"] --&gt;|"reads"| EXT
+    PLANNER --&gt;|"reads"| DATA
+</code></pre>
+
+<p><code class="language-plaintext highlighter-rouge">pg_statistic_ext</code> stores:</p>
+<ul>
+  <li><code class="language-plaintext highlighter-rouge">stxrelid</code>: The table the statistics are defined on</li>
+  <li><code class="language-plaintext highlighter-rouge">stxkeys</code>: An <code class="language-plaintext highlighter-rouge">int2vector</code> of column attribute numbers</li>
+  <li><code class="language-plaintext highlighter-rouge">stxkind</code>: Array of kind characters (<code class="language-plaintext highlighter-rouge">'d'</code>, <code class="language-plaintext highlighter-rouge">'f'</code>, <code class="language-plaintext highlighter-rouge">'m'</code>, <code class="language-plaintext highlighter-rouge">'e'</code>)</li>
+  <li><code class="language-plaintext highlighter-rouge">stxexprs</code>: Expression trees for expression statistics</li>
+</ul>
+
+<p><code class="language-plaintext highlighter-rouge">pg_statistic_ext_data</code> stores:</p>
+<ul>
+  <li><code class="language-plaintext highlighter-rouge">stxoid</code>: References the definition in <code class="language-plaintext highlighter-rouge">pg_statistic_ext</code></li>
+  <li><code class="language-plaintext highlighter-rouge">stxdinherit</code>: Whether inheritance children are included</li>
+  <li><code class="language-plaintext highlighter-rouge">stxdndistinct</code>: Serialized <code class="language-plaintext highlighter-rouge">pg_ndistinct</code> blob</li>
+  <li><code class="language-plaintext highlighter-rouge">stxddependencies</code>: Serialized <code class="language-plaintext highlighter-rouge">pg_dependencies</code> blob</li>
+  <li><code class="language-plaintext highlighter-rouge">stxdmcv</code>: Serialized <code class="language-plaintext highlighter-rouge">pg_mcv_list</code> blob</li>
+  <li><code class="language-plaintext highlighter-rouge">stxdexpr</code>: Per-expression single-column statistics</li>
+</ul>
+
+<h3 id="functional-dependencies">Functional Dependencies</h3>
+
+<p>Functional dependencies capture relationships like “ZIP code determines city.” The degree of a dependency <code class="language-plaintext highlighter-rouge">(a =&gt; b)</code> ranges from 0.0 (no dependency) to 1.0 (perfect dependency).</p>
+
+<p><strong>Mining algorithm</strong> (during ANALYZE):</p>
+
+<ol>
+  <li>For each possible dependency <code class="language-plaintext highlighter-rouge">(X =&gt; Y)</code> where X is a subset of columns and Y is a single column not in X:</li>
+  <li>Sort the sampled data lexicographically by X, then Y.</li>
+  <li>For each group of rows sharing the same X values, check if Y has a single distinct value.</li>
+  <li>The degree = (rows consistent with the dependency) / (total rows).</li>
+</ol>
+
+<p><strong>Selectivity estimation</strong> (during planning):</p>
+
+<p>Given <code class="language-plaintext highlighter-rouge">WHERE a = 1 AND b = 2</code> with dependency <code class="language-plaintext highlighter-rouge">a =&gt; b</code> of degree <code class="language-plaintext highlighter-rouge">d</code>:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>P(a=1, b=2) = P(a=1) * (d + (1-d) * P(b=2))
+</code></pre></div></div>
+
+<p>When <code class="language-plaintext highlighter-rouge">d = 1.0</code> (perfect dependency), this simplifies to <code class="language-plaintext highlighter-rouge">P(a=1)</code> – knowing <code class="language-plaintext highlighter-rouge">a</code> fully determines <code class="language-plaintext highlighter-rouge">b</code>, so the <code class="language-plaintext highlighter-rouge">b</code> condition adds no additional filtering. When <code class="language-plaintext highlighter-rouge">d = 0.0</code>, it reduces to <code class="language-plaintext highlighter-rouge">P(a=1) * P(b=2)</code>, the independence assumption.</p>
+
+<p>For three or more columns, the formula applies recursively. Given <code class="language-plaintext highlighter-rouge">(a, b =&gt; c)</code> with degree <code class="language-plaintext highlighter-rouge">e</code>:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>P(a=1, b=2, c=3) = P(a=1, b=2) * (e + (1-e) * P(c=3))
+</code></pre></div></div>
+
+<p>Then <code class="language-plaintext highlighter-rouge">P(a=1, b=2)</code> is further decomposed using <code class="language-plaintext highlighter-rouge">(a =&gt; b)</code>.</p>
+
+<pre><code class="language-mermaid">flowchart TD
+    CLAUSE["WHERE zip=10001\nAND city='NYC'\nAND state='NY'"]
+    CLAUSE --&gt; FIND["Find best dependency stats\ncovering these columns"]
+    FIND --&gt; DEP1["zip, city =&gt; state\ndegree = 0.98"]
+    DEP1 --&gt; REDUCE1["P(zip,city,state) =\nP(zip,city) * (0.98 + 0.02*P(state))"]
+    REDUCE1 --&gt; DEP2["zip =&gt; city\ndegree = 0.95"]
+    DEP2 --&gt; REDUCE2["P(zip,city) =\nP(zip) * (0.95 + 0.05*P(city))"]
+</code></pre>
+
+<p><strong>Limitation</strong>: Dependencies only help with equality clauses combined with AND. They do not help with inequality conditions or OR clauses. They can also overestimate when the clause values are inconsistent with the dependency (e.g., a ZIP code paired with the wrong city).</p>
+
+<h3 id="multi-column-ndistinct">Multi-Column Ndistinct</h3>
+
+<p>Ndistinct coefficients track how many distinct value combinations exist across subsets of the specified columns. The planner uses these for GROUP BY cardinality estimation.</p>
+
+<p>For columns <code class="language-plaintext highlighter-rouge">(a, b, c)</code>, ndistinct stores coefficients for all 2+ column subsets: <code class="language-plaintext highlighter-rouge">{a,b}</code>, <code class="language-plaintext highlighter-rouge">{a,c}</code>, <code class="language-plaintext highlighter-rouge">{b,c}</code>, <code class="language-plaintext highlighter-rouge">{a,b,c}</code>. Each coefficient is a <code class="language-plaintext highlighter-rouge">double</code> representing the estimated number of distinct combinations.</p>
+
+<p>Without extended statistics, the planner estimates <code class="language-plaintext highlighter-rouge">SELECT COUNT(DISTINCT (a, b))</code> by multiplying the individual ndistinct values, which often massively overestimates. With ndistinct statistics, the planner uses the directly observed count.</p>
+
+<h3 id="multi-column-mcv-lists">Multi-Column MCV Lists</h3>
+
+<p>Multi-column MCV lists are the most powerful and most general form of extended statistics. They track the most frequent value combinations along with their actual frequencies and “base frequencies” (the frequency that would be expected under independence).</p>
+
+<p><strong>Build algorithm</strong>:</p>
+
+<ol>
+  <li>Sort sampled rows by all columns using <code class="language-plaintext highlighter-rouge">MultiSortSupport</code>.</li>
+  <li>Count frequency of each unique combination.</li>
+  <li>Keep the top <code class="language-plaintext highlighter-rouge">statistics_target</code> combinations that appear more than once.</li>
+  <li>For each kept combination, compute the base frequency as the product of individual column frequencies (the independence assumption).</li>
+  <li>Serialize using a deduplicated format to minimize storage.</li>
+</ol>
+
+<p><strong>Selectivity estimation</strong>:</p>
+
+<p>For a clause list, <code class="language-plaintext highlighter-rouge">mcv_clauselist_selectivity()</code>:</p>
+
+<ol>
+  <li>Iterate over all MCV items.</li>
+  <li>For each item, evaluate whether it matches all clauses.</li>
+  <li>Sum the frequencies of matching items (<code class="language-plaintext highlighter-rouge">mcv_sel</code>).</li>
+  <li>Sum the base frequencies of matching items (<code class="language-plaintext highlighter-rouge">mcv_basesel</code>).</li>
+  <li>Compute the “total” MCV coverage (<code class="language-plaintext highlighter-rouge">mcv_totalsel</code>) and base coverage.</li>
+  <li>Combine with the simple (independence-based) selectivity for non-MCV values:</li>
+</ol>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>final_sel = mcv_sel + (simple_sel - mcv_basesel) * correction_factor
+</code></pre></div></div>
+
+<p>This approach handles the full range of clause types: equality, inequality, IS NULL, IS NOT NULL, and OR combinations.</p>
+
+<pre><code class="language-mermaid">flowchart TD
+    CLAUSE["WHERE status='active'\nAND region='US'"] --&gt; LOAD["Load MCV list for\n(status, region)"]
+    LOAD --&gt; SCAN["Scan all MCV items"]
+    SCAN --&gt; MATCH{"Item matches\nboth clauses?"}
+    MATCH --&gt;|"Yes"| SUM_MCV["Add to mcv_sel\nand mcv_basesel"]
+    MATCH --&gt;|"No"| SKIP["Skip"]
+    SUM_MCV --&gt; NEXT["Next item"]
+    SKIP --&gt; NEXT
+    NEXT --&gt; DONE{"All items\nprocessed?"}
+    DONE --&gt;|"No"| MATCH
+    DONE --&gt;|"Yes"| COMBINE["Combine mcv_sel with\nsimple_sel for non-MCV tail"]
+    COMBINE --&gt; RESULT["Final selectivity"]
+</code></pre>
+
+<h3 id="expression-statistics">Expression Statistics</h3>
+
+<p>Added in PostgreSQL 14, expression statistics let you collect single-column-style statistics (MCV, histogram, ndistinct) on arbitrary expressions:</p>
+
+<div class="language-sql highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">CREATE</span> <span class="k">STATISTICS</span> <span class="n">s_expr</span> <span class="k">ON</span> <span class="p">(</span><span class="n">a</span> <span class="o">+</span> <span class="n">b</span><span class="p">),</span> <span class="p">(</span><span class="k">lower</span><span class="p">(</span><span class="n">name</span><span class="p">))</span> <span class="k">FROM</span> <span class="n">t</span><span class="p">;</span>
+</code></pre></div></div>
+
+<p>After ANALYZE, the <code class="language-plaintext highlighter-rouge">stxdexpr</code> field stores per-expression statistics in the same format as <code class="language-plaintext highlighter-rouge">pg_statistic</code> rows. The planner can then estimate conditions like <code class="language-plaintext highlighter-rouge">WHERE a + b = 10</code> or <code class="language-plaintext highlighter-rouge">WHERE lower(name) = 'smith'</code> accurately.</p>
+
+<hr />
+
+<h2 id="key-data-structures">Key Data Structures</h2>
+
+<h3 id="mvndistinct">MVNDistinct</h3>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">typedef</span> <span class="k">struct</span> <span class="n">MVNDistinctItem</span> <span class="p">{</span>
+    <span class="kt">double</span>      <span class="n">ndistinct</span><span class="p">;</span>      <span class="cm">/* distinct count for this combination */</span>
+    <span class="kt">int</span>         <span class="n">nattributes</span><span class="p">;</span>    <span class="cm">/* number of columns */</span>
+    <span class="n">AttrNumber</span> <span class="o">*</span><span class="n">attributes</span><span class="p">;</span>     <span class="cm">/* column attribute numbers */</span>
+<span class="p">}</span> <span class="n">MVNDistinctItem</span><span class="p">;</span>
+
+<span class="k">typedef</span> <span class="k">struct</span> <span class="n">MVNDistinct</span> <span class="p">{</span>
+    <span class="n">uint32</span>      <span class="n">magic</span><span class="p">;</span>          <span class="cm">/* STATS_NDISTINCT_MAGIC (0xA352BFA4) */</span>
+    <span class="n">uint32</span>      <span class="n">type</span><span class="p">;</span>           <span class="cm">/* STATS_NDISTINCT_TYPE_BASIC */</span>
+    <span class="n">uint32</span>      <span class="n">nitems</span><span class="p">;</span>         <span class="cm">/* number of column combinations */</span>
+    <span class="n">MVNDistinctItem</span> <span class="n">items</span><span class="p">[</span><span class="n">FLEXIBLE_ARRAY_MEMBER</span><span class="p">];</span>
+<span class="p">}</span> <span class="n">MVNDistinct</span><span class="p">;</span>
+</code></pre></div></div>
+
+<h3 id="mvdependencies">MVDependencies</h3>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">typedef</span> <span class="k">struct</span> <span class="n">MVDependency</span> <span class="p">{</span>
+    <span class="kt">double</span>      <span class="n">degree</span><span class="p">;</span>         <span class="cm">/* validity degree: 0.0 to 1.0 */</span>
+    <span class="n">AttrNumber</span>  <span class="n">nattributes</span><span class="p">;</span>    <span class="cm">/* number of attributes */</span>
+    <span class="n">AttrNumber</span>  <span class="n">attributes</span><span class="p">[</span><span class="n">FLEXIBLE_ARRAY_MEMBER</span><span class="p">];</span>
+    <span class="cm">/* Last attribute is the "dependent" column */</span>
+<span class="p">}</span> <span class="n">MVDependency</span><span class="p">;</span>
+
+<span class="k">typedef</span> <span class="k">struct</span> <span class="n">MVDependencies</span> <span class="p">{</span>
+    <span class="n">uint32</span>      <span class="n">magic</span><span class="p">;</span>          <span class="cm">/* STATS_DEPS_MAGIC (0xB4549A2C) */</span>
+    <span class="n">uint32</span>      <span class="n">type</span><span class="p">;</span>           <span class="cm">/* STATS_DEPS_TYPE_BASIC */</span>
+    <span class="n">uint32</span>      <span class="n">ndeps</span><span class="p">;</span>          <span class="cm">/* number of dependencies */</span>
+    <span class="n">MVDependency</span> <span class="o">*</span><span class="n">deps</span><span class="p">[</span><span class="n">FLEXIBLE_ARRAY_MEMBER</span><span class="p">];</span>
+<span class="p">}</span> <span class="n">MVDependencies</span><span class="p">;</span>
+</code></pre></div></div>
+
+<h3 id="mcvlist-and-mcvitem">MCVList and MCVItem</h3>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">typedef</span> <span class="k">struct</span> <span class="n">MCVItem</span> <span class="p">{</span>
+    <span class="kt">double</span>      <span class="n">frequency</span><span class="p">;</span>      <span class="cm">/* actual observed frequency */</span>
+    <span class="kt">double</span>      <span class="n">base_frequency</span><span class="p">;</span> <span class="cm">/* expected frequency under independence */</span>
+    <span class="n">bool</span>       <span class="o">*</span><span class="n">isnull</span><span class="p">;</span>         <span class="cm">/* NULL flags per dimension */</span>
+    <span class="n">Datum</span>      <span class="o">*</span><span class="n">values</span><span class="p">;</span>         <span class="cm">/* values per dimension */</span>
+<span class="p">}</span> <span class="n">MCVItem</span><span class="p">;</span>
+
+<span class="k">typedef</span> <span class="k">struct</span> <span class="n">MCVList</span> <span class="p">{</span>
+    <span class="n">uint32</span>      <span class="n">magic</span><span class="p">;</span>          <span class="cm">/* STATS_MCV_MAGIC (0xE1A651C2) */</span>
+    <span class="n">uint32</span>      <span class="n">type</span><span class="p">;</span>           <span class="cm">/* STATS_MCV_TYPE_BASIC */</span>
+    <span class="n">uint32</span>      <span class="n">nitems</span><span class="p">;</span>         <span class="cm">/* number of MCV items */</span>
+    <span class="n">AttrNumber</span>  <span class="n">ndimensions</span><span class="p">;</span>    <span class="cm">/* number of columns */</span>
+    <span class="n">Oid</span>         <span class="n">types</span><span class="p">[</span><span class="n">STATS_MAX_DIMENSIONS</span><span class="p">];</span> <span class="cm">/* column type OIDs */</span>
+    <span class="n">MCVItem</span>     <span class="n">items</span><span class="p">[</span><span class="n">FLEXIBLE_ARRAY_MEMBER</span><span class="p">];</span>
+<span class="p">}</span> <span class="n">MCVList</span><span class="p">;</span>
+</code></pre></div></div>
+
+<p><code class="language-plaintext highlighter-rouge">STATS_MAX_DIMENSIONS</code> is 8, limiting extended statistics to at most 8 columns.</p>
+
+<h3 id="statsbuilddata">StatsBuildData</h3>
+
+<p>The unified working structure passed to all extended statistics build functions:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">typedef</span> <span class="k">struct</span> <span class="n">StatsBuildData</span> <span class="p">{</span>
+    <span class="kt">int</span>         <span class="n">numrows</span><span class="p">;</span>        <span class="cm">/* sample size */</span>
+    <span class="kt">int</span>         <span class="n">nattnums</span><span class="p">;</span>       <span class="cm">/* number of columns */</span>
+    <span class="n">AttrNumber</span> <span class="o">*</span><span class="n">attnums</span><span class="p">;</span>        <span class="cm">/* column numbers */</span>
+    <span class="n">VacAttrStats</span> <span class="o">**</span><span class="n">stats</span><span class="p">;</span>       <span class="cm">/* per-column stats info */</span>
+    <span class="n">Datum</span>     <span class="o">**</span><span class="n">values</span><span class="p">;</span>         <span class="cm">/* values[col][row] */</span>
+    <span class="n">bool</span>      <span class="o">**</span><span class="n">nulls</span><span class="p">;</span>          <span class="cm">/* nulls[col][row] */</span>
+<span class="p">}</span> <span class="n">StatsBuildData</span><span class="p">;</span>
+</code></pre></div></div>
+
+<hr />
+
+<h2 id="the-build-orchestration">The Build Orchestration</h2>
+
+<p><code class="language-plaintext highlighter-rouge">BuildRelationExtStatistics()</code> in <code class="language-plaintext highlighter-rouge">extended_stats.c</code> is called from ANALYZE after single-column statistics are computed:</p>
+
+<pre><code class="language-mermaid">flowchart TD
+    ENTRY["BuildRelationExtStatistics()"] --&gt; SCAN["Scan pg_statistic_ext\nfor this relation"]
+    SCAN --&gt; FOREACH["For each statistics object ..."]
+    FOREACH --&gt; PREP["Build StatsBuildData\nfrom sampled rows"]
+    PREP --&gt; CHECK_D{"ndistinct\nrequested?"}
+    CHECK_D --&gt;|"Yes"| BUILD_D["statext_ndistinct_build()"]
+    CHECK_D --&gt;|"No"| CHECK_F
+    BUILD_D --&gt; CHECK_F{"dependencies\nrequested?"}
+    CHECK_F --&gt;|"Yes"| BUILD_F["statext_dependencies_build()"]
+    CHECK_F --&gt;|"No"| CHECK_M
+    BUILD_F --&gt; CHECK_M{"MCV\nrequested?"}
+    CHECK_M --&gt;|"Yes"| BUILD_M["statext_mcv_build()"]
+    CHECK_M --&gt;|"No"| CHECK_E
+    BUILD_M --&gt; CHECK_E{"expressions\nrequested?"}
+    CHECK_E --&gt;|"Yes"| BUILD_E["Build per-expression stats"]
+    CHECK_E --&gt;|"No"| STORE
+    BUILD_E --&gt; STORE["Serialize and store in\npg_statistic_ext_data"]
+    STORE --&gt; FOREACH
+</code></pre>
+
+<p>Each build function serializes its result to <code class="language-plaintext highlighter-rouge">bytea</code> for storage. The serialization uses custom binary formats with magic numbers for integrity checking during deserialization.</p>
+
+<hr />
+
+<h2 id="planner-integration">Planner Integration</h2>
+
+<p>The planner integration lives in <code class="language-plaintext highlighter-rouge">statext_clauselist_selectivity()</code>, called from <code class="language-plaintext highlighter-rouge">clauselist_selectivity()</code> when extended statistics exist for a relation:</p>
+
+<ol>
+  <li><strong>MCV check first</strong>: If any MCV statistics cover the clause columns, apply <code class="language-plaintext highlighter-rouge">mcv_clauselist_selectivity()</code>. This handles equality, inequality, NULL checks, and OR clauses.</li>
+  <li><strong>Dependencies fallback</strong>: For equality-only AND clauses not fully covered by MCV, try <code class="language-plaintext highlighter-rouge">dependencies_clauselist_selectivity()</code>.</li>
+  <li><strong>Clause marking</strong>: Each function marks which clauses it has estimated via a <code class="language-plaintext highlighter-rouge">Bitmapset</code>. Remaining clauses fall through to standard single-column estimation.</li>
+</ol>
+
+<p>The <code class="language-plaintext highlighter-rouge">choose_best_statistics()</code> function selects which statistics object to use when multiple objects cover overlapping column sets, preferring the one that covers the most clauses.</p>
+
+<hr />
+
+<h2 id="inspecting-extended-statistics">Inspecting Extended Statistics</h2>
+
+<div class="language-sql highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="c1">-- View defined statistics objects</span>
+<span class="k">SELECT</span> <span class="n">stxname</span><span class="p">,</span> <span class="n">stxkeys</span><span class="p">,</span> <span class="n">stxkind</span>
+<span class="k">FROM</span> <span class="n">pg_statistic_ext</span>
+<span class="k">WHERE</span> <span class="n">stxrelid</span> <span class="o">=</span> <span class="s1">'addresses'</span><span class="p">::</span><span class="n">regclass</span><span class="p">;</span>
+
+<span class="c1">-- Inspect MCV list contents</span>
+<span class="k">SELECT</span> <span class="n">m</span><span class="p">.</span><span class="o">*</span>
+<span class="k">FROM</span> <span class="n">pg_statistic_ext</span> <span class="n">s</span>
+<span class="k">JOIN</span> <span class="n">pg_statistic_ext_data</span> <span class="n">d</span> <span class="k">ON</span> <span class="n">d</span><span class="p">.</span><span class="n">stxoid</span> <span class="o">=</span> <span class="n">s</span><span class="p">.</span><span class="n">oid</span>
+<span class="k">CROSS</span> <span class="k">JOIN</span> <span class="k">LATERAL</span> <span class="n">pg_mcv_list_items</span><span class="p">(</span><span class="n">d</span><span class="p">.</span><span class="n">stxdmcv</span><span class="p">)</span> <span class="n">m</span>
+<span class="k">WHERE</span> <span class="n">s</span><span class="p">.</span><span class="n">stxname</span> <span class="o">=</span> <span class="s1">'s_city_state'</span>
+<span class="k">ORDER</span> <span class="k">BY</span> <span class="n">m</span><span class="p">.</span><span class="n">frequency</span> <span class="k">DESC</span>
+<span class="k">LIMIT</span> <span class="mi">10</span><span class="p">;</span>
+
+<span class="c1">-- Inspect ndistinct values</span>
+<span class="k">SELECT</span> <span class="n">stxdndistinct</span>
+<span class="k">FROM</span> <span class="n">pg_statistic_ext_data</span> <span class="n">d</span>
+<span class="k">JOIN</span> <span class="n">pg_statistic_ext</span> <span class="n">s</span> <span class="k">ON</span> <span class="n">s</span><span class="p">.</span><span class="n">oid</span> <span class="o">=</span> <span class="n">d</span><span class="p">.</span><span class="n">stxoid</span>
+<span class="k">WHERE</span> <span class="n">s</span><span class="p">.</span><span class="n">stxname</span> <span class="o">=</span> <span class="s1">'s_city_state'</span><span class="p">;</span>
+</code></pre></div></div>
+
+<hr />
+
+<h2 id="connections-to-other-chapters">Connections to Other Chapters</h2>
+
+<ul>
+  <li><strong>Chapter 7 (Query Planner)</strong>: Extended statistics plug directly into <code class="language-plaintext highlighter-rouge">clauselist_selectivity()</code>, the central selectivity estimation function. Without them, the planner relies on the independence assumption.</li>
+  <li><strong>Chapter 13 (pg_statistic)</strong>: Extended statistics reuse the same ANALYZE sampling infrastructure and complement single-column statistics rather than replacing them.</li>
+  <li><strong>Chapter 8 (VACUUM)</strong>: Autovacuum-triggered ANALYZE builds extended statistics alongside single-column statistics. There is no separate mechanism to trigger extended stats computation.</li>
+  <li><strong>Chapter 3 (Transactions)</strong>: Extended statistics data in <code class="language-plaintext highlighter-rouge">pg_statistic_ext_data</code> is a regular catalog table subject to MVCC. Concurrent ANALYZE runs are serialized by locking the statistics object.</li>
+</ul>
+
+
+      <hr>
+
+      <!-- Prev / Next / Up navigation -->
+      
+      
+      
+
+      <div class="clearfix" style="margin-top: 2rem;">
+        
+          
+          
+
+          
+            
+            <a class="btn btn-primary float-left" href="/postgresql/13-statistics/activity-monitoring.html" title="Activity Monitoring">&larr; Previous</a>
+          
+
+          
+            
+            <a class="btn btn-primary float-right" href="/postgresql/13-statistics/pg-statistic.html" title="pg_statistic and Single-Column Statistics">Next &rarr;</a>
+          
+        
+      </div>
+
+      
+      <div style="text-align: center; margin-top: 1rem;">
+        <a href="/postgresql-internals/">&uarr; Back to Table of Contents</a>
+      </div>
+      
+
+    </div>
+  </div>
+</div>
+
+
+  <!-- Footer -->
+
+<hr>
+
+<footer>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <ul class="list-inline text-center">
+          
+          <li class="list-inline-item">
+            <a href="mailto:amitava.dev@proton.me" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="far fa-envelope fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          
+          
+          <li class="list-inline-item">
+            <a href="https://www.linkedin.com/in/amitavaag" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-linkedin fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          <li class="list-inline-item">
+            <a href="https://github.com/ikouchiha47" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-github fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+        </ul>
+
+        <p class="copyright text-muted">
+          Build with: 
+          <a 
+            href="https://github.com/StartBootstrap/startbootstrap-clean-blog-jekyll"
+            class="text-gray"
+            target="_blank">startbootstrap-clean-blog-jekyll</a></p>
+      </div>
+    </div>
+  </div>
+</footer>
+
+
+  <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="/assets/vendor/blog/js/scripts.js"></script>
+
+<script src="/assets/scripts.js"></script>
+
+
+
+
+
+  <script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+
+    document.querySelectorAll('pre > code.language-mermaid').forEach((codeBlock) => {
+      codeBlock.parentElement.outerHTML = `<pre class="mermaid">${codeBlock.textContent}</pre>`;
+    });
+
+
+    mermaid.initialize({ startOnLoad: true, theme: 'forest' });
+</script>
+
+
+  
+
+</body>
+
+</html>

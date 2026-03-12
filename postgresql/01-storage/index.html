@@ -1,0 +1,424 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+  <title>
+    Storage Engine - iko&#39;s logs
+    
+  </title>
+
+  <meta name="description" content="">
+  <meta property="og:description" content="">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Storage Engine">
+  <meta property="og:url" content="https://ikouchiha47.github.io/postgresql/01-storage/">
+
+  
+
+  <link href='https://fonts.googleapis.com/css?family=Lora:400,700,400italic,700italic' rel='stylesheet' type='text/css'>
+  <link href='https://fonts.googleapis.com/css?family=Open+Sans:300italic,400italic,600italic,700italic,800italic,400,300,600,700,800' rel='stylesheet' type='text/css'>
+
+  <!-- <script src="https://use.fontawesome.com/releases/v5.15.3/js/all.js" crossorigin="anonymous"></script> -->
+  <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.15.4/css/all.css" integrity="sha384-DyZ88mC6Up2uqS4h/KRgHuoeGwBcD4Ng9SiP4dIRy0EXTlnuz47vAwmeGwVChigm" crossorigin="anonymous"/>
+
+  <link rel="stylesheet" href="/assets/main.css">
+  <link rel="canonical" href="https://ikouchiha47.github.io/postgresql/01-storage/">
+  <link rel="alternate" type="application/rss+xml" title="iko&#39;s logs" href="/feed.xml">
+
+  <meta name="google-site-verification" content="lWkg6gIxJgzEKX_5XnhcxCtPE9QknaimFWWos_dTvPM" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fira+Sans:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Inconsolata:wght@200..900&family=Jersey+25&family=Kanit:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Merriweather+Sans:ital,wght@0,300..800;1,300..800&family=Nanum+Gothic+Coding&family=Space+Grotesk:wght@300..700&family=Titillium+Web:ital,wght@0,200;0,300;0,400;0,600;0,700;0,900;1,200;1,300;1,400;1,600;1,700&display=swap" rel="stylesheet">
+
+</head>
+
+
+<body>
+
+  <!-- Navigation -->
+<nav class="navbar navbar-expand-lg navbar-light fixed-top" id="mainNav">
+  <div class="container">
+    <a class="navbar-brand" href="/">iko&#39;s logs</a>
+    <button class="navbar-toggler navbar-toggler-right" type="button" data-toggle="collapse" data-target="#navbarResponsive" aria-controls="navbarResponsive" aria-expanded="false" aria-label="Toggle navigation">
+      Menu
+      <i class="fa fa-bars"></i>
+    </button>
+    <div class="collapse navbar-collapse" id="navbarResponsive">
+      <ul class="navbar-nav ml-auto">
+        <li class="nav-item">
+          <a class="nav-link" href="/">Home</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/about">About</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/posts">Posts</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/contact">Contact</a>
+        </li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+
+  <!-- Page Header -->
+
+<header class="masthead">
+
+  <div class="overlay"></div>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <div class="post-heading">
+          <h1>Storage Engine</h1>
+          
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="container space-grotesk">
+  <div class="row">
+    <div class="col-lg-8 col-md-10 mx-auto">
+
+      <!-- Breadcrumb -->
+      <nav aria-label="breadcrumb" style="margin-bottom: 1.5rem;">
+        <ol class="breadcrumb" style="background: transparent; padding: 0;">
+          
+            <li class="breadcrumb-item"><a href="/postgresql-internals/">PostgreSQL Internals Deep Dive</a></li>
+          
+          
+          <li class="breadcrumb-item active" aria-current="page">Storage Engine</li>
+        </ol>
+      </nav>
+
+      <h1 id="chapter-1-storage-engine">Chapter 1: Storage Engine</h1>
+
+<p>PostgreSQL’s storage engine translates logical tables and indexes into physical bytes on disk, managing the full lifecycle of data from write to read through a layered architecture of pages, buffers, and file abstractions.</p>
+
+<h2 id="overview">Overview</h2>
+
+<p>Every relation in PostgreSQL – whether a heap table, B-tree index, or TOAST table – is physically stored as a collection of <strong>8 KB pages</strong> in one or more <strong>forks</strong> (main data, free space map, visibility map, init). The <strong>storage manager</strong> (smgr) provides a uniform interface for reading and writing these pages, while the <strong>magnetic disk</strong> (md) layer underneath handles the details of splitting large relations into 1 GB segment files.</p>
+
+<p>Between the on-disk pages and the executor sits the <strong>shared buffer pool</strong>, a fixed-size cache in shared memory. The <strong>buffer manager</strong> uses a clock-sweep eviction algorithm to decide which pages stay resident. Every page modification flows through the buffer pool, and the WAL (write-ahead log) protocol ensures durability: a dirty buffer cannot be flushed to disk until its WAL record has been written.</p>
+
+<p>Two auxiliary per-relation structures accelerate common operations:</p>
+<ul>
+  <li>The <strong>Free Space Map</strong> (FSM) tracks available space in each heap page so that INSERT can quickly find room without scanning.</li>
+  <li>The <strong>Visibility Map</strong> (VM) tracks which pages contain only tuples visible to all transactions, enabling VACUUM to skip clean pages and enabling <strong>index-only scans</strong> to avoid heap fetches entirely.</li>
+</ul>
+
+<p>PostgreSQL 17+ introduces an <strong>asynchronous I/O</strong> (AIO) framework with pluggable methods (synchronous fallback, worker processes, and io_uring on Linux). The <strong>read stream</strong> abstraction builds on AIO to provide look-ahead prefetching for sequential and index scans.</p>
+
+<h2 id="architecture-diagram">Architecture Diagram</h2>
+
+<pre><code class="language-mermaid">graph TD
+    subgraph "Backend Process"
+        EX[Executor] --&gt; AM[Access Method&lt;br/&gt;heapam / indexam]
+        AM --&gt; BM[Buffer Manager]
+    end
+
+    subgraph "Shared Memory"
+        BM --&gt; BP["Shared Buffer Pool&lt;br/&gt;(shared_buffers)"]
+        BP --&gt; BT[Buffer Hash Table]
+        BP --&gt; BD[BufferDesc Array]
+        BD --&gt; CS[Clock-Sweep Freelist]
+    end
+
+    subgraph "Storage Manager Layer"
+        BM --&gt; SMGR[smgr.c&lt;br/&gt;SMgrRelationData]
+        SMGR --&gt; MD["md.c&lt;br/&gt;Magnetic Disk"]
+    end
+
+    subgraph "Relation Forks on Disk"
+        MD --&gt; MAIN["Main Fork&lt;br/&gt;(heap/index pages)"]
+        MD --&gt; FSM["FSM Fork&lt;br/&gt;(free space map)"]
+        MD --&gt; VM["VM Fork&lt;br/&gt;(visibility map)"]
+        MD --&gt; INIT["Init Fork&lt;br/&gt;(unlogged rels)"]
+    end
+
+    subgraph "Async I/O Layer"
+        BM --&gt; AIO[AIO Subsystem]
+        AIO --&gt; RS[Read Stream]
+        AIO --&gt; SYNC[method_sync.c]
+        AIO --&gt; WORKER[method_worker.c]
+        AIO --&gt; URING[method_io_uring.c]
+    end
+
+    style BP fill:#e1f5fe
+    style AIO fill:#fff3e0
+</code></pre>
+
+<h2 id="key-source-files">Key Source Files</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>Component</th>
+      <th>Header</th>
+      <th>Implementation</th>
+      <th>README</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Page Layout</td>
+      <td><code class="language-plaintext highlighter-rouge">src/include/storage/bufpage.h</code></td>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/storage/page/bufpage.c</code></td>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/storage/page/README</code></td>
+    </tr>
+    <tr>
+      <td>Item Pointers</td>
+      <td><code class="language-plaintext highlighter-rouge">src/include/storage/itemid.h</code></td>
+      <td>–</td>
+      <td>–</td>
+    </tr>
+    <tr>
+      <td>Heap Tuple Header</td>
+      <td><code class="language-plaintext highlighter-rouge">src/include/access/htup_details.h</code></td>
+      <td>–</td>
+      <td>–</td>
+    </tr>
+    <tr>
+      <td>Buffer Manager</td>
+      <td><code class="language-plaintext highlighter-rouge">src/include/storage/bufmgr.h</code></td>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/storage/buffer/bufmgr.c</code></td>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/storage/buffer/README</code></td>
+    </tr>
+    <tr>
+      <td>Buffer Internals</td>
+      <td><code class="language-plaintext highlighter-rouge">src/include/storage/buf_internals.h</code></td>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/storage/buffer/freelist.c</code></td>
+      <td>–</td>
+    </tr>
+    <tr>
+      <td>Storage Manager</td>
+      <td><code class="language-plaintext highlighter-rouge">src/include/storage/smgr.h</code></td>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/storage/smgr/smgr.c</code></td>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/storage/smgr/README</code></td>
+    </tr>
+    <tr>
+      <td>Magnetic Disk</td>
+      <td><code class="language-plaintext highlighter-rouge">src/include/storage/md.h</code></td>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/storage/smgr/md.c</code></td>
+      <td>–</td>
+    </tr>
+    <tr>
+      <td>Fork Numbers</td>
+      <td><code class="language-plaintext highlighter-rouge">src/include/common/relpath.h</code></td>
+      <td><code class="language-plaintext highlighter-rouge">src/common/relpath.c</code></td>
+      <td>–</td>
+    </tr>
+    <tr>
+      <td>Free Space Map</td>
+      <td><code class="language-plaintext highlighter-rouge">src/include/storage/fsm_internals.h</code></td>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/storage/freespace/freespace.c</code></td>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/storage/freespace/README</code></td>
+    </tr>
+    <tr>
+      <td>Visibility Map</td>
+      <td><code class="language-plaintext highlighter-rouge">src/include/access/visibilitymap.h</code></td>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/access/heap/visibilitymap.c</code></td>
+      <td>–</td>
+    </tr>
+    <tr>
+      <td>AIO Framework</td>
+      <td><code class="language-plaintext highlighter-rouge">src/include/storage/aio.h</code></td>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/storage/aio/aio.c</code></td>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/storage/aio/README.md</code></td>
+    </tr>
+    <tr>
+      <td>Read Streams</td>
+      <td><code class="language-plaintext highlighter-rouge">src/include/storage/read_stream.h</code></td>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/storage/aio/read_stream.c</code></td>
+      <td>–</td>
+    </tr>
+  </tbody>
+</table>
+
+<h2 id="how-the-layers-connect">How the Layers Connect</h2>
+
+<ol>
+  <li><strong>Executor</strong> calls an access method (e.g., <code class="language-plaintext highlighter-rouge">heap_fetch</code>) which calls <code class="language-plaintext highlighter-rouge">ReadBuffer()</code>.</li>
+  <li><strong>Buffer Manager</strong> hashes the <code class="language-plaintext highlighter-rouge">(tablespace, database, relfilenode, fork, block)</code> tag to check the shared buffer hash table.</li>
+  <li>On a <strong>cache miss</strong>, the buffer manager evicts a victim via clock-sweep, then calls <code class="language-plaintext highlighter-rouge">smgrread()</code> to load the page from disk.</li>
+  <li><strong>smgr</strong> dispatches to <strong>md.c</strong>, which translates the block number into a segment file offset and issues a <code class="language-plaintext highlighter-rouge">pread()</code> (or an async read via the AIO layer).</li>
+  <li>The returned 8 KB page is placed in shared memory, and the backend receives a <code class="language-plaintext highlighter-rouge">Buffer</code> handle (a small integer index).</li>
+  <li>The access method interprets the page using <code class="language-plaintext highlighter-rouge">PageHeaderData</code>, <code class="language-plaintext highlighter-rouge">ItemIdData</code> line pointers, and <code class="language-plaintext highlighter-rouge">HeapTupleHeaderData</code>.</li>
+  <li>When a tuple is inserted, the <strong>FSM</strong> is consulted to find a page with enough free space. After VACUUM, the <strong>VM</strong> is updated to mark all-visible pages.</li>
+</ol>
+
+<h2 id="sections-in-this-chapter">Sections in This Chapter</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>Section</th>
+      <th>Description</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><a href="page-layout">Page Layout</a></td>
+      <td>The 8 KB page format, line pointers, and tuple headers</td>
+    </tr>
+    <tr>
+      <td><a href="buffer-manager">Buffer Manager</a></td>
+      <td>Shared buffer pool, clock-sweep, ring buffers</td>
+    </tr>
+    <tr>
+      <td><a href="smgr-and-forks">smgr and Forks</a></td>
+      <td>Storage manager abstraction and relation forks</td>
+    </tr>
+    <tr>
+      <td><a href="freespace-map">Free Space Map</a></td>
+      <td>FSM binary tree structure for space tracking</td>
+    </tr>
+    <tr>
+      <td><a href="visibility-map">Visibility Map</a></td>
+      <td>VM bits, index-only scans, and VACUUM optimization</td>
+    </tr>
+    <tr>
+      <td><a href="aio">Async I/O</a></td>
+      <td>The new AIO framework, io_uring, and read streams</td>
+    </tr>
+  </tbody>
+</table>
+
+<h2 id="connections-to-other-chapters">Connections to Other Chapters</h2>
+
+<ul>
+  <li><strong>Chapter 2: WAL and Recovery</strong> – The buffer manager enforces the WAL protocol via <code class="language-plaintext highlighter-rouge">pd_lsn</code>. Dirty pages cannot be flushed until their WAL records are on disk.</li>
+  <li><strong>Chapter 3: MVCC and Snapshots</strong> – <code class="language-plaintext highlighter-rouge">HeapTupleHeaderData</code> fields (<code class="language-plaintext highlighter-rouge">t_xmin</code>, <code class="language-plaintext highlighter-rouge">t_xmax</code>, <code class="language-plaintext highlighter-rouge">t_infomask</code>) drive visibility decisions.</li>
+  <li><strong>Chapter 4: VACUUM</strong> – VACUUM updates the FSM and VM, and relies on the page layout to identify dead tuples.</li>
+  <li><strong>Chapter 5: Indexes</strong> – B-tree and other index types use the same page format with a different “special space” trailer.</li>
+  <li><strong>Chapter 6: TOAST</strong> – Oversized attributes are stored out-of-line, but the TOAST table itself uses the same storage engine.</li>
+</ul>
+
+
+      <hr>
+
+      <!-- Prev / Next / Up navigation -->
+      
+      
+      
+
+      <div class="clearfix" style="margin-top: 2rem;">
+        
+          
+          
+
+          
+            
+            <a class="btn btn-primary float-left" href="/postgresql/00-architecture/query-lifecycle.html" title="Query Lifecycle">&larr; Previous</a>
+          
+
+          
+            
+            <a class="btn btn-primary float-right" href="/postgresql/01-storage/aio.html" title="Async I/O">Next &rarr;</a>
+          
+        
+      </div>
+
+      
+      <div style="text-align: center; margin-top: 1rem;">
+        <a href="/postgresql-internals/">&uarr; Back to Table of Contents</a>
+      </div>
+      
+
+    </div>
+  </div>
+</div>
+
+
+  <!-- Footer -->
+
+<hr>
+
+<footer>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <ul class="list-inline text-center">
+          
+          <li class="list-inline-item">
+            <a href="mailto:amitava.dev@proton.me" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="far fa-envelope fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          
+          
+          <li class="list-inline-item">
+            <a href="https://www.linkedin.com/in/amitavaag" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-linkedin fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          <li class="list-inline-item">
+            <a href="https://github.com/ikouchiha47" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-github fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+        </ul>
+
+        <p class="copyright text-muted">
+          Build with: 
+          <a 
+            href="https://github.com/StartBootstrap/startbootstrap-clean-blog-jekyll"
+            class="text-gray"
+            target="_blank">startbootstrap-clean-blog-jekyll</a></p>
+      </div>
+    </div>
+  </div>
+</footer>
+
+
+  <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="/assets/vendor/blog/js/scripts.js"></script>
+
+<script src="/assets/scripts.js"></script>
+
+
+
+
+
+  <script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+
+    document.querySelectorAll('pre > code.language-mermaid').forEach((codeBlock) => {
+      codeBlock.parentElement.outerHTML = `<pre class="mermaid">${codeBlock.textContent}</pre>`;
+    });
+
+
+    mermaid.initialize({ startOnLoad: true, theme: 'forest' });
+</script>
+
+
+  
+
+</body>
+
+</html>

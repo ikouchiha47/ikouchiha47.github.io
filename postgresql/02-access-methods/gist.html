@@ -1,0 +1,582 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+  <title>
+    GiST Index - iko&#39;s logs
+    
+  </title>
+
+  <meta name="description" content="">
+  <meta property="og:description" content="">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="GiST Index">
+  <meta property="og:url" content="https://ikouchiha47.github.io/postgresql/02-access-methods/gist.html">
+
+  
+
+  <link href='https://fonts.googleapis.com/css?family=Lora:400,700,400italic,700italic' rel='stylesheet' type='text/css'>
+  <link href='https://fonts.googleapis.com/css?family=Open+Sans:300italic,400italic,600italic,700italic,800italic,400,300,600,700,800' rel='stylesheet' type='text/css'>
+
+  <!-- <script src="https://use.fontawesome.com/releases/v5.15.3/js/all.js" crossorigin="anonymous"></script> -->
+  <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.15.4/css/all.css" integrity="sha384-DyZ88mC6Up2uqS4h/KRgHuoeGwBcD4Ng9SiP4dIRy0EXTlnuz47vAwmeGwVChigm" crossorigin="anonymous"/>
+
+  <link rel="stylesheet" href="/assets/main.css">
+  <link rel="canonical" href="https://ikouchiha47.github.io/postgresql/02-access-methods/gist.html">
+  <link rel="alternate" type="application/rss+xml" title="iko&#39;s logs" href="/feed.xml">
+
+  <meta name="google-site-verification" content="lWkg6gIxJgzEKX_5XnhcxCtPE9QknaimFWWos_dTvPM" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fira+Sans:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Inconsolata:wght@200..900&family=Jersey+25&family=Kanit:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Merriweather+Sans:ital,wght@0,300..800;1,300..800&family=Nanum+Gothic+Coding&family=Space+Grotesk:wght@300..700&family=Titillium+Web:ital,wght@0,200;0,300;0,400;0,600;0,700;0,900;1,200;1,300;1,400;1,600;1,700&display=swap" rel="stylesheet">
+
+</head>
+
+
+<body>
+
+  <!-- Navigation -->
+<nav class="navbar navbar-expand-lg navbar-light fixed-top" id="mainNav">
+  <div class="container">
+    <a class="navbar-brand" href="/">iko&#39;s logs</a>
+    <button class="navbar-toggler navbar-toggler-right" type="button" data-toggle="collapse" data-target="#navbarResponsive" aria-controls="navbarResponsive" aria-expanded="false" aria-label="Toggle navigation">
+      Menu
+      <i class="fa fa-bars"></i>
+    </button>
+    <div class="collapse navbar-collapse" id="navbarResponsive">
+      <ul class="navbar-nav ml-auto">
+        <li class="nav-item">
+          <a class="nav-link" href="/">Home</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/about">About</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/posts">Posts</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/contact">Contact</a>
+        </li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+
+  <!-- Page Header -->
+
+<header class="masthead">
+
+  <div class="overlay"></div>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <div class="post-heading">
+          <h1>GiST Index</h1>
+          
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="container space-grotesk">
+  <div class="row">
+    <div class="col-lg-8 col-md-10 mx-auto">
+
+      <!-- Breadcrumb -->
+      <nav aria-label="breadcrumb" style="margin-bottom: 1.5rem;">
+        <ol class="breadcrumb" style="background: transparent; padding: 0;">
+          
+            <li class="breadcrumb-item"><a href="/postgresql-internals/">PostgreSQL Internals Deep Dive</a></li>
+          
+          
+            
+              <li class="breadcrumb-item"><a href="/postgresql/02-access-methods/">Access Methods</a></li>
+            
+          
+          <li class="breadcrumb-item active" aria-current="page">GiST Index</li>
+        </ol>
+      </nav>
+
+      <h1 id="gist-generalized-search-tree">GiST (Generalized Search Tree)</h1>
+
+<h2 id="summary">Summary</h2>
+
+<p>GiST is a <strong>balanced, height-balanced tree</strong> that generalizes B-trees to
+support arbitrary data types and query predicates. Unlike a B-tree (which
+requires a total ordering), GiST works with any data type that can define
+<strong>consistent</strong>, <strong>union</strong>, <strong>penalty</strong>, and <strong>picksplit</strong> functions. It powers
+PostgreSQL’s built-in support for geometric types, range types, full-text
+search (<code class="language-plaintext highlighter-rouge">tsvector</code>), and the PostGIS extension for spatial data.</p>
+
+<hr />
+
+<h2 id="key-source-files">Key Source Files</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>File</th>
+      <th>Purpose</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/access/gist/gist.c</code></td>
+      <td>Entry points: <code class="language-plaintext highlighter-rouge">gisthandler()</code>, <code class="language-plaintext highlighter-rouge">gistinsert()</code>, <code class="language-plaintext highlighter-rouge">gistgettuple()</code>, <code class="language-plaintext highlighter-rouge">gistgetbitmap()</code></td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/access/gist/gistbuild.c</code></td>
+      <td><code class="language-plaintext highlighter-rouge">gistbuild()</code> – buffered bulk loading</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/access/gist/gistbuildbuffers.c</code></td>
+      <td>In-memory buffers for build</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/access/gist/gistget.c</code></td>
+      <td><code class="language-plaintext highlighter-rouge">gistgettuple()</code> – priority queue scan</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/access/gist/gistsplit.c</code></td>
+      <td>Page split logic using <code class="language-plaintext highlighter-rouge">picksplit</code> callback</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/access/gist/gistutil.c</code></td>
+      <td>Tuple management, page utilities</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/access/gist/gistproc.c</code></td>
+      <td>Built-in opclass support functions (box, point, polygon)</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/access/gist/gistscan.c</code></td>
+      <td>Scan initialization</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/access/gist/gistvacuum.c</code></td>
+      <td>VACUUM support</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/access/gist/gistxlog.c</code></td>
+      <td>WAL redo</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/access/gist/gistvalidate.c</code></td>
+      <td>Operator class validation</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/access/gist/README</code></td>
+      <td>Design notes</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/access/gist.h</code></td>
+      <td><code class="language-plaintext highlighter-rouge">GISTPageOpaqueData</code>, <code class="language-plaintext highlighter-rouge">GISTENTRY</code>, <code class="language-plaintext highlighter-rouge">GIST_SPLITVEC</code></td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/access/gist_private.h</code></td>
+      <td><code class="language-plaintext highlighter-rouge">GISTSTATE</code>, <code class="language-plaintext highlighter-rouge">GISTInsertStack</code>, <code class="language-plaintext highlighter-rouge">GISTSearchItem</code></td>
+    </tr>
+  </tbody>
+</table>
+
+<hr />
+
+<h2 id="how-it-works">How It Works</h2>
+
+<h3 id="tree-structure">Tree Structure</h3>
+
+<p>GiST is a balanced tree where:</p>
+<ul>
+  <li><strong>Internal nodes</strong> contain <em>bounding predicates</em> (e.g., bounding boxes) that
+cover all entries in the subtree below.</li>
+  <li><strong>Leaf nodes</strong> contain the actual indexed values with TIDs.</li>
+</ul>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>             +--------------------+
+             | root: covers all   |
+             | [bbox_whole_table] |
+             +----+----------+---+
+                  |          |
+       +----------+     +----+--------+
+       | internal  |     | internal   |
+       | [bbox_NW] |     | [bbox_SE]  |
+       +--+----+---+     +--+----+---+
+          |    |             |    |
+        leaf  leaf         leaf  leaf
+        entries            entries
+</code></pre></div></div>
+
+<h3 id="user-defined-operator-class-functions">User-Defined Operator Class Functions</h3>
+
+<p>A GiST opclass must provide these support functions:</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>#</th>
+      <th>Function</th>
+      <th>Purpose</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>1</td>
+      <td><code class="language-plaintext highlighter-rouge">consistent</code></td>
+      <td>Does a subtree/leaf match the query predicate?</td>
+    </tr>
+    <tr>
+      <td>2</td>
+      <td><code class="language-plaintext highlighter-rouge">union</code></td>
+      <td>Compute the union of a set of entries (bounding predicate)</td>
+    </tr>
+    <tr>
+      <td>3</td>
+      <td><code class="language-plaintext highlighter-rouge">compress</code></td>
+      <td>Transform a datum for storage in the index</td>
+    </tr>
+    <tr>
+      <td>4</td>
+      <td><code class="language-plaintext highlighter-rouge">decompress</code></td>
+      <td>Reverse of compress (often identity)</td>
+    </tr>
+    <tr>
+      <td>5</td>
+      <td><code class="language-plaintext highlighter-rouge">penalty</code></td>
+      <td>Cost of inserting an entry into a subtree</td>
+    </tr>
+    <tr>
+      <td>6</td>
+      <td><code class="language-plaintext highlighter-rouge">picksplit</code></td>
+      <td>Split a set of entries into two groups</td>
+    </tr>
+    <tr>
+      <td>7</td>
+      <td><code class="language-plaintext highlighter-rouge">same</code></td>
+      <td>Are two entries identical?</td>
+    </tr>
+    <tr>
+      <td>8</td>
+      <td><code class="language-plaintext highlighter-rouge">distance</code> (optional)</td>
+      <td>Distance from entry to query (for KNN)</td>
+    </tr>
+    <tr>
+      <td>9</td>
+      <td><code class="language-plaintext highlighter-rouge">fetch</code> (optional)</td>
+      <td>Reconstruct original datum from index (for index-only scans)</td>
+    </tr>
+  </tbody>
+</table>
+
+<h3 id="search-algorithm">Search Algorithm</h3>
+
+<p>GiST search uses a <strong>priority queue</strong> (ordered by distance for KNN, or
+traversal order for containment queries):</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>gistgettuple(scan)
+  -&gt; GISTSearchItem queue (pairing heap)
+  -&gt; push root onto queue
+  -&gt; loop:
+       pop item with lowest distance/penalty
+       if leaf:
+         return tuple to executor
+       if internal:
+         for each child:
+           call consistent(child_key, query)
+           if true: push child onto queue with distance()
+</code></pre></div></div>
+
+<p>For non-ordered scans (e.g., <code class="language-plaintext highlighter-rouge">@&gt;</code>, <code class="language-plaintext highlighter-rouge">&amp;&amp;</code>), the queue degenerates to a stack
+(depth-first). For KNN scans (<code class="language-plaintext highlighter-rouge">ORDER BY geom &lt;-&gt; point</code>), the priority queue
+ensures nearest results are returned first.</p>
+
+<h3 id="insert-algorithm">Insert Algorithm</h3>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>gistinsert(rel, values, tid)
+  -&gt; gistdoinsert()
+       -&gt; descend from root, at each level:
+            call penalty() for each child
+            choose child with lowest penalty
+       -&gt; at leaf: insert entry
+            if page full:
+              -&gt; gistsplit() calls picksplit() to divide entries
+              -&gt; may cascade splits up the tree
+              -&gt; adjust parent bounding predicates via union()
+</code></pre></div></div>
+
+<hr />
+
+<h2 id="key-data-structures">Key Data Structures</h2>
+
+<h3 id="gistpageopaquedata">GISTPageOpaqueData</h3>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="c1">// src/include/access/gist.h</span>
+<span class="k">typedef</span> <span class="k">struct</span> <span class="n">GISTPageOpaqueData</span>
+<span class="p">{</span>
+    <span class="n">FullTransactionId</span> <span class="n">gist_page_id</span><span class="p">;</span>   <span class="c1">// for deleted page tracking</span>
+    <span class="n">BlockNumber</span> <span class="n">rightlink</span><span class="p">;</span>            <span class="c1">// right sibling (like Lehman-Yao)</span>
+    <span class="n">uint16</span>      <span class="n">flags</span><span class="p">;</span>                <span class="c1">// F_LEAF, F_DELETED, F_FOLLOW_RIGHT, F_TUPLES_DELETED</span>
+<span class="p">}</span> <span class="n">GISTPageOpaqueData</span><span class="p">;</span>
+</code></pre></div></div>
+
+<h3 id="gistentry">GISTENTRY</h3>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="c1">// src/include/access/gist.h</span>
+<span class="k">typedef</span> <span class="k">struct</span> <span class="n">GISTENTRY</span>
+<span class="p">{</span>
+    <span class="n">Datum</span>       <span class="n">key</span><span class="p">;</span>            <span class="c1">// the indexed value (or bounding predicate)</span>
+    <span class="n">Relation</span>    <span class="n">rel</span><span class="p">;</span>
+    <span class="n">Page</span>        <span class="n">page</span><span class="p">;</span>
+    <span class="n">OffsetNumber</span> <span class="n">offset</span><span class="p">;</span>
+    <span class="n">bool</span>        <span class="n">leafkey</span><span class="p">;</span>        <span class="c1">// true if this is a leaf-level entry</span>
+<span class="p">}</span> <span class="n">GISTENTRY</span><span class="p">;</span>
+</code></pre></div></div>
+
+<h3 id="gist_splitvec">GIST_SPLITVEC</h3>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="c1">// src/include/access/gist.h</span>
+<span class="k">typedef</span> <span class="k">struct</span> <span class="n">GIST_SPLITVEC</span>
+<span class="p">{</span>
+    <span class="n">OffsetNumber</span> <span class="o">*</span><span class="n">spl_left</span><span class="p">;</span>     <span class="c1">// array of offsets going to left page</span>
+    <span class="kt">int</span>          <span class="n">spl_nleft</span><span class="p">;</span>
+    <span class="n">Datum</span>        <span class="n">spl_ldatum</span><span class="p">;</span>    <span class="c1">// union of left entries</span>
+    <span class="n">OffsetNumber</span> <span class="o">*</span><span class="n">spl_right</span><span class="p">;</span>    <span class="c1">// array of offsets going to right page</span>
+    <span class="kt">int</span>          <span class="n">spl_nright</span><span class="p">;</span>
+    <span class="n">Datum</span>        <span class="n">spl_rdatum</span><span class="p">;</span>    <span class="c1">// union of right entries</span>
+<span class="p">}</span> <span class="n">GIST_SPLITVEC</span><span class="p">;</span>
+</code></pre></div></div>
+
+<h3 id="gistinsertstack">GISTInsertStack</h3>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="c1">// src/include/access/gist_private.h</span>
+<span class="k">typedef</span> <span class="k">struct</span> <span class="n">GISTInsertStack</span>
+<span class="p">{</span>
+    <span class="n">BlockNumber</span> <span class="n">blkno</span><span class="p">;</span>
+    <span class="n">Buffer</span>      <span class="n">buffer</span><span class="p">;</span>
+    <span class="n">Page</span>        <span class="n">page</span><span class="p">;</span>
+    <span class="n">GistNSN</span>     <span class="n">lsn</span><span class="p">;</span>
+    <span class="n">OffsetNumber</span> <span class="n">downlinkoffnum</span><span class="p">;</span>    <span class="c1">// where the downlink to child is</span>
+    <span class="k">struct</span> <span class="n">GISTInsertStack</span> <span class="o">*</span><span class="n">parent</span><span class="p">;</span>
+    <span class="c1">// ...</span>
+<span class="p">}</span> <span class="n">GISTInsertStack</span><span class="p">;</span>
+</code></pre></div></div>
+
+<hr />
+
+<h2 id="diagram-gist-split">Diagram: GiST Split</h2>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code> Before split (page full):
+ +---------------------------------------+
+ | entry A  entry B  entry C  entry D    |
+ | entry E  entry F  entry G  entry H    |
+ +---------------------------------------+
+
+ picksplit() divides into two groups:
+
+ Left page:                Right page:
+ +-------------------+     +-------------------+
+ | entry A  entry C  |     | entry B  entry D  |
+ | entry E  entry G  |     | entry F  entry H  |
+ +-------------------+     +-------------------+
+
+ Parent gets two entries:
+   union(A,C,E,G)  -&gt;  left page
+   union(B,D,F,H)  -&gt;  right page
+</code></pre></div></div>
+
+<hr />
+
+<h2 id="buffered-build">Buffered Build</h2>
+
+<p>For large tables, <code class="language-plaintext highlighter-rouge">gistbuild()</code> uses a <strong>buffered build</strong> strategy
+(<code class="language-plaintext highlighter-rouge">gistbuildbuffers.c</code>):</p>
+
+<ol>
+  <li>Assign each internal node a buffer (in memory or on temp files).</li>
+  <li>Tuples are pushed into the root buffer.</li>
+  <li>When a buffer fills, its contents are flushed down one level.</li>
+  <li>This reduces random I/O by batching inserts.</li>
+</ol>
+
+<p>Controlled by <code class="language-plaintext highlighter-rouge">buffering = auto | on | off</code> in <code class="language-plaintext highlighter-rouge">CREATE INDEX</code>.</p>
+
+<hr />
+
+<h2 id="common-use-cases">Common Use Cases</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>Data Type</th>
+      <th>Operators</th>
+      <th>Example</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">point</code>, <code class="language-plaintext highlighter-rouge">box</code>, <code class="language-plaintext highlighter-rouge">polygon</code></td>
+      <td><code class="language-plaintext highlighter-rouge">&lt;&lt;</code>, <code class="language-plaintext highlighter-rouge">&gt;&gt;</code>, <code class="language-plaintext highlighter-rouge">@&gt;</code>, <code class="language-plaintext highlighter-rouge">&lt;@</code>, <code class="language-plaintext highlighter-rouge">&amp;&amp;</code>, <code class="language-plaintext highlighter-rouge">&lt;-&gt;</code></td>
+      <td>Spatial containment, nearest neighbor</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">inet</code>, <code class="language-plaintext highlighter-rouge">cidr</code></td>
+      <td><code class="language-plaintext highlighter-rouge">&gt;&gt;=</code>, <code class="language-plaintext highlighter-rouge">&lt;&lt;=</code></td>
+      <td>Network containment</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">range</code> types</td>
+      <td><code class="language-plaintext highlighter-rouge">@&gt;</code>, <code class="language-plaintext highlighter-rouge">&lt;@</code>, <code class="language-plaintext highlighter-rouge">&amp;&amp;</code>, <code class="language-plaintext highlighter-rouge">-|-</code></td>
+      <td>Range overlap and containment</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">tsvector</code></td>
+      <td><code class="language-plaintext highlighter-rouge">@@</code></td>
+      <td>Full-text search</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">ltree</code></td>
+      <td><code class="language-plaintext highlighter-rouge">@&gt;</code>, <code class="language-plaintext highlighter-rouge">&lt;@</code></td>
+      <td>Label tree queries</td>
+    </tr>
+  </tbody>
+</table>
+
+<hr />
+
+<h2 id="connections">Connections</h2>
+
+<ul>
+  <li><strong>SP-GiST</strong>: An alternative for space-partitioned structures (quad trees,
+k-d trees) where GiST’s balanced tree is less natural.</li>
+  <li><strong>GIN</strong>: For full-text search, GIN is often preferred over GiST because it
+stores exact lexeme lists. GiST uses lossy signatures.</li>
+  <li><strong>Planner</strong>: GiST sets <code class="language-plaintext highlighter-rouge">amcanorderbyop = true</code> to enable KNN (<code class="language-plaintext highlighter-rouge">ORDER BY ...
+&lt;-&gt;</code>) optimization. The planner calls <code class="language-plaintext highlighter-rouge">gistcostestimate()</code>.</li>
+  <li><strong>WAL</strong>: <code class="language-plaintext highlighter-rouge">gistxlog.c</code> handles redo for page splits, updates, and deletions.</li>
+</ul>
+
+
+      <hr>
+
+      <!-- Prev / Next / Up navigation -->
+      
+      
+      
+
+      <div class="clearfix" style="margin-top: 2rem;">
+        
+          
+          
+
+          
+            
+            <a class="btn btn-primary float-left" href="/postgresql/02-access-methods/gin.html" title="GIN Index">&larr; Previous</a>
+          
+
+          
+            
+            <a class="btn btn-primary float-right" href="/postgresql/02-access-methods/hash.html" title="Hash Index">Next &rarr;</a>
+          
+        
+      </div>
+
+      
+      <div style="text-align: center; margin-top: 1rem;">
+        <a href="/postgresql-internals/">&uarr; Back to Table of Contents</a>
+      </div>
+      
+
+    </div>
+  </div>
+</div>
+
+
+  <!-- Footer -->
+
+<hr>
+
+<footer>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <ul class="list-inline text-center">
+          
+          <li class="list-inline-item">
+            <a href="mailto:amitava.dev@proton.me" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="far fa-envelope fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          
+          
+          <li class="list-inline-item">
+            <a href="https://www.linkedin.com/in/amitavaag" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-linkedin fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          <li class="list-inline-item">
+            <a href="https://github.com/ikouchiha47" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-github fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+        </ul>
+
+        <p class="copyright text-muted">
+          Build with: 
+          <a 
+            href="https://github.com/StartBootstrap/startbootstrap-clean-blog-jekyll"
+            class="text-gray"
+            target="_blank">startbootstrap-clean-blog-jekyll</a></p>
+      </div>
+    </div>
+  </div>
+</footer>
+
+
+  <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="/assets/vendor/blog/js/scripts.js"></script>
+
+<script src="/assets/scripts.js"></script>
+
+
+
+
+
+  <script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+
+    document.querySelectorAll('pre > code.language-mermaid').forEach((codeBlock) => {
+      codeBlock.parentElement.outerHTML = `<pre class="mermaid">${codeBlock.textContent}</pre>`;
+    });
+
+
+    mermaid.initialize({ startOnLoad: true, theme: 'forest' });
+</script>
+
+
+  
+
+</body>
+
+</html>

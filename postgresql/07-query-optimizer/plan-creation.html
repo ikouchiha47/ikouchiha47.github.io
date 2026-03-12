@@ -1,0 +1,691 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+  <title>
+    Plan Creation - iko&#39;s logs
+    
+  </title>
+
+  <meta name="description" content="">
+  <meta property="og:description" content="">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Plan Creation">
+  <meta property="og:url" content="https://ikouchiha47.github.io/postgresql/07-query-optimizer/plan-creation.html">
+
+  
+
+  <link href='https://fonts.googleapis.com/css?family=Lora:400,700,400italic,700italic' rel='stylesheet' type='text/css'>
+  <link href='https://fonts.googleapis.com/css?family=Open+Sans:300italic,400italic,600italic,700italic,800italic,400,300,600,700,800' rel='stylesheet' type='text/css'>
+
+  <!-- <script src="https://use.fontawesome.com/releases/v5.15.3/js/all.js" crossorigin="anonymous"></script> -->
+  <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.15.4/css/all.css" integrity="sha384-DyZ88mC6Up2uqS4h/KRgHuoeGwBcD4Ng9SiP4dIRy0EXTlnuz47vAwmeGwVChigm" crossorigin="anonymous"/>
+
+  <link rel="stylesheet" href="/assets/main.css">
+  <link rel="canonical" href="https://ikouchiha47.github.io/postgresql/07-query-optimizer/plan-creation.html">
+  <link rel="alternate" type="application/rss+xml" title="iko&#39;s logs" href="/feed.xml">
+
+  <meta name="google-site-verification" content="lWkg6gIxJgzEKX_5XnhcxCtPE9QknaimFWWos_dTvPM" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fira+Sans:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Inconsolata:wght@200..900&family=Jersey+25&family=Kanit:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Merriweather+Sans:ital,wght@0,300..800;1,300..800&family=Nanum+Gothic+Coding&family=Space+Grotesk:wght@300..700&family=Titillium+Web:ital,wght@0,200;0,300;0,400;0,600;0,700;0,900;1,200;1,300;1,400;1,600;1,700&display=swap" rel="stylesheet">
+
+</head>
+
+
+<body>
+
+  <!-- Navigation -->
+<nav class="navbar navbar-expand-lg navbar-light fixed-top" id="mainNav">
+  <div class="container">
+    <a class="navbar-brand" href="/">iko&#39;s logs</a>
+    <button class="navbar-toggler navbar-toggler-right" type="button" data-toggle="collapse" data-target="#navbarResponsive" aria-controls="navbarResponsive" aria-expanded="false" aria-label="Toggle navigation">
+      Menu
+      <i class="fa fa-bars"></i>
+    </button>
+    <div class="collapse navbar-collapse" id="navbarResponsive">
+      <ul class="navbar-nav ml-auto">
+        <li class="nav-item">
+          <a class="nav-link" href="/">Home</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/about">About</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/posts">Posts</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/contact">Contact</a>
+        </li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+
+  <!-- Page Header -->
+
+<header class="masthead">
+
+  <div class="overlay"></div>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <div class="post-heading">
+          <h1>Plan Creation</h1>
+          
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="container space-grotesk">
+  <div class="row">
+    <div class="col-lg-8 col-md-10 mx-auto">
+
+      <!-- Breadcrumb -->
+      <nav aria-label="breadcrumb" style="margin-bottom: 1.5rem;">
+        <ol class="breadcrumb" style="background: transparent; padding: 0;">
+          
+            <li class="breadcrumb-item"><a href="/postgresql-internals/">PostgreSQL Internals Deep Dive</a></li>
+          
+          
+            
+              <li class="breadcrumb-item"><a href="/postgresql/07-query-optimizer/">Query Optimizer</a></li>
+            
+          
+          <li class="breadcrumb-item active" aria-current="page">Plan Creation</li>
+        </ol>
+      </nav>
+
+      <h1 id="plan-creation">Plan Creation</h1>
+
+<p>After the optimizer has found the cheapest Path tree, it must convert it into a <code class="language-plaintext highlighter-rouge">Plan</code> tree that the executor can run. This is a mostly mechanical translation, but with important post-processing: target-list construction, qual ordering for security, and – critically – fixing up all Var references so that each plan node references the output columns of its child nodes rather than the original range table. These steps are handled by <code class="language-plaintext highlighter-rouge">createplan.c</code> and <code class="language-plaintext highlighter-rouge">setrefs.c</code>.</p>
+
+<hr />
+
+<h2 id="summary">Summary</h2>
+
+<p>Plan creation has two phases:</p>
+
+<ol>
+  <li>
+    <p><strong>Path-to-Plan conversion</strong> (<code class="language-plaintext highlighter-rouge">createplan.c</code>): recursively walk the Path tree, creating the corresponding Plan nodes. Each Path type maps to a Plan node type (SeqScan, IndexScan, NestLoop, HashJoin, Sort, etc.). The translation fills in executor-specific details that Paths omit: target lists, qual expression trees, plan node parameters.</p>
+  </li>
+  <li>
+    <p><strong>Reference fixing</strong> (<code class="language-plaintext highlighter-rouge">setrefs.c</code>): a final pass over the complete Plan tree that replaces table-level Var references with INNER_VAR / OUTER_VAR references to child plan node output columns, resolves regproc OIDs for operators, and performs other executor-oriented cleanups.</p>
+  </li>
+</ol>
+
+<hr />
+
+<h2 id="key-source-files">Key Source Files</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>File</th>
+      <th>Purpose</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/optimizer/plan/createplan.c</code></td>
+      <td><code class="language-plaintext highlighter-rouge">create_plan()</code>, <code class="language-plaintext highlighter-rouge">create_plan_recurse()</code>, and all per-node-type creators</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/optimizer/plan/setrefs.c</code></td>
+      <td><code class="language-plaintext highlighter-rouge">set_plan_references()</code>, Var fixup, subplan linking</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/optimizer/plan/planner.c</code></td>
+      <td><code class="language-plaintext highlighter-rouge">subquery_planner()</code> calls <code class="language-plaintext highlighter-rouge">create_plan()</code> then <code class="language-plaintext highlighter-rouge">set_plan_references()</code></td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/nodes/plannodes.h</code></td>
+      <td>Plan, SeqScan, IndexScan, NestLoop, HashJoin, etc.</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/nodes/pathnodes.h</code></td>
+      <td>Path types that are converted</td>
+    </tr>
+  </tbody>
+</table>
+
+<hr />
+
+<h2 id="how-it-works">How It Works</h2>
+
+<h3 id="phase-1-create_plan">Phase 1: create_plan()</h3>
+
+<p>The entry point is <code class="language-plaintext highlighter-rouge">create_plan()</code> in <code class="language-plaintext highlighter-rouge">createplan.c</code>, which calls <code class="language-plaintext highlighter-rouge">create_plan_recurse()</code>:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="n">Plan</span> <span class="o">*</span>
+<span class="nf">create_plan</span><span class="p">(</span><span class="n">PlannerInfo</span> <span class="o">*</span><span class="n">root</span><span class="p">,</span> <span class="n">Path</span> <span class="o">*</span><span class="n">best_path</span><span class="p">)</span>
+<span class="p">{</span>
+    <span class="n">Plan</span> <span class="o">*</span><span class="n">plan</span><span class="p">;</span>
+
+    <span class="n">plan</span> <span class="o">=</span> <span class="n">create_plan_recurse</span><span class="p">(</span><span class="n">root</span><span class="p">,</span> <span class="n">best_path</span><span class="p">,</span> <span class="n">CP_EXACT_TLIST</span><span class="p">);</span>
+
+    <span class="cm">/* Post-creation adjustments */</span>
+    <span class="p">...</span>
+
+    <span class="k">return</span> <span class="n">plan</span><span class="p">;</span>
+<span class="p">}</span>
+</code></pre></div></div>
+
+<p><code class="language-plaintext highlighter-rouge">create_plan_recurse()</code> dispatches on the Path node type:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>create_plan_recurse(root, path, flags):
+  switch path-&gt;pathtype:
+
+    T_SeqScan:       create_seqscan_plan()
+    T_IndexScan:     create_indexscan_plan()
+    T_IndexOnlyScan: create_indexonlyscan_plan()
+    T_BitmapHeapScan: create_bitmap_subplan()
+    T_TidScan:       create_tidscan_plan()
+    T_SubqueryScan:  create_subqueryscan_plan()
+    T_FunctionScan:  create_functionscan_plan()
+
+    T_NestLoop:      create_nestloop_plan()
+    T_MergeJoin:     create_mergejoin_plan()
+    T_HashJoin:      create_hashjoin_plan()
+
+    T_Material:      create_material_plan()
+    T_Memoize:       create_memoize_plan()
+    T_Sort:          create_sort_plan()
+    T_IncrementalSort: create_incrementalsort_plan()
+    T_Group:         create_group_plan()
+    T_Agg:           create_agg_plan()
+    T_WindowAgg:     create_windowagg_plan()
+    T_Unique:        create_unique_plan()
+    T_Gather:        create_gather_plan()
+    T_GatherMerge:   create_gather_merge_plan()
+    T_SetOp:         create_setop_plan()
+    T_LockRows:      create_lockrows_plan()
+    T_ModifyTable:   create_modifytable_plan()
+    T_Limit:         create_limit_plan()
+    T_Result:        create_result_plan()
+    T_Append:        create_append_plan()
+    T_MergeAppend:   create_merge_append_plan()
+    T_RecursiveUnion: create_recursiveunion_plan()
+</code></pre></div></div>
+
+<h4 id="target-list-construction">Target List Construction</h4>
+
+<p>Each plan node needs a target list (<code class="language-plaintext highlighter-rouge">plan-&gt;targetlist</code>) specifying which columns it outputs. The function <code class="language-plaintext highlighter-rouge">build_path_tlist()</code> creates this from the Path’s <code class="language-plaintext highlighter-rouge">pathtarget</code>:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">static</span> <span class="n">List</span> <span class="o">*</span>
+<span class="nf">build_path_tlist</span><span class="p">(</span><span class="n">PlannerInfo</span> <span class="o">*</span><span class="n">root</span><span class="p">,</span> <span class="n">Path</span> <span class="o">*</span><span class="n">path</span><span class="p">)</span>
+<span class="p">{</span>
+    <span class="cm">/* Convert each expression in path-&gt;pathtarget-&gt;exprs
+     * into a TargetEntry */</span>
+<span class="p">}</span>
+</code></pre></div></div>
+
+<p>For scan nodes, <code class="language-plaintext highlighter-rouge">use_physical_tlist()</code> checks whether we can use a “physical” tlist that simply returns all columns of the table (avoiding projection overhead). This is possible when no expressions need to be computed and when the node does not need to match a specific column layout.</p>
+
+<h4 id="qual-ordering">Qual Ordering</h4>
+
+<p><code class="language-plaintext highlighter-rouge">order_qual_clauses()</code> sorts the qual list for each plan node. The ordering respects:</p>
+<ol>
+  <li><strong>Security levels</strong> – barrier quals (from RLS or security-barrier views) must be evaluated before leaky quals.</li>
+  <li><strong>Cost</strong> – cheaper quals are evaluated first (to short-circuit expensive ones via AND semantics).</li>
+  <li><strong>Stability</strong> – when security levels and costs are equal, the original order is preserved.</li>
+</ol>
+
+<h4 id="join-plan-creation">Join Plan Creation</h4>
+
+<p>For join nodes, the creator functions do the following:</p>
+
+<p><strong>create_nestloop_plan():</strong></p>
+<ul>
+  <li>Recursively create plans for outer and inner paths.</li>
+  <li>Separate join quals into join clauses and filter clauses.</li>
+  <li>For parameterized inner paths, convert join clauses into index conditions (they were already matched during path generation).</li>
+</ul>
+
+<p><strong>create_hashjoin_plan():</strong></p>
+<ul>
+  <li>Create a Hash node wrapping the inner plan.</li>
+  <li>Extract hash join clauses from the RestrictInfo list.</li>
+  <li>The Hash node’s startup cost represents building the hash table.</li>
+</ul>
+
+<p><strong>create_mergejoin_plan():</strong></p>
+<ul>
+  <li>If the input paths are not already sorted on the merge keys, insert Sort nodes.</li>
+  <li>Extract merge join clauses and their sort operators.</li>
+  <li>Set up mark/restore positions for handling non-unique merge keys.</li>
+</ul>
+
+<h3 id="phase-2-set_plan_references-setrefsc">Phase 2: set_plan_references() (setrefs.c)</h3>
+
+<p>After the Plan tree is built, <code class="language-plaintext highlighter-rouge">set_plan_references()</code> performs a critical transformation: it converts all Var nodes from table-level references to execution-level references.</p>
+
+<h4 id="the-problem">The Problem</h4>
+
+<p>During planning, a Var node like <code class="language-plaintext highlighter-rouge">{varno=2, varattno=3}</code> means “column 3 of range-table entry 2.” But the executor doesn’t scan range-table entries directly – it receives tuples from child plan nodes. A join node’s inner child outputs some columns, its outer child outputs others, and the join node must know which of its children provides each column.</p>
+
+<h4 id="the-solution">The Solution</h4>
+
+<p><code class="language-plaintext highlighter-rouge">set_plan_references()</code> walks the Plan tree bottom-up. For each plan node, it:</p>
+
+<ol>
+  <li>
+    <p><strong>Builds an indexed target list</strong> for each child plan node, mapping <code class="language-plaintext highlighter-rouge">(varno, varattno)</code> pairs to output column positions.</p>
+  </li>
+  <li><strong>Replaces Vars in quals and target lists</strong> using this mapping:
+    <ul>
+      <li>In a join node: Vars from the outer child become <code class="language-plaintext highlighter-rouge">OUTER_VAR</code> references (varno = 65001). Vars from the inner child become <code class="language-plaintext highlighter-rouge">INNER_VAR</code> references (varno = 65000).</li>
+      <li>In a scan node: Vars reference the scan’s range-table entry directly (no change needed).</li>
+      <li>In an upper node (Sort, Agg, etc.): Vars reference the child’s output columns.</li>
+    </ul>
+  </li>
+  <li>
+    <p><strong>Resolves operator OIDs.</strong> During planning, operators may be referenced by name or opclass. <code class="language-plaintext highlighter-rouge">setrefs.c</code> ensures all <code class="language-plaintext highlighter-rouge">OpExpr</code> nodes have concrete <code class="language-plaintext highlighter-rouge">opfuncid</code> values (regproc OIDs) for the executor.</p>
+  </li>
+  <li><strong>Flattens subplan references.</strong> SubPlan nodes in the Plan tree are linked to their actual plan trees, and parameter mappings are finalized.</li>
+</ol>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>Before setrefs:
+  HashJoin
+    qual: Var(t1.x) = Var(t2.y)      -- table-level references
+    -&gt;  SeqScan on t1
+          targetlist: Var(t1.x), Var(t1.z)
+    -&gt;  SeqScan on t2
+          targetlist: Var(t2.y), Var(t2.w)
+
+After setrefs:
+  HashJoin
+    qual: Var(OUTER_VAR, 1) = Var(INNER_VAR, 1)  -- positional references
+    -&gt;  SeqScan on t1
+          targetlist: Var(1, 1), Var(1, 3)        -- (rtindex, attnum)
+    -&gt;  SeqScan on t2
+          targetlist: Var(2, 2), Var(2, 4)
+</code></pre></div></div>
+
+<hr />
+
+<h2 id="key-data-structures">Key Data Structures</h2>
+
+<h3 id="plan-base-type">Plan (base type)</h3>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">typedef</span> <span class="k">struct</span> <span class="n">Plan</span>
+<span class="p">{</span>
+    <span class="n">NodeTag</span>     <span class="n">type</span><span class="p">;</span>
+    <span class="n">Cost</span>        <span class="n">startup_cost</span><span class="p">;</span>   <span class="cm">/* cost before first tuple */</span>
+    <span class="n">Cost</span>        <span class="n">total_cost</span><span class="p">;</span>     <span class="cm">/* total cost */</span>
+    <span class="kt">double</span>      <span class="n">plan_rows</span><span class="p">;</span>      <span class="cm">/* estimated output rows */</span>
+    <span class="kt">int</span>         <span class="n">plan_width</span><span class="p">;</span>     <span class="cm">/* estimated average row width */</span>
+    <span class="n">bool</span>        <span class="n">parallel_aware</span><span class="p">;</span>
+    <span class="n">bool</span>        <span class="n">parallel_safe</span><span class="p">;</span>
+    <span class="kt">int</span>         <span class="n">plan_node_id</span><span class="p">;</span>   <span class="cm">/* unique ID within PlannedStmt */</span>
+    <span class="n">List</span>       <span class="o">*</span><span class="n">targetlist</span><span class="p">;</span>     <span class="cm">/* target list of TargetEntry nodes */</span>
+    <span class="n">List</span>       <span class="o">*</span><span class="n">qual</span><span class="p">;</span>           <span class="cm">/* filter conditions (implicit AND) */</span>
+    <span class="n">Plan</span>       <span class="o">*</span><span class="n">lefttree</span><span class="p">;</span>       <span class="cm">/* outer (left) input plan */</span>
+    <span class="n">Plan</span>       <span class="o">*</span><span class="n">righttree</span><span class="p">;</span>      <span class="cm">/* inner (right) input plan */</span>
+    <span class="n">List</span>       <span class="o">*</span><span class="n">initPlan</span><span class="p">;</span>       <span class="cm">/* init SubPlan nodes */</span>
+    <span class="n">Bitmapset</span>  <span class="o">*</span><span class="n">extParam</span><span class="p">;</span>       <span class="cm">/* external PARAM_EXEC parameters needed */</span>
+    <span class="n">Bitmapset</span>  <span class="o">*</span><span class="n">allParam</span><span class="p">;</span>       <span class="cm">/* all PARAM_EXEC parameters */</span>
+<span class="p">}</span> <span class="n">Plan</span><span class="p">;</span>
+</code></pre></div></div>
+
+<h3 id="plannedstmt">PlannedStmt</h3>
+
+<p>The top-level output of the planner:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">typedef</span> <span class="k">struct</span> <span class="n">PlannedStmt</span>
+<span class="p">{</span>
+    <span class="n">NodeTag</span>     <span class="n">type</span><span class="p">;</span>
+    <span class="n">CmdType</span>     <span class="n">commandType</span><span class="p">;</span>    <span class="cm">/* SELECT, INSERT, UPDATE, DELETE */</span>
+    <span class="n">bool</span>        <span class="n">hasReturning</span><span class="p">;</span>
+    <span class="n">bool</span>        <span class="n">hasModifyingCTE</span><span class="p">;</span>
+    <span class="n">bool</span>        <span class="n">canSetTag</span><span class="p">;</span>
+    <span class="n">bool</span>        <span class="n">transientPlan</span><span class="p">;</span>  <span class="cm">/* should plan be cached? */</span>
+    <span class="n">bool</span>        <span class="n">dependsOnRole</span><span class="p">;</span>
+    <span class="n">bool</span>        <span class="n">parallelModeNeeded</span><span class="p">;</span>
+    <span class="kt">int</span>         <span class="n">jitFlags</span><span class="p">;</span>       <span class="cm">/* JIT compilation flags */</span>
+    <span class="n">Plan</span>       <span class="o">*</span><span class="n">planTree</span><span class="p">;</span>       <span class="cm">/* the actual plan tree */</span>
+    <span class="n">List</span>       <span class="o">*</span><span class="n">rtable</span><span class="p">;</span>         <span class="cm">/* range table */</span>
+    <span class="n">List</span>       <span class="o">*</span><span class="n">permInfos</span><span class="p">;</span>      <span class="cm">/* permission check info */</span>
+    <span class="n">List</span>       <span class="o">*</span><span class="n">resultRelations</span><span class="p">;</span>
+    <span class="n">List</span>       <span class="o">*</span><span class="n">appendRelations</span><span class="p">;</span>
+    <span class="n">List</span>       <span class="o">*</span><span class="n">subplans</span><span class="p">;</span>       <span class="cm">/* list of SubPlan plan trees */</span>
+    <span class="n">Bitmapset</span>  <span class="o">*</span><span class="n">rewindPlanIDs</span><span class="p">;</span>  <span class="cm">/* plans needing rewind capability */</span>
+    <span class="n">List</span>       <span class="o">*</span><span class="n">rowMarks</span><span class="p">;</span>       <span class="cm">/* FOR UPDATE/SHARE info */</span>
+    <span class="n">List</span>       <span class="o">*</span><span class="n">relationOids</span><span class="p">;</span>   <span class="cm">/* OIDs of relations referenced */</span>
+    <span class="n">List</span>       <span class="o">*</span><span class="n">invalItems</span><span class="p">;</span>     <span class="cm">/* plan cache invalidation triggers */</span>
+    <span class="kt">int</span>         <span class="n">nParamExec</span><span class="p">;</span>     <span class="cm">/* number of PARAM_EXEC parameters */</span>
+<span class="p">}</span> <span class="n">PlannedStmt</span><span class="p">;</span>
+</code></pre></div></div>
+
+<h3 id="path-to-plan-type-mapping">Path-to-Plan Type Mapping</h3>
+
+<table>
+  <thead>
+    <tr>
+      <th>Path Type</th>
+      <th>Plan Type</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">Path</code> (T_SeqScan)</td>
+      <td><code class="language-plaintext highlighter-rouge">SeqScan</code></td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">IndexPath</code></td>
+      <td><code class="language-plaintext highlighter-rouge">IndexScan</code> or <code class="language-plaintext highlighter-rouge">IndexOnlyScan</code></td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">BitmapHeapPath</code></td>
+      <td><code class="language-plaintext highlighter-rouge">BitmapHeapScan</code> + <code class="language-plaintext highlighter-rouge">BitmapIndexScan</code>/<code class="language-plaintext highlighter-rouge">BitmapAnd</code>/<code class="language-plaintext highlighter-rouge">BitmapOr</code></td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">NestPath</code></td>
+      <td><code class="language-plaintext highlighter-rouge">NestLoop</code></td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">MergePath</code></td>
+      <td><code class="language-plaintext highlighter-rouge">MergeJoin</code> (+ <code class="language-plaintext highlighter-rouge">Sort</code> nodes if needed)</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">HashPath</code></td>
+      <td><code class="language-plaintext highlighter-rouge">HashJoin</code> + <code class="language-plaintext highlighter-rouge">Hash</code></td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">SortPath</code></td>
+      <td><code class="language-plaintext highlighter-rouge">Sort</code></td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">AggPath</code></td>
+      <td><code class="language-plaintext highlighter-rouge">Agg</code></td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">GroupPath</code></td>
+      <td><code class="language-plaintext highlighter-rouge">Group</code></td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">WindowAggPath</code></td>
+      <td><code class="language-plaintext highlighter-rouge">WindowAgg</code></td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">LimitPath</code></td>
+      <td><code class="language-plaintext highlighter-rouge">Limit</code></td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">MaterialPath</code></td>
+      <td><code class="language-plaintext highlighter-rouge">Material</code></td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">MemoizePath</code></td>
+      <td><code class="language-plaintext highlighter-rouge">Memoize</code></td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">GatherPath</code></td>
+      <td><code class="language-plaintext highlighter-rouge">Gather</code></td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">GatherMergePath</code></td>
+      <td><code class="language-plaintext highlighter-rouge">GatherMerge</code></td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">AppendPath</code></td>
+      <td><code class="language-plaintext highlighter-rouge">Append</code></td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">ModifyTablePath</code></td>
+      <td><code class="language-plaintext highlighter-rouge">ModifyTable</code></td>
+    </tr>
+  </tbody>
+</table>
+
+<hr />
+
+<h2 id="diagram-path-to-plan-conversion">Diagram: Path-to-Plan Conversion</h2>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>Path Tree (optimizer output)          Plan Tree (executor input)
+================================      ================================
+
+HashPath                              HashJoin
+  pathtype: T_HashJoin                  jointype: JOIN_INNER
+  total_cost: 192.75                    hash_qual: t2.y = t1.x
+  pathkeys: NIL                         ┌───────────┴───────────┐
+  ┌────────┴────────┐                   v                       v
+  v                 v                 SeqScan on t2          Hash
+Path(T_SeqScan)  Path(T_SeqScan)       targetlist:           ┌──┘
+  parent: t2       parent: t1           [t2.y, t2.w]         v
+                                                           SeqScan on t1
+                                                             targetlist:
+                                                             [t1.x, t1.z]
+                                                             qual: t1.z &gt; 100
+
+After setrefs:
+
+HashJoin
+  hash_qual: OUTER_VAR.1 = INNER_VAR.1
+  ┌───────────┴───────────┐
+  v                       v
+SeqScan on t2          Hash
+  tlist: [col2, col4]     |
+                        SeqScan on t1
+                          tlist: [col1, col3]
+                          qual: col3 &gt; 100
+</code></pre></div></div>
+
+<hr />
+
+<h2 id="special-cases">Special Cases</h2>
+
+<h3 id="projection-nodes">Projection Nodes</h3>
+
+<p>If a plan node needs to compute expressions (not just pass through columns), and its child node cannot do the projection, a <code class="language-plaintext highlighter-rouge">Result</code> node is inserted as a projection step. The <code class="language-plaintext highlighter-rouge">CP_EXACT_TLIST</code> flag in <code class="language-plaintext highlighter-rouge">create_plan_recurse()</code> controls when this is necessary.</p>
+
+<h3 id="gating-conditions">Gating Conditions</h3>
+
+<p>If a qual can be determined false at plan creation time (e.g., contradictory EquivalenceClass constants), a <code class="language-plaintext highlighter-rouge">Result</code> node with a <code class="language-plaintext highlighter-rouge">One-Time Filter: false</code> is inserted. This short-circuits execution immediately, returning no rows.</p>
+
+<h3 id="subplan-linking">SubPlan Linking</h3>
+
+<p><code class="language-plaintext highlighter-rouge">set_plan_references()</code> finalizes the connection between SubPlan nodes in the main plan and their plan trees in <code class="language-plaintext highlighter-rouge">PlannedStmt.subplans</code>. Each SubPlan references its plan by index into the subplans list.</p>
+
+<h3 id="parallel-plan-finalization">Parallel Plan Finalization</h3>
+
+<p>For parallel plans, <code class="language-plaintext highlighter-rouge">create_gather_plan()</code> or <code class="language-plaintext highlighter-rouge">create_gather_merge_plan()</code> wraps the partial plan. The Gather node specifies <code class="language-plaintext highlighter-rouge">num_workers</code> and whether the leader participates. <code class="language-plaintext highlighter-rouge">set_plan_references()</code> ensures that parallel-safe expressions are used throughout.</p>
+
+<hr />
+
+<h2 id="the-complete-pipeline">The Complete Pipeline</h2>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>subquery_planner()
+  │
+  ├── preprocessing (prepjointree, prepqual, etc.)
+  ├── grouping_planner()
+  │     ├── query_planner()
+  │     │     └── make_one_rel() -&gt; best Path tree
+  │     └── handle upper-level processing (agg, sort, limit)
+  │           └── final best Path
+  │
+  ├── create_plan(best_path)              &lt;-- THIS SECTION
+  │     └── create_plan_recurse()
+  │           ├── create_seqscan_plan()
+  │           ├── create_hashjoin_plan()
+  │           │     ├── recurse for outer
+  │           │     └── recurse for inner (wrapped in Hash)
+  │           └── ... other plan types ...
+  │
+  └── set_plan_references(plan)           &lt;-- THIS SECTION
+        ├── fix Var references (OUTER_VAR, INNER_VAR)
+        ├── resolve operator OIDs
+        ├── link SubPlan references
+        └── return PlannedStmt
+              │
+              v
+          Executor
+</code></pre></div></div>
+
+<hr />
+
+<h2 id="connections">Connections</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>Subsystem</th>
+      <th>Relationship</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><a href="path-generation">Path Generation</a></td>
+      <td>Produces the Path tree that plan creation converts</td>
+    </tr>
+    <tr>
+      <td><a href="join-ordering">Join Ordering</a></td>
+      <td>Determines which Path tree wins (cheapest at top level)</td>
+    </tr>
+    <tr>
+      <td><a href="cost-model">Cost Model</a></td>
+      <td>Plan nodes carry the cost estimates from their source Paths</td>
+    </tr>
+    <tr>
+      <td><a href="../08-executor/">Executor</a></td>
+      <td>Consumes the Plan tree; each Plan node type has a corresponding executor node</td>
+    </tr>
+    <tr>
+      <td><a href="../09-caches/">Caches</a></td>
+      <td>The finished PlannedStmt may be stored in the plan cache for reuse</td>
+    </tr>
+    <tr>
+      <td><a href="preprocessing">Preprocessing</a></td>
+      <td>SubPlan nodes originate from sublinks that could not be pulled up</td>
+    </tr>
+  </tbody>
+</table>
+
+
+      <hr>
+
+      <!-- Prev / Next / Up navigation -->
+      
+      
+      
+
+      <div class="clearfix" style="margin-top: 2rem;">
+        
+          
+          
+
+          
+            
+            <a class="btn btn-primary float-left" href="/postgresql/07-query-optimizer/path-generation.html" title="Path Generation">&larr; Previous</a>
+          
+
+          
+            
+            <a class="btn btn-primary float-right" href="/postgresql/07-query-optimizer/preprocessing.html" title="Preprocessing">Next &rarr;</a>
+          
+        
+      </div>
+
+      
+      <div style="text-align: center; margin-top: 1rem;">
+        <a href="/postgresql-internals/">&uarr; Back to Table of Contents</a>
+      </div>
+      
+
+    </div>
+  </div>
+</div>
+
+
+  <!-- Footer -->
+
+<hr>
+
+<footer>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <ul class="list-inline text-center">
+          
+          <li class="list-inline-item">
+            <a href="mailto:amitava.dev@proton.me" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="far fa-envelope fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          
+          
+          <li class="list-inline-item">
+            <a href="https://www.linkedin.com/in/amitavaag" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-linkedin fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          <li class="list-inline-item">
+            <a href="https://github.com/ikouchiha47" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-github fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+        </ul>
+
+        <p class="copyright text-muted">
+          Build with: 
+          <a 
+            href="https://github.com/StartBootstrap/startbootstrap-clean-blog-jekyll"
+            class="text-gray"
+            target="_blank">startbootstrap-clean-blog-jekyll</a></p>
+      </div>
+    </div>
+  </div>
+</footer>
+
+
+  <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="/assets/vendor/blog/js/scripts.js"></script>
+
+<script src="/assets/scripts.js"></script>
+
+
+
+
+
+  <script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+
+    document.querySelectorAll('pre > code.language-mermaid').forEach((codeBlock) => {
+      codeBlock.parentElement.outerHTML = `<pre class="mermaid">${codeBlock.textContent}</pre>`;
+    });
+
+
+    mermaid.initialize({ startOnLoad: true, theme: 'forest' });
+</script>
+
+
+  
+
+</body>
+
+</html>
