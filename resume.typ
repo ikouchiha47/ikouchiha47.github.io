@@ -25,10 +25,12 @@
 
 = Profile
 
-A generalist software engineer, building, scaling and improving perforamnce of systems and processes, with an interest in building fault tolerant distributed systems, databases and some emulators.
-I build platform services, profiled applications, optimize data and databases, file encoding and network issues, handle production outages stabilizing and monitoring the systems to facilitate application and developer productivity across cross-functional teams.
+I’m a platform engineer who enjoys building scalable, fault-tolerant systems and making them faster and more reliable. I spend a lot of time profiling and benchmarking to uncover bottlenecks,
+reduce production issues, and improve system stability. I’ve led architectural decisions through ADRs, supported teams in building services, and worked across teams to improve delivery.
+Working across different parts of the platform, and my familiarity with some low-level debugging tools has also made me comfortable adapting quickly to new domains and problems.
 
 
+\
 = Skills
 
 #resume-skill-item(
@@ -43,12 +45,25 @@ I build platform services, profiled applications, optimize data and databases, f
 
 #resume-skill-item(
   "Technologies",
-  ("AWS", "Terraform", "Containerization (Docker) & Namespaces", "SDKs", "DSL", "Grpc", "Protobuf", "Some Kafka", "Redis streams"),
+  (
+    "AWS",
+    "Terraform",
+    "Docker & Containers",
+    "gRPC",
+    "Protobuf",
+    "Redis Streams",
+    "SDK & DSL Design",
+  ),
+)
+
+#resume-skill-item(
+  "Applied AI",
+  ("Dspy", "CrewAI", "Langchain", "Langtrace", "Prompt and Context Engineering", "Workflow Orchestration", "Embeddings and Applications")
 )
 
 #resume-skill-item(
   "Other Skills",
-  ("Distributed Systems", "Overservability", "Debugging convoluted problems", "Zig"),
+  ("Distributed Systems", "Overservability", "Few Unix tools", "Zig"),
 )
 
 \
@@ -57,33 +72,47 @@ I build platform services, profiled applications, optimize data and databases, f
 #resume-entry(
   title: "Affogato (formerly Rendernet)",
   location: "Bengaluru, India",
-  date: "12/2024 - Now",
+  date: "12/2024 - 31/2025",
   description: "Senior Software Engineer",
 )
 
 #resume-item[
   *Desigining systems to support media generation and delivery, evolving schemas, MVPs and POCs to help product make decisions*
 
-*Platform Engineering* (Oversaw products including):
-  - Workflow DSL backed by graphs (with concurrency handling), helping in faster integration
-  - Designing Screenplay service to support video editing, allowing for collaborative editing (using fractional indexing)
-  - DSL to facilitate easy Cross-embedding, Full Text Search
-  - Team-based authorization system
-  - Centralizing services like moderation, reverse proxy gateway for external services to control api limits, with queues for degraded experience
+\
 
-*Image & Video Optimization*:
-  - Built dynamic image delivery pipeline with on-the-fly + background compression (Golang + libvips) reducing transfer for 1K+ images from 4G to ~10 MB;
-  - Drove upstream libvips improvements by shifting to file pointer/reader APIs, enabling automated C-bindings. Designed dynamic Golang scaling and ran extensive performance benchmarks.
-  - Got govips team to integrate Reader interface instead of returning bytes. #link("https://github.com/davidbyttow/govips/issues/476")[Issue]
-  - *[WIP]* ffmpeg farm to handle video compression, delivery and edits.
+*Architecture & System Design Ownership*
+- Designed an orthogonal architecture for a collaborative video editor, cleanly separating timelines, assets, workflows, and rendering concerns to enable independent evolution and rapid experimentation.
+- Architected a workflow DSL backed by graph execution with concurrency controls, enabling faster integration of media-generation pipelines and reducing coordination overhead.
+- Designed fractional indexing–based primitives for non-linear collaborative editing, avoiding global reindexing and write contention.
+- Defined asynchronous, event-driven system patterns with queues and notifications to decouple user actions from long-running media processing and external dependencies.
 
+\
+*Platform Engineering*
+- Owned platform-level architectural decisions across media generation, search, authorization, moderation, and gateway services, balancing latency, cost, and operational complexity.
+- Designed a team-based authorization system and centralized reverse-proxy gateway with rate control and degraded-mode handling for external APIs.
+- Built internal DSLs for cross-embedding, full-text search, and metadata enrichment to standardize retrieval and evaluation across products.
+- Owned internal developer platform decisions, including CI/CD standards, QA gates, and automated PRD→ADR workflows using Claude-Code / Opencode agents.
+- Standardized deployment, configuration, and review workflows across services, reducing cognitive load and improving developer velocity.
+\
+
+*Image & Video Optimization*
+- Architected a dynamic image delivery pipeline (Golang + libvips) with on-the-fly and background compression, and dynamic go worker scaling, reducing transfer for 1K+ images from ~4GB to ~10MB.
+- Drove upstream libvips and govips improvements by shifting to reader-based APIs, enabling streaming processing and automated C-bindings.
+  #link("https://github.com/davidbyttow/govips/issues/476")[Upstream Issue]
+- Designing a scalable ffmpeg farm for video compression, delivery, and editing workflows (and AWS MediaConvert for later)
+
+\
 *Agentic AI & LLM Infrastructure*:
   - Build agentic AI topologies, combining tools for faster scaffolding; optimized LLM Router with shorter prompts + vector search; developed internal tooling for rapid prompt experimentation.
   - Visual Intelligence: Built video analysis platform to extract screenplay structure, colors, and product metadata—foundation for knowledgebase refinement and campaign evaluation.
   - Building a critique system, combining LLM based scoring, embedding scoring, readibility scores, emotional scores. (Learning about Natural Language)
 
-*Developer Velocity*:
+\
+*Development Velocity*:
   - Set up CI/CD pipelines, QA checks, and Claude-Code/Opencode powered agents to accelerate PRD->ADR conversions, code reviews, tests, and refactors.
+  - Bridged the gap between product team and dev team for faster iteration on prompt changes.
+  - Other smaller convention changes, to match the deployment readiness of frontend-backend releases, reducing late nights and multiple refactors post release.
 ]
 
 \
@@ -96,14 +125,11 @@ I build platform services, profiled applications, optimize data and databases, f
 )
 
 #resume-item[
-- Web based CSV processing system with Sqlite WASM, helping in quick analysis, cleanup, and computation of data.
-- Consulted a startup on setting up their online presence, providing them landing page designs, cost estimation to start up and scale with online service providers like Zoho, Microsoft emails, server cost, domain pricing etc.
-- Building on github.com/go-batteries, an one stop shop for most platform services, and tools to scaffold projects with them.
-- Worked on a python project, with LLM, backed by ollama to provide an api to categorize text. Using Langchain and vector databases to summarize customer reviews sentiment, for fun.
-- Mr.Notorious
-  - Wanting to see how to start a business. I managed to start an apparel company for serious weight-lifters. I handled most things, tech, graphic design, ideation, fabric research, market research for vendors and order quantities. 
-  - The cool factor was providing a customizable QR code on the sleeves to link directly to product page or self promote. The reminisance can be found on instagram #link("https://www.instagram.com/impowerbuff")[impowerbuff], and mr-notorious was the name of the cohort.
-- I ended up learning deployment and CI, adding terraform and some AWS products, sorting out what I want in life.
+- Designed and built a web-based CSV processing system using SQLite WASM for fast, local analysis and transformation of large datasets.
+- Consulted startups on early-stage architecture, infrastructure cost modeling, and cloud adoption strategies.
+- Built github.com/go-batteries, a reusable platform toolkit for scaffolding backend services and internal infrastructure.
+- Built LLM-backed APIs using Ollama and LangChain for text categorization and sentiment analysis experiments.
+- Founded and operated a small D2C apparel brand, owning end-to-end execution across product design, vendor sourcing, tech, and operations.
 ]
 
 \
@@ -118,16 +144,15 @@ I build platform services, profiled applications, optimize data and databases, f
 
 \
 #resume-item[
-  - Led the development of multiple new features and addressed SSO login issues, centralizing CSV management across use cases for clients like Snap and Mongo.
-  - Built an OpenID-based OAuth2 layer for employment history sharing, while resolving database locking issues from syncing new users and handling login requests.
-  - Orchestrated the migration of unencrypted files and integrated Datadog APM to address slow queries and later introducing application and system metrics.
-  - Developed and maintained core services, including a notification system using AWS(SQS, SES, SNS) and an internal developer platform to streamline workflows (PII log filters, database migrations, and more).
-  - Building the developer platform for engineers for faster development, including SDK, docs generation, database migrations, PII log filters, merge conflict predictor etc.
+  - Led the development of multiple new features and addressed SSO login issues, centralizing CSV management across use cases for clients like Snap and Mongo, and handling file *encoding* issues
+  - Build the developer platform for engineers for faster development, including *internal SDK*, docs generation, database migrations, PII log filters, merge conflict predictor etc.
+  - Orchestrated the migration of unencrypted files and integrated Datadog APM to address slow queries and later introducing application and system metrics, across multiple teams.
+  - Led efforts for Securing APIs with rate-limiting and more stringent request validations in collaboration with Security Team.
+  - Collaborated on building an OpenID-based OAuth2 layer for employment history sharing, while resolving database locking issues from syncing new users and handling login requests, and maintaining compliance.
+  - Developed and maintained core services, including a *notification system* using AWS(SQS, SES, SNS) and an internal developer platform to streamline workflows (PII log filters, database migrations, and more).
   - Standardized processes through the Golang SDK for configuration management, request tracing, and file encryption, while debugging production issues and resolving Redis connection issue to enable token caching and rate limiting.
-  - Conducted code reviews, lectured on Go concurrency and Node.js Promises, and assisted teams in integrating with existing services, including generating Swagger docs, Securing APIs with rate-limiting and more stringent request validations in collaboration with Security Team.
   - Other notable work includes building a DB resolver library for Gorm V1, migrating code from Lambda to Airflow, and improving performance through pprof benchmarking and Flamegraphs.
-  - Build the initial POC and helped complete a GraphQL backed API aggregator for Medical Records, Doctors from multiple different external sources, with hystrix timeouts.
-  - Helping new teams integrate with existing services, and generating swagger docs and request/response models using
+  - Conducted code reviews, lectured on Go concurrency and Node.js Promises, and assisted teams in integrating with existing services, including generating Swagger docs,
 ]
 
 \
