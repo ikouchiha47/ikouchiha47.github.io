@@ -1,6 +1,9 @@
 ---
 active: true
-layout: post
+layout: group_page
+group: rune
+group_title: "RUNE"
+group_url: "/rune/"
 title: "RUNE Part 5: Calibration, From 125 Seconds to 3"
 subtitle: "MASR throttling, stable windows, and a timer that fires regardless of IMU events"
 description: "Why the original calibration took 2 minutes and how it was fixed to take 3 seconds."
@@ -10,7 +13,7 @@ background_color: '#0a1628'
 
 ![Early prototype during calibration testing](/assets/rune/img/IMG_20260330_152939403.jpg)
 
-Calibration answers the question from [Part 4](/2026/04/29/rune-part4-gestures.html): reference anchoring. The device needs to know where "neutral" is for this user in this position before it can classify any motion as a gesture. That baseline is captured once after pairing — user holds arm in wearing position, firmware collects rotation vector samples, computes average, stores as the reference.
+Calibration answers the question from [Part 4](/rune/04-gestures): reference anchoring. The device needs to know where "neutral" is for this user in this position before it can classify any motion as a gesture. That baseline is captured once after pairing — user holds arm in wearing position, firmware collects rotation vector samples, computes average, stores as the reference.
 
 The original implementation required the user to hold still for up to two minutes. This is not a product.
 

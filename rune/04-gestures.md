@@ -1,6 +1,9 @@
 ---
 active: true
-layout: post
+layout: group_page
+group: rune
+group_title: "RUNE"
+group_url: "/rune/"
 title: "RUNE Part 4: Eight Problems Called Gesture Detection"
 subtitle: "From Euler angle deltas to a gyro integration FSM — and why the naive version fails seven ways"
 description: "Every naive gesture algorithm has the same failure modes. Here's the taxonomy and the rewrite."
@@ -163,4 +166,4 @@ Hold = triple same gesture. No time-based ambiguity about whether the user is st
 
 ---
 
-Calibration — the other piece of reference anchoring — is covered separately in [Part 5](/2026/04/30/rune-part5-calibration.html). It went from 125 seconds to 3.
+Calibration — the other piece of reference anchoring — is covered separately in [Part 5](/rune/05-calibration). It went from 125 seconds to 3.

@@ -1,6 +1,9 @@
 ---
 active: true
-layout: post
+layout: group_page
+group: rune
+group_title: "RUNE"
+group_url: "/rune/"
 title: "RUNE Epilogue: Read the Datasheet"
 subtitle: "How every fix in this project came from reading documentation, not throwing components"
 description: "On reading datasheets, analysing real data before writing code, and why the best engineers I know do exactly this while interview prep teaches the opposite."
@@ -63,7 +66,7 @@ The Stability Classifier is what made calibration possible. It outputs:
 - `3` — **stable** (sensor confident in current orientation — ideal for calibration)
 - `4+` — in motion
 
-The calibration fix in [Part 5](/2026/04/30/rune-part5-calibration.html) collected samples preferentially when `stab=3`. That classification comes from this report. It's not something we computed — the BNO085 computes it internally, continuously, as part of its fusion pipeline. We just had to read the manual to know it existed.
+The calibration fix in [Part 5](/rune/05-calibration) collected samples preferentially when `stab=3`. That classification comes from this report. It's not something we computed — the BNO085 computes it internally, continuously, as part of its fusion pipeline. We just had to read the manual to know it existed.
 
 ---
 

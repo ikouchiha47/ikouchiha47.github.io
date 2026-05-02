@@ -1,6 +1,9 @@
 ---
 active: true
-layout: post
+layout: group_page
+group: rune
+group_title: "RUNE"
+group_url: "/rune/"
 title: "RUNE Part 3: The Chip Wouldn't Wake Up"
 subtitle: "A concurrency bug in a third-party library, found the hard way"
 description: "The BNO085 sleep/wake feature, two layered bugs, and why you have to drain INT events before reading them."

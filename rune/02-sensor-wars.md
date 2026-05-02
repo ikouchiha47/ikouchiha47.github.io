@@ -1,6 +1,9 @@
 ---
 active: true
-layout: post
+layout: group_page
+group: rune
+group_title: "RUNE"
+group_url: "/rune/"
 title: "RUNE Part 2: The Sensor Wars"
 subtitle: "Why 6 degrees of freedom aren't enough, and why a magnetometer doesn't fix it"
 description: "The LSM6DS3, Madgwick, EKF, and why the BNO085 works on the first test."

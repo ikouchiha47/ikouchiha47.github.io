@@ -1,6 +1,9 @@
 ---
 active: true
-layout: post
+layout: group_page
+group: rune
+group_title: "RUNE"
+group_url: "/rune/"
 title: "RUNE Part 6: The App"
 subtitle: "Claude built most of it. Humans tested the joints."
 description: "Architecture of the React Native app — BLE bridge, TypeScript core, the androidtvremote2 protocol reverse-engineered into Kotlin, and how a research detour led to DTW."
@@ -28,7 +31,7 @@ UI (React Native screens)
 
 Core is testable without a device or simulator — just Bun and a test file. Infrastructure is thin: it calls core. Screens display state and capture input. No business logic in the screens. This boundary is defined in `wristturn-app/CLAUDE.md` and enforced by code review.
 
-What Claude built: the BLE state machine (`useBLE.ts`, `BLEServiceNative.ts`), the InteractionEngine (covered in [Part 4](/2026/04/29/rune-part4-gestures.html)), `ComboValidator`, `MotionClassifier`, `BaselineTracker`, the calibration flow, all screen layouts. The `StatePacket` discriminated union parser that turns raw BLE bytes into typed events:
+What Claude built: the BLE state machine (`useBLE.ts`, `BLEServiceNative.ts`), the InteractionEngine (covered in [Part 4](/rune/04-gestures)), `ComboValidator`, `MotionClassifier`, `BaselineTracker`, the calibration flow, all screen layouts. The `StatePacket` discriminated union parser that turns raw BLE bytes into typed events:
 
 ```typescript
 type StatePacket =
@@ -119,7 +122,7 @@ The **Sakoe-Chiba band** constrains the warping path to stay within W samples of
 
 **HMMs** were the 2000s standard when you have 10–50 training examples per class. Not 1-shot. Overkill for the current problem.
 
-The research is written up in full in [Research on RUNE-III](/2026/05/02/rune-iii-gesture-symbol-research.html). The short version: start with feature vectors (simplest, fastest, interpretable), fall back to DTW with Sakoe-Chiba when features alone can't discriminate. Both are implementable in TypeScript without a ML framework. No training data required beyond one reference recording per gesture.
+The research is written up in full in [Research on RUNE-III](/rune/08-gesture-symbols). The short version: start with feature vectors (simplest, fastest, interpretable), fall back to DTW with Sakoe-Chiba when features alone can't discriminate. Both are implementable in TypeScript without a ML framework. No training data required beyond one reference recording per gesture.
 
 `SymbolCapture.ts` in `src/gestures/` is the capture side — it records the gravity vector path during an arm gesture window. The matching side is RUNE-III.
 
@@ -137,6 +140,6 @@ This is an honest gap. Unit-testable Kotlin would require either a real device i
 
 ## What's next
 
-RUNE-I is the phone-paired version. BLE range and battery are the main constraints; both are work in progress. RUNE-III adds symbol recognition — the research is done, the implementation is next. RUNE-V adds EMG, which finally answers the engagement problem from [Part 4](/2026/04/29/rune-part4-gestures.html): knowing when the user means to gesture versus just moving their arm.
+RUNE-I is the phone-paired version. BLE range and battery are the main constraints; both are work in progress. RUNE-III adds symbol recognition — the research is done, the implementation is next. RUNE-V adds EMG, which finally answers the engagement problem from [Part 4](/rune/04-gestures): knowing when the user means to gesture versus just moving their arm.
 
 The hardware is a plastic box on velcro. The TV responds to wrist flicks. The series ends here for now.

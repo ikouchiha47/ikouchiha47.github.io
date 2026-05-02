@@ -1,6 +1,9 @@
 ---
 active: true
-layout: post
+layout: group_page
+group: rune
+group_title: "RUNE"
+group_url: "/rune/"
 title: "RUNE Part 1: The Hardware"
 subtitle: "From breadboard to a thing that fits on your wrist"
 description: "What's actually in the RUNE prototype, what it cost, and how it evolved from a glowing breadboard circuit to a plastic box held on by velcro."
@@ -21,7 +24,7 @@ This post is about how it got from there to something you can actually wear.
 Nothing here is cheap.
 
 **Seeed Studio XIAO nRF52840 Sense — ₹1100+**
-Nordic nRF52840 MCU: BLE 5.0, 64MHz Cortex-M4F, 256KB RAM, 1MB flash. BLE-certified. USB-C charging. Has an onboard LSM6DS3TR-C 6DOF IMU — which turns out to matter a lot, and not in a good way. That story is [Part 2](/2026/04/27/rune-part2-sensor-wars.html).
+Nordic nRF52840 MCU: BLE 5.0, 64MHz Cortex-M4F, 256KB RAM, 1MB flash. BLE-certified. USB-C charging. Has an onboard LSM6DS3TR-C 6DOF IMU — which turns out to matter a lot, and not in a good way. That story is [Part 2](/rune/02-sensor-wars).
 
 **SparkFun BNO085 Qwiic Breakout — ₹800–1000**
 A 9-axis IMU with a dedicated ARM Cortex-M0+ running Bosch SH-2 sensor fusion at 400Hz internally. More expensive than the MCU. Worth it. Qwiic connector makes the I2C wiring a single keyed cable rather than four loose jumpers that vibrate loose at the worst possible moment.
@@ -89,7 +92,7 @@ Approximate draw breakdown:
 - BNO085 in sleep between gestures: drops from ~1mA to ~few hundred µA
 - nRF52840 deep sleep: ~2µA
 
-Getting from one night to two days means average draw under ~23mA across the duty cycle. That's tight with BLE active. The sleep/wake logic on the BNO085 is the main variable — and it was completely broken when we first implemented it. [That's Part 3](/2026/04/28/rune-part3-wakeup.html).
+Getting from one night to two days means average draw under ~23mA across the duty cycle. That's tight with BLE active. The sleep/wake logic on the BNO085 is the main variable — and it was completely broken when we first implemented it. [That's Part 3](/rune/03-wakeup).
 
 The current debugging approach: multimeter in series with the battery line to measure real draw in each state. Serial logs tell you what the firmware thinks it's doing. The multimeter tells you what's actually happening.
 

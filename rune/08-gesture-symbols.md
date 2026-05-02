@@ -1,6 +1,9 @@
 ---
 active: true
-layout: post
+layout: group_page
+group: rune
+group_title: "RUNE"
+group_url: "/rune/"
 title: "Research on RUNE-III: Recognising Symbols in the Air"
 subtitle: "Five approaches to matching wrist gesture time series, ranked by how much they ask of you"
 description: "DTW, the $1 recognizer, feature vectors, HMMs, shapelets, and CNNs — what the literature says about 1-shot gesture matching on IMU data."
@@ -22,7 +25,7 @@ The full research document lives in `docs/GESTURE_SYMBOL_RECOGNITION.md`. This i
 
 Record a reference gesture once. Later, the user performs the same gesture 20% slower, or with a brief pause. Simple Euclidean distance between the two time series says they are different. A human says they are the same.
 
-The signal at each timestep is `ω(t) = [ωx, ωy, ωz]` — angular velocity from the BNO085 gyroscope at ~50Hz. A gesture is a short burst of this signal, segmented by the FSM from [Part 4](/2026/04/29/rune-part4-gestures.html). The matching problem is: given a reference recording and a query recording, are they the same gesture?
+The signal at each timestep is `ω(t) = [ωx, ωy, ωz]` — angular velocity from the BNO085 gyroscope at ~50Hz. A gesture is a short burst of this signal, segmented by the FSM from [Part 4](/rune/04-gestures). The matching problem is: given a reference recording and a query recording, are they the same gesture?
 
 Five approaches, ranked by how much they ask of you.
 
