@@ -35,6 +35,7 @@ layout: default
 
       {{ content }}
 
+      {% unless page.hide_toc %}
       <hr>
 
       {% assign group_pages = site.pages | where: "group", page.group | sort: "url" %}
@@ -69,6 +70,7 @@ layout: default
         {% endfor %}
         </ol>
       {% endif %}
+      {% endunless %}
 
     </div>
   </div>

@@ -75,6 +75,24 @@ The SH-2 reference manual describes the internal fusion pipeline in detail. The 
 
 ---
 
+## Session data — the difference
+
+**LSM6DS3 (April 6)** — every session baseline is already offset before the gesture starts. The blue line (yaw) is at −50°, −80°, −100° before any motion. The axes tangle as accumulated yaw bleeds into roll and pitch. These sessions were recorded with the wrist mostly still.
+
+<div style="display:flex;gap:1rem;flex-wrap:wrap;margin-bottom:1.5rem;">
+  <img src="/assets/rune/img/lsm6ds3-yaw-drift-sessions.jpg" alt="LSM6DS3 session data — yaw diving to -80° at rest" style="max-width:48%;min-width:260px;height:auto;border-radius:4px;">
+  <img src="/assets/rune/img/lsm6ds3-yaw-drift-tangled.jpg" alt="LSM6DS3 session data — all axes tangled, -100° baselines" style="max-width:48%;min-width:260px;height:auto;border-radius:4px;">
+</div>
+
+**BNO085 (April 4)** — same app, same UI, different chip. Lines start near 0°, make a clean shaped motion, return to baseline. Gesture identity is readable directly from the chart.
+
+<div style="display:flex;gap:1rem;flex-wrap:wrap;margin-bottom:1.5rem;">
+  <img src="/assets/rune/img/bno085-session-gestures.jpg" alt="BNO085 session data — Swipe, Z, Y, X gestures, clean baselines" style="max-width:48%;min-width:260px;height:auto;border-radius:4px;">
+  <img src="/assets/rune/img/bno085-session-rotate.jpg" alt="BNO085 session data — Rotate gestures, clean roll/pitch motion" style="max-width:48%;min-width:260px;height:auto;border-radius:4px;">
+</div>
+
+---
+
 ## The git evidence
 
 Two commits tell the story cleanly:
