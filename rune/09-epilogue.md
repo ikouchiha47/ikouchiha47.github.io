@@ -11,7 +11,7 @@ date: 2026-05-03 00:00:00
 background_color: '#0a0a0a'
 ---
 
-![The device that got debugged, not replaced](/assets/rune/img/IMG_20260429_174628015.jpg)
+<img src="/assets/rune/img/IMG_20260429_174628015.jpg" alt="The device that got debugged, not replaced" style="max-width:100%;height:auto;display:block;margin:0 auto 1.5rem;">
 
 Every meaningful fix in this project came from reading something first.
 

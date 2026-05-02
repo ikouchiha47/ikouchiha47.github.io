@@ -11,7 +11,7 @@ date: 2026-04-26 00:00:00
 background_color: '#0f2027'
 ---
 
-![First working circuit — breadboard, BNO085 Qwiic, nRF52840 XIAO](/assets/rune/img/IMG_20260330_173915512.jpg)
+<img src="/assets/rune/img/IMG_20260330_173915512.jpg" alt="First working circuit — breadboard, BNO085 Qwiic, nRF52840 XIAO" style="max-width:100%;height:auto;display:block;margin:0 auto 1.5rem;">
 
 That blue glow is the BLE advertising indicator. That's the whole device. Everything RUNE does — gesture detection, BLE communication, power management — is running on those two boards jammed into a breadboard at 17:39 on March 30th, somewhere in Bengaluru.
 
@@ -63,7 +63,7 @@ Solder both modules to a small perfboard with short solid-core wire between pads
 
 **Plastic component box + velcro strap (April 2026)**
 
-![Prototype housing — plastic box, battery inside, wireless](/assets/rune/img/IMG_20260429_174628015.jpg)
+<img src="/assets/rune/img/IMG_20260429_174628015.jpg" alt="Prototype housing — plastic box, battery inside, wireless" style="max-width:100%;height:auto;display:block;margin:0 auto 1.5rem;">
 
 Ugly. Self-contained. Battery inside. Wireless. This is what you actually test with — not the breadboard, not a render.
 
@@ -105,3 +105,17 @@ RUNE-IV: custom 2-layer PCB with the Raytac MDBT50Q (no USB-C port thickness pen
 RUNE-V: EMG pads via extendable pogo pins. Clip the EMG module on when you want muscle-based intent detection, off when you don't. Clip-on or standalone watch form factor. This is the version that makes it something you might actually choose to wear.
 
 Not a fitness tracker. A control surface that happens to sit on your wrist.
+
+---
+
+## Case model
+
+The Three.js case model (v3) — drag to orbit, scroll to zoom, right-drag to pan. Shows the full stack: battery → BNO085 → XIAO, strap lugs, side expansion port, bottom pogo contacts, and the EMG electrode placement on the inner band.
+
+<div style="position:relative;width:100%;padding-bottom:62.5%;margin-bottom:1.5rem;">
+  <iframe src="/rune/case-preview.html"
+    style="position:absolute;top:0;left:0;width:100%;height:100%;border:none;border-radius:6px;"
+    loading="lazy"
+    title="WristTurn v1 — Modular System 3D Preview">
+  </iframe>
+</div>

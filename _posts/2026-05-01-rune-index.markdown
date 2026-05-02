@@ -8,18 +8,10 @@ date: 2026-04-25 00:00:00
 background_color: '#1a1a2e'
 group: rune
 permalink: /rune/
+hide_toc: true
 ---
 
-![RUNE prototype — breadboard day one](/assets/rune/img/IMG_20260330_173915512.jpg)
-
----
-
-## Before you read the parts
-
-**[Epilogue: Read the Datasheet](/rune/09-epilogue)**
-Every fix in this project came from reading a document, not guessing. The SH-2 reference manual, the LSM6DS3 datasheet, the SparkFun library source. On why reading before coding is faster than the alternative — and a gentle word about system design interviews where everything stays in the air.
-
----
+<img src="/assets/rune/img/IMG_20260502_device_box.jpg" alt="RUNE — plastic box prototype, blue BLE indicator, desk setup" style="max-width:100%;height:auto;display:block;margin:0 auto 1.5rem;">
 
 RUNE is a wrist-worn gesture controller. Flick right — D-pad right. Pitch down — back. Hold still — nothing happens, which is the correct default. It talks to smart TVs, bulbs, plugs, and desktop inputs over BLE. No voice. No phone in hand. No accent required.
 
@@ -31,11 +23,9 @@ You don't need an accent to control a smart device. (Alexa 😉😉)
 
 It's not a fitness tracker. This is a deliberate product decision, not an oversight.
 
-Knowing your HRV every 20 minutes doesn't improve your health unless you're doing something with that number. Most people aren't. If you're outside having fun wearing a Rolex, you're having a good time. You don't need something on your wrist telling you that.
+Knowing your HRV every 20 minutes doesn't improve your health unless you're doing something with that number. Most people aren't. If you're outside having a good time wearing a Rolex, and you glance at your wrist, you can tell — you're having a good time.
 
 RUNE is a tool you put on when you want to control something, then take off and wear a real watch. Different category entirely.
-
-*Caution: Your grandma might start dancing to chammak challo.*
 
 ---
 
@@ -92,3 +82,6 @@ DTW, feature vectors, the $1 recognizer, shapelets, HMMs — five approaches to 
 ---
 
 The hardware exists. The gestures work. The parts that were broken are documented in the posts above, not papered over.
+
+**[Epilogue: Read the Datasheet](/rune/09-epilogue)**
+Every meaningful fix came from reading something first. Not Googling "BNO085 not working" and hoping for a hit. Reading the SH-2 Reference Manual. Reading the SparkFun library source. Reading the datasheet section on MASR. Every time something broke in a non-obvious way, the answer was in a document that existed before the problem did.

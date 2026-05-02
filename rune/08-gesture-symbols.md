@@ -11,7 +11,7 @@ date: 2026-05-02 00:00:00
 background_color: '#12001a'
 ---
 
-![Early prototype — the hardware that will run RUNE-III](/assets/rune/img/IMG_20260330_173915512.jpg)
+<img src="/assets/rune/img/IMG_20260330_173915512.jpg" alt="Early prototype — the hardware that will run RUNE-III" style="max-width:100%;height:auto;display:block;margin:0 auto 1.5rem;">
 
 RUNE-I maps fixed gestures to fixed actions. Turn right → D-pad right. That's a lookup table. RUNE-III is different: the user draws a symbol in the air — a Z, an L, a circle — and the device recognises it. One recording per gesture, no training set, no server.
 

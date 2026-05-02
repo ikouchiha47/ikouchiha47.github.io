@@ -11,7 +11,7 @@ date: 2026-05-01 00:00:00
 background_color: '#0f1923'
 ---
 
-![App connected and active](/assets/rune/img/IMG_20260421_120823252-2.jpg)
+<img src="/assets/rune/img/IMG_20260421_120823252-2.jpg" alt="App connected and active" style="max-width:100%;height:auto;display:block;margin:0 auto 1.5rem;">
 
 The app is the bridge. Firmware classifies gestures. The app decides what to do about them — D-pad the TV, toggle a bulb, send a keypress to a desktop. The execution logic lives in TypeScript and Kotlin, not C++.
 
@@ -47,7 +47,7 @@ The gravity pose packet (`PKT_GRAV = 0x07`) was added late, replacing a pitch-be
 
 ## Android TV — not what you'd expect
 
-![Device on desk](/assets/rune/img/IMG_20260501_021252907.jpg)
+<img src="/assets/rune/img/IMG_20260501_021252907.jpg" alt="Device on desk" style="max-width:100%;height:auto;display:block;margin:0 auto 1.5rem;">
 
 The Android TV integration (`modules/androidtv/`) does not use `InputManager.injectInputEvent()`. It implements the **androidtvremote2 protocol** — Google's actual remote control protocol used by the official Android TV Remote app, running over two TLS-over-TCP connections on ports 6467 (pairing) and 6466 (remote).
 

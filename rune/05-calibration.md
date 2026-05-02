@@ -11,7 +11,7 @@ date: 2026-04-30 00:00:00
 background_color: '#0a1628'
 ---
 
-![Early prototype during calibration testing](/assets/rune/img/IMG_20260330_152939403.jpg)
+<img src="/assets/rune/img/IMG_20260330_152939403.jpg" alt="Early prototype during calibration testing" style="max-width:100%;height:auto;display:block;margin:0 auto 1.5rem;">
 
 Calibration answers the question from [Part 4](/rune/04-gestures): reference anchoring. The device needs to know where "neutral" is for this user in this position before it can classify any motion as a gesture. That baseline is captured once after pairing — user holds arm in wearing position, firmware collects rotation vector samples, computes average, stores as the reference.
 
