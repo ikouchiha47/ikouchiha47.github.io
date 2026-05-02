@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+  <title>
+    RUNE Part 6: The App - iko&#39;s logs
+    
+  </title>
+
+  <meta name="description" content="Architecture of the React Native app — BLE bridge, TypeScript core, the androidtvremote2 protocol reverse-engineered into Kotlin, and how a research detour led to DTW.">
+  <meta property="og:description" content="Architecture of the React Native app — BLE bridge, TypeScript core, the androidtvremote2 protocol reverse-engineered into Kotlin, and how a research detour l...">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="RUNE Part 6: The App">
+  <meta property="og:url" content="https://ikouchiha47.github.io/rune/06-app.html">
+
+  
+
+  <link href='https://fonts.googleapis.com/css?family=Lora:400,700,400italic,700italic' rel='stylesheet' type='text/css'>
+  <link href='https://fonts.googleapis.com/css?family=Open+Sans:300italic,400italic,600italic,700italic,800italic,400,300,600,700,800' rel='stylesheet' type='text/css'>
+
+  <!-- <script src="https://use.fontawesome.com/releases/v5.15.3/js/all.js" crossorigin="anonymous"></script> -->
+  <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.15.4/css/all.css" integrity="sha384-DyZ88mC6Up2uqS4h/KRgHuoeGwBcD4Ng9SiP4dIRy0EXTlnuz47vAwmeGwVChigm" crossorigin="anonymous"/>
+
+  <link rel="stylesheet" href="/assets/main.css">
+  <link rel="canonical" href="https://ikouchiha47.github.io/rune/06-app.html">
+  <link rel="alternate" type="application/rss+xml" title="iko&#39;s logs" href="/feed.xml">
+
+  <meta name="google-site-verification" content="lWkg6gIxJgzEKX_5XnhcxCtPE9QknaimFWWos_dTvPM" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fira+Sans:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Inconsolata:wght@200..900&family=Jersey+25&family=Kanit:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Merriweather+Sans:ital,wght@0,300..800;1,300..800&family=Nanum+Gothic+Coding&family=Space+Grotesk:wght@300..700&family=Titillium+Web:ital,wght@0,200;0,300;0,400;0,600;0,700;0,900;1,200;1,300;1,400;1,600;1,700&display=swap" rel="stylesheet">
+
+</head>
+
+
+<body>
+
+  <!-- Navigation -->
+<nav class="navbar navbar-expand-lg navbar-light fixed-top" id="mainNav">
+  <div class="container">
+    <a class="navbar-brand" href="/">iko&#39;s logs</a>
+    <button class="navbar-toggler navbar-toggler-right" type="button" data-toggle="collapse" data-target="#navbarResponsive" aria-controls="navbarResponsive" aria-expanded="false" aria-label="Toggle navigation">
+      Menu
+      <i class="fa fa-bars"></i>
+    </button>
+    <div class="collapse navbar-collapse" id="navbarResponsive">
+      <ul class="navbar-nav ml-auto">
+        <li class="nav-item">
+          <a class="nav-link" href="/">Home</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/about">About</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/posts">Posts</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/contact">Contact</a>
+        </li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+
+  <!-- Page Header -->
+
+<header class="masthead" style="background: #0f1923">
+
+  <div class="overlay"></div>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <div class="post-heading">
+          <h1>RUNE Part 6: The App</h1>
+          
+          <h2 class="subheading">Claude built most of it. Humans tested the joints.</h2>
+          
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="container space-grotesk">
+  <div class="row">
+    <div class="col-lg-8 col-md-10 mx-auto">
+
+      <!-- Breadcrumb -->
+      <nav aria-label="breadcrumb" style="margin-bottom: 1.5rem;">
+        <ol class="breadcrumb" style="background: transparent; padding: 0;">
+          
+            <li class="breadcrumb-item"><a href="/rune/">RUNE</a></li>
+          
+          
+          <li class="breadcrumb-item active" aria-current="page">RUNE Part 6: The App</li>
+        </ol>
+      </nav>
+
+      <p><img src="/assets/rune/img/IMG_20260421_120823252-2.jpg" alt="App connected and active" style="max-width:100%;height:auto;display:block;margin:0 auto 1.5rem;" /></p>
+
+<p>The app is the bridge. Firmware classifies gestures. The app decides what to do about them — D-pad the TV, toggle a bulb, send a keypress to a desktop. The execution logic lives in TypeScript and Kotlin, not C++.</p>
+
+<p>Most of the app code was written by Claude. The parts that required a physical device to verify — Claude got wrong.</p>
+
+<hr />
+
+<h2 id="architecture">Architecture</h2>
+
+<p>Three layers. Dependencies point inward.</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>UI (React Native screens)
+  → Core (pure TypeScript, no framework imports, testable with Bun)
+  → Infrastructure (BLE service, native bridge)
+</code></pre></div></div>
+
+<p>Core is testable without a device or simulator — just Bun and a test file. Infrastructure is thin: it calls core. Screens display state and capture input. No business logic in the screens. This boundary is defined in <code class="language-plaintext highlighter-rouge">wristturn-app/CLAUDE.md</code> and enforced by code review.</p>
+
+<p>What Claude built: the BLE state machine (<code class="language-plaintext highlighter-rouge">useBLE.ts</code>, <code class="language-plaintext highlighter-rouge">BLEServiceNative.ts</code>), the InteractionEngine (covered in <a href="/rune/04-gestures">Part 4</a>), <code class="language-plaintext highlighter-rouge">ComboValidator</code>, <code class="language-plaintext highlighter-rouge">MotionClassifier</code>, <code class="language-plaintext highlighter-rouge">BaselineTracker</code>, the calibration flow, all screen layouts. The <code class="language-plaintext highlighter-rouge">StatePacket</code> discriminated union parser that turns raw BLE bytes into typed events:</p>
+
+<div class="language-typescript highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="kd">type</span> <span class="nx">StatePacket</span> <span class="o">=</span>
+  <span class="o">|</span> <span class="p">{</span> <span class="na">type</span><span class="p">:</span> <span class="dl">"</span><span class="s2">stab</span><span class="dl">"</span><span class="p">;</span>    <span class="nl">value</span><span class="p">:</span> <span class="kr">number</span> <span class="p">}</span>
+  <span class="o">|</span> <span class="p">{</span> <span class="na">type</span><span class="p">:</span> <span class="dl">"</span><span class="s2">grav</span><span class="dl">"</span><span class="p">;</span>    <span class="nl">pose</span><span class="p">:</span> <span class="dl">"</span><span class="s2">flat</span><span class="dl">"</span> <span class="o">|</span> <span class="dl">"</span><span class="s2">hanging</span><span class="dl">"</span> <span class="o">|</span> <span class="dl">"</span><span class="s2">raised</span><span class="dl">"</span> <span class="p">}</span>
+  <span class="o">|</span> <span class="p">{</span> <span class="na">type</span><span class="p">:</span> <span class="dl">"</span><span class="s2">batt</span><span class="dl">"</span><span class="p">;</span>    <span class="nl">percent</span><span class="p">:</span> <span class="kr">number</span> <span class="p">}</span>
+  <span class="o">|</span> <span class="p">{</span> <span class="na">type</span><span class="p">:</span> <span class="dl">"</span><span class="s2">gesture</span><span class="dl">"</span><span class="p">;</span> <span class="nl">name</span><span class="p">:</span> <span class="kr">string</span><span class="p">;</span> <span class="nl">roll</span><span class="p">:</span> <span class="kr">number</span><span class="p">;</span> <span class="nl">pitch</span><span class="p">:</span> <span class="kr">number</span><span class="p">;</span> <span class="nl">yaw</span><span class="p">:</span> <span class="kr">number</span> <span class="p">}</span>
+</code></pre></div></div>
+
+<p>The gravity pose packet (<code class="language-plaintext highlighter-rouge">PKT_GRAV = 0x07</code>) was added late, replacing a pitch-below-baseline arm detection hack that worked and was wrong. The firmware now sends the actual arm pose derived from gravity vector projection. This is typical: the clean version comes after you’ve shipped the hack and watched it fail at the edges.</p>
+
+<hr />
+
+<h2 id="android-tv--not-what-youd-expect">Android TV — not what you’d expect</h2>
+
+<p><img src="/assets/rune/img/IMG_20260501_021252907.jpg" alt="Device on desk" style="max-width:100%;height:auto;display:block;margin:0 auto 1.5rem;" /></p>
+
+<p>The Android TV integration (<code class="language-plaintext highlighter-rouge">modules/androidtv/</code>) does not use <code class="language-plaintext highlighter-rouge">InputManager.injectInputEvent()</code>. It implements the <strong>androidtvremote2 protocol</strong> — Google’s actual remote control protocol used by the official Android TV Remote app, running over two TLS-over-TCP connections on ports 6467 (pairing) and 6466 (remote).</p>
+
+<p>This was found by asking: who has solved the exact problem of controlling an Android TV from a non-TV Android device? The answer was the <a href="https://github.com/tronikos/androidtvremote2"><code class="language-plaintext highlighter-rouge">androidtvremote2</code></a> Python library — a clean open-source implementation of the protocol, reverse-engineered from traffic captures. The Kotlin code in <code class="language-plaintext highlighter-rouge">AndroidTVRemoteClient.kt</code> follows the same protocol. There’s even a comment in the pairing code crediting the source:</p>
+
+<div class="language-kotlin highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="c1">// Protocol from androidtvremote2:</span>
+<span class="c1">// sha256(bytes.fromhex(clientMod) + bytes.fromhex(0+clientExp) + ...)</span>
+</code></pre></div></div>
+
+<p><strong>How the protocol works:</strong></p>
+
+<p>Pairing (port 6467) uses Google’s Polo protocol — a TLS handshake where both sides present self-signed RSA-2048 certificates, then exchange a shared secret derived from those certs and a 6-digit hex PIN shown on the TV screen:</p>
+
+<div class="language-kotlin highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="c1">// The secret is SHA-256 over both RSA public key moduli + exponents + the PIN</span>
+<span class="kd">val</span> <span class="py">digest</span> <span class="p">=</span> <span class="nc">MessageDigest</span><span class="p">.</span><span class="nf">getInstance</span><span class="p">(</span><span class="s">"SHA-256"</span><span class="p">)</span>
+<span class="n">digest</span><span class="p">.</span><span class="nf">update</span><span class="p">(</span><span class="nf">hexToBytes</span><span class="p">(</span><span class="n">clientMod</span><span class="p">))</span>
+<span class="n">digest</span><span class="p">.</span><span class="nf">update</span><span class="p">(</span><span class="nf">hexToBytes</span><span class="p">(</span><span class="n">clientExp</span><span class="p">))</span>
+<span class="n">digest</span><span class="p">.</span><span class="nf">update</span><span class="p">(</span><span class="nf">hexToBytes</span><span class="p">(</span><span class="n">serverMod</span><span class="p">))</span>
+<span class="n">digest</span><span class="p">.</span><span class="nf">update</span><span class="p">(</span><span class="nf">hexToBytes</span><span class="p">(</span><span class="n">serverExp</span><span class="p">))</span>
+<span class="n">digest</span><span class="p">.</span><span class="nf">update</span><span class="p">(</span><span class="nf">hexToBytes</span><span class="p">(</span><span class="n">pin</span><span class="p">.</span><span class="nf">substring</span><span class="p">(</span><span class="mi">2</span><span class="p">)))</span>
+<span class="kd">val</span> <span class="py">hash</span> <span class="p">=</span> <span class="n">digest</span><span class="p">.</span><span class="nf">digest</span><span class="p">()</span>
+<span class="c1">// hash[0] must match pin[0:2] — this is the checksum that makes the PIN verifiable</span>
+</code></pre></div></div>
+
+<p>Once paired, the client identity (private key + cert) is persisted to disk. Subsequent connections skip pairing — the TV recognizes the cert.</p>
+
+<p>Remote control (port 6466) sends protobuf-encoded key events. There’s no protobuf dependency — the encoding is implemented inline with ~50 lines of varint and length-delimited field helpers:</p>
+
+<div class="language-kotlin highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">fun</span> <span class="nf">keyEventMessage</span><span class="p">(</span><span class="n">keyCode</span><span class="p">:</span> <span class="nc">Int</span><span class="p">,</span> <span class="n">direction</span><span class="p">:</span> <span class="nc">Int</span><span class="p">):</span> <span class="nc">ByteArray</span> <span class="p">{</span>
+    <span class="c1">// RemoteMessage field 10 = remote_key_inject { key_code(1), direction(2) }</span>
+    <span class="c1">// direction: SHORT=3, START_LONG=1, END_LONG=2</span>
+    <span class="kd">val</span> <span class="py">keyEvent</span> <span class="p">=</span> <span class="nf">int32Field</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">keyCode</span><span class="p">)</span> <span class="p">+</span> <span class="nf">int32Field</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="n">direction</span><span class="p">)</span>
+    <span class="kd">val</span> <span class="py">outer</span>    <span class="p">=</span> <span class="nf">lengthDelimited</span><span class="p">(</span><span class="mi">10</span><span class="p">,</span> <span class="n">keyEvent</span><span class="p">)</span>
+    <span class="k">return</span> <span class="nf">frameMessage</span><span class="p">(</span><span class="n">outer</span><span class="p">)</span>
+<span class="p">}</span>
+</code></pre></div></div>
+
+<p>The writer thread drains a <code class="language-plaintext highlighter-rouge">LinkedBlockingQueue</code> and measures enqueue-to-send latency. The reader thread handles the TV’s ping frames (field 8 → field 9 pong) and configure messages. App links (<code class="language-plaintext highlighter-rouge">remote_app_link_launch_request</code>, field 90) are also supported for deep-launching apps directly.</p>
+
+<p>What required physical testing to get right: the configure handshake the TV expects on first connection, the specific feature bitmask (<code class="language-plaintext highlighter-rouge">PING=1 | KEY=2 | POWER=32 | VOLUME=64 | APP_LINK=512 = 611</code>), BouncyCastle cert generation via Android’s bundled internal classes (which requires reflection because the APIs aren’t public), and the soTimeout dance — set during handshake, cleared after so the reader thread doesn’t time out on quiet connections.</p>
+
+<p>None of this was in any tutorial. It required reading the Python source, reading the Kotlin TLS docs, and running it against a physical TV with logcat open.</p>
+
+<hr />
+
+<h2 id="finding-the-protocol-how-research-applies-here">Finding the protocol: how research applies here</h2>
+
+<p>The approach used to find <code class="language-plaintext highlighter-rouge">androidtvremote2</code> — “who has solved the same problem or a close variant, and what did they learn?” — is a repeatable pattern that came up again for gesture symbol recognition.</p>
+
+<p>The RUNE-III goal is drawing symbols in the air (Z, L, circle) and having the device recognize them. The naive approach is: record one reference gesture, compare future gestures against it. The problem: gestures drawn at different speeds produce different time series. Simple Euclidean distance says they’re different. A human says they’re the same.</p>
+
+<p>Searching for “time series classification with one training example” turns up the same cluster of results across audio, speech, and gesture literature:</p>
+
+<p><strong>DTW (Dynamic Time Warping)</strong> — warps the time axis to find the optimal alignment between two sequences, then measures distance on the aligned version. A gesture drawn 20% slower gets stretched to match the reference; the shape is preserved.</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>Reference: [A, B, B, C, D, D, E]
+Query:     [A, B, C, C, D, E, E]
+
+DTW finds the diagonal path through the cost matrix that minimizes total distance.
+Cost matrix cell = Euclidean distance between ω(t) samples (3D vectors).
+</code></pre></div></div>
+
+<p>The <strong>Sakoe-Chiba band</strong> constrains the warping path to stay within W samples of the diagonal — prevents degenerate alignments where the entire reference maps to a single query point, and reduces complexity from O(N²) to O(N·W).</p>
+
+<p><strong>The $1 Unistroke Recognizer</strong> (<a href="http://depts.washington.edu/acelab/proj/dollar/index.html">depts.washington.edu/acelab</a>) — resamples the gesture path to N equally-spaced points, rotates to canonical angle, scales to unit square, compares against templates. Originally for touch strokes, but directly applicable if you treat the gravity vector tip as the “stroke” on the sphere surface. ~100 lines of code. Works with one template per class.</p>
+
+<p><strong>Feature vectors</strong> (Benbasat 2002) — extract peak gyro rate, total integral, duration, dominant axis from each gesture and compare as a fixed-length vector. Much simpler than DTW. Works well for gestures with distinct profiles (Z vs L vs circle have different peak rates and dominant axes). Fails for gestures that only differ in subtle timing.</p>
+
+<p><strong>HMMs</strong> were the 2000s standard when you have 10–50 training examples per class. Not 1-shot. Overkill for the current problem.</p>
+
+<p>The research is written up in full in <a href="/rune/08-gesture-symbols">Research on RUNE-III</a>. The short version: start with feature vectors (simplest, fastest, interpretable), fall back to DTW with Sakoe-Chiba when features alone can’t discriminate. Both are implementable in TypeScript without a ML framework. No training data required beyond one reference recording per gesture.</p>
+
+<p><code class="language-plaintext highlighter-rouge">SymbolCapture.ts</code> in <code class="language-plaintext highlighter-rouge">src/gestures/</code> is the capture side — it records the gravity vector path during an arm gesture window. The matching side is RUNE-III.</p>
+
+<hr />
+
+<h2 id="testing">Testing</h2>
+
+<p>The gesture logic has unit tests running under Bun — hand-rolled harness, no Jest, no Mocha, exits non-zero on failure. The <code class="language-plaintext highlighter-rouge">InteractionEngine</code> tests cover Terminal, Sequence, and Repeat rules with synthetic gesture streams.</p>
+
+<p>The Kotlin bridge has no unit tests. It’s tested physically against a real Android TV. The failure modes are hardware-dependent in ways a mock cannot capture — TV firmware versions, the exact configure handshake timing, soTimeout behavior on different Android versions. The tests that exist are integration tests performed by hand.</p>
+
+<p>This is an honest gap. Unit-testable Kotlin would require either a real device in CI or a detailed mock of the TLS protocol stack. Neither is worth it at this stage.</p>
+
+<hr />
+
+<h2 id="whats-next">What’s next</h2>
+
+<p>RUNE-I is the phone-paired version. BLE range and battery are the main constraints; both are work in progress. RUNE-III adds symbol recognition — the research is done, the implementation is next. RUNE-V adds EMG, which finally answers the engagement problem from <a href="/rune/04-gestures">Part 4</a>: knowing when the user means to gesture versus just moving their arm.</p>
+
+<p>The hardware is a plastic box on velcro. The TV responds to wrist flicks. The series ends here for now.</p>
+
+
+      <hr>
+
+      <!-- Prev / Next / Up navigation -->
+      
+      
+      
+
+      <div class="clearfix" style="margin-top: 2rem;">
+        
+          
+          
+
+          
+            
+            <a class="btn btn-primary float-left" href="/rune/05-calibration.html" title="RUNE Part 5: Calibration, From 125 Seconds to 3">&larr; Previous</a>
+          
+
+          
+            
+            <a class="btn btn-primary float-right" href="/rune/07-power.html" title="Part 7: Power on 300mAh">Next &rarr;</a>
+          
+        
+      </div>
+
+      
+      <div style="text-align: center; margin-top: 1rem;">
+        <a href="/rune/">&uarr; Back to Table of Contents</a>
+      </div>
+      
+
+    </div>
+  </div>
+</div>
+
+
+  <!-- Footer -->
+
+<hr>
+
+<footer>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <ul class="list-inline text-center">
+          
+          <li class="list-inline-item">
+            <a href="mailto:amitava.dev@proton.me" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="far fa-envelope fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          
+          
+          <li class="list-inline-item">
+            <a href="https://www.linkedin.com/in/amitavaag" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-linkedin fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          <li class="list-inline-item">
+            <a href="https://github.com/ikouchiha47" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-github fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+        </ul>
+
+        <p class="copyright text-muted">
+          Build with: 
+          <a 
+            href="https://github.com/StartBootstrap/startbootstrap-clean-blog-jekyll"
+            class="text-gray"
+            target="_blank">startbootstrap-clean-blog-jekyll</a></p>
+      </div>
+    </div>
+  </div>
+</footer>
+
+
+  <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="/assets/vendor/blog/js/scripts.js"></script>
+
+<script src="/assets/scripts.js"></script>
+
+
+
+
+
+  <script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+
+    document.querySelectorAll('pre > code.language-mermaid').forEach((codeBlock) => {
+      codeBlock.parentElement.outerHTML = `<pre class="mermaid">${codeBlock.textContent}</pre>`;
+    });
+
+
+    mermaid.initialize({ startOnLoad: true, theme: 'forest' });
+</script>
+
+
+  
+
+</body>
+
+</html>

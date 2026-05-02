@@ -1,0 +1,683 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+  <title>
+    WAL Internals - iko&#39;s logs
+    
+  </title>
+
+  <meta name="description" content="">
+  <meta property="og:description" content="">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="WAL Internals">
+  <meta property="og:url" content="https://ikouchiha47.github.io/postgresql/04-wal/wal-internals.html">
+
+  
+
+  <link href='https://fonts.googleapis.com/css?family=Lora:400,700,400italic,700italic' rel='stylesheet' type='text/css'>
+  <link href='https://fonts.googleapis.com/css?family=Open+Sans:300italic,400italic,600italic,700italic,800italic,400,300,600,700,800' rel='stylesheet' type='text/css'>
+
+  <!-- <script src="https://use.fontawesome.com/releases/v5.15.3/js/all.js" crossorigin="anonymous"></script> -->
+  <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.15.4/css/all.css" integrity="sha384-DyZ88mC6Up2uqS4h/KRgHuoeGwBcD4Ng9SiP4dIRy0EXTlnuz47vAwmeGwVChigm" crossorigin="anonymous"/>
+
+  <link rel="stylesheet" href="/assets/main.css">
+  <link rel="canonical" href="https://ikouchiha47.github.io/postgresql/04-wal/wal-internals.html">
+  <link rel="alternate" type="application/rss+xml" title="iko&#39;s logs" href="/feed.xml">
+
+  <meta name="google-site-verification" content="lWkg6gIxJgzEKX_5XnhcxCtPE9QknaimFWWos_dTvPM" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fira+Sans:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Inconsolata:wght@200..900&family=Jersey+25&family=Kanit:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Merriweather+Sans:ital,wght@0,300..800;1,300..800&family=Nanum+Gothic+Coding&family=Space+Grotesk:wght@300..700&family=Titillium+Web:ital,wght@0,200;0,300;0,400;0,600;0,700;0,900;1,200;1,300;1,400;1,600;1,700&display=swap" rel="stylesheet">
+
+</head>
+
+
+<body>
+
+  <!-- Navigation -->
+<nav class="navbar navbar-expand-lg navbar-light fixed-top" id="mainNav">
+  <div class="container">
+    <a class="navbar-brand" href="/">iko&#39;s logs</a>
+    <button class="navbar-toggler navbar-toggler-right" type="button" data-toggle="collapse" data-target="#navbarResponsive" aria-controls="navbarResponsive" aria-expanded="false" aria-label="Toggle navigation">
+      Menu
+      <i class="fa fa-bars"></i>
+    </button>
+    <div class="collapse navbar-collapse" id="navbarResponsive">
+      <ul class="navbar-nav ml-auto">
+        <li class="nav-item">
+          <a class="nav-link" href="/">Home</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/about">About</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/posts">Posts</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/contact">Contact</a>
+        </li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+
+  <!-- Page Header -->
+
+<header class="masthead">
+
+  <div class="overlay"></div>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <div class="post-heading">
+          <h1>WAL Internals</h1>
+          
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="container space-grotesk">
+  <div class="row">
+    <div class="col-lg-8 col-md-10 mx-auto">
+
+      <!-- Breadcrumb -->
+      <nav aria-label="breadcrumb" style="margin-bottom: 1.5rem;">
+        <ol class="breadcrumb" style="background: transparent; padding: 0;">
+          
+            <li class="breadcrumb-item"><a href="/postgresql-internals/">PostgreSQL Internals Deep Dive</a></li>
+          
+          
+            
+              <li class="breadcrumb-item"><a href="/postgresql/04-wal/">Write-Ahead Logging</a></li>
+            
+          
+          <li class="breadcrumb-item active" aria-current="page">WAL Internals</li>
+        </ol>
+      </nav>
+
+      <h1 id="wal-internals-buffers-lsns-records-and-insertion">WAL Internals: Buffers, LSNs, Records, and Insertion</h1>
+
+<h2 id="summary">Summary</h2>
+
+<p>This page covers the internal machinery of WAL: how LSNs address the infinite
+byte stream, how WAL records are structured on disk, how the WAL buffer ring
+works, and how concurrent backends insert records with minimal contention. The
+critical path – from <code class="language-plaintext highlighter-rouge">XLogBeginInsert()</code> to the returned LSN – touches
+surprisingly few locks thanks to a design that separates reservation from
+copying.</p>
+
+<h2 id="overview">Overview</h2>
+
+<p>The WAL subsystem can be understood as three layers:</p>
+
+<ol>
+  <li>
+    <p><strong>Record construction</strong> (<code class="language-plaintext highlighter-rouge">xloginsert.c</code>) – backends build a description of
+what changed using <code class="language-plaintext highlighter-rouge">XLogRegisterBuffer()</code> and <code class="language-plaintext highlighter-rouge">XLogRegisterData()</code>, then call
+<code class="language-plaintext highlighter-rouge">XLogInsert()</code> to assemble the final record.</p>
+  </li>
+  <li>
+    <p><strong>Space reservation and copying</strong> (<code class="language-plaintext highlighter-rouge">xlog.c</code>) – <code class="language-plaintext highlighter-rouge">XLogInsertRecord()</code> acquires
+one of <code class="language-plaintext highlighter-rouge">NUM_XLOGINSERT_LOCKS</code> (default 8) insertion locks, atomically reserves
+space in the WAL buffer by advancing <code class="language-plaintext highlighter-rouge">CurrBytePos</code>, copies the record, and
+releases the lock.</p>
+  </li>
+  <li>
+    <p><strong>Flush to disk</strong> (<code class="language-plaintext highlighter-rouge">xlog.c</code>) – <code class="language-plaintext highlighter-rouge">XLogFlush()</code> ensures all WAL up to a given
+LSN is on stable storage. This involves <code class="language-plaintext highlighter-rouge">write()</code> and <code class="language-plaintext highlighter-rouge">fsync()</code> (or equivalent)
+on the WAL segment files.</p>
+  </li>
+</ol>
+
+<h2 id="key-source-files">Key Source Files</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>File</th>
+      <th>Purpose</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/access/xlogrecord.h</code></td>
+      <td>On-disk record format: <code class="language-plaintext highlighter-rouge">XLogRecord</code>, block headers, data headers</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/access/xloginsert.h</code></td>
+      <td>Insertion API: <code class="language-plaintext highlighter-rouge">XLogBeginInsert</code>, <code class="language-plaintext highlighter-rouge">XLogInsert</code>, <code class="language-plaintext highlighter-rouge">XLogRegisterBuffer</code></td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/access/xlog_internal.h</code></td>
+      <td>Page headers (<code class="language-plaintext highlighter-rouge">XLogPageHeaderData</code>), segment math, <code class="language-plaintext highlighter-rouge">XLogRecData</code> chain</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/access/xlogdefs.h</code></td>
+      <td><code class="language-plaintext highlighter-rouge">XLogRecPtr</code> (LSN), <code class="language-plaintext highlighter-rouge">TimeLineID</code>, <code class="language-plaintext highlighter-rouge">XLogSegNo</code></td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/access/transam/xloginsert.c</code></td>
+      <td>Record construction: assembles block headers, FPIs, main data</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/access/transam/xlog.c</code></td>
+      <td>WAL buffer management, insertion locks, write/flush, segment files</td>
+    </tr>
+  </tbody>
+</table>
+
+<h2 id="how-it-works">How It Works</h2>
+
+<h3 id="lsn-addressing-the-wal-stream">LSN: Addressing the WAL Stream</h3>
+
+<p>An <strong>LSN</strong> (Log Sequence Number) is a 64-bit byte offset into the conceptual WAL
+stream. It is defined as:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="cm">/* src/include/access/xlogdefs.h:22 */</span>
+<span class="k">typedef</span> <span class="n">uint64</span> <span class="n">XLogRecPtr</span><span class="p">;</span>
+</code></pre></div></div>
+
+<p>LSNs are displayed in <code class="language-plaintext highlighter-rouge">X/YYYYYYYY</code> format, where <code class="language-plaintext highlighter-rouge">X</code> is the upper 32 bits and
+<code class="language-plaintext highlighter-rouge">YYYYYYYY</code> is the lower 32 bits. For example, <code class="language-plaintext highlighter-rouge">0/1A3B5C00</code> means byte offset
+<code class="language-plaintext highlighter-rouge">0x1A3B5C00</code> in the WAL.</p>
+
+<p>The WAL stream is divided into <strong>segment files</strong> of <code class="language-plaintext highlighter-rouge">wal_segment_size</code> bytes
+(default 16 MB). Segment files live in <code class="language-plaintext highlighter-rouge">$PGDATA/pg_wal/</code> with names like
+<code class="language-plaintext highlighter-rouge">000000010000000000000001</code> (timeline 1, segment 1). The mapping from LSN to
+segment and offset is:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="cm">/* src/include/access/xlog_internal.h:117 */</span>
+<span class="cp">#define XLByteToSeg(xlrp, logSegNo, wal_segsz_bytes) \
+    logSegNo = (xlrp) / (wal_segsz_bytes)
+</span>
+<span class="cp">#define XLogSegmentOffset(xlogptr, wal_segsz_bytes) \
+    ((xlogptr) &amp; ((wal_segsz_bytes) - 1))
+</span></code></pre></div></div>
+
+<h3 id="wal-page-layout">WAL Page Layout</h3>
+
+<p>Each WAL segment is divided into pages of <code class="language-plaintext highlighter-rouge">XLOG_BLCKSZ</code> (default 8 KB). Every
+page starts with a header:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="cm">/* src/include/access/xlog_internal.h:36 */</span>
+<span class="k">typedef</span> <span class="k">struct</span> <span class="n">XLogPageHeaderData</span>
+<span class="p">{</span>
+    <span class="n">uint16</span>      <span class="n">xlp_magic</span><span class="p">;</span>      <span class="cm">/* magic value for correctness checks */</span>
+    <span class="n">uint16</span>      <span class="n">xlp_info</span><span class="p">;</span>       <span class="cm">/* flag bits (XLP_LONG_HEADER, etc.) */</span>
+    <span class="n">TimeLineID</span>  <span class="n">xlp_tli</span><span class="p">;</span>        <span class="cm">/* TimeLineID of first record on page */</span>
+    <span class="n">XLogRecPtr</span>  <span class="n">xlp_pageaddr</span><span class="p">;</span>   <span class="cm">/* XLOG address of this page */</span>
+    <span class="n">uint32</span>      <span class="n">xlp_rem_len</span><span class="p">;</span>    <span class="cm">/* remaining bytes from previous page's record */</span>
+<span class="p">}</span> <span class="n">XLogPageHeaderData</span><span class="p">;</span>
+</code></pre></div></div>
+
+<p>The first page of each segment file uses a <strong>long page header</strong> that adds the
+system identifier, segment size, and block size for cross-checking:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="cm">/* src/include/access/xlog_internal.h:61 */</span>
+<span class="k">typedef</span> <span class="k">struct</span> <span class="n">XLogLongPageHeaderData</span>
+<span class="p">{</span>
+    <span class="n">XLogPageHeaderData</span> <span class="n">std</span><span class="p">;</span>       <span class="cm">/* standard header fields */</span>
+    <span class="n">uint64</span>      <span class="n">xlp_sysid</span><span class="p">;</span>        <span class="cm">/* system identifier from pg_control */</span>
+    <span class="n">uint32</span>      <span class="n">xlp_seg_size</span><span class="p">;</span>     <span class="cm">/* segment size cross-check */</span>
+    <span class="n">uint32</span>      <span class="n">xlp_xlog_blcksz</span><span class="p">;</span>  <span class="cm">/* block size cross-check */</span>
+<span class="p">}</span> <span class="n">XLogLongPageHeaderData</span><span class="p">;</span>
+</code></pre></div></div>
+
+<p>When a record crosses a page boundary, the continuation page sets
+<code class="language-plaintext highlighter-rouge">XLP_FIRST_IS_CONTRECORD</code> in <code class="language-plaintext highlighter-rouge">xlp_info</code> and stores the remaining byte count in
+<code class="language-plaintext highlighter-rouge">xlp_rem_len</code>.</p>
+
+<h3 id="wal-record-format">WAL Record Format</h3>
+
+<p>Every WAL record starts with a fixed-size <code class="language-plaintext highlighter-rouge">XLogRecord</code> header, followed by zero
+or more block reference headers, an optional data header, block data (including
+possible full-page images), and main data:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code> +------------------+
+ | XLogRecord       |  24 bytes (fixed header)
+ +------------------+
+ | BlockHeader #0   |  variable (block ref + optional FPI header)
+ | BlockHeader #1   |  ...
+ | ...              |
+ +------------------+
+ | DataHeader       |  1-5 bytes (short or long form)
+ +------------------+
+ | Block #0 data    |  FPI and/or rmgr-specific per-block data
+ | Block #1 data    |  ...
+ +------------------+
+ | Main data        |  rmgr-specific payload not tied to a block
+ +------------------+
+</code></pre></div></div>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="cm">/* src/include/access/xlogrecord.h:41 */</span>
+<span class="k">typedef</span> <span class="k">struct</span> <span class="n">XLogRecord</span>
+<span class="p">{</span>
+    <span class="n">uint32</span>      <span class="n">xl_tot_len</span><span class="p">;</span>   <span class="cm">/* total len of entire record */</span>
+    <span class="n">TransactionId</span> <span class="n">xl_xid</span><span class="p">;</span>     <span class="cm">/* xact id */</span>
+    <span class="n">XLogRecPtr</span>  <span class="n">xl_prev</span><span class="p">;</span>      <span class="cm">/* ptr to previous record in log */</span>
+    <span class="n">uint8</span>       <span class="n">xl_info</span><span class="p">;</span>      <span class="cm">/* flag bits: low 4 for WAL, high 4 for rmgr */</span>
+    <span class="n">RmgrId</span>      <span class="n">xl_rmid</span><span class="p">;</span>      <span class="cm">/* resource manager for this record */</span>
+    <span class="cm">/* 2 bytes of padding */</span>
+    <span class="n">pg_crc32c</span>   <span class="n">xl_crc</span><span class="p">;</span>       <span class="cm">/* CRC for this record */</span>
+<span class="p">}</span> <span class="n">XLogRecord</span><span class="p">;</span>
+</code></pre></div></div>
+
+<p>The <code class="language-plaintext highlighter-rouge">xl_info</code> field packs two things: the low 4 bits (<code class="language-plaintext highlighter-rouge">XLR_INFO_MASK = 0x0F</code>)
+carry WAL-level flags like <code class="language-plaintext highlighter-rouge">XLR_SPECIAL_REL_UPDATE</code>; the high 4 bits
+(<code class="language-plaintext highlighter-rouge">XLR_RMGR_INFO_MASK = 0xF0</code>) are free for the resource manager to encode the
+operation type (e.g., <code class="language-plaintext highlighter-rouge">XLOG_HEAP_INSERT</code>, <code class="language-plaintext highlighter-rouge">XLOG_BTREE_VACUUM</code>).</p>
+
+<h4 id="block-reference-headers">Block Reference Headers</h4>
+
+<p>Each block reference describes a page that was modified:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="cm">/* src/include/access/xlogrecord.h:103 */</span>
+<span class="k">typedef</span> <span class="k">struct</span> <span class="n">XLogRecordBlockHeader</span>
+<span class="p">{</span>
+    <span class="n">uint8</span>       <span class="n">id</span><span class="p">;</span>             <span class="cm">/* block reference ID (0..XLR_MAX_BLOCK_ID) */</span>
+    <span class="n">uint8</span>       <span class="n">fork_flags</span><span class="p">;</span>     <span class="cm">/* fork + flags (HAS_IMAGE, HAS_DATA, etc.) */</span>
+    <span class="n">uint16</span>      <span class="n">data_length</span><span class="p">;</span>    <span class="cm">/* rmgr payload bytes for this block */</span>
+    <span class="cm">/* Optional: XLogRecordBlockImageHeader (if BKPBLOCK_HAS_IMAGE) */</span>
+    <span class="cm">/* Optional: RelFileLocator (unless BKPBLOCK_SAME_REL) */</span>
+    <span class="cm">/* Always: BlockNumber */</span>
+<span class="p">}</span> <span class="n">XLogRecordBlockHeader</span><span class="p">;</span>
+</code></pre></div></div>
+
+<p>When <code class="language-plaintext highlighter-rouge">BKPBLOCK_HAS_IMAGE</code> is set, a <strong>full-page image (FPI)</strong> follows. The image
+can be compressed (pglz, LZ4, or zstd) and the “hole” of zeros in the middle of
+standard pages is removed to save space:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="cm">/* src/include/access/xlogrecord.h:141 */</span>
+<span class="k">typedef</span> <span class="k">struct</span> <span class="n">XLogRecordBlockImageHeader</span>
+<span class="p">{</span>
+    <span class="n">uint16</span>      <span class="n">length</span><span class="p">;</span>         <span class="cm">/* page image bytes (after hole removal) */</span>
+    <span class="n">uint16</span>      <span class="n">hole_offset</span><span class="p">;</span>    <span class="cm">/* bytes before the "hole" */</span>
+    <span class="n">uint8</span>       <span class="n">bimg_info</span><span class="p">;</span>      <span class="cm">/* BKPIMAGE_HAS_HOLE, compression flags */</span>
+<span class="p">}</span> <span class="n">XLogRecordBlockImageHeader</span><span class="p">;</span>
+</code></pre></div></div>
+
+<h3 id="wal-buffer-the-ring-buffer">WAL Buffer: The Ring Buffer</h3>
+
+<p>WAL records are not written directly to disk. They are first assembled in a
+<strong>ring buffer</strong> of shared memory pages. The size is controlled by <code class="language-plaintext highlighter-rouge">wal_buffers</code>
+(auto-tuned to 1/32 of <code class="language-plaintext highlighter-rouge">shared_buffers</code>, clamped between 64 KB and the WAL
+segment size).</p>
+
+<p>The ring buffer state lives in <code class="language-plaintext highlighter-rouge">XLogCtlData</code> (defined in <code class="language-plaintext highlighter-rouge">src/backend/access/transam/xlog.c:453</code>):</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">typedef</span> <span class="k">struct</span> <span class="n">XLogCtlData</span>
+<span class="p">{</span>
+    <span class="n">XLogCtlInsert</span> <span class="n">Insert</span><span class="p">;</span>            <span class="cm">/* insertion state */</span>
+
+    <span class="n">XLogwrtRqst</span>   <span class="n">LogwrtRqst</span><span class="p">;</span>        <span class="cm">/* write/flush request pointers */</span>
+    <span class="n">XLogRecPtr</span>    <span class="n">RedoRecPtr</span><span class="p">;</span>        <span class="cm">/* cached redo pointer */</span>
+
+    <span class="cm">/* Atomic progress counters -- no lock needed to read */</span>
+    <span class="n">pg_atomic_uint64</span> <span class="n">logInsertResult</span><span class="p">;</span> <span class="cm">/* last byte + 1 inserted */</span>
+    <span class="n">pg_atomic_uint64</span> <span class="n">logWriteResult</span><span class="p">;</span>  <span class="cm">/* last byte + 1 written to kernel */</span>
+    <span class="n">pg_atomic_uint64</span> <span class="n">logFlushResult</span><span class="p">;</span>  <span class="cm">/* last byte + 1 fsynced */</span>
+
+    <span class="n">XLogRecPtr</span>    <span class="n">InitializedUpTo</span><span class="p">;</span>   <span class="cm">/* latest initialized buffer page */</span>
+    <span class="kt">char</span>         <span class="o">*</span><span class="n">pages</span><span class="p">;</span>             <span class="cm">/* buffer pages array */</span>
+    <span class="n">pg_atomic_uint64</span> <span class="o">*</span><span class="n">xlblocks</span><span class="p">;</span>      <span class="cm">/* end-LSN of each buffer page */</span>
+    <span class="kt">int</span>           <span class="n">XLogCacheBlck</span><span class="p">;</span>     <span class="cm">/* highest buffer index */</span>
+    <span class="cm">/* ... timeline, recovery state, checkpoint info ... */</span>
+<span class="p">}</span> <span class="n">XLogCtlData</span><span class="p">;</span>
+</code></pre></div></div>
+
+<p>The three atomic counters – <code class="language-plaintext highlighter-rouge">logInsertResult</code>, <code class="language-plaintext highlighter-rouge">logWriteResult</code>, <code class="language-plaintext highlighter-rouge">logFlushResult</code> –
+track how far the WAL has progressed through each stage. The invariant is:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>FlushResult &lt;= WriteResult &lt;= InsertResult
+</code></pre></div></div>
+
+<h3 id="insertion-reserving-space-and-copying">Insertion: Reserving Space and Copying</h3>
+
+<p>The insertion path is optimized for high concurrency. Here is the sequence:</p>
+
+<pre><code class="language-mermaid">sequenceDiagram
+    participant B as Backend
+    participant XI as xloginsert.c
+    participant XL as xlog.c
+    participant BUF as WAL Buffer
+    participant DSK as pg_wal/ on disk
+
+    B-&gt;&gt;XI: XLogBeginInsert()
+    Note over XI: Reset per-record state
+
+    B-&gt;&gt;XI: XLogRegisterBuffer(block_id, buf, flags)
+    B-&gt;&gt;XI: XLogRegisterData(data, len)
+    Note over XI: Build registered_buffers[]&lt;br/&gt;and mainrdata chain
+
+    B-&gt;&gt;XI: XLogInsert(rmid, info)
+    XI-&gt;&gt;XI: Assemble XLogRecData chain&lt;br/&gt;(headers + FPIs + data)
+    XI-&gt;&gt;XL: XLogInsertRecord(rdata, fpw_lsn, flags)
+
+    XL-&gt;&gt;XL: WALInsertLockAcquire()
+    Note over XL: Pick lock via MyLockNo&lt;br/&gt;(rotated per insertion)
+
+    XL-&gt;&gt;XL: ReserveXLogInsertLocation()&lt;br/&gt;advance CurrBytePos
+
+    XL-&gt;&gt;BUF: CopyXLogRecordToWAL()&lt;br/&gt;copy record bytes into buffer pages
+
+    XL-&gt;&gt;XL: WALInsertLockRelease()
+    XL--&gt;&gt;B: Return LSN (end position)
+
+    Note over B: Later, at commit time:
+    B-&gt;&gt;XL: XLogFlush(commit_lsn)
+    XL-&gt;&gt;DSK: write() + fsync()
+</code></pre>
+
+<h4 id="wal-insertion-locks">WAL Insertion Locks</h4>
+
+<p>PostgreSQL uses <code class="language-plaintext highlighter-rouge">NUM_XLOGINSERT_LOCKS</code> (8) lightweight locks to allow concurrent
+WAL insertion. Each lock tracks how far its holder has progressed:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="cm">/* src/backend/access/transam/xlog.c:370 */</span>
+<span class="k">typedef</span> <span class="k">struct</span>
+<span class="p">{</span>
+    <span class="n">LWLock</span>      <span class="n">lock</span><span class="p">;</span>
+    <span class="n">pg_atomic_uint64</span> <span class="n">insertingAt</span><span class="p">;</span>     <span class="cm">/* LSN being inserted at */</span>
+    <span class="n">XLogRecPtr</span>  <span class="n">lastImportantAt</span><span class="p">;</span>      <span class="cm">/* LSN of last important record */</span>
+<span class="p">}</span> <span class="n">WALInsertLock</span><span class="p">;</span>
+</code></pre></div></div>
+
+<p>A backend acquires <em>one</em> lock to insert. To flush WAL, the flusher must wait
+for all insertion locks whose <code class="language-plaintext highlighter-rouge">insertingAt</code> falls within the flush range –
+but it does <em>not</em> need to acquire them. This avoids deadlocks between
+concurrent inserters that need to evict old WAL buffer pages.</p>
+
+<p>The lock assignment rotates across calls to distribute contention:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="cm">/* src/backend/access/transam/xlog.c (WALInsertLockAcquire) */</span>
+<span class="n">MyLockNo</span><span class="o">++</span><span class="p">;</span>
+<span class="k">if</span> <span class="p">(</span><span class="n">MyLockNo</span> <span class="o">&gt;=</span> <span class="n">NUM_XLOGINSERT_LOCKS</span><span class="p">)</span>
+    <span class="n">MyLockNo</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span>
+</code></pre></div></div>
+
+<h4 id="space-reservation">Space Reservation</h4>
+
+<p>The actual reservation is a spinlock-protected update of two 64-bit values:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="cm">/* src/backend/access/transam/xlog.c (XLogCtlInsert) */</span>
+<span class="k">typedef</span> <span class="k">struct</span> <span class="n">XLogCtlInsert</span>
+<span class="p">{</span>
+    <span class="n">slock_t</span>     <span class="n">insertpos_lck</span><span class="p">;</span>   <span class="cm">/* protects CurrBytePos and PrevBytePos */</span>
+    <span class="n">uint64</span>      <span class="n">CurrBytePos</span><span class="p">;</span>     <span class="cm">/* end of reserved WAL (usable byte pos) */</span>
+    <span class="n">uint64</span>      <span class="n">PrevBytePos</span><span class="p">;</span>     <span class="cm">/* start of previous record */</span>
+    <span class="cm">/* ... */</span>
+<span class="p">}</span> <span class="n">XLogCtlInsert</span><span class="p">;</span>
+</code></pre></div></div>
+
+<p>These are “usable byte positions” that exclude page headers. The function
+<code class="language-plaintext highlighter-rouge">XLogBytePosToRecPtr()</code> converts them to real LSNs by adding back the page
+header space. This makes the reservation arithmetic simpler – it is just a
+plain addition of the record length.</p>
+
+<h3 id="full-page-writes-fpw">Full-Page Writes (FPW)</h3>
+
+<p>The first time a page is modified after a checkpoint, the entire page image is
+included in the WAL record. This protects against <strong>torn pages</strong> – partial
+writes where only some of the 8 KB page makes it to disk during a crash.</p>
+
+<p>The decision is made during <code class="language-plaintext highlighter-rouge">XLogInsert()</code>:</p>
+
+<ol>
+  <li>Check if the page’s LSN is older than <code class="language-plaintext highlighter-rouge">RedoRecPtr</code> (the current checkpoint’s
+redo point, cached in <code class="language-plaintext highlighter-rouge">XLogCtlInsert.RedoRecPtr</code>).</li>
+  <li>If yes, and <code class="language-plaintext highlighter-rouge">fullPageWrites</code> is enabled, set <code class="language-plaintext highlighter-rouge">BKPBLOCK_HAS_IMAGE</code> and include
+the page image.</li>
+</ol>
+
+<p>The <code class="language-plaintext highlighter-rouge">REGBUF_STANDARD</code> flag tells the insertion code that the page follows the
+standard layout (<code class="language-plaintext highlighter-rouge">pd_lower</code>/<code class="language-plaintext highlighter-rouge">pd_upper</code>), so the “hole” between them can be
+skipped to save space. With <code class="language-plaintext highlighter-rouge">wal_compression</code> enabled, the image is further
+compressed using pglz, LZ4, or zstd.</p>
+
+<h3 id="wal-levels">WAL Levels</h3>
+
+<p>The <code class="language-plaintext highlighter-rouge">wal_level</code> GUC controls how much information is written:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="cm">/* src/include/access/xlog.h:73 */</span>
+<span class="k">typedef</span> <span class="k">enum</span> <span class="n">WalLevel</span>
+<span class="p">{</span>
+    <span class="n">WAL_LEVEL_MINIMAL</span> <span class="o">=</span> <span class="mi">0</span><span class="p">,</span>    <span class="cm">/* crash recovery only */</span>
+    <span class="n">WAL_LEVEL_REPLICA</span><span class="p">,</span>        <span class="cm">/* + standby support (hot standby, streaming) */</span>
+    <span class="n">WAL_LEVEL_LOGICAL</span><span class="p">,</span>        <span class="cm">/* + logical decoding info */</span>
+<span class="p">}</span> <span class="n">WalLevel</span><span class="p">;</span>
+</code></pre></div></div>
+
+<p>At <code class="language-plaintext highlighter-rouge">minimal</code>, some bulk operations (e.g., <code class="language-plaintext highlighter-rouge">CREATE TABLE AS</code>, <code class="language-plaintext highlighter-rouge">COPY</code> into a
+just-created table) skip WAL entirely and just fsync the data files. At
+<code class="language-plaintext highlighter-rouge">replica</code> and above, all changes are logged to support replication.</p>
+
+<h3 id="wal-write-and-flush">WAL Write and Flush</h3>
+
+<p>Writing WAL to disk is a two-step process:</p>
+
+<ol>
+  <li><strong>Write</strong> – <code class="language-plaintext highlighter-rouge">write()</code> system call copies WAL from shared memory to the
+kernel page cache. Updates <code class="language-plaintext highlighter-rouge">logWriteResult</code>.</li>
+  <li><strong>Flush</strong> – <code class="language-plaintext highlighter-rouge">fsync()</code> (or equivalent per <code class="language-plaintext highlighter-rouge">wal_sync_method</code>) forces the
+kernel to push data to stable storage. Updates <code class="language-plaintext highlighter-rouge">logFlushResult</code>.</li>
+</ol>
+
+<p>The <code class="language-plaintext highlighter-rouge">wal_sync_method</code> GUC selects the flush method:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="cm">/* src/include/access/xlog.h:24 */</span>
+<span class="k">enum</span> <span class="n">WalSyncMethod</span>
+<span class="p">{</span>
+    <span class="n">WAL_SYNC_METHOD_FSYNC</span> <span class="o">=</span> <span class="mi">0</span><span class="p">,</span>
+    <span class="n">WAL_SYNC_METHOD_FDATASYNC</span><span class="p">,</span>
+    <span class="n">WAL_SYNC_METHOD_OPEN</span><span class="p">,</span>            <span class="cm">/* O_SYNC */</span>
+    <span class="n">WAL_SYNC_METHOD_FSYNC_WRITETHROUGH</span><span class="p">,</span>
+    <span class="n">WAL_SYNC_METHOD_OPEN_DSYNC</span>       <span class="cm">/* O_DSYNC */</span>
+<span class="p">};</span>
+</code></pre></div></div>
+
+<p>With <code class="language-plaintext highlighter-rouge">open_datasync</code>, the file is opened with <code class="language-plaintext highlighter-rouge">O_DSYNC</code> so every <code class="language-plaintext highlighter-rouge">write()</code> is
+implicitly synced, eliminating the separate fsync call.</p>
+
+<h3 id="group-commit-and-commitdelay">Group Commit and CommitDelay</h3>
+
+<p>When <code class="language-plaintext highlighter-rouge">synchronous_commit = on</code> (the default), each committing backend calls
+<code class="language-plaintext highlighter-rouge">XLogFlush()</code>. If multiple backends commit concurrently, they naturally
+<strong>group commit</strong> – the first one to call <code class="language-plaintext highlighter-rouge">XLogFlush()</code> will flush WAL that
+covers all of them.</p>
+
+<p>The <code class="language-plaintext highlighter-rouge">CommitDelay</code> and <code class="language-plaintext highlighter-rouge">CommitSiblings</code> GUCs add an intentional delay before
+flushing, to increase the batch size when there are enough concurrent
+committers.</p>
+
+<h2 id="key-data-structures">Key Data Structures</h2>
+
+<h3 id="xlogrecdata-in-memory-record-chain">XLogRecData (in-memory record chain)</h3>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="cm">/* src/include/access/xlog_internal.h:312 */</span>
+<span class="k">typedef</span> <span class="k">struct</span> <span class="n">XLogRecData</span>
+<span class="p">{</span>
+    <span class="k">struct</span> <span class="n">XLogRecData</span> <span class="o">*</span><span class="n">next</span><span class="p">;</span>   <span class="cm">/* next chunk in chain, or NULL */</span>
+    <span class="k">const</span> <span class="kt">void</span> <span class="o">*</span><span class="n">data</span><span class="p">;</span>           <span class="cm">/* pointer to data */</span>
+    <span class="n">uint32</span>      <span class="n">len</span><span class="p">;</span>            <span class="cm">/* length of data */</span>
+<span class="p">}</span> <span class="n">XLogRecData</span><span class="p">;</span>
+</code></pre></div></div>
+
+<p>This linked list is built by <code class="language-plaintext highlighter-rouge">xloginsert.c</code> during record construction. The
+chain includes the <code class="language-plaintext highlighter-rouge">XLogRecord</code> header, block headers, FPI data, per-block
+data, and main data, in order. <code class="language-plaintext highlighter-rouge">XLogInsertRecord()</code> walks this chain to copy
+bytes into the WAL buffer.</p>
+
+<h3 id="rmgrdata-resource-manager-callbacks">RmgrData (resource manager callbacks)</h3>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="cm">/* src/include/access/xlog_internal.h:339 */</span>
+<span class="k">typedef</span> <span class="k">struct</span> <span class="n">RmgrData</span>
+<span class="p">{</span>
+    <span class="k">const</span> <span class="kt">char</span> <span class="o">*</span><span class="n">rm_name</span><span class="p">;</span>
+    <span class="kt">void</span> <span class="p">(</span><span class="o">*</span><span class="n">rm_redo</span><span class="p">)(</span><span class="n">XLogReaderState</span> <span class="o">*</span><span class="n">record</span><span class="p">);</span>     <span class="cm">/* replay a record */</span>
+    <span class="kt">void</span> <span class="p">(</span><span class="o">*</span><span class="n">rm_desc</span><span class="p">)(</span><span class="n">StringInfo</span> <span class="n">buf</span><span class="p">,</span> <span class="n">XLogReaderState</span> <span class="o">*</span><span class="n">record</span><span class="p">);</span> <span class="cm">/* describe */</span>
+    <span class="k">const</span> <span class="kt">char</span> <span class="o">*</span><span class="p">(</span><span class="o">*</span><span class="n">rm_identify</span><span class="p">)(</span><span class="n">uint8</span> <span class="n">info</span><span class="p">);</span>       <span class="cm">/* name an operation */</span>
+    <span class="kt">void</span> <span class="p">(</span><span class="o">*</span><span class="n">rm_startup</span><span class="p">)(</span><span class="kt">void</span><span class="p">);</span>                     <span class="cm">/* startup hook */</span>
+    <span class="kt">void</span> <span class="p">(</span><span class="o">*</span><span class="n">rm_cleanup</span><span class="p">)(</span><span class="kt">void</span><span class="p">);</span>                     <span class="cm">/* cleanup hook */</span>
+    <span class="kt">void</span> <span class="p">(</span><span class="o">*</span><span class="n">rm_mask</span><span class="p">)(</span><span class="kt">char</span> <span class="o">*</span><span class="n">pagedata</span><span class="p">,</span> <span class="n">BlockNumber</span> <span class="n">blkno</span><span class="p">);</span> <span class="cm">/* mask for checking */</span>
+    <span class="kt">void</span> <span class="p">(</span><span class="o">*</span><span class="n">rm_decode</span><span class="p">)(...);</span>                       <span class="cm">/* logical decoding */</span>
+<span class="p">}</span> <span class="n">RmgrData</span><span class="p">;</span>
+</code></pre></div></div>
+
+<p>Each resource manager (heap, btree, gin, etc.) registers these callbacks.
+During recovery, the main loop calls <code class="language-plaintext highlighter-rouge">rm_redo()</code> for each record.</p>
+
+<h2 id="connections">Connections</h2>
+
+<ul>
+  <li>
+    <p><strong><a href="checkpoints">Checkpoints</a></strong> – checkpoints advance the <code class="language-plaintext highlighter-rouge">RedoRecPtr</code>, which
+controls when full-page writes are needed and which WAL can be recycled.</p>
+  </li>
+  <li>
+    <p><strong><a href="recovery">Recovery</a></strong> – the recovery loop reads records from the WAL using
+<code class="language-plaintext highlighter-rouge">XLogReadRecord()</code> and dispatches them to resource managers via <code class="language-plaintext highlighter-rouge">rm_redo()</code>.</p>
+  </li>
+  <li>
+    <p><strong><a href="../01-storage/">Storage Engine (Ch. 1)</a></strong> – every buffer page carries
+<code class="language-plaintext highlighter-rouge">pd_lsn</code> (the LSN of the last WAL record that modified it). The buffer manager
+ensures WAL is flushed to this LSN before writing the page to disk.</p>
+  </li>
+  <li>
+    <p><strong><a href="../05-locking/">Locking (Ch. 5)</a></strong> – the WAL insertion locks are
+lightweight locks. <code class="language-plaintext highlighter-rouge">WALWriteLock</code> serializes writes to disk.</p>
+  </li>
+  <li>
+    <p><strong><a href="../12-replication/">Replication (Ch. 12)</a></strong> – the WAL sender reads from
+WAL segment files (or directly from WAL buffers via <code class="language-plaintext highlighter-rouge">WALReadFromBuffers()</code>)
+and streams records to standbys.</p>
+  </li>
+</ul>
+
+
+      <hr>
+
+      <!-- Prev / Next / Up navigation -->
+      
+      
+      
+
+      <div class="clearfix" style="margin-top: 2rem;">
+        
+          
+          
+
+          
+            
+            <a class="btn btn-primary float-left" href="/postgresql/04-wal/wal-for-extensions.html" title="WAL for Extensions">&larr; Previous</a>
+          
+
+          
+            
+            <a class="btn btn-primary float-right" href="/postgresql/05-locking/" title="Locking">Next &rarr;</a>
+          
+        
+      </div>
+
+      
+      <div style="text-align: center; margin-top: 1rem;">
+        <a href="/postgresql-internals/">&uarr; Back to Table of Contents</a>
+      </div>
+      
+
+    </div>
+  </div>
+</div>
+
+
+  <!-- Footer -->
+
+<hr>
+
+<footer>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <ul class="list-inline text-center">
+          
+          <li class="list-inline-item">
+            <a href="mailto:amitava.dev@proton.me" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="far fa-envelope fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          
+          
+          <li class="list-inline-item">
+            <a href="https://www.linkedin.com/in/amitavaag" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-linkedin fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          <li class="list-inline-item">
+            <a href="https://github.com/ikouchiha47" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-github fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+        </ul>
+
+        <p class="copyright text-muted">
+          Build with: 
+          <a 
+            href="https://github.com/StartBootstrap/startbootstrap-clean-blog-jekyll"
+            class="text-gray"
+            target="_blank">startbootstrap-clean-blog-jekyll</a></p>
+      </div>
+    </div>
+  </div>
+</footer>
+
+
+  <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="/assets/vendor/blog/js/scripts.js"></script>
+
+<script src="/assets/scripts.js"></script>
+
+
+
+
+
+  <script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+
+    document.querySelectorAll('pre > code.language-mermaid').forEach((codeBlock) => {
+      codeBlock.parentElement.outerHTML = `<pre class="mermaid">${codeBlock.textContent}</pre>`;
+    });
+
+
+    mermaid.initialize({ startOnLoad: true, theme: 'forest' });
+</script>
+
+
+  
+
+</body>
+
+</html>

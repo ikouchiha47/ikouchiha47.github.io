@@ -1,0 +1,607 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+  <title>
+    Latches and Wait Events - iko&#39;s logs
+    
+  </title>
+
+  <meta name="description" content="">
+  <meta property="og:description" content="">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Latches and Wait Events">
+  <meta property="og:url" content="https://ikouchiha47.github.io/postgresql/11-ipc/latches-and-events.html">
+
+  
+
+  <link href='https://fonts.googleapis.com/css?family=Lora:400,700,400italic,700italic' rel='stylesheet' type='text/css'>
+  <link href='https://fonts.googleapis.com/css?family=Open+Sans:300italic,400italic,600italic,700italic,800italic,400,300,600,700,800' rel='stylesheet' type='text/css'>
+
+  <!-- <script src="https://use.fontawesome.com/releases/v5.15.3/js/all.js" crossorigin="anonymous"></script> -->
+  <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.15.4/css/all.css" integrity="sha384-DyZ88mC6Up2uqS4h/KRgHuoeGwBcD4Ng9SiP4dIRy0EXTlnuz47vAwmeGwVChigm" crossorigin="anonymous"/>
+
+  <link rel="stylesheet" href="/assets/main.css">
+  <link rel="canonical" href="https://ikouchiha47.github.io/postgresql/11-ipc/latches-and-events.html">
+  <link rel="alternate" type="application/rss+xml" title="iko&#39;s logs" href="/feed.xml">
+
+  <meta name="google-site-verification" content="lWkg6gIxJgzEKX_5XnhcxCtPE9QknaimFWWos_dTvPM" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fira+Sans:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Inconsolata:wght@200..900&family=Jersey+25&family=Kanit:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Merriweather+Sans:ital,wght@0,300..800;1,300..800&family=Nanum+Gothic+Coding&family=Space+Grotesk:wght@300..700&family=Titillium+Web:ital,wght@0,200;0,300;0,400;0,600;0,700;0,900;1,200;1,300;1,400;1,600;1,700&display=swap" rel="stylesheet">
+
+</head>
+
+
+<body>
+
+  <!-- Navigation -->
+<nav class="navbar navbar-expand-lg navbar-light fixed-top" id="mainNav">
+  <div class="container">
+    <a class="navbar-brand" href="/">iko&#39;s logs</a>
+    <button class="navbar-toggler navbar-toggler-right" type="button" data-toggle="collapse" data-target="#navbarResponsive" aria-controls="navbarResponsive" aria-expanded="false" aria-label="Toggle navigation">
+      Menu
+      <i class="fa fa-bars"></i>
+    </button>
+    <div class="collapse navbar-collapse" id="navbarResponsive">
+      <ul class="navbar-nav ml-auto">
+        <li class="nav-item">
+          <a class="nav-link" href="/">Home</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/about">About</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/posts">Posts</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/contact">Contact</a>
+        </li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+
+  <!-- Page Header -->
+
+<header class="masthead">
+
+  <div class="overlay"></div>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <div class="post-heading">
+          <h1>Latches and Wait Events</h1>
+          
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="container space-grotesk">
+  <div class="row">
+    <div class="col-lg-8 col-md-10 mx-auto">
+
+      <!-- Breadcrumb -->
+      <nav aria-label="breadcrumb" style="margin-bottom: 1.5rem;">
+        <ol class="breadcrumb" style="background: transparent; padding: 0;">
+          
+            <li class="breadcrumb-item"><a href="/postgresql-internals/">PostgreSQL Internals Deep Dive</a></li>
+          
+          
+            
+              <li class="breadcrumb-item"><a href="/postgresql/11-ipc/">IPC</a></li>
+            
+          
+          <li class="breadcrumb-item active" aria-current="page">Latches and Wait Events</li>
+        </ol>
+      </nav>
+
+      <h1 id="latches-and-wait-events">Latches and Wait Events</h1>
+
+<p>Processes in PostgreSQL frequently need to sleep until something happens: a lock
+becomes available, WAL is flushed, a client sends data, or the postmaster dies.
+The <strong>Latch</strong> abstraction provides a reliable, portable sleep/wake mechanism that
+avoids the classic race conditions of <code class="language-plaintext highlighter-rouge">signal</code> + <code class="language-plaintext highlighter-rouge">poll()</code>. The <strong>WaitEventSet</strong>
+layer extends this to multiplex waiting on latches, sockets, timeouts, and
+postmaster death in a single call.</p>
+
+<hr />
+
+<h2 id="overview">Overview</h2>
+
+<p>A latch is a boolean flag with three operations:</p>
+
+<ul>
+  <li><strong>SetLatch</strong> – Sets the flag and wakes up the sleeping process.</li>
+  <li><strong>ResetLatch</strong> – Clears the flag.</li>
+  <li><strong>WaitLatch</strong> – Sleeps until the flag is set (or a timeout expires, or the
+postmaster dies).</li>
+</ul>
+
+<p>The critical property: <code class="language-plaintext highlighter-rouge">SetLatch</code> is safe to call from a signal handler, and
+there is no window between checking for work and sleeping where a signal could
+be lost.</p>
+
+<p>Under the hood, <code class="language-plaintext highlighter-rouge">WaitLatch</code> delegates to <code class="language-plaintext highlighter-rouge">WaitEventSetWait</code>, which uses the
+best available OS primitive: <code class="language-plaintext highlighter-rouge">epoll</code> on Linux, <code class="language-plaintext highlighter-rouge">kqueue</code> on macOS/BSD, <code class="language-plaintext highlighter-rouge">poll</code>
+as a portable fallback, or native events on Windows.</p>
+
+<hr />
+
+<h2 id="key-source-files">Key Source Files</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>File</th>
+      <th>Role</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/storage/latch.h</code></td>
+      <td>Latch struct definition, API prototypes</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/storage/ipc/latch.c</code></td>
+      <td><code class="language-plaintext highlighter-rouge">InitLatch</code>, <code class="language-plaintext highlighter-rouge">SetLatch</code>, <code class="language-plaintext highlighter-rouge">ResetLatch</code>, <code class="language-plaintext highlighter-rouge">WaitLatch</code></td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/storage/waiteventset.h</code></td>
+      <td><code class="language-plaintext highlighter-rouge">WaitEventSet</code>, <code class="language-plaintext highlighter-rouge">WaitEvent</code>, <code class="language-plaintext highlighter-rouge">WL_*</code> flags</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/storage/ipc/waiteventset.c</code></td>
+      <td>Platform-specific wait implementations</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/storage/ipc/pmsignal.c</code></td>
+      <td>Postmaster death detection</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/storage/ipc/procsignal.c</code></td>
+      <td>Inter-backend signaling via <code class="language-plaintext highlighter-rouge">SIGUSR1</code> / <code class="language-plaintext highlighter-rouge">SIGURG</code></td>
+    </tr>
+  </tbody>
+</table>
+
+<hr />
+
+<h2 id="how-it-works">How It Works</h2>
+
+<h3 id="the-latch-struct">The Latch Struct</h3>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="cm">/* src/include/storage/latch.h */</span>
+<span class="k">typedef</span> <span class="k">struct</span> <span class="n">Latch</span>
+<span class="p">{</span>
+    <span class="kt">sig_atomic_t</span> <span class="n">is_set</span><span class="p">;</span>           <span class="cm">/* The boolean flag */</span>
+    <span class="kt">sig_atomic_t</span> <span class="n">maybe_sleeping</span><span class="p">;</span>   <span class="cm">/* Hint: owner might be in WaitEventSetWait */</span>
+    <span class="n">bool</span>         <span class="n">is_shared</span><span class="p">;</span>        <span class="cm">/* Shared (in shmem) or local? */</span>
+    <span class="kt">int</span>          <span class="n">owner_pid</span><span class="p">;</span>        <span class="cm">/* PID of the process that owns this latch */</span>
+<span class="p">}</span> <span class="n">Latch</span><span class="p">;</span>
+</code></pre></div></div>
+
+<p>Every <code class="language-plaintext highlighter-rouge">PGPROC</code> contains a <code class="language-plaintext highlighter-rouge">procLatch</code> – a shared latch that any process can set
+to wake that backend. Local latches (created with <code class="language-plaintext highlighter-rouge">InitLatch</code>) can only be set
+from within the same process (typically from signal handlers).</p>
+
+<h3 id="the-correct-wait-loop">The Correct Wait Loop</h3>
+
+<p>The latch header documents two safe patterns. The canonical one:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">for</span> <span class="p">(;;)</span>
+<span class="p">{</span>
+    <span class="n">ResetLatch</span><span class="p">(</span><span class="n">MyLatch</span><span class="p">);</span>
+
+    <span class="k">if</span> <span class="p">(</span><span class="n">got_work</span><span class="p">)</span>
+        <span class="n">DoWork</span><span class="p">();</span>
+
+    <span class="n">WaitLatch</span><span class="p">(</span><span class="n">MyLatch</span><span class="p">,</span> <span class="n">WL_LATCH_SET</span> <span class="o">|</span> <span class="n">WL_TIMEOUT</span> <span class="o">|</span> <span class="n">WL_EXIT_ON_PM_DEATH</span><span class="p">,</span>
+              <span class="n">timeout_ms</span><span class="p">,</span> <span class="n">WAIT_EVENT_FOO</span><span class="p">);</span>
+<span class="p">}</span>
+</code></pre></div></div>
+
+<p>The key rule: <strong>reset before checking for work</strong>. If you check first and then
+reset, a <code class="language-plaintext highlighter-rouge">SetLatch</code> arriving between the check and the reset will be lost,
+causing the process to sleep when it should be working.</p>
+
+<h3 id="setlatch-internals">SetLatch Internals</h3>
+
+<p><code class="language-plaintext highlighter-rouge">SetLatch</code> does the following (simplified):</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>1.  Write is_set = true    (with memory barrier)
+2.  Read maybe_sleeping
+3.  If maybe_sleeping:
+        Send SIGURG to owner_pid   (Unix)
+        -- or --
+        SetEvent(latch-&gt;event)     (Windows)
+</code></pre></div></div>
+
+<p>The <code class="language-plaintext highlighter-rouge">maybe_sleeping</code> flag is an optimization. If the owner is not in
+<code class="language-plaintext highlighter-rouge">WaitEventSetWait</code>, there is no need to send a signal. This avoids the overhead
+of <code class="language-plaintext highlighter-rouge">kill()</code> in the common case where the target is already running.</p>
+
+<p>On Unix, <code class="language-plaintext highlighter-rouge">SIGURG</code> is the signal used to wake processes. It was chosen because it
+has no default action (unlike <code class="language-plaintext highlighter-rouge">SIGUSR1</code>/<code class="language-plaintext highlighter-rouge">SIGUSR2</code>, which PostgreSQL uses for other
+purposes) and does not interfere with <code class="language-plaintext highlighter-rouge">poll()</code>/<code class="language-plaintext highlighter-rouge">select()</code> on all platforms.</p>
+
+<h3 id="waiteventset-the-multiplexing-layer">WaitEventSet: The Multiplexing Layer</h3>
+
+<p><code class="language-plaintext highlighter-rouge">WaitLatch</code> is a convenience wrapper around <code class="language-plaintext highlighter-rouge">WaitEventSet</code>. For long-lived wait
+loops, creating a <code class="language-plaintext highlighter-rouge">WaitEventSet</code> directly is more efficient because it avoids
+repeated setup of the OS-level monitoring structures.</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="cm">/* Typical pattern for a long-lived WaitEventSet */</span>
+<span class="n">WaitEventSet</span> <span class="o">*</span><span class="n">set</span> <span class="o">=</span> <span class="n">CreateWaitEventSet</span><span class="p">(</span><span class="n">CurrentResourceOwner</span><span class="p">,</span> <span class="mi">3</span><span class="p">);</span>
+<span class="n">AddWaitEventToSet</span><span class="p">(</span><span class="n">set</span><span class="p">,</span> <span class="n">WL_LATCH_SET</span><span class="p">,</span> <span class="n">PGINVALID_SOCKET</span><span class="p">,</span> <span class="n">MyLatch</span><span class="p">,</span> <span class="nb">NULL</span><span class="p">);</span>
+<span class="n">AddWaitEventToSet</span><span class="p">(</span><span class="n">set</span><span class="p">,</span> <span class="n">WL_SOCKET_READABLE</span><span class="p">,</span> <span class="n">client_sock</span><span class="p">,</span> <span class="nb">NULL</span><span class="p">,</span> <span class="nb">NULL</span><span class="p">);</span>
+<span class="n">AddWaitEventToSet</span><span class="p">(</span><span class="n">set</span><span class="p">,</span> <span class="n">WL_EXIT_ON_PM_DEATH</span><span class="p">,</span> <span class="n">PGINVALID_SOCKET</span><span class="p">,</span> <span class="nb">NULL</span><span class="p">,</span> <span class="nb">NULL</span><span class="p">);</span>
+
+<span class="k">for</span> <span class="p">(;;)</span>
+<span class="p">{</span>
+    <span class="n">WaitEvent</span> <span class="n">events</span><span class="p">[</span><span class="mi">3</span><span class="p">];</span>
+    <span class="kt">int</span> <span class="n">nevents</span> <span class="o">=</span> <span class="n">WaitEventSetWait</span><span class="p">(</span><span class="n">set</span><span class="p">,</span> <span class="n">timeout</span><span class="p">,</span> <span class="n">events</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="n">WAIT_EVENT_CLIENT_READ</span><span class="p">);</span>
+
+    <span class="k">for</span> <span class="p">(</span><span class="kt">int</span> <span class="n">i</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span> <span class="n">i</span> <span class="o">&lt;</span> <span class="n">nevents</span><span class="p">;</span> <span class="n">i</span><span class="o">++</span><span class="p">)</span>
+    <span class="p">{</span>
+        <span class="k">if</span> <span class="p">(</span><span class="n">events</span><span class="p">[</span><span class="n">i</span><span class="p">].</span><span class="n">events</span> <span class="o">&amp;</span> <span class="n">WL_LATCH_SET</span><span class="p">)</span>
+        <span class="p">{</span>
+            <span class="n">ResetLatch</span><span class="p">(</span><span class="n">MyLatch</span><span class="p">);</span>
+            <span class="n">HandleLatchWakeup</span><span class="p">();</span>
+        <span class="p">}</span>
+        <span class="k">if</span> <span class="p">(</span><span class="n">events</span><span class="p">[</span><span class="n">i</span><span class="p">].</span><span class="n">events</span> <span class="o">&amp;</span> <span class="n">WL_SOCKET_READABLE</span><span class="p">)</span>
+            <span class="n">HandleClientData</span><span class="p">();</span>
+    <span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div></div>
+
+<h3 id="wl_-event-flags">WL_* Event Flags</h3>
+
+<table>
+  <thead>
+    <tr>
+      <th>Flag</th>
+      <th>Meaning</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">WL_LATCH_SET</code></td>
+      <td>The associated latch has been set</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">WL_SOCKET_READABLE</code></td>
+      <td>Data is available to read on the socket</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">WL_SOCKET_WRITEABLE</code></td>
+      <td>The socket is ready for writing</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">WL_SOCKET_CONNECTED</code></td>
+      <td>An async connect has completed</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">WL_SOCKET_CLOSED</code></td>
+      <td>The remote end has closed the connection</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">WL_SOCKET_ACCEPT</code></td>
+      <td>A new connection is pending on a listening socket</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">WL_TIMEOUT</code></td>
+      <td>The specified timeout has elapsed</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">WL_POSTMASTER_DEATH</code></td>
+      <td>The postmaster process has died (returns event)</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">WL_EXIT_ON_PM_DEATH</code></td>
+      <td>The postmaster has died (calls <code class="language-plaintext highlighter-rouge">proc_exit</code> immediately)</td>
+    </tr>
+  </tbody>
+</table>
+
+<hr />
+
+<h2 id="platform-implementations">Platform Implementations</h2>
+
+<p><code class="language-plaintext highlighter-rouge">WaitEventSetWait</code> dispatches to one of several platform-specific implementations:</p>
+
+<h3 id="epoll-linux">epoll (Linux)</h3>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>epoll_create1()          -- once per WaitEventSet
+epoll_ctl(EPOLL_CTL_ADD) -- for each event source
+epoll_pwait2()           -- blocks until event fires
+</code></pre></div></div>
+
+<p>Latch wakeups arrive via a <code class="language-plaintext highlighter-rouge">signalfd</code> descriptor that monitors <code class="language-plaintext highlighter-rouge">SIGURG</code>.
+This avoids the self-pipe trick entirely. The signal is kept blocked in the
+process signal mask, and <code class="language-plaintext highlighter-rouge">signalfd</code> delivers it as a readable file descriptor
+that <code class="language-plaintext highlighter-rouge">epoll</code> can monitor.</p>
+
+<h3 id="kqueue-macos-freebsd">kqueue (macOS, FreeBSD)</h3>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>kqueue()                 -- once per WaitEventSet
+kevent(EV_ADD)           -- for each event source
+kevent()                 -- blocks until event fires
+</code></pre></div></div>
+
+<p>Latch wakeups use <code class="language-plaintext highlighter-rouge">EVFILT_SIGNAL</code> for <code class="language-plaintext highlighter-rouge">SIGURG</code>, which is kqueue’s native signal
+monitoring. No self-pipe needed.</p>
+
+<h3 id="poll-portable-fallback">poll (Portable Fallback)</h3>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>poll()                   -- blocks on file descriptors
+</code></pre></div></div>
+
+<p>Uses the <strong>self-pipe trick</strong>: a pipe is created at startup, and the <code class="language-plaintext highlighter-rouge">SIGURG</code>
+handler writes a byte to the pipe’s write end. The pipe’s read end is added to
+the <code class="language-plaintext highlighter-rouge">poll()</code> set. When <code class="language-plaintext highlighter-rouge">SIGURG</code> arrives, the write wakes <code class="language-plaintext highlighter-rouge">poll()</code> from sleep.</p>
+
+<p>After <code class="language-plaintext highlighter-rouge">poll()</code> returns, the pipe is drained.</p>
+
+<h3 id="windows">Windows</h3>
+
+<p>Uses <code class="language-plaintext highlighter-rouge">WaitForMultipleObjects()</code> on Windows event objects. Each latch has a
+dedicated <code class="language-plaintext highlighter-rouge">HANDLE</code> created by <code class="language-plaintext highlighter-rouge">CreateEvent()</code>.</p>
+
+<hr />
+
+<h2 id="key-data-structures">Key Data Structures</h2>
+
+<h3 id="waitevent">WaitEvent</h3>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="cm">/* src/include/storage/waiteventset.h */</span>
+<span class="k">typedef</span> <span class="k">struct</span> <span class="n">WaitEvent</span>
+<span class="p">{</span>
+    <span class="kt">int</span>       <span class="n">pos</span><span class="p">;</span>          <span class="cm">/* Position in the WaitEventSet */</span>
+    <span class="n">uint32</span>    <span class="n">events</span><span class="p">;</span>       <span class="cm">/* Which events fired (WL_* bitmask) */</span>
+    <span class="n">pgsocket</span>  <span class="n">fd</span><span class="p">;</span>           <span class="cm">/* Socket fd, if applicable */</span>
+    <span class="kt">void</span>     <span class="o">*</span><span class="n">user_data</span><span class="p">;</span>    <span class="cm">/* Caller-supplied context pointer */</span>
+<span class="p">}</span> <span class="n">WaitEvent</span><span class="p">;</span>
+</code></pre></div></div>
+
+<h3 id="waiteventset-opaque">WaitEventSet (Opaque)</h3>
+
+<p>Internally, <code class="language-plaintext highlighter-rouge">WaitEventSet</code> contains:</p>
+
+<ul>
+  <li>An array of registered events (latch, sockets, postmaster death)</li>
+  <li>Platform-specific state (epoll fd, kqueue fd, poll array, or Windows handles)</li>
+  <li>A reference to the associated latch (for <code class="language-plaintext highlighter-rouge">WL_LATCH_SET</code> events)</li>
+  <li>The resource owner for cleanup tracking</li>
+</ul>
+
+<hr />
+
+<h2 id="diagram-latch-wake-flow">Diagram: Latch Wake Flow</h2>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>Process A (sender)                    Process B (sleeper)
+==================                    ====================
+
+                                      ResetLatch(MyLatch)
+                                      Check for work: none
+                                      maybe_sleeping = true
+                                      WaitEventSetWait(...)
+                                         |
+                                         | epoll_pwait() / kqueue() / poll()
+                                         | (blocked)
+                                         |
+SetLatch(B-&gt;procLatch)                   |
+  1. B-&gt;procLatch.is_set = true          |
+  2. memory barrier                      |
+  3. read maybe_sleeping == true         |
+  4. kill(B-&gt;pid, SIGURG) -------------&gt;-+
+                                         |
+                                      SIGURG arrives
+                                         |
+                                      [epoll] signalfd becomes readable
+                                      [kqueue] EVFILT_SIGNAL fires
+                                      [poll] self-pipe write wakes poll()
+                                         |
+                                      WaitEventSetWait returns
+                                      events[0].events = WL_LATCH_SET
+                                         |
+                                      ResetLatch(MyLatch)
+                                      Check for work: found!
+                                      DoWork()
+</code></pre></div></div>
+
+<hr />
+
+<h2 id="postmaster-death-detection">Postmaster Death Detection</h2>
+
+<p><code class="language-plaintext highlighter-rouge">WL_POSTMASTER_DEATH</code> and <code class="language-plaintext highlighter-rouge">WL_EXIT_ON_PM_DEATH</code> allow backends to detect when the
+postmaster has crashed. On Unix, this is implemented by monitoring a <strong>postmaster
+death pipe</strong>: the postmaster creates a pipe at startup and keeps the write end open.
+All children inherit the read end. When the postmaster dies, the kernel closes the
+write end, making the read end readable.</p>
+
+<p>On Linux with <code class="language-plaintext highlighter-rouge">epoll</code>, the pipe fd is added to the epoll set. On other platforms,
+it is added to the <code class="language-plaintext highlighter-rouge">poll()</code> or <code class="language-plaintext highlighter-rouge">kqueue()</code> set. When the fd becomes readable,
+<code class="language-plaintext highlighter-rouge">WaitEventSetWait</code> reports <code class="language-plaintext highlighter-rouge">WL_POSTMASTER_DEATH</code>.</p>
+
+<p><code class="language-plaintext highlighter-rouge">WL_EXIT_ON_PM_DEATH</code> is a convenience flag that calls <code class="language-plaintext highlighter-rouge">proc_exit(1)</code> immediately
+upon detecting postmaster death, so the caller does not need to handle it explicitly.</p>
+
+<hr />
+
+<h2 id="procsignal-inter-backend-signaling">Procsignal: Inter-Backend Signaling</h2>
+
+<p><code class="language-plaintext highlighter-rouge">procsignal.c</code> provides a higher-level signaling mechanism built on top of latches.
+A backend can send a <strong>typed signal</strong> to another backend:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="cm">/* Signal types (from procsignal.h) */</span>
+<span class="n">PROCSIG_CATCHUP_INTERRUPT</span>     <span class="cm">/* Invalidation messages pending */</span>
+<span class="n">PROCSIG_NOTIFY_INTERRUPT</span>      <span class="cm">/* NOTIFY message arrived */</span>
+<span class="n">PROCSIG_PARALLEL_MESSAGE</span>      <span class="cm">/* Parallel worker message available */</span>
+<span class="n">PROCSIG_WALSND_INIT_STOPPING</span>  <span class="cm">/* WAL sender should begin stopping */</span>
+<span class="n">PROCSIG_BARRIER</span>               <span class="cm">/* Barrier processing needed */</span>
+<span class="n">PROCSIG_LOG_MEMORY_CONTEXT</span>    <span class="cm">/* Dump memory contexts to log */</span>
+<span class="n">PROCSIG_PARALLEL_APPLY_MESSAGE</span> <span class="cm">/* Parallel apply message available */</span>
+</code></pre></div></div>
+
+<p>The implementation uses a shared memory array (<code class="language-plaintext highlighter-rouge">ProcSignalSlots</code>) indexed by
+<code class="language-plaintext highlighter-rouge">ProcNumber</code>. To send a signal, the sender sets a flag in the target’s slot and
+then calls <code class="language-plaintext highlighter-rouge">SetLatch</code> on the target’s <code class="language-plaintext highlighter-rouge">procLatch</code>. The target, upon waking, checks
+its flags and dispatches accordingly.</p>
+
+<hr />
+
+<h2 id="connections">Connections</h2>
+
+<ul>
+  <li>
+    <p><strong><a href="shared-memory.md">Shared Memory</a></strong> – Every <code class="language-plaintext highlighter-rouge">PGPROC</code> and its <code class="language-plaintext highlighter-rouge">procLatch</code> live
+in the main shared memory region. <code class="language-plaintext highlighter-rouge">WaitEventSet</code> objects are backend-local, but
+they reference shared latches.</p>
+  </li>
+  <li>
+    <p><strong><a href="procarray.md">ProcArray</a></strong> – <code class="language-plaintext highlighter-rouge">ProcArray</code> uses <code class="language-plaintext highlighter-rouge">SetLatch</code> to wake backends that
+are waiting for transaction completion or snapshot updates.</p>
+  </li>
+  <li>
+    <p><strong><a href="message-queues.md">Message Queues</a></strong> – <code class="language-plaintext highlighter-rouge">shm_mq</code> uses <code class="language-plaintext highlighter-rouge">SetLatch</code> to wake the
+reader when data is written to the ring buffer, and vice versa.</p>
+  </li>
+  <li>
+    <p><strong>Chapter 5 (Locking)</strong> – LWLock waits use <code class="language-plaintext highlighter-rouge">PGPROC.sem</code> (a semaphore) rather than
+latches, but heavyweight lock waits use <code class="language-plaintext highlighter-rouge">ProcSleep</code> which does interact with the
+latch system for deadlock timeout handling.</p>
+  </li>
+  <li>
+    <p><strong>Chapter 8 (Executor)</strong> – The parallel query leader uses <code class="language-plaintext highlighter-rouge">WaitEventSet</code> to monitor
+multiple <code class="language-plaintext highlighter-rouge">shm_mq</code> queues from different workers simultaneously.</p>
+  </li>
+</ul>
+
+
+      <hr>
+
+      <!-- Prev / Next / Up navigation -->
+      
+      
+      
+
+      <div class="clearfix" style="margin-top: 2rem;">
+        
+          
+          
+
+          
+            
+            <a class="btn btn-primary float-left" href="/postgresql/11-ipc/" title="IPC">&larr; Previous</a>
+          
+
+          
+            
+            <a class="btn btn-primary float-right" href="/postgresql/11-ipc/message-queues.html" title="Message Queues">Next &rarr;</a>
+          
+        
+      </div>
+
+      
+      <div style="text-align: center; margin-top: 1rem;">
+        <a href="/postgresql-internals/">&uarr; Back to Table of Contents</a>
+      </div>
+      
+
+    </div>
+  </div>
+</div>
+
+
+  <!-- Footer -->
+
+<hr>
+
+<footer>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <ul class="list-inline text-center">
+          
+          <li class="list-inline-item">
+            <a href="mailto:amitava.dev@proton.me" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="far fa-envelope fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          
+          
+          <li class="list-inline-item">
+            <a href="https://www.linkedin.com/in/amitavaag" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-linkedin fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          <li class="list-inline-item">
+            <a href="https://github.com/ikouchiha47" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-github fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+        </ul>
+
+        <p class="copyright text-muted">
+          Build with: 
+          <a 
+            href="https://github.com/StartBootstrap/startbootstrap-clean-blog-jekyll"
+            class="text-gray"
+            target="_blank">startbootstrap-clean-blog-jekyll</a></p>
+      </div>
+    </div>
+  </div>
+</footer>
+
+
+  <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="/assets/vendor/blog/js/scripts.js"></script>
+
+<script src="/assets/scripts.js"></script>
+
+
+
+
+
+  <script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+
+    document.querySelectorAll('pre > code.language-mermaid').forEach((codeBlock) => {
+      codeBlock.parentElement.outerHTML = `<pre class="mermaid">${codeBlock.textContent}</pre>`;
+    });
+
+
+    mermaid.initialize({ startOnLoad: true, theme: 'forest' });
+</script>
+
+
+  
+
+</body>
+
+</html>

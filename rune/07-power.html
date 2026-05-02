@@ -1,0 +1,515 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+  <title>
+    Part 7: Power on 300mAh - iko&#39;s logs
+    
+  </title>
+
+  <meta name="description" content="">
+  <meta property="og:description" content="">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Part 7: Power on 300mAh">
+  <meta property="og:url" content="https://ikouchiha47.github.io/rune/07-power.html">
+
+  
+
+  <link href='https://fonts.googleapis.com/css?family=Lora:400,700,400italic,700italic' rel='stylesheet' type='text/css'>
+  <link href='https://fonts.googleapis.com/css?family=Open+Sans:300italic,400italic,600italic,700italic,800italic,400,300,600,700,800' rel='stylesheet' type='text/css'>
+
+  <!-- <script src="https://use.fontawesome.com/releases/v5.15.3/js/all.js" crossorigin="anonymous"></script> -->
+  <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.15.4/css/all.css" integrity="sha384-DyZ88mC6Up2uqS4h/KRgHuoeGwBcD4Ng9SiP4dIRy0EXTlnuz47vAwmeGwVChigm" crossorigin="anonymous"/>
+
+  <link rel="stylesheet" href="/assets/main.css">
+  <link rel="canonical" href="https://ikouchiha47.github.io/rune/07-power.html">
+  <link rel="alternate" type="application/rss+xml" title="iko&#39;s logs" href="/feed.xml">
+
+  <meta name="google-site-verification" content="lWkg6gIxJgzEKX_5XnhcxCtPE9QknaimFWWos_dTvPM" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fira+Sans:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Inconsolata:wght@200..900&family=Jersey+25&family=Kanit:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Merriweather+Sans:ital,wght@0,300..800;1,300..800&family=Nanum+Gothic+Coding&family=Space+Grotesk:wght@300..700&family=Titillium+Web:ital,wght@0,200;0,300;0,400;0,600;0,700;0,900;1,200;1,300;1,400;1,600;1,700&display=swap" rel="stylesheet">
+
+</head>
+
+
+<body>
+
+  <!-- Navigation -->
+<nav class="navbar navbar-expand-lg navbar-light fixed-top" id="mainNav">
+  <div class="container">
+    <a class="navbar-brand" href="/">iko&#39;s logs</a>
+    <button class="navbar-toggler navbar-toggler-right" type="button" data-toggle="collapse" data-target="#navbarResponsive" aria-controls="navbarResponsive" aria-expanded="false" aria-label="Toggle navigation">
+      Menu
+      <i class="fa fa-bars"></i>
+    </button>
+    <div class="collapse navbar-collapse" id="navbarResponsive">
+      <ul class="navbar-nav ml-auto">
+        <li class="nav-item">
+          <a class="nav-link" href="/">Home</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/about">About</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/posts">Posts</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/contact">Contact</a>
+        </li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+
+  <!-- Page Header -->
+
+<header class="masthead" style="background: #0a1a0a">
+
+  <div class="overlay"></div>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <div class="post-heading">
+          <h1>Part 7: Power on 300mAh</h1>
+          
+          <h2 class="subheading">Adaptive sample rates, staged sleep, and nine hours watching INT blink at nothing</h2>
+          
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="container space-grotesk">
+  <div class="row">
+    <div class="col-lg-8 col-md-10 mx-auto">
+
+      <!-- Breadcrumb -->
+      <nav aria-label="breadcrumb" style="margin-bottom: 1.5rem;">
+        <ol class="breadcrumb" style="background: transparent; padding: 0;">
+          
+            <li class="breadcrumb-item"><a href="/rune/">RUNE</a></li>
+          
+          
+          <li class="breadcrumb-item active" aria-current="page">Part 7: Power on 300mAh</li>
+        </ol>
+      </nav>
+
+      <p>300mAh at 3.7V is 1.11 Wh. The device survives one full night. The target is two days. Getting from here to there is not firmware magic — it’s accounting: measure every state’s draw, then cut what’s unnecessary.</p>
+
+<p>Two independent systems manage power while the device is active. They share a single input signal: the BNO085 stability classifier.</p>
+
+<hr />
+
+<h2 id="1-adaptive-rv-rate">1. Adaptive RV Rate</h2>
+
+<h3 id="the-knob-you-actually-have">The knob you actually have</h3>
+
+<p>The BNO085 fusion engine runs at ~400Hz internally regardless of what you tell it. What you control is how often the SH-2 hub <em>pushes data over I2C</em> — the report rate. Fewer pushes = fewer <code class="language-plaintext highlighter-rouge">waitForEvent()</code> returns in <code class="language-plaintext highlighter-rouge">loop()</code> = less MCU active time and less I2C bus traffic.</p>
+
+<p>The BNO085 chip power is dominated by its fusion engine, not the output rate. The savings land on the nRF52840 side.</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>Rate</th>
+      <th>Interval</th>
+      <th>When</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>50Hz</td>
+      <td>20ms</td>
+      <td>Default on arm/wake; always during MOTION</td>
+    </tr>
+    <tr>
+      <td>10Hz</td>
+      <td>100ms</td>
+      <td>Knob/symbol mode only, after 5s stationary</td>
+    </tr>
+  </tbody>
+</table>
+
+<h3 id="the-state-machine">The state machine</h3>
+
+<p>Driven by <code class="language-plaintext highlighter-rouge">handleStabilityClassifier()</code> on every stab change:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>stab=4 (MOTION)
+  → snap to 50Hz immediately
+  → reset idle countdown
+
+stab=3 (STABLE — arm raised, user resting between gestures)
+  → reset idle countdown
+  → hold current rate
+
+stab≤2 (STATIONARY / TABLE — device truly at rest)
+  → if MODE_GESTURE: reset timer, hold 50Hz forever
+  → if MODE_KNOB / MODE_SYMBOL: start 5s countdown
+      → after 5s: drop to 10Hz
+
+Any arm/wake event
+  → enableReports() always resets to 50Hz
+</code></pre></div></div>
+
+<h3 id="why-gesture-mode-never-drops">Why gesture mode never drops</h3>
+
+<p>In gesture mode the arm rests at <code class="language-plaintext highlighter-rouge">stab=3</code> (STABLE) between flicks — user is holding their wrist up, waiting to gesture. Dropping to 10Hz at stab=3 would cause a missed-onset problem: the BNO085 report rate takes one full interval to ramp back up, so the first 100ms of a gesture could be missed entirely.</p>
+
+<p>Knob and symbol modes involve deliberate sustained motion, so they tolerate a short ramp from 10Hz back to 50Hz when motion resumes.</p>
+
+<hr />
+
+<h2 id="2-powermanager--the-sleep-stack">2. PowerManager — The Sleep Stack</h2>
+
+<h3 id="entry-conditions">Entry conditions</h3>
+
+<p><code class="language-plaintext highlighter-rouge">enterSleep()</code> fires from <code class="language-plaintext highlighter-rouge">loop()</code> when:</p>
+
+<div class="language-cpp highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="p">(</span><span class="n">millis</span><span class="p">()</span> <span class="o">-</span> <span class="n">lastMotionMs</span><span class="p">)</span> <span class="o">&gt;</span> <span class="n">SLEEP_TIMEOUT_MS</span>  <span class="c1">// 5 min production, 30s debug</span>
+</code></pre></div></div>
+
+<p><code class="language-plaintext highlighter-rouge">lastMotionMs</code> updates on stab=4 (MOTION), shake, tap, and <code class="language-plaintext highlighter-rouge">exitSleep()</code>. Path to sleep: no MOTION events for 5 minutes.</p>
+
+<h3 id="how-the-two-systems-share-a-signal">How the two systems share a signal</h3>
+
+<p>The adaptive rate system and sleep entry use the same root signal:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>User puts device down
+  → stab drops: 4 → 3 → 2 → 1
+  → stab=4 events stop → lastMotionMs freezes
+  → sleep countdown begins (5 min)
+  → adaptive rate: stab≤2 for 5s → drops to 10Hz (non-gesture modes)
+  → at 5 min: enterSleep()
+</code></pre></div></div>
+
+<p>The rate drops at 5s of stillness. Sleep fires at 5 min. Both reset on the same MOTION signal. The timers are independent.</p>
+
+<h3 id="the-sleep-tiers">The sleep tiers</h3>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>enterSleep()
+  → disable high-freq reports (RV, linear accel, gyro, stability)
+  → drain FIFO
+  → StagedPolicy.arm()
+
+Stage 0: ShakeSleepPolicy  (light sleep, runs 10 min)
+─────────────────────────────────────────────────────
+  arm():
+    configureSensor(SHAKE_DETECTOR, 200ms interval, wakeupEnabled=false)
+    modeSleep()
+    start 30s software timer
+
+  tick() every ~10ms:
+    if timer &lt; 30s → return false (stay asleep)
+    on 30s expiry:
+      modeOn() + drainFifo(200ms)   ← BNO085 wakes briefly, samples shake detector
+      if 0x19 (shake) seen → return true → full wake
+      else → modeSleep() + reset 30s timer
+
+Stage 1: SigMotionSleepPolicy  (deep sleep, indefinite)
+───────────────────────────────────────────────────────
+  arm():
+    configureSensor(SIG_MOTION, 2s interval, wakeupEnabled=true)
+    modeSleep()                      ← always-on domain handles wake
+
+  tick() every ~10ms:
+    if INT pin HIGH → return false
+    if INT pin LOW:
+      modeOn() + drainFifo(300ms)
+      if 0x12 (significant motion) seen → return true → full wake
+</code></pre></div></div>
+
+<h3 id="full-timeline">Full timeline</h3>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>T+0s      stab=4 stops → lastMotionMs freezes
+T+5s      RV rate drops to 10Hz (knob/symbol modes)
+T+5min    enterSleep() → Stage 0 (ShakeSleepPolicy)
+          BNO085: modeSleep, shake configured at 200ms, no INT dependency
+T+5m30s   tick fires: modeOn 200ms, check shake, back to sleep
+T+6m00s   tick fires: modeOn 200ms, check shake, back to sleep
+...       (every 30s for 10 min)
+T+15min   Stage 0 ends → Stage 1 (SigMotionSleepPolicy)
+          BNO085: SIG_MOTION armed wakeupEnabled=true, modeSleep
+          nRF52840: WFE, wakes only on SIG_MOTION INT or FreeRTOS tick
+</code></pre></div></div>
+
+<p>The device wakes on: user shaking during a Stage 0 sample window (latency: 0–30s), or Significant Motion firing at Stage 1 (requires walking-scale movement).</p>
+
+<hr />
+
+<h2 id="3-getting-here--four-things-that-didnt-work">3. Getting Here — Four Things That Didn’t Work</h2>
+
+<h3 id="approach-1-int-pin-with-wakeupenabledtrue-on-shake-detector">Approach 1: INT pin with wakeupEnabled=true on shake detector</h3>
+
+<p>Configure <code class="language-plaintext highlighter-rouge">SH2_SHAKE_DETECTOR</code> with <code class="language-plaintext highlighter-rouge">wakeupEnabled=true</code>. In <code class="language-plaintext highlighter-rouge">loop()</code>, poll INT pin — INT LOW = shake = wake.</p>
+
+<p>What happened: INT stayed LOW continuously from the moment <code class="language-plaintext highlighter-rouge">modeSleep()</code> was called. The SHTP transport sends an ACK pulse (INT LOW) every time a sensor command is processed. With shake configured at 200ms intervals and wakeupEnabled, the BNO085 drove INT LOW again almost immediately after each drain. The sleep loop spent 9 hours in a continuous “INT pin LOW — draining to clear INT” spin:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>[04:21:42.827] [Sleep] INT pin LOW during MIN_SLEEP_MS window (elapsed=4335ms) — draining to clear INT
+[04:21:43.389] E [DEADLOCK WARNING] ...
+... (repeating every 63ms for ~9 hours)
+[13:11:04.152] [Sleep] INT pin LOW while sleeping (elapsed=417ms) — waking SH-2 hub
+</code></pre></div></div>
+
+<p>Root cause: <code class="language-plaintext highlighter-rouge">SH2_SHAKE_DETECTOR</code> with <code class="language-plaintext highlighter-rouge">wakeupEnabled=true</code> is a periodic sensor — it sends a report on schedule whether or not shaking occurred. It is not an edge-triggered interrupt. INT never stays HIGH.</p>
+
+<hr />
+
+<h3 id="approach-2-longer-guard-window-to-absorb-acks">Approach 2: Longer guard window to absorb ACKs</h3>
+
+<p>After <code class="language-plaintext highlighter-rouge">modeSleep()</code>, enter a 10s guard window where INT LOW → drain without waking. After the window, treat the next INT LOW as a real shake wake.</p>
+
+<p>What happened: The drain log showed 54 consecutive 0x19 shake events at ~196ms spacing in the first 10 seconds:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>[00:05:03.611] [Sleep] drain[5] event=0x19 elapsed=361ms
+[00:05:04.784] [Sleep] drain[11] event=0x19 elapsed=1534ms
+...
+[00:05:13.191] [Sleep] drain[53] event=0x19 elapsed=9746ms
+[00:05:13.247] [Sleep] drain window ended (elapsed=10000ms drainCycles=54) — re-sleeping hub
+[00:05:13.253] [Sleep] INT pin LOW after MIN_SLEEP_MS (elapsed=10006ms) — waking
+</code></pre></div></div>
+
+<p>Device woke immediately after the guard window because the next shake report arrived 6ms after it closed. The guard window delayed the false wake. It didn’t prevent it.</p>
+
+<hr />
+
+<h3 id="approach-3-2s-interval--guard-window">Approach 3: 2s interval + guard window</h3>
+
+<p>Change shake interval to 2s to reduce ACK frequency. Keep a shorter guard window (~10s, ~6 drain cycles). After the guard window, treat the first INT LOW as a real wake.</p>
+
+<p>What happened: consistent pattern across all cycles — device woke at exactly ~11.85s (6 guard drains × ~1.95s) regardless of user activity:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>[00:05:05.353] [Sleep] BNO085 SH-2 sleep — INT=0 after modeSleep
+[00:05:05.443] [Sleep] INT LOW in guard window (elapsed=125ms) — drain ACK, no re-sleep
+...
+[00:05:15.104] [Sleep] INT pin LOW while sleeping (elapsed=11854ms) — waking SH-2 hub
+[00:05:15.159] [Sleep] wake event=0x19 drained=0
+</code></pre></div></div>
+
+<p>The “wake event=0x19 drained=0” is the tell: the drain reported 0 events actually decoded from FIFO, yet still triggered exit. The 7th INT pulse was the next periodic shake report. The guard window approach cannot distinguish a real shake from a scheduled report.</p>
+
+<hr />
+
+<h3 id="what-the-datasheet-actually-says">What the datasheet actually says</h3>
+
+<p>Reading the BNO085 SH-2 Application Note:</p>
+
+<ul>
+  <li>
+    <p><strong><code class="language-plaintext highlighter-rouge">SH2_SIGNIFICANT_MOTION</code></strong> (0x12): Requires a 5-step walking pattern with acceleration threshold crossing. Designed for “user picked up and started walking” detection. Not “device moved” detection.</p>
+  </li>
+  <li>
+    <p><strong><code class="language-plaintext highlighter-rouge">SH2_SHAKE_DETECTOR</code></strong> (0x19): Documented as requiring “significant acceleration changes in rapid succession.” In practice, sends periodic reports at its configured interval — the report payload indicates shake direction, but the report fires on schedule whether or not shaking occurred.</p>
+  </li>
+</ul>
+
+<p>Neither sensor was wired correctly for the use case. The INT pin cannot distinguish a real event from a periodic heartbeat for either sensor.</p>
+
+<hr />
+
+<h3 id="approach-4-the-fix-software-timer">Approach 4 (the fix): Software timer</h3>
+
+<p>Inspired by SparkFun BNO08x Example20-Sleep. Instead of waiting for INT to signal a shake event, use a software timer:</p>
+
+<ol>
+  <li>Configure shake detector with <code class="language-plaintext highlighter-rouge">wakeupEnabled=false</code> — no INT-pin dependency</li>
+  <li><code class="language-plaintext highlighter-rouge">modeSleep()</code> — hub sleeps</li>
+  <li>Every 30s: software timer fires → <code class="language-plaintext highlighter-rouge">modeOn()</code> + drain FIFO for 200ms → check for 0x19 → if found, full wake; else <code class="language-plaintext highlighter-rouge">modeSleep()</code> again</li>
+</ol>
+
+<p>This completely avoids the periodic-report-as-interrupt problem. Wake latency: 0–30s. The user shakes and holds for a few seconds; eventually a sample window catches it.</p>
+
+<p>This is <code class="language-plaintext highlighter-rouge">ShakeSleepPolicy</code> in <code class="language-plaintext highlighter-rouge">PowerManager.h</code>.</p>
+
+<hr />
+
+<h2 id="4-validated-from-hardware-logs">4. Validated from Hardware Logs</h2>
+
+<h3 id="before-the-fix--the-deadlock-bug-logs39">Before the fix — the DEADLOCK bug (logs.39)</h3>
+
+<p>The firmware had a missing <code class="language-plaintext highlighter-rouge">return</code> after <code class="language-plaintext highlighter-rouge">delay(10)</code> in the sleep block. After <code class="language-plaintext highlighter-rouge">enterSleep()</code>, <code class="language-plaintext highlighter-rouge">loop()</code> fell through to the DEADLOCK check on every 10ms iteration because the sleep branch didn’t return. The modeSleep() SHTP ACK held INT LOW, triggering 301 consecutive warnings over ~3 seconds:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>[00:05:03.247] [Sleep] inactivity timeout — entering light sleep
+[00:05:03.284] [Sleep] pre-sleep drain: 5 cycles, INT=1
+[00:05:03.376] E [DEADLOCK WARNING] CPU about to sleep but BNO085 INT is LOW!
+[00:05:03.386] E [DEADLOCK WARNING] ...   ← repeats 301 times over 3 seconds
+...
+[00:10:00.579] [Sleep] PowerManager: wake event confirmed — exiting sleep
+[00:10:00.641] [Sleep] reports restored — restarting BLE advertising
+</code></pre></div></div>
+
+<p>Key observation: despite 301 warnings, the device did not actually deadlock — FreeRTOS RTC tick continued waking the CPU from WFE every ~1ms. It eventually woke correctly from the shake cycle. The bug was noise + wasted cycles, not a crash.</p>
+
+<p><strong>Fix</strong>: added <code class="language-plaintext highlighter-rouge">return</code> after <code class="language-plaintext highlighter-rouge">delay(10)</code> in the sleeping block. The DEADLOCK check and <code class="language-plaintext highlighter-rouge">waitForEvent()</code> are now skipped entirely while sleeping.</p>
+
+<h3 id="after-the-fix--clean-stage-transition-logs39-era-new-firmware">After the fix — clean stage transition (logs.39 era, new firmware)</h3>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>[00:05:03.247] [Sleep] inactivity timeout — entering light sleep (armed=0 lastMotionAge=300004ms)
+[00:05:03.284] [Sleep] pre-sleep drain: 5 cycles, INT=1
+
+[00:09:33.452] [Sleep] stage=1 deep sleep (SigMotion, INT-based)
+                        ↑ exactly 4.5 min → ShakeSleepPolicy → SigMotionSleepPolicy
+
+[00:14:07.756] [Sleep] PowerManager: wake event confirmed — exiting sleep
+[00:14:07.813] [Sleep] exitSleep drained 1 residual events, INT=1
+[00:14:07.813] [Reports] enable start rawMode=0 armed=0 sleeping=0
+[00:14:07.825] [Sleep] reports restored — restarting BLE advertising for reconnect
+[00:14:08.259] [Stab] stab=4
+                        ↑ SigMotion fired on motion, ~4.5 min in deep sleep
+</code></pre></div></div>
+
+<p>Observations:</p>
+<ul>
+  <li>Pre-sleep drain exits clean (<code class="language-plaintext highlighter-rouge">INT=1</code>) — no ACK flooding.</li>
+  <li>SigMotion (<code class="language-plaintext highlighter-rouge">SH2_SIGNIFICANT_MOTION</code>, 0x12) confirmed working on this hardware with <code class="language-plaintext highlighter-rouge">wakeupEnabled=true</code> from <code class="language-plaintext highlighter-rouge">modeSleep</code>.</li>
+  <li><code class="language-plaintext highlighter-rouge">exitSleep drained 1 residual events</code> — normal, that’s the SigMotion event itself.</li>
+  <li><code class="language-plaintext highlighter-rouge">stab=4</code> immediately after wake — BNO085 reporting motion within 500ms of reports being re-enabled.</li>
+  <li>No DEADLOCK warnings. <code class="language-plaintext highlighter-rouge">return</code> fix confirmed.</li>
+</ul>
+
+<p>One bug found in this log: <code class="language-plaintext highlighter-rouge">lastStage</code> was initialised to <code class="language-plaintext highlighter-rouge">0</code>, same as <code class="language-plaintext highlighter-rouge">staged.currentStage</code>, so the stage=0 entry was never logged. <strong>Fixed</strong>: initialise <code class="language-plaintext highlighter-rouge">lastStage = 0xFF</code>.</p>
+
+<hr />
+
+<h2 id="5-known-limitations-rune-i">5. Known Limitations (RUNE-I)</h2>
+
+<p><strong>Shake detection is sampling-based.</strong> <code class="language-plaintext highlighter-rouge">SH2_SHAKE_DETECTOR</code> does not run in the BNO085 always-on domain during <code class="language-plaintext highlighter-rouge">modeSleep()</code>. The 30s cycle wakes the BNO085 for 200ms. The user must shake during that window. Typical wake latency: 0–30s. Shake and hold a few seconds.</p>
+
+<p><strong>SigMotion requires walking, not just motion.</strong> <code class="language-plaintext highlighter-rouge">SH2_SIGNIFICANT_MOTION</code> (0x12) uses a 5-step + acceleration pattern. It will not fire from picking up the device or flicking a wrist — only from walking-scale motion. Confirmed working from hardware log.</p>
+
+<p><strong>nRF52840 WFE tick rate.</strong> <code class="language-plaintext highlighter-rouge">waitForEvent()</code> uses <code class="language-plaintext highlighter-rouge">sd_app_evt_wait()</code> which wakes on any interrupt including the FreeRTOS RTC tick (~1ms). This is how <code class="language-plaintext highlighter-rouge">powerMgr.tick()</code> runs without a dedicated hardware timer. The <code class="language-plaintext highlighter-rouge">delay(10)</code> in the sleep path rate-limits tick checks to ~100/s.</p>
+
+<hr />
+
+<h2 id="rune-ii-direction">RUNE-II Direction</h2>
+
+<p>Push Significant Motion detection further onto the BNO085 always-on domain, or add a dedicated low-power motion interrupt source external to the BNO085 — an accelerometer with a hardware wake output. Goal: true deep sleep with sub-µA idle current on the motion sensing path, wake on genuine gross motion only. Stage 0 (ShakeSleepPolicy) disappears entirely; Stage 1 becomes the only sleep state.</p>
+
+<p>The current device survives a full night. Two days requires measuring actual draw per state with a multimeter in series on the battery line — the serial log tells you what the firmware thinks is happening; the multimeter tells you what’s actually happening.</p>
+
+
+      <hr>
+
+      <!-- Prev / Next / Up navigation -->
+      
+      
+      
+
+      <div class="clearfix" style="margin-top: 2rem;">
+        
+          
+          
+
+          
+            
+            <a class="btn btn-primary float-left" href="/rune/06-app.html" title="RUNE Part 6: The App">&larr; Previous</a>
+          
+
+          
+            
+            <a class="btn btn-primary float-right" href="/rune/08-gesture-symbols.html" title="Research on RUNE-III: Recognising Symbols in the Air">Next &rarr;</a>
+          
+        
+      </div>
+
+      
+      <div style="text-align: center; margin-top: 1rem;">
+        <a href="/rune/">&uarr; Back to Table of Contents</a>
+      </div>
+      
+
+    </div>
+  </div>
+</div>
+
+
+  <!-- Footer -->
+
+<hr>
+
+<footer>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <ul class="list-inline text-center">
+          
+          <li class="list-inline-item">
+            <a href="mailto:amitava.dev@proton.me" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="far fa-envelope fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          
+          
+          <li class="list-inline-item">
+            <a href="https://www.linkedin.com/in/amitavaag" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-linkedin fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          <li class="list-inline-item">
+            <a href="https://github.com/ikouchiha47" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-github fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+        </ul>
+
+        <p class="copyright text-muted">
+          Build with: 
+          <a 
+            href="https://github.com/StartBootstrap/startbootstrap-clean-blog-jekyll"
+            class="text-gray"
+            target="_blank">startbootstrap-clean-blog-jekyll</a></p>
+      </div>
+    </div>
+  </div>
+</footer>
+
+
+  <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="/assets/vendor/blog/js/scripts.js"></script>
+
+<script src="/assets/scripts.js"></script>
+
+
+
+
+
+  <script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+
+    document.querySelectorAll('pre > code.language-mermaid').forEach((codeBlock) => {
+      codeBlock.parentElement.outerHTML = `<pre class="mermaid">${codeBlock.textContent}</pre>`;
+    });
+
+
+    mermaid.initialize({ startOnLoad: true, theme: 'forest' });
+</script>
+
+
+  
+
+</body>
+
+</html>

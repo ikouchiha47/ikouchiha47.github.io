@@ -1,0 +1,494 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+  <title>
+    Lightweight Locks - iko&#39;s logs
+    
+  </title>
+
+  <meta name="description" content="">
+  <meta property="og:description" content="">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Lightweight Locks">
+  <meta property="og:url" content="https://ikouchiha47.github.io/postgresql/05-locking/lwlocks.html">
+
+  
+
+  <link href='https://fonts.googleapis.com/css?family=Lora:400,700,400italic,700italic' rel='stylesheet' type='text/css'>
+  <link href='https://fonts.googleapis.com/css?family=Open+Sans:300italic,400italic,600italic,700italic,800italic,400,300,600,700,800' rel='stylesheet' type='text/css'>
+
+  <!-- <script src="https://use.fontawesome.com/releases/v5.15.3/js/all.js" crossorigin="anonymous"></script> -->
+  <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.15.4/css/all.css" integrity="sha384-DyZ88mC6Up2uqS4h/KRgHuoeGwBcD4Ng9SiP4dIRy0EXTlnuz47vAwmeGwVChigm" crossorigin="anonymous"/>
+
+  <link rel="stylesheet" href="/assets/main.css">
+  <link rel="canonical" href="https://ikouchiha47.github.io/postgresql/05-locking/lwlocks.html">
+  <link rel="alternate" type="application/rss+xml" title="iko&#39;s logs" href="/feed.xml">
+
+  <meta name="google-site-verification" content="lWkg6gIxJgzEKX_5XnhcxCtPE9QknaimFWWos_dTvPM" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fira+Sans:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Inconsolata:wght@200..900&family=Jersey+25&family=Kanit:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Merriweather+Sans:ital,wght@0,300..800;1,300..800&family=Nanum+Gothic+Coding&family=Space+Grotesk:wght@300..700&family=Titillium+Web:ital,wght@0,200;0,300;0,400;0,600;0,700;0,900;1,200;1,300;1,400;1,600;1,700&display=swap" rel="stylesheet">
+
+</head>
+
+
+<body>
+
+  <!-- Navigation -->
+<nav class="navbar navbar-expand-lg navbar-light fixed-top" id="mainNav">
+  <div class="container">
+    <a class="navbar-brand" href="/">iko&#39;s logs</a>
+    <button class="navbar-toggler navbar-toggler-right" type="button" data-toggle="collapse" data-target="#navbarResponsive" aria-controls="navbarResponsive" aria-expanded="false" aria-label="Toggle navigation">
+      Menu
+      <i class="fa fa-bars"></i>
+    </button>
+    <div class="collapse navbar-collapse" id="navbarResponsive">
+      <ul class="navbar-nav ml-auto">
+        <li class="nav-item">
+          <a class="nav-link" href="/">Home</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/about">About</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/posts">Posts</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/contact">Contact</a>
+        </li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+
+  <!-- Page Header -->
+
+<header class="masthead">
+
+  <div class="overlay"></div>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <div class="post-heading">
+          <h1>Lightweight Locks</h1>
+          
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="container space-grotesk">
+  <div class="row">
+    <div class="col-lg-8 col-md-10 mx-auto">
+
+      <!-- Breadcrumb -->
+      <nav aria-label="breadcrumb" style="margin-bottom: 1.5rem;">
+        <ol class="breadcrumb" style="background: transparent; padding: 0;">
+          
+            <li class="breadcrumb-item"><a href="/postgresql-internals/">PostgreSQL Internals Deep Dive</a></li>
+          
+          
+            
+              <li class="breadcrumb-item"><a href="/postgresql/05-locking/">Locking</a></li>
+            
+          
+          <li class="breadcrumb-item active" aria-current="page">Lightweight Locks</li>
+        </ol>
+      </nav>
+
+      <h1 id="lightweight-locks-lwlocks">Lightweight Locks (LWLocks)</h1>
+
+<p>Lightweight locks protect shared-memory data structures such as buffer
+mapping tables, WAL insertion slots, and the lock manager’s own hash tables.
+They support shared (read) and exclusive (write) modes, use atomic operations
+for the fast path, and put waiters to sleep on OS semaphores rather than
+busy-waiting.</p>
+
+<h2 id="overview">Overview</h2>
+
+<p>LWLocks sit between spinlocks and heavyweight locks in the locking hierarchy.
+They are fast enough for per-page or per-hash-partition protection (a few
+dozen instructions in the uncontended case) yet rich enough to support
+read/write semantics and ordered wakeup of waiters.</p>
+
+<p>Key properties:</p>
+
+<ul>
+  <li><strong>Two modes</strong>: <code class="language-plaintext highlighter-rouge">LW_SHARED</code> (multiple readers) and <code class="language-plaintext highlighter-rouge">LW_EXCLUSIVE</code> (single
+writer, blocks readers).</li>
+  <li><strong>No deadlock detection</strong>: Code must acquire LWLocks in a consistent order.</li>
+  <li><strong>Automatic release on error</strong>: The <code class="language-plaintext highlighter-rouge">elog()</code> recovery path calls
+<code class="language-plaintext highlighter-rouge">LWLockReleaseAll()</code>, so it is safe to <code class="language-plaintext highlighter-rouge">ereport(ERROR)</code> while holding
+LWLocks.</li>
+  <li><strong>Interrupts deferred</strong>: Query cancel and <code class="language-plaintext highlighter-rouge">die()</code> are held off while any
+LWLock is held, preventing partial updates to shared structures.</li>
+  <li><strong>Wait-free shared acquisition</strong> when uncontended: A single atomic
+compare-and-exchange is sufficient.</li>
+</ul>
+
+<h2 id="key-source-files">Key Source Files</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>File</th>
+      <th>Purpose</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/storage/lmgr/lwlock.c</code></td>
+      <td>Acquire, release, wait queue management</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/storage/lwlock.h</code></td>
+      <td><code class="language-plaintext highlighter-rouge">LWLock</code> struct, <code class="language-plaintext highlighter-rouge">LWLockMode</code> enum, tranche IDs</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/storage/lwlocklist.h</code></td>
+      <td>Enumeration of all individually-named LWLocks</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/storage/lwlocknames.h</code></td>
+      <td>Auto-generated names for individual LWLocks</td>
+    </tr>
+  </tbody>
+</table>
+
+<h2 id="how-it-works">How It Works</h2>
+
+<h3 id="the-atomic-state-variable">The Atomic State Variable</h3>
+
+<p>Each LWLock contains a single <code class="language-plaintext highlighter-rouge">pg_atomic_uint32 state</code> that encodes both the
+lock mode and holder count:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>  Bit layout of LWLock.state (32 bits):
+  +----+----+----+------------------------------+
+  | 31 | 30 | 29 |  28 ... 0                    |
+  +----+----+----+------------------------------+
+    |    |    |       |
+    |    |    |       +-- Number of shared lockers (up to ~500 million)
+    |    |    +---------- LW_FLAG_RELEASE_OK: waiters may be released
+    |    +--------------- LW_FLAG_HAS_WAITERS: wait queue is non-empty
+    +-------------------- LW_VAL_EXCLUSIVE: lock is held exclusively
+
+  LW_VAL_EXCLUSIVE  = (1 &lt;&lt; 24)  -- sentinel for exclusive hold
+  LW_SHARED_MASK    = ((1 &lt;&lt; 24) - 1)  -- mask for shared holder count
+</code></pre></div></div>
+
+<h3 id="acquisition-protocol-four-phases">Acquisition Protocol (Four Phases)</h3>
+
+<p>The acquisition protocol addresses a subtle race: between the moment a backend
+sees the lock is held and the moment it enqueues itself, the holder might
+release. The four-phase protocol prevents missed wakeups:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>LWLockAcquire(lock, mode)
+  |
+  +-- Phase 1: Atomic attempt
+  |     If mode == LW_SHARED:
+  |       atomic_fetch_add(&amp;state, 1)  -- increment shared count
+  |       If no exclusive holder: SUCCESS
+  |       Else: undo the add, proceed to Phase 2
+  |     If mode == LW_EXCLUSIVE:
+  |       atomic_compare_exchange(&amp;state, 0, LW_VAL_EXCLUSIVE)
+  |       If succeeded: SUCCESS
+  |       Else: proceed to Phase 2
+  |
+  +-- Phase 2: Enqueue on wait list
+  |     Acquire lock-&gt;waiters spinlock (via atomic ops on state)
+  |     Add PGPROC to lock-&gt;waiters list
+  |     Set LW_FLAG_HAS_WAITERS
+  |     Set my lwWaitMode, lwWaiting = LW_WS_WAITING
+  |
+  +-- Phase 3: Retry atomic attempt
+  |     Try Phase 1 again (lock may have been released during enqueue)
+  |     If succeeded: dequeue self, SUCCESS
+  |
+  +-- Phase 4: Sleep
+        Call PGSemaphoreLock(proc-&gt;sem) -- block on OS semaphore
+        When woken: goto Phase 1
+</code></pre></div></div>
+
+<h3 id="release-protocol">Release Protocol</h3>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>LWLockRelease(lock)
+  |
+  +-- If held exclusively:
+  |     atomic_sub(&amp;state, LW_VAL_EXCLUSIVE)
+  |   Else (held shared):
+  |     atomic_sub(&amp;state, 1)
+  |
+  +-- If new state == 0 and LW_FLAG_HAS_WAITERS is set:
+        Acquire waiters list
+        Walk the list:
+          - Wake all waiting shared lockers (if no exclusive waiter ahead)
+          - Or wake the first exclusive waiter
+        PGSemaphoreUnlock(each woken proc-&gt;sem)
+</code></pre></div></div>
+
+<p>Waiters are woken in FIFO order. If the first waiter wants exclusive access,
+only that waiter is woken. If the first waiter wants shared access, all
+consecutive shared waiters are woken together.</p>
+
+<h2 id="key-data-structures">Key Data Structures</h2>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">typedef</span> <span class="k">struct</span> <span class="n">LWLock</span>
+<span class="p">{</span>
+    <span class="n">uint16</span>          <span class="n">tranche</span><span class="p">;</span>    <span class="cm">/* identifies which group this lock belongs to */</span>
+    <span class="n">pg_atomic_uint32</span> <span class="n">state</span><span class="p">;</span>     <span class="cm">/* encodes exclusive/shared holders + flags */</span>
+    <span class="n">proclist_head</span>   <span class="n">waiters</span><span class="p">;</span>    <span class="cm">/* list of waiting PGPROCs */</span>
+<span class="cp">#ifdef LOCK_DEBUG
+</span>    <span class="n">pg_atomic_uint32</span> <span class="n">nwaiters</span><span class="p">;</span>
+    <span class="k">struct</span> <span class="n">PGPROC</span>   <span class="o">*</span><span class="n">owner</span><span class="p">;</span>     <span class="cm">/* last exclusive owner (debug only) */</span>
+<span class="cp">#endif
+</span><span class="p">}</span> <span class="n">LWLock</span><span class="p">;</span>
+
+<span class="cm">/* Padded to a full cache line to prevent false sharing */</span>
+<span class="k">typedef</span> <span class="k">union</span> <span class="n">LWLockPadded</span>
+<span class="p">{</span>
+    <span class="n">LWLock</span>  <span class="n">lock</span><span class="p">;</span>
+    <span class="kt">char</span>    <span class="n">pad</span><span class="p">[</span><span class="n">PG_CACHE_LINE_SIZE</span><span class="p">];</span>   <span class="cm">/* typically 64 or 128 bytes */</span>
+<span class="p">}</span> <span class="n">LWLockPadded</span><span class="p">;</span>
+
+<span class="cm">/* The main array of pre-allocated LWLocks in shared memory */</span>
+<span class="k">extern</span> <span class="n">LWLockPadded</span> <span class="o">*</span><span class="n">MainLWLockArray</span><span class="p">;</span>
+</code></pre></div></div>
+
+<h3 id="pgproc-fields-for-lwlock-waiting">PGPROC Fields for LWLock Waiting</h3>
+
+<p>Each backend’s <code class="language-plaintext highlighter-rouge">PGPROC</code> structure contains:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="cm">/* In PGPROC: */</span>
+<span class="n">LWLockWaitState</span>  <span class="n">lwWaiting</span><span class="p">;</span>     <span class="cm">/* LW_WS_NOT_WAITING, LW_WS_WAITING, LW_WS_PENDING_WAKEUP */</span>
+<span class="n">uint8</span>            <span class="n">lwWaitMode</span><span class="p">;</span>    <span class="cm">/* LW_EXCLUSIVE or LW_SHARED */</span>
+<span class="n">proclist_node</span>    <span class="n">lwWaitLink</span><span class="p">;</span>    <span class="cm">/* link in LWLock's waiters list */</span>
+<span class="n">PGSemaphore</span>      <span class="n">sem</span><span class="p">;</span>           <span class="cm">/* semaphore for sleeping */</span>
+</code></pre></div></div>
+
+<h2 id="tranches-organizing-lwlocks">Tranches: Organizing LWLocks</h2>
+
+<p>LWLocks are grouped into <strong>tranches</strong> for monitoring and debugging. Each
+tranche has a name that appears in <code class="language-plaintext highlighter-rouge">pg_stat_activity.wait_event</code>:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>MainLWLockArray layout:
++-------------------------------------------------------------------+
+| Individual named locks        | Buffer mapping | Lock manager     |
+| (BufFreelistLock,             | partitions     | partitions       |
+|  CheckpointerCommLock, ...)   | (128 locks)    | (16 locks)       |
+| NUM_INDIVIDUAL_LWLOCKS        |                |                  |
++-------------------------------+----------------+------------------+
+| Predicate lock manager partitions (16 locks)                      |
++-------------------------------------------------------------------+
+</code></pre></div></div>
+
+<p>Additional tranches are allocated dynamically for:</p>
+<ul>
+  <li>Per-buffer content locks (one per shared buffer)</li>
+  <li>WAL insertion locks (one per WAL insertion slot)</li>
+  <li>Extension-requested tranches via <code class="language-plaintext highlighter-rouge">RequestNamedLWLockTranche()</code></li>
+</ul>
+
+<h3 id="partitioning-constants">Partitioning Constants</h3>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="cp">#define NUM_BUFFER_PARTITIONS          128
+#define NUM_LOCK_PARTITIONS             16   </span><span class="cm">/* 2^4 */</span><span class="cp">
+#define NUM_PREDICATELOCK_PARTITIONS    16   </span><span class="cm">/* 2^4 */</span><span class="cp">
+</span></code></pre></div></div>
+
+<h2 id="diagram-lwlock-state-transitions">Diagram: LWLock State Transitions</h2>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>                    atomic_fetch_add(1)
+            +------ UNLOCKED (state=0) ------+
+            |                                 |
+            v                                 v
+   SHARED (state=N)                  EXCLUSIVE (state=LW_VAL_EXCLUSIVE)
+   N = number of shared holders      Only one holder
+            |                                 |
+            | atomic_sub(1)                   | atomic_sub(LW_VAL_EXCLUSIVE)
+            | if N-1 &gt; 0: still shared        |
+            | if N-1 == 0: unlocked           |
+            |                                 |
+            +--------&gt; UNLOCKED &lt;-------------+
+                           |
+                    If HAS_WAITERS flag set:
+                    wake appropriate waiters
+</code></pre></div></div>
+
+<h2 id="the-lwlockwaitforvar-pattern">The LWLockWaitForVar Pattern</h2>
+
+<p>LWLocks support a special pattern for waiting until a protected variable
+changes value, without holding the lock:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="n">bool</span> <span class="nf">LWLockWaitForVar</span><span class="p">(</span><span class="n">LWLock</span> <span class="o">*</span><span class="n">lock</span><span class="p">,</span>
+                      <span class="n">pg_atomic_uint64</span> <span class="o">*</span><span class="n">valptr</span><span class="p">,</span>
+                      <span class="n">uint64</span> <span class="n">oldval</span><span class="p">,</span>
+                      <span class="n">uint64</span> <span class="o">*</span><span class="n">newval</span><span class="p">);</span>
+</code></pre></div></div>
+
+<p>This is used by the WAL subsystem: a backend waiting for WAL to be flushed
+calls <code class="language-plaintext highlighter-rouge">LWLockWaitForVar()</code> on the WAL write lock, waiting until the flush
+position advances past the desired LSN. The lock holder periodically calls
+<code class="language-plaintext highlighter-rouge">LWLockUpdateVar()</code> to publish progress and wake waiters whose condition is
+now satisfied.</p>
+
+<h2 id="performance-considerations">Performance Considerations</h2>
+
+<p><strong>Cache-line padding.</strong> Each LWLock is padded to a full cache line (64 or 128
+bytes) to prevent false sharing. Without padding, two unrelated locks on the
+same cache line would cause cross-CPU cache invalidation traffic on every
+acquisition.</p>
+
+<p><strong>Wait-free shared path.</strong> The common case of acquiring a shared lock on an
+uncontended LWLock is a single <code class="language-plaintext highlighter-rouge">atomic_fetch_add</code> – no spinlock, no kernel
+call, no cache-line bouncing beyond the lock’s own line.</p>
+
+<p><strong>Tranche-level monitoring.</strong> Because each tranche is named, <code class="language-plaintext highlighter-rouge">EXPLAIN
+(BUFFERS)</code> and <code class="language-plaintext highlighter-rouge">pg_stat_activity</code> can report exactly which LWLock a backend is
+waiting on (e.g., <code class="language-plaintext highlighter-rouge">LWLock:BufferMapping</code>, <code class="language-plaintext highlighter-rouge">LWLock:WALInsert</code>), making
+contention analysis straightforward.</p>
+
+<h2 id="connections">Connections</h2>
+
+<ul>
+  <li><strong>Spinlocks</strong>: LWLocks originally used spinlocks internally; modern
+PostgreSQL replaced them with atomic operations for the common path but
+retains the adaptive backoff logic from the spinlock implementation.</li>
+  <li><strong>Buffer Manager</strong>: Every buffer lookup acquires a shared LWLock on the
+buffer mapping partition. Every buffer read/write acquires a shared or
+exclusive buffer content lock (also an LWLock).</li>
+  <li><strong>WAL</strong>: The <code class="language-plaintext highlighter-rouge">WALInsertLock</code> tranche allows multiple backends to insert WAL
+records concurrently into different WAL insertion slots.</li>
+  <li><strong>Heavyweight Locks</strong>: The lock manager’s shared hash tables are protected
+by 16 LWLock partitions (<code class="language-plaintext highlighter-rouge">LockManagerLock</code> tranche). Fast-path lock
+promotion also requires briefly holding a per-backend LWLock.</li>
+  <li><strong>Replication</strong>: <code class="language-plaintext highlighter-rouge">ReplicationSlotLock</code> and <code class="language-plaintext highlighter-rouge">ReplicationOriginLock</code> protect
+replication slot state in shared memory.</li>
+</ul>
+
+
+      <hr>
+
+      <!-- Prev / Next / Up navigation -->
+      
+      
+      
+
+      <div class="clearfix" style="margin-top: 2rem;">
+        
+          
+          
+
+          
+            
+            <a class="btn btn-primary float-left" href="/postgresql/05-locking/heavyweight-locks.html" title="Heavyweight Locks">&larr; Previous</a>
+          
+
+          
+            
+            <a class="btn btn-primary float-right" href="/postgresql/05-locking/predicate-locks.html" title="Predicate Locks">Next &rarr;</a>
+          
+        
+      </div>
+
+      
+      <div style="text-align: center; margin-top: 1rem;">
+        <a href="/postgresql-internals/">&uarr; Back to Table of Contents</a>
+      </div>
+      
+
+    </div>
+  </div>
+</div>
+
+
+  <!-- Footer -->
+
+<hr>
+
+<footer>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <ul class="list-inline text-center">
+          
+          <li class="list-inline-item">
+            <a href="mailto:amitava.dev@proton.me" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="far fa-envelope fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          
+          
+          <li class="list-inline-item">
+            <a href="https://www.linkedin.com/in/amitavaag" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-linkedin fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          <li class="list-inline-item">
+            <a href="https://github.com/ikouchiha47" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-github fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+        </ul>
+
+        <p class="copyright text-muted">
+          Build with: 
+          <a 
+            href="https://github.com/StartBootstrap/startbootstrap-clean-blog-jekyll"
+            class="text-gray"
+            target="_blank">startbootstrap-clean-blog-jekyll</a></p>
+      </div>
+    </div>
+  </div>
+</footer>
+
+
+  <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="/assets/vendor/blog/js/scripts.js"></script>
+
+<script src="/assets/scripts.js"></script>
+
+
+
+
+
+  <script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+
+    document.querySelectorAll('pre > code.language-mermaid').forEach((codeBlock) => {
+      codeBlock.parentElement.outerHTML = `<pre class="mermaid">${codeBlock.textContent}</pre>`;
+    });
+
+
+    mermaid.initialize({ startOnLoad: true, theme: 'forest' });
+</script>
+
+
+  
+
+</body>
+
+</html>

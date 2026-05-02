@@ -1,0 +1,626 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+  <title>
+    Preprocessing - iko&#39;s logs
+    
+  </title>
+
+  <meta name="description" content="">
+  <meta property="og:description" content="">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Preprocessing">
+  <meta property="og:url" content="https://ikouchiha47.github.io/postgresql/07-query-optimizer/preprocessing.html">
+
+  
+
+  <link href='https://fonts.googleapis.com/css?family=Lora:400,700,400italic,700italic' rel='stylesheet' type='text/css'>
+  <link href='https://fonts.googleapis.com/css?family=Open+Sans:300italic,400italic,600italic,700italic,800italic,400,300,600,700,800' rel='stylesheet' type='text/css'>
+
+  <!-- <script src="https://use.fontawesome.com/releases/v5.15.3/js/all.js" crossorigin="anonymous"></script> -->
+  <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.15.4/css/all.css" integrity="sha384-DyZ88mC6Up2uqS4h/KRgHuoeGwBcD4Ng9SiP4dIRy0EXTlnuz47vAwmeGwVChigm" crossorigin="anonymous"/>
+
+  <link rel="stylesheet" href="/assets/main.css">
+  <link rel="canonical" href="https://ikouchiha47.github.io/postgresql/07-query-optimizer/preprocessing.html">
+  <link rel="alternate" type="application/rss+xml" title="iko&#39;s logs" href="/feed.xml">
+
+  <meta name="google-site-verification" content="lWkg6gIxJgzEKX_5XnhcxCtPE9QknaimFWWos_dTvPM" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fira+Sans:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Inconsolata:wght@200..900&family=Jersey+25&family=Kanit:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Merriweather+Sans:ital,wght@0,300..800;1,300..800&family=Nanum+Gothic+Coding&family=Space+Grotesk:wght@300..700&family=Titillium+Web:ital,wght@0,200;0,300;0,400;0,600;0,700;0,900;1,200;1,300;1,400;1,600;1,700&display=swap" rel="stylesheet">
+
+</head>
+
+
+<body>
+
+  <!-- Navigation -->
+<nav class="navbar navbar-expand-lg navbar-light fixed-top" id="mainNav">
+  <div class="container">
+    <a class="navbar-brand" href="/">iko&#39;s logs</a>
+    <button class="navbar-toggler navbar-toggler-right" type="button" data-toggle="collapse" data-target="#navbarResponsive" aria-controls="navbarResponsive" aria-expanded="false" aria-label="Toggle navigation">
+      Menu
+      <i class="fa fa-bars"></i>
+    </button>
+    <div class="collapse navbar-collapse" id="navbarResponsive">
+      <ul class="navbar-nav ml-auto">
+        <li class="nav-item">
+          <a class="nav-link" href="/">Home</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/about">About</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/posts">Posts</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/contact">Contact</a>
+        </li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+
+  <!-- Page Header -->
+
+<header class="masthead">
+
+  <div class="overlay"></div>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <div class="post-heading">
+          <h1>Preprocessing</h1>
+          
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="container space-grotesk">
+  <div class="row">
+    <div class="col-lg-8 col-md-10 mx-auto">
+
+      <!-- Breadcrumb -->
+      <nav aria-label="breadcrumb" style="margin-bottom: 1.5rem;">
+        <ol class="breadcrumb" style="background: transparent; padding: 0;">
+          
+            <li class="breadcrumb-item"><a href="/postgresql-internals/">PostgreSQL Internals Deep Dive</a></li>
+          
+          
+            
+              <li class="breadcrumb-item"><a href="/postgresql/07-query-optimizer/">Query Optimizer</a></li>
+            
+          
+          <li class="breadcrumb-item active" aria-current="page">Preprocessing</li>
+        </ol>
+      </nav>
+
+      <h1 id="preprocessing">Preprocessing</h1>
+
+<p>Before the optimizer can search for the best plan, it must simplify and normalize the <code class="language-plaintext highlighter-rouge">Query</code> tree. Preprocessing transforms the query into a form that is easier and more efficient to optimize. This phase handles subquery pullup, sublink conversion, WHERE-clause canonicalization, join-tree flattening, and constant folding.</p>
+
+<hr />
+
+<h2 id="summary">Summary</h2>
+
+<p>Preprocessing is the first thing <code class="language-plaintext highlighter-rouge">subquery_planner()</code> does after receiving a <code class="language-plaintext highlighter-rouge">Query</code> from the rewriter. The key transformations are:</p>
+
+<ol>
+  <li><strong>Sublink pullup</strong> – convert <code class="language-plaintext highlighter-rouge">EXISTS</code> and <code class="language-plaintext highlighter-rouge">ANY</code> sublinks into semi-joins or anti-joins.</li>
+  <li><strong>Subquery pullup</strong> – pull simple subqueries in <code class="language-plaintext highlighter-rouge">FROM</code> up into the parent query’s join tree.</li>
+  <li><strong>Join tree flattening</strong> – merge nested <code class="language-plaintext highlighter-rouge">FROM</code> lists to give the optimizer maximum freedom in join ordering.</li>
+  <li><strong>Qual canonicalization</strong> – flatten nested AND/OR trees and detect duplicate OR branches.</li>
+  <li><strong>Constant folding</strong> – evaluate constant sub-expressions at plan time.</li>
+  <li><strong>Outer join reduction</strong> – remove outer joins that provably produce no null-extended rows.</li>
+</ol>
+
+<hr />
+
+<h2 id="key-source-files">Key Source Files</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>File</th>
+      <th>Purpose</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/optimizer/plan/planner.c</code></td>
+      <td><code class="language-plaintext highlighter-rouge">subquery_planner()</code> orchestrates all preprocessing steps</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/optimizer/prep/prepjointree.c</code></td>
+      <td>Subquery pullup, join-tree flattening, outer-join reduction</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/optimizer/prep/prepqual.c</code></td>
+      <td>AND/OR flattening, duplicate-OR detection</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/optimizer/plan/subselect.c</code></td>
+      <td>SubLink-to-join conversion</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/optimizer/util/clauses.c</code></td>
+      <td><code class="language-plaintext highlighter-rouge">eval_const_expressions()</code> – constant folding</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/optimizer/prep/preptlist.c</code></td>
+      <td>Target list preprocessing</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/optimizer/prep/prepagg.c</code></td>
+      <td>Aggregate preprocessing</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/optimizer/prep/prepunion.c</code></td>
+      <td>UNION/INTERSECT/EXCEPT handling</td>
+    </tr>
+  </tbody>
+</table>
+
+<hr />
+
+<h2 id="how-it-works">How It Works</h2>
+
+<h3 id="preprocessing-order-in-subquery_planner">Preprocessing Order in subquery_planner()</h3>
+
+<p>The function <code class="language-plaintext highlighter-rouge">subquery_planner()</code> in <code class="language-plaintext highlighter-rouge">planner.c</code> calls the preprocessing steps in a carefully ordered sequence. The comments in <code class="language-plaintext highlighter-rouge">prepjointree.c</code> document the intended order:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>preprocess_relation_rtes      -- expand inheritance, partition hierarchies
+replace_empty_jointree        -- handle empty FROM by inserting a dummy RTE
+pull_up_sublinks              -- convert EXISTS/ANY SubLinks to joins
+preprocess_function_rtes      -- inline SQL functions in FROM
+pull_up_subqueries            -- flatten simple subqueries into parent
+flatten_simple_union_all      -- optimize UNION ALL as append
+preprocess_expression         -- constant folding, function inlining
+reduce_outer_joins            -- remove unnecessary outer joins
+remove_useless_result_rtes    -- clean up trivial Result RTEs
+</code></pre></div></div>
+
+<h3 id="1-sublink-pullup-pull_up_sublinks">1. SubLink Pullup (pull_up_sublinks)</h3>
+
+<p>A <code class="language-plaintext highlighter-rouge">SubLink</code> is the parser’s representation of a subquery appearing in a WHERE or HAVING clause. The optimizer can sometimes convert these to joins, which is far more efficient because the join-ordering machinery can then consider all tables together.</p>
+
+<p><strong>Before pullup:</strong></p>
+<div class="language-sql highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">SELECT</span> <span class="o">*</span> <span class="k">FROM</span> <span class="n">t1</span> <span class="k">WHERE</span> <span class="k">EXISTS</span> <span class="p">(</span><span class="k">SELECT</span> <span class="mi">1</span> <span class="k">FROM</span> <span class="n">t2</span> <span class="k">WHERE</span> <span class="n">t2</span><span class="p">.</span><span class="n">x</span> <span class="o">=</span> <span class="n">t1</span><span class="p">.</span><span class="n">x</span><span class="p">)</span>
+</code></pre></div></div>
+
+<p>The parser represents this as a sequential scan on <code class="language-plaintext highlighter-rouge">t1</code> with a SubPlan filter. For every row of <code class="language-plaintext highlighter-rouge">t1</code>, the executor would run the subquery.</p>
+
+<p><strong>After pullup:</strong></p>
+<div class="language-sql highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">SELECT</span> <span class="o">*</span> <span class="k">FROM</span> <span class="n">t1</span> <span class="n">SEMI</span> <span class="k">JOIN</span> <span class="n">t2</span> <span class="k">ON</span> <span class="p">(</span><span class="n">t2</span><span class="p">.</span><span class="n">x</span> <span class="o">=</span> <span class="n">t1</span><span class="p">.</span><span class="n">x</span><span class="p">)</span>
+</code></pre></div></div>
+
+<p>Now the optimizer can choose hash semi-join, merge semi-join, or nestloop semi-join and can consider either table as outer or inner.</p>
+
+<p>The conversion rules:</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>SubLink Type</th>
+      <th>Conversion</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">EXISTS_SUBLINK</code></td>
+      <td>Semi-join (or anti-join if under NOT)</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">ANY_SUBLINK</code> (= ANY)</td>
+      <td>Semi-join</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">ALL_SUBLINK</code></td>
+      <td>Anti-join (after negation)</td>
+    </tr>
+    <tr>
+      <td>Correlated scalar</td>
+      <td>Left as SubPlan (cannot be pulled up)</td>
+    </tr>
+    <tr>
+      <td>Uncorrelated scalar</td>
+      <td>Converted to <code class="language-plaintext highlighter-rouge">InitPlan</code> (evaluated once)</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>The code is in <code class="language-plaintext highlighter-rouge">convert_EXISTS_sublink_to_join()</code> and <code class="language-plaintext highlighter-rouge">convert_ANY_sublink_to_join()</code> in <code class="language-plaintext highlighter-rouge">subselect.c</code>, called from <code class="language-plaintext highlighter-rouge">pull_up_sublinks()</code> in <code class="language-plaintext highlighter-rouge">prepjointree.c</code>.</p>
+
+<h3 id="2-subquery-pullup-pull_up_subqueries">2. Subquery Pullup (pull_up_subqueries)</h3>
+
+<p>A subquery in <code class="language-plaintext highlighter-rouge">FROM</code> (a <code class="language-plaintext highlighter-rouge">RangeTblEntry</code> of type <code class="language-plaintext highlighter-rouge">RTE_SUBQUERY</code>) is normally planned as a black box: the optimizer plans it independently, then treats its output as a single relation. This prevents the optimizer from considering join orders that interleave the subquery’s tables with the outer query’s tables.</p>
+
+<p><code class="language-plaintext highlighter-rouge">pull_up_subqueries()</code> detects simple subqueries that can be merged into the parent:</p>
+
+<p><strong>Conditions for pullup:</strong></p>
+<ul>
+  <li>No aggregation, GROUP BY, HAVING, DISTINCT, or window functions</li>
+  <li>No set operations (UNION, INTERSECT, EXCEPT)</li>
+  <li>No LIMIT or OFFSET</li>
+  <li>Not a volatile function in FROM</li>
+  <li>Not a FULL JOIN target that would change semantics</li>
+  <li><code class="language-plaintext highlighter-rouge">from_collapse_limit</code> not exceeded</li>
+</ul>
+
+<p><strong>What happens during pullup:</strong></p>
+<ol>
+  <li>The subquery’s range table entries are appended to the parent’s range table.</li>
+  <li>The subquery’s join tree is substituted into the parent’s join tree in place of the <code class="language-plaintext highlighter-rouge">RTE_SUBQUERY</code> reference.</li>
+  <li>Var references to the subquery outputs are replaced with the underlying expressions.</li>
+  <li>PlaceHolderVars may be introduced when expressions from inside the subquery need to be nullable due to outer joins above.</li>
+</ol>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>Before:  SELECT * FROM t1, (SELECT a, b FROM t2 WHERE t2.c &gt; 5) sub
+                             WHERE t1.x = sub.a
+
+After:   SELECT * FROM t1, t2
+                             WHERE t1.x = t2.a AND t2.c &gt; 5
+</code></pre></div></div>
+
+<h3 id="3-join-tree-flattening">3. Join Tree Flattening</h3>
+
+<p>After subquery pullup, the join tree may have nested <code class="language-plaintext highlighter-rouge">FromExpr</code> (FROM lists) or <code class="language-plaintext highlighter-rouge">JoinExpr</code> nodes. The optimizer flattens these to give maximum freedom for join reordering.</p>
+
+<p><strong>Rules:</strong></p>
+<ul>
+  <li>A <code class="language-plaintext highlighter-rouge">FromExpr</code> nested inside another <code class="language-plaintext highlighter-rouge">FromExpr</code> can be merged (their FROM-lists concatenated).</li>
+  <li>Explicit <code class="language-plaintext highlighter-rouge">INNER JOIN</code> nodes can be flattened into the parent FROM-list (the ON clause becomes a WHERE clause).</li>
+  <li><code class="language-plaintext highlighter-rouge">LEFT JOIN</code>, <code class="language-plaintext highlighter-rouge">RIGHT JOIN</code> can sometimes be flattened (the ON clause is preserved in a <code class="language-plaintext highlighter-rouge">SpecialJoinInfo</code>).</li>
+  <li><code class="language-plaintext highlighter-rouge">FULL OUTER JOIN</code> is never flattened – the optimizer cannot reorder it.</li>
+</ul>
+
+<p>Flattening is controlled by <code class="language-plaintext highlighter-rouge">join_collapse_limit</code> (for explicit JOINs) and <code class="language-plaintext highlighter-rouge">from_collapse_limit</code> (for subquery FROM-lists). When either limit is exceeded, the optimizer preserves the syntactic join structure, constraining the search space but bounding planning time.</p>
+
+<h3 id="4-qual-canonicalization-prepqualc">4. Qual Canonicalization (prepqual.c)</h3>
+
+<p>The function <code class="language-plaintext highlighter-rouge">canonicalize_qual()</code> normalizes the WHERE clause:</p>
+
+<p><strong>AND/OR flattening:</strong></p>
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>Before:  (A AND (B AND C)) OR (D AND E)
+After:   (A AND B AND C) OR (D AND E)
+</code></pre></div></div>
+<p>The functions <code class="language-plaintext highlighter-rouge">pull_ands()</code> and <code class="language-plaintext highlighter-rouge">pull_ors()</code> recursively flatten nested AND/OR trees into flat N-argument lists.</p>
+
+<p><strong>Duplicate OR detection:</strong></p>
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>Before:  (A AND B) OR (A AND C) OR (A AND D)
+After:   A AND (B OR C OR D)
+</code></pre></div></div>
+<p>The function <code class="language-plaintext highlighter-rouge">find_duplicate_ors()</code> identifies common factors across OR branches and factors them out. This is critical because it can turn a filter that could only be applied after a join into a restriction that can be pushed down to a single table scan.</p>
+
+<h3 id="5-constant-folding-eval_const_expressions">5. Constant Folding (eval_const_expressions)</h3>
+
+<p><code class="language-plaintext highlighter-rouge">eval_const_expressions()</code> in <code class="language-plaintext highlighter-rouge">clauses.c</code> walks the expression tree and:</p>
+
+<ul>
+  <li>Evaluates <code class="language-plaintext highlighter-rouge">OpExpr</code> and <code class="language-plaintext highlighter-rouge">FuncExpr</code> nodes when all arguments are constants.</li>
+  <li>Simplifies <code class="language-plaintext highlighter-rouge">CASE WHEN true THEN x ELSE y</code> to just <code class="language-plaintext highlighter-rouge">x</code>.</li>
+  <li>Reduces <code class="language-plaintext highlighter-rouge">COALESCE(const, ...)</code> when the first argument is non-null.</li>
+  <li>Applies boolean simplification (<code class="language-plaintext highlighter-rouge">TRUE AND x</code> becomes <code class="language-plaintext highlighter-rouge">x</code>, <code class="language-plaintext highlighter-rouge">FALSE OR x</code> becomes <code class="language-plaintext highlighter-rouge">x</code>).</li>
+  <li>Inlines simple SQL functions (single SELECT body, immutable).</li>
+  <li>Flattens nested AND/OR as a side effect.</li>
+</ul>
+
+<h3 id="6-outer-join-reduction-reduce_outer_joins">6. Outer Join Reduction (reduce_outer_joins)</h3>
+
+<p>If a WHERE clause effectively filters out NULLs from the nullable side of a LEFT JOIN, the LEFT JOIN can be reduced to an INNER JOIN:</p>
+
+<div class="language-sql highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="c1">-- Before (LEFT JOIN):</span>
+<span class="k">SELECT</span> <span class="o">*</span> <span class="k">FROM</span> <span class="n">t1</span> <span class="k">LEFT</span> <span class="k">JOIN</span> <span class="n">t2</span> <span class="k">ON</span> <span class="n">t1</span><span class="p">.</span><span class="n">x</span> <span class="o">=</span> <span class="n">t2</span><span class="p">.</span><span class="n">y</span> <span class="k">WHERE</span> <span class="n">t2</span><span class="p">.</span><span class="n">z</span> <span class="o">&gt;</span> <span class="mi">10</span>
+
+<span class="c1">-- After (reduced to INNER JOIN):</span>
+<span class="k">SELECT</span> <span class="o">*</span> <span class="k">FROM</span> <span class="n">t1</span> <span class="k">INNER</span> <span class="k">JOIN</span> <span class="n">t2</span> <span class="k">ON</span> <span class="n">t1</span><span class="p">.</span><span class="n">x</span> <span class="o">=</span> <span class="n">t2</span><span class="p">.</span><span class="n">y</span> <span class="k">WHERE</span> <span class="n">t2</span><span class="p">.</span><span class="n">z</span> <span class="o">&gt;</span> <span class="mi">10</span>
+</code></pre></div></div>
+
+<p>The <code class="language-plaintext highlighter-rouge">WHERE t2.z &gt; 10</code> is strict (rejects NULLs), so any null-extended rows from the LEFT JOIN would be filtered out anyway. Converting to an inner join gives the optimizer more freedom in join ordering.</p>
+
+<hr />
+
+<h2 id="key-data-structures">Key Data Structures</h2>
+
+<h3 id="fromexpr">FromExpr</h3>
+
+<p>Represents a FROM clause: a list of tables/joins plus a WHERE qualification.</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">typedef</span> <span class="k">struct</span> <span class="n">FromExpr</span>
+<span class="p">{</span>
+    <span class="n">NodeTag</span>     <span class="n">type</span><span class="p">;</span>
+    <span class="n">List</span>       <span class="o">*</span><span class="n">fromlist</span><span class="p">;</span>   <span class="cm">/* List of join subtrees */</span>
+    <span class="n">Node</span>       <span class="o">*</span><span class="n">quals</span><span class="p">;</span>      <span class="cm">/* WHERE conditions (implicit AND) */</span>
+<span class="p">}</span> <span class="n">FromExpr</span><span class="p">;</span>
+</code></pre></div></div>
+
+<h3 id="joinexpr">JoinExpr</h3>
+
+<p>Represents an explicit JOIN:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">typedef</span> <span class="k">struct</span> <span class="n">JoinExpr</span>
+<span class="p">{</span>
+    <span class="n">NodeTag</span>     <span class="n">type</span><span class="p">;</span>
+    <span class="n">JoinType</span>    <span class="n">jointype</span><span class="p">;</span>   <span class="cm">/* JOIN_INNER, JOIN_LEFT, JOIN_FULL, etc. */</span>
+    <span class="n">bool</span>        <span class="n">isNatural</span><span class="p">;</span>
+    <span class="n">Node</span>       <span class="o">*</span><span class="n">larg</span><span class="p">;</span>       <span class="cm">/* left subtree */</span>
+    <span class="n">Node</span>       <span class="o">*</span><span class="n">rarg</span><span class="p">;</span>       <span class="cm">/* right subtree */</span>
+    <span class="n">List</span>       <span class="o">*</span><span class="n">usingClause</span><span class="p">;</span>
+    <span class="n">Alias</span>      <span class="o">*</span><span class="n">join_using_alias</span><span class="p">;</span>
+    <span class="n">Node</span>       <span class="o">*</span><span class="n">quals</span><span class="p">;</span>      <span class="cm">/* ON clause */</span>
+    <span class="n">Alias</span>      <span class="o">*</span><span class="n">alias</span><span class="p">;</span>
+    <span class="kt">int</span>         <span class="n">rtindex</span><span class="p">;</span>    <span class="cm">/* RT index assigned to this join */</span>
+<span class="p">}</span> <span class="n">JoinExpr</span><span class="p">;</span>
+</code></pre></div></div>
+
+<h3 id="specialjoininfo">SpecialJoinInfo</h3>
+
+<p>Created for each outer, semi, or anti join. Survives join-tree flattening to constrain legal join orders:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">typedef</span> <span class="k">struct</span> <span class="n">SpecialJoinInfo</span>
+<span class="p">{</span>
+    <span class="n">NodeTag</span>     <span class="n">type</span><span class="p">;</span>
+    <span class="n">Relids</span>      <span class="n">min_lefthand</span><span class="p">;</span>   <span class="cm">/* minimum relids on LHS */</span>
+    <span class="n">Relids</span>      <span class="n">min_righthand</span><span class="p">;</span>  <span class="cm">/* minimum relids on RHS */</span>
+    <span class="n">Relids</span>      <span class="n">syn_lefthand</span><span class="p">;</span>   <span class="cm">/* syntactic LHS relids */</span>
+    <span class="n">Relids</span>      <span class="n">syn_righthand</span><span class="p">;</span>  <span class="cm">/* syntactic RHS relids */</span>
+    <span class="n">JoinType</span>    <span class="n">jointype</span><span class="p">;</span>
+    <span class="n">bool</span>        <span class="n">lhs_strict</span><span class="p">;</span>     <span class="cm">/* does ON clause reject nulls from LHS? */</span>
+    <span class="n">bool</span>        <span class="n">semi_can_btree</span><span class="p">;</span> <span class="cm">/* can use btree for semi-join? */</span>
+    <span class="n">bool</span>        <span class="n">semi_can_hash</span><span class="p">;</span>  <span class="cm">/* can use hash for semi-join? */</span>
+    <span class="n">List</span>       <span class="o">*</span><span class="n">semi_operators</span><span class="p">;</span> <span class="cm">/* equality operators for semi-join */</span>
+    <span class="n">List</span>       <span class="o">*</span><span class="n">semi_rhs_exprs</span><span class="p">;</span> <span class="cm">/* RHS expressions for semi-join */</span>
+<span class="p">}</span> <span class="n">SpecialJoinInfo</span><span class="p">;</span>
+</code></pre></div></div>
+
+<h3 id="sublink-and-subplan">SubLink and SubPlan</h3>
+
+<p><code class="language-plaintext highlighter-rouge">SubLink</code> is the parser representation of a subquery in a WHERE/HAVING clause. After sublink processing, unflattened subqueries become <code class="language-plaintext highlighter-rouge">SubPlan</code> nodes (for correlated) or <code class="language-plaintext highlighter-rouge">InitPlan</code> nodes (for uncorrelated).</p>
+
+<hr />
+
+<h2 id="diagram-preprocessing-pipeline">Diagram: Preprocessing Pipeline</h2>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>┌─────────────────────────────────────────────────────────┐
+│                    Query from rewriter                   │
+└───────────────────────┬─────────────────────────────────┘
+                        │
+            ┌───────────v───────────┐
+            │  pull_up_sublinks()   │  EXISTS/ANY -&gt; semi/anti joins
+            └───────────┬───────────┘
+                        │
+            ┌───────────v───────────┐
+            │ pull_up_subqueries()  │  Flatten simple FROM subqueries
+            └───────────┬───────────┘
+                        │
+            ┌───────────v───────────┐
+            │  flatten join tree    │  Merge nested FROM-lists
+            │  (join_collapse_limit)│  up to threshold
+            └───────────┬───────────┘
+                        │
+            ┌───────────v───────────┐
+            │ preprocess_expression │  Constant folding, function
+            │ eval_const_expressions│  inlining, boolean simplification
+            └───────────┬───────────┘
+                        │
+            ┌───────────v───────────┐
+            │  canonicalize_qual()  │  AND/OR flattening,
+            │  find_duplicate_ors() │  duplicate-OR factoring
+            └───────────┬───────────┘
+                        │
+            ┌───────────v───────────┐
+            │ reduce_outer_joins()  │  LEFT JOIN -&gt; INNER JOIN
+            │                       │  when WHERE is strict
+            └───────────┬───────────┘
+                        │
+            ┌───────────v───────────┐
+            │ remove_useless_result │  Clean up trivial RTEs
+            │          _rtes()      │
+            └───────────┬───────────┘
+                        │
+                        v
+              Simplified Query tree
+              ready for path generation
+</code></pre></div></div>
+
+<hr />
+
+<h2 id="practical-examples">Practical Examples</h2>
+
+<h3 id="sublink-pullup-in-action">Sublink Pullup in Action</h3>
+
+<div class="language-sql highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="c1">-- Original query:</span>
+<span class="k">SELECT</span> <span class="n">e</span><span class="p">.</span><span class="n">name</span> <span class="k">FROM</span> <span class="n">employees</span> <span class="n">e</span>
+<span class="k">WHERE</span> <span class="n">e</span><span class="p">.</span><span class="n">dept_id</span> <span class="k">IN</span> <span class="p">(</span><span class="k">SELECT</span> <span class="n">d</span><span class="p">.</span><span class="n">id</span> <span class="k">FROM</span> <span class="n">departments</span> <span class="n">d</span> <span class="k">WHERE</span> <span class="n">d</span><span class="p">.</span><span class="n">budget</span> <span class="o">&gt;</span> <span class="mi">1000000</span><span class="p">);</span>
+
+<span class="c1">-- After preprocessing:</span>
+<span class="c1">-- The IN sublink becomes a semi-join:</span>
+<span class="k">SELECT</span> <span class="n">e</span><span class="p">.</span><span class="n">name</span> <span class="k">FROM</span> <span class="n">employees</span> <span class="n">e</span>
+<span class="n">SEMI</span> <span class="k">JOIN</span> <span class="n">departments</span> <span class="n">d</span> <span class="k">ON</span> <span class="p">(</span><span class="n">e</span><span class="p">.</span><span class="n">dept_id</span> <span class="o">=</span> <span class="n">d</span><span class="p">.</span><span class="n">id</span> <span class="k">AND</span> <span class="n">d</span><span class="p">.</span><span class="n">budget</span> <span class="o">&gt;</span> <span class="mi">1000000</span><span class="p">);</span>
+</code></pre></div></div>
+
+<h3 id="subquery-pullup-in-action">Subquery Pullup in Action</h3>
+
+<div class="language-sql highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="c1">-- Original query:</span>
+<span class="k">SELECT</span> <span class="o">*</span> <span class="k">FROM</span> <span class="n">orders</span> <span class="n">o</span>
+<span class="k">JOIN</span> <span class="p">(</span><span class="k">SELECT</span> <span class="n">customer_id</span><span class="p">,</span> <span class="k">count</span><span class="p">(</span><span class="o">*</span><span class="p">)</span> <span class="k">as</span> <span class="n">cnt</span>
+      <span class="k">FROM</span> <span class="k">returns</span> <span class="k">GROUP</span> <span class="k">BY</span> <span class="n">customer_id</span><span class="p">)</span> <span class="n">r</span>
+<span class="k">ON</span> <span class="n">o</span><span class="p">.</span><span class="n">customer_id</span> <span class="o">=</span> <span class="n">r</span><span class="p">.</span><span class="n">customer_id</span><span class="p">;</span>
+
+<span class="c1">-- This subquery CANNOT be pulled up because it has GROUP BY.</span>
+<span class="c1">-- It is planned independently as a black box.</span>
+
+<span class="c1">-- But this one CAN be pulled up:</span>
+<span class="k">SELECT</span> <span class="o">*</span> <span class="k">FROM</span> <span class="n">orders</span> <span class="n">o</span>
+<span class="k">JOIN</span> <span class="p">(</span><span class="k">SELECT</span> <span class="o">*</span> <span class="k">FROM</span> <span class="k">returns</span> <span class="k">WHERE</span> <span class="n">return_date</span> <span class="o">&gt;</span> <span class="s1">'2025-01-01'</span><span class="p">)</span> <span class="n">r</span>
+<span class="k">ON</span> <span class="n">o</span><span class="p">.</span><span class="n">order_id</span> <span class="o">=</span> <span class="n">r</span><span class="p">.</span><span class="n">order_id</span><span class="p">;</span>
+
+<span class="c1">-- After pullup:</span>
+<span class="k">SELECT</span> <span class="o">*</span> <span class="k">FROM</span> <span class="n">orders</span> <span class="n">o</span> <span class="k">JOIN</span> <span class="k">returns</span> <span class="n">r</span>
+<span class="k">ON</span> <span class="n">o</span><span class="p">.</span><span class="n">order_id</span> <span class="o">=</span> <span class="n">r</span><span class="p">.</span><span class="n">order_id</span>
+<span class="k">WHERE</span> <span class="n">r</span><span class="p">.</span><span class="n">return_date</span> <span class="o">&gt;</span> <span class="s1">'2025-01-01'</span><span class="p">;</span>
+</code></pre></div></div>
+
+<hr />
+
+<h2 id="connections">Connections</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>Subsystem</th>
+      <th>Relationship</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><a href="../06-query-parser/">Parsing &amp; Rewriting</a></td>
+      <td>Produces the Query tree that preprocessing transforms</td>
+    </tr>
+    <tr>
+      <td><a href="path-generation">Path Generation</a></td>
+      <td>Receives the simplified query tree and builds access paths</td>
+    </tr>
+    <tr>
+      <td><a href="join-ordering">Join Ordering</a></td>
+      <td>Benefits from join-tree flattening: more tables in the search space</td>
+    </tr>
+    <tr>
+      <td><a href="../13-statistics/">Statistics</a></td>
+      <td>Constant folding may use catalog lookups; outer-join reduction uses strictness analysis</td>
+    </tr>
+    <tr>
+      <td><a href="cost-model">Cost Model</a></td>
+      <td>A well-preprocessed query leads to more accurate cost estimates</td>
+    </tr>
+  </tbody>
+</table>
+
+
+      <hr>
+
+      <!-- Prev / Next / Up navigation -->
+      
+      
+      
+
+      <div class="clearfix" style="margin-top: 2rem;">
+        
+          
+          
+
+          
+            
+            <a class="btn btn-primary float-left" href="/postgresql/07-query-optimizer/plan-creation.html" title="Plan Creation">&larr; Previous</a>
+          
+
+          
+            
+            <a class="btn btn-primary float-right" href="/postgresql/08-executor/" title="Executor">Next &rarr;</a>
+          
+        
+      </div>
+
+      
+      <div style="text-align: center; margin-top: 1rem;">
+        <a href="/postgresql-internals/">&uarr; Back to Table of Contents</a>
+      </div>
+      
+
+    </div>
+  </div>
+</div>
+
+
+  <!-- Footer -->
+
+<hr>
+
+<footer>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <ul class="list-inline text-center">
+          
+          <li class="list-inline-item">
+            <a href="mailto:amitava.dev@proton.me" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="far fa-envelope fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          
+          
+          <li class="list-inline-item">
+            <a href="https://www.linkedin.com/in/amitavaag" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-linkedin fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          <li class="list-inline-item">
+            <a href="https://github.com/ikouchiha47" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-github fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+        </ul>
+
+        <p class="copyright text-muted">
+          Build with: 
+          <a 
+            href="https://github.com/StartBootstrap/startbootstrap-clean-blog-jekyll"
+            class="text-gray"
+            target="_blank">startbootstrap-clean-blog-jekyll</a></p>
+      </div>
+    </div>
+  </div>
+</footer>
+
+
+  <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="/assets/vendor/blog/js/scripts.js"></script>
+
+<script src="/assets/scripts.js"></script>
+
+
+
+
+
+  <script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+
+    document.querySelectorAll('pre > code.language-mermaid').forEach((codeBlock) => {
+      codeBlock.parentElement.outerHTML = `<pre class="mermaid">${codeBlock.textContent}</pre>`;
+    });
+
+
+    mermaid.initialize({ startOnLoad: true, theme: 'forest' });
+</script>
+
+
+  
+
+</body>
+
+</html>

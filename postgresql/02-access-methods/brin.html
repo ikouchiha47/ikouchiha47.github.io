@@ -1,0 +1,525 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+  <title>
+    BRIN Index - iko&#39;s logs
+    
+  </title>
+
+  <meta name="description" content="">
+  <meta property="og:description" content="">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="BRIN Index">
+  <meta property="og:url" content="https://ikouchiha47.github.io/postgresql/02-access-methods/brin.html">
+
+  
+
+  <link href='https://fonts.googleapis.com/css?family=Lora:400,700,400italic,700italic' rel='stylesheet' type='text/css'>
+  <link href='https://fonts.googleapis.com/css?family=Open+Sans:300italic,400italic,600italic,700italic,800italic,400,300,600,700,800' rel='stylesheet' type='text/css'>
+
+  <!-- <script src="https://use.fontawesome.com/releases/v5.15.3/js/all.js" crossorigin="anonymous"></script> -->
+  <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.15.4/css/all.css" integrity="sha384-DyZ88mC6Up2uqS4h/KRgHuoeGwBcD4Ng9SiP4dIRy0EXTlnuz47vAwmeGwVChigm" crossorigin="anonymous"/>
+
+  <link rel="stylesheet" href="/assets/main.css">
+  <link rel="canonical" href="https://ikouchiha47.github.io/postgresql/02-access-methods/brin.html">
+  <link rel="alternate" type="application/rss+xml" title="iko&#39;s logs" href="/feed.xml">
+
+  <meta name="google-site-verification" content="lWkg6gIxJgzEKX_5XnhcxCtPE9QknaimFWWos_dTvPM" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fira+Sans:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Inconsolata:wght@200..900&family=Jersey+25&family=Kanit:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Merriweather+Sans:ital,wght@0,300..800;1,300..800&family=Nanum+Gothic+Coding&family=Space+Grotesk:wght@300..700&family=Titillium+Web:ital,wght@0,200;0,300;0,400;0,600;0,700;0,900;1,200;1,300;1,400;1,600;1,700&display=swap" rel="stylesheet">
+
+</head>
+
+
+<body>
+
+  <!-- Navigation -->
+<nav class="navbar navbar-expand-lg navbar-light fixed-top" id="mainNav">
+  <div class="container">
+    <a class="navbar-brand" href="/">iko&#39;s logs</a>
+    <button class="navbar-toggler navbar-toggler-right" type="button" data-toggle="collapse" data-target="#navbarResponsive" aria-controls="navbarResponsive" aria-expanded="false" aria-label="Toggle navigation">
+      Menu
+      <i class="fa fa-bars"></i>
+    </button>
+    <div class="collapse navbar-collapse" id="navbarResponsive">
+      <ul class="navbar-nav ml-auto">
+        <li class="nav-item">
+          <a class="nav-link" href="/">Home</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/about">About</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/posts">Posts</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/contact">Contact</a>
+        </li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+
+  <!-- Page Header -->
+
+<header class="masthead">
+
+  <div class="overlay"></div>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <div class="post-heading">
+          <h1>BRIN Index</h1>
+          
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="container space-grotesk">
+  <div class="row">
+    <div class="col-lg-8 col-md-10 mx-auto">
+
+      <!-- Breadcrumb -->
+      <nav aria-label="breadcrumb" style="margin-bottom: 1.5rem;">
+        <ol class="breadcrumb" style="background: transparent; padding: 0;">
+          
+            <li class="breadcrumb-item"><a href="/postgresql-internals/">PostgreSQL Internals Deep Dive</a></li>
+          
+          
+            
+              <li class="breadcrumb-item"><a href="/postgresql/02-access-methods/">Access Methods</a></li>
+            
+          
+          <li class="breadcrumb-item active" aria-current="page">BRIN Index</li>
+        </ol>
+      </nav>
+
+      <h1 id="brin-block-range-index">BRIN (Block Range Index)</h1>
+
+<h2 id="summary">Summary</h2>
+
+<p>BRIN is a <strong>lossy, summarizing index</strong> that stores aggregate information (e.g.,
+min/max values) for ranges of consecutive heap pages. It is extremely compact
+– often just a few kilobytes for tables with billions of rows – but only
+effective when the physical order of data on disk correlates with the indexed
+column values. BRIN excels at large, append-mostly tables where the indexed
+column naturally increases (timestamps, serial IDs).</p>
+
+<hr />
+
+<h2 id="key-source-files">Key Source Files</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>File</th>
+      <th>Purpose</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/access/brin/brin.c</code></td>
+      <td>Entry points: <code class="language-plaintext highlighter-rouge">brinhandler()</code>, <code class="language-plaintext highlighter-rouge">brininsert()</code>, <code class="language-plaintext highlighter-rouge">bringetbitmap()</code>, <code class="language-plaintext highlighter-rouge">brinbuild()</code></td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/access/brin/brin_pageops.c</code></td>
+      <td>Page-level operations, tuple storage</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/access/brin/brin_revmap.c</code></td>
+      <td>Reverse mapping: heap block range -&gt; BRIN summary tuple</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/access/brin/brin_tuple.c</code></td>
+      <td>BRIN tuple serialization/deserialization</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/access/brin/brin_minmax.c</code></td>
+      <td>Min/max opclass (default)</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/access/brin/brin_minmax_multi.c</code></td>
+      <td>Multi-range min/max opclass</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/access/brin/brin_inclusion.c</code></td>
+      <td>Inclusion opclass (for range/box types)</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/access/brin/brin_bloom.c</code></td>
+      <td>Bloom filter opclass</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/access/brin/brin_validate.c</code></td>
+      <td>Opclass validation</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/access/brin/brin_xlog.c</code></td>
+      <td>WAL redo</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/access/brin/README</code></td>
+      <td>Design document</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/access/brin.h</code></td>
+      <td><code class="language-plaintext highlighter-rouge">BrinOptions</code>, <code class="language-plaintext highlighter-rouge">BrinStatsData</code></td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/access/brin_page.h</code></td>
+      <td><code class="language-plaintext highlighter-rouge">BrinSpecialSpace</code>, <code class="language-plaintext highlighter-rouge">BrinMetaPageData</code>, <code class="language-plaintext highlighter-rouge">RevmapContents</code></td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/access/brin_internal.h</code></td>
+      <td><code class="language-plaintext highlighter-rouge">BrinOpcInfo</code>, <code class="language-plaintext highlighter-rouge">BrinDesc</code></td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/access/brin_tuple.h</code></td>
+      <td><code class="language-plaintext highlighter-rouge">BrinMemTuple</code>, <code class="language-plaintext highlighter-rouge">BrinValues</code></td>
+    </tr>
+  </tbody>
+</table>
+
+<hr />
+
+<h2 id="how-it-works">How It Works</h2>
+
+<h3 id="core-concept">Core Concept</h3>
+
+<p>BRIN divides the heap into <strong>block ranges</strong> of <code class="language-plaintext highlighter-rouge">pages_per_range</code> consecutive
+pages (default 128). For each range, it stores a <strong>summary tuple</strong> containing
+aggregate information about the indexed column values in that range.</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code> Heap pages:  [0..127]  [128..255]  [256..383]  [384..511]  ...
+                 |           |           |           |
+                 v           v           v           v
+ BRIN index:  summary_0  summary_1  summary_2  summary_3  ...
+              min=1       min=1000   min=2000   min=3000
+              max=999     max=1999   max=2999   max=3999
+</code></pre></div></div>
+
+<h3 id="three-components">Three Components</h3>
+
+<ol>
+  <li><strong>Regular pages</strong>: Store the BRIN summary tuples (variable-length).</li>
+  <li><strong>Revmap (Reverse Map) pages</strong>: A fixed-size array mapping each block range
+number to the <code class="language-plaintext highlighter-rouge">ItemPointerData</code> of its summary tuple.</li>
+  <li><strong>Meta page</strong> (block 0): Stores <code class="language-plaintext highlighter-rouge">pages_per_range</code>, revmap start block, and
+last revmap page.</li>
+</ol>
+
+<h3 id="scan-algorithm">Scan Algorithm</h3>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>bringetbitmap(scan)
+  -&gt; for each block range:
+       -&gt; look up summary tuple via revmap
+       -&gt; if no summary (unsummarized range):
+            add all pages in range to bitmap (must scan them)
+       -&gt; call opclass consistent() with scan keys and summary values
+            if consistent returns true:
+              add all pages in range to bitmap
+            else:
+              skip entire range
+  -&gt; return lossy bitmap to executor
+       (executor does bitmap heap scan with rechecks)
+</code></pre></div></div>
+
+<p>The bitmap is <strong>lossy</strong> at the page level: BRIN knows which block ranges
+<em>might</em> contain matching tuples, but not which specific tuples.</p>
+
+<h3 id="insert-path">Insert Path</h3>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>brininsert(rel, values, tid)
+  -&gt; compute block range number from TID's block
+  -&gt; look up summary via revmap
+  -&gt; if summary exists:
+       -&gt; call opclass add_value() to update summary
+            (e.g., extend min/max range if new value is outside)
+       -&gt; if summary changed: write updated tuple
+  -&gt; if no summary:
+       -&gt; create new summary tuple for this range
+       -&gt; store in regular page, update revmap
+</code></pre></div></div>
+
+<hr />
+
+<h2 id="key-data-structures">Key Data Structures</h2>
+
+<h3 id="brinmetapagedata">BrinMetaPageData</h3>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="c1">// src/include/access/brin_page.h</span>
+<span class="k">typedef</span> <span class="k">struct</span> <span class="n">BrinMetaPageData</span>
+<span class="p">{</span>
+    <span class="n">uint32</span>      <span class="n">brinMagic</span><span class="p">;</span>
+    <span class="n">uint32</span>      <span class="n">brinVersion</span><span class="p">;</span>
+    <span class="n">BlockNumber</span> <span class="n">pagesPerRange</span><span class="p">;</span>     <span class="c1">// heap pages per block range</span>
+    <span class="n">BlockNumber</span> <span class="n">lastRevmapPage</span><span class="p">;</span>    <span class="c1">// last revmap page block</span>
+    <span class="n">BlockNumber</span> <span class="n">lastRegularPage</span><span class="p">;</span>   <span class="c1">// last regular (summary) page</span>
+<span class="p">}</span> <span class="n">BrinMetaPageData</span><span class="p">;</span>
+</code></pre></div></div>
+
+<h3 id="revmapcontents">RevmapContents</h3>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="c1">// src/include/access/brin_page.h</span>
+<span class="k">typedef</span> <span class="k">struct</span> <span class="n">RevmapContents</span>
+<span class="p">{</span>
+    <span class="c1">// Array of ItemPointerData, one per block range.</span>
+    <span class="c1">// rm_tids[i] points to the summary tuple for range i</span>
+    <span class="c1">// (relative to this revmap page's starting range).</span>
+    <span class="n">ItemPointerData</span> <span class="n">rm_tids</span><span class="p">[</span><span class="n">REVMAP_PAGE_MAXITEMS</span><span class="p">];</span>
+<span class="p">}</span> <span class="n">RevmapContents</span><span class="p">;</span>
+</code></pre></div></div>
+
+<h3 id="brinopcinfo">BrinOpcInfo</h3>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="c1">// src/include/access/brin_internal.h</span>
+<span class="k">typedef</span> <span class="k">struct</span> <span class="n">BrinOpcInfo</span>
+<span class="p">{</span>
+    <span class="n">uint16</span>      <span class="n">oi_nstored</span><span class="p">;</span>          <span class="c1">// number of stored values per range</span>
+    <span class="n">uint16</span>      <span class="n">oi_regular_nulls</span><span class="p">;</span>    <span class="c1">// how nulls are represented</span>
+    <span class="n">uint16</span>      <span class="n">oi_opaque_size</span><span class="p">;</span>      <span class="c1">// extra space needed</span>
+    <span class="n">Oid</span>         <span class="n">oi_typcache</span><span class="p">[</span><span class="n">FLEXIBLE_ARRAY_MEMBER</span><span class="p">];</span>  <span class="c1">// type cache entries</span>
+<span class="p">}</span> <span class="n">BrinOpcInfo</span><span class="p">;</span>
+</code></pre></div></div>
+
+<h3 id="brindesc">BrinDesc</h3>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="c1">// src/include/access/brin_internal.h</span>
+<span class="k">typedef</span> <span class="k">struct</span> <span class="n">BrinDesc</span>
+<span class="p">{</span>
+    <span class="n">Relation</span>        <span class="n">bd_index</span><span class="p">;</span>
+    <span class="n">TupleDesc</span>       <span class="n">bd_tupdesc</span><span class="p">;</span>      <span class="c1">// summary tuple descriptor</span>
+    <span class="kt">int</span>             <span class="n">bd_totalstored</span><span class="p">;</span>  <span class="c1">// total stored values across all columns</span>
+    <span class="n">BrinOpcInfo</span>    <span class="o">*</span><span class="n">bd_info</span><span class="p">[</span><span class="n">FLEXIBLE_ARRAY_MEMBER</span><span class="p">];</span>  <span class="c1">// per-column opclass info</span>
+<span class="p">}</span> <span class="n">BrinDesc</span><span class="p">;</span>
+</code></pre></div></div>
+
+<hr />
+
+<h2 id="diagram-brin-physical-layout">Diagram: BRIN Physical Layout</h2>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code> Block 0: Meta page
+ +--------------------------+
+ | BrinMetaPageData         |
+ | pagesPerRange = 128      |
+ | lastRevmapPage = 1       |
+ +--------------------------+
+
+ Block 1: Revmap page
+ +--------------------------+
+ | RevmapContents           |
+ | rm_tids[0] -&gt; (5, 1)     |  &lt;-- summary for range 0 is at block 5, offset 1
+ | rm_tids[1] -&gt; (5, 2)     |
+ | rm_tids[2] -&gt; (5, 3)     |
+ | ...                      |
+ +--------------------------+
+
+ Block 5: Regular page (summary tuples)
+ +--------------------------+
+ | Summary tuple 1:         |
+ |   range 0: min=1 max=999 |
+ | Summary tuple 2:         |
+ |   range 1: min=1000      |
+ |            max=1999      |
+ | ...                      |
+ +--------------------------+
+</code></pre></div></div>
+
+<hr />
+
+<h2 id="opclass-strategies">Opclass Strategies</h2>
+
+<p>BRIN supports multiple summarization strategies through opclasses:</p>
+
+<h3 id="minmax-default">minmax (default)</h3>
+
+<p>Stores the minimum and maximum value for each range. Effective for columns with
+natural ordering correlation.</p>
+
+<h3 id="minmax_multi-postgresql-14">minmax_multi (PostgreSQL 14+)</h3>
+
+<p>Stores multiple min/max intervals per range. Handles columns where values are
+clustered into groups rather than a single range.</p>
+
+<h3 id="inclusion">inclusion</h3>
+
+<p>Stores a bounding value that <em>includes</em> all values in the range. Used for
+range types and geometric types (e.g., <code class="language-plaintext highlighter-rouge">box</code>). The summary is a single
+bounding box/range that covers all values.</p>
+
+<h3 id="bloom-postgresql-14">bloom (PostgreSQL 14+)</h3>
+
+<p>Stores a Bloom filter of all values in the range. Works for equality queries
+on columns with no ordering correlation. Probabilistic – may produce false
+positives but never false negatives.</p>
+
+<hr />
+
+<h2 id="when-brin-works-well-and-when-it-does-not">When BRIN Works Well (and When It Does Not)</h2>
+
+<p><strong>Good fit</strong>:</p>
+<ul>
+  <li>Large tables (hundreds of millions of rows)</li>
+  <li>Column values correlate strongly with physical row order</li>
+  <li>Append-only or append-mostly workloads</li>
+  <li>Timestamp columns on time-series data</li>
+  <li>Sequential ID columns</li>
+</ul>
+
+<p><strong>Poor fit</strong>:</p>
+<ul>
+  <li>Randomly ordered data (every range covers the full value space)</li>
+  <li>Small tables (overhead of bitmap heap scan outweighs benefit)</li>
+  <li>Point queries requiring exact lookups (B-tree is better)</li>
+</ul>
+
+<p>The correlation statistic (<code class="language-plaintext highlighter-rouge">pg_stats.correlation</code>) is a good predictor:
+values close to 1.0 or -1.0 indicate BRIN will be effective.</p>
+
+<hr />
+
+<h2 id="connections">Connections</h2>
+
+<ul>
+  <li><strong>B-tree</strong>: B-tree provides exact lookups; BRIN provides approximate
+filtering. For naturally ordered large tables, BRIN can be 100-1000x smaller
+than a B-tree.</li>
+  <li><strong>Heap AM</strong>: BRIN summaries are per-block-range of the heap. The heap’s
+physical layout directly determines BRIN effectiveness.</li>
+  <li><strong>Planner</strong>: BRIN sets <code class="language-plaintext highlighter-rouge">amsummarizing = true</code>. The planner accounts for the
+lossy nature of BRIN and adds recheck conditions.</li>
+  <li><strong>VACUUM</strong>: <code class="language-plaintext highlighter-rouge">brin_summarize_new_values()</code> summarizes ranges that were inserted
+since the last summarization. <code class="language-plaintext highlighter-rouge">VACUUM</code> calls this automatically.</li>
+  <li><strong>WAL</strong>: <code class="language-plaintext highlighter-rouge">brin_xlog.c</code> handles redo for summary tuple inserts, updates, and
+revmap changes.</li>
+</ul>
+
+
+      <hr>
+
+      <!-- Prev / Next / Up navigation -->
+      
+      
+      
+
+      <div class="clearfix" style="margin-top: 2rem;">
+        
+          
+          
+
+          
+            
+            <a class="btn btn-primary float-left" href="/postgresql/02-access-methods/" title="Access Methods">&larr; Previous</a>
+          
+
+          
+            
+            <a class="btn btn-primary float-right" href="/postgresql/02-access-methods/btree.html" title="B-tree Index">Next &rarr;</a>
+          
+        
+      </div>
+
+      
+      <div style="text-align: center; margin-top: 1rem;">
+        <a href="/postgresql-internals/">&uarr; Back to Table of Contents</a>
+      </div>
+      
+
+    </div>
+  </div>
+</div>
+
+
+  <!-- Footer -->
+
+<hr>
+
+<footer>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <ul class="list-inline text-center">
+          
+          <li class="list-inline-item">
+            <a href="mailto:amitava.dev@proton.me" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="far fa-envelope fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          
+          
+          <li class="list-inline-item">
+            <a href="https://www.linkedin.com/in/amitavaag" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-linkedin fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          <li class="list-inline-item">
+            <a href="https://github.com/ikouchiha47" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-github fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+        </ul>
+
+        <p class="copyright text-muted">
+          Build with: 
+          <a 
+            href="https://github.com/StartBootstrap/startbootstrap-clean-blog-jekyll"
+            class="text-gray"
+            target="_blank">startbootstrap-clean-blog-jekyll</a></p>
+      </div>
+    </div>
+  </div>
+</footer>
+
+
+  <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="/assets/vendor/blog/js/scripts.js"></script>
+
+<script src="/assets/scripts.js"></script>
+
+
+
+
+
+  <script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+
+    document.querySelectorAll('pre > code.language-mermaid').forEach((codeBlock) => {
+      codeBlock.parentElement.outerHTML = `<pre class="mermaid">${codeBlock.textContent}</pre>`;
+    });
+
+
+    mermaid.initialize({ startOnLoad: true, theme: 'forest' });
+</script>
+
+
+  
+
+</body>
+
+</html>

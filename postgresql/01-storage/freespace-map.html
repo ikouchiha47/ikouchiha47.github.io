@@ -1,0 +1,489 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+  <title>
+    Free Space Map - iko&#39;s logs
+    
+  </title>
+
+  <meta name="description" content="">
+  <meta property="og:description" content="">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Free Space Map">
+  <meta property="og:url" content="https://ikouchiha47.github.io/postgresql/01-storage/freespace-map.html">
+
+  
+
+  <link href='https://fonts.googleapis.com/css?family=Lora:400,700,400italic,700italic' rel='stylesheet' type='text/css'>
+  <link href='https://fonts.googleapis.com/css?family=Open+Sans:300italic,400italic,600italic,700italic,800italic,400,300,600,700,800' rel='stylesheet' type='text/css'>
+
+  <!-- <script src="https://use.fontawesome.com/releases/v5.15.3/js/all.js" crossorigin="anonymous"></script> -->
+  <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.15.4/css/all.css" integrity="sha384-DyZ88mC6Up2uqS4h/KRgHuoeGwBcD4Ng9SiP4dIRy0EXTlnuz47vAwmeGwVChigm" crossorigin="anonymous"/>
+
+  <link rel="stylesheet" href="/assets/main.css">
+  <link rel="canonical" href="https://ikouchiha47.github.io/postgresql/01-storage/freespace-map.html">
+  <link rel="alternate" type="application/rss+xml" title="iko&#39;s logs" href="/feed.xml">
+
+  <meta name="google-site-verification" content="lWkg6gIxJgzEKX_5XnhcxCtPE9QknaimFWWos_dTvPM" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fira+Sans:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Inconsolata:wght@200..900&family=Jersey+25&family=Kanit:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Merriweather+Sans:ital,wght@0,300..800;1,300..800&family=Nanum+Gothic+Coding&family=Space+Grotesk:wght@300..700&family=Titillium+Web:ital,wght@0,200;0,300;0,400;0,600;0,700;0,900;1,200;1,300;1,400;1,600;1,700&display=swap" rel="stylesheet">
+
+</head>
+
+
+<body>
+
+  <!-- Navigation -->
+<nav class="navbar navbar-expand-lg navbar-light fixed-top" id="mainNav">
+  <div class="container">
+    <a class="navbar-brand" href="/">iko&#39;s logs</a>
+    <button class="navbar-toggler navbar-toggler-right" type="button" data-toggle="collapse" data-target="#navbarResponsive" aria-controls="navbarResponsive" aria-expanded="false" aria-label="Toggle navigation">
+      Menu
+      <i class="fa fa-bars"></i>
+    </button>
+    <div class="collapse navbar-collapse" id="navbarResponsive">
+      <ul class="navbar-nav ml-auto">
+        <li class="nav-item">
+          <a class="nav-link" href="/">Home</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/about">About</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/posts">Posts</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/contact">Contact</a>
+        </li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+
+  <!-- Page Header -->
+
+<header class="masthead">
+
+  <div class="overlay"></div>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <div class="post-heading">
+          <h1>Free Space Map</h1>
+          
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="container space-grotesk">
+  <div class="row">
+    <div class="col-lg-8 col-md-10 mx-auto">
+
+      <!-- Breadcrumb -->
+      <nav aria-label="breadcrumb" style="margin-bottom: 1.5rem;">
+        <ol class="breadcrumb" style="background: transparent; padding: 0;">
+          
+            <li class="breadcrumb-item"><a href="/postgresql-internals/">PostgreSQL Internals Deep Dive</a></li>
+          
+          
+            
+              <li class="breadcrumb-item"><a href="/postgresql/01-storage/">Storage Engine</a></li>
+            
+          
+          <li class="breadcrumb-item active" aria-current="page">Free Space Map</li>
+        </ol>
+      </nav>
+
+      <h1 id="free-space-map">Free Space Map</h1>
+
+<p>The Free Space Map (FSM) is a per-relation data structure that tracks the amount of free space available on each heap page. It enables INSERT to quickly find a page with enough room for a new tuple, without scanning the entire relation.</p>
+
+<h2 id="overview">Overview</h2>
+
+<p>Each relation’s FSM is stored in a dedicated fork (<code class="language-plaintext highlighter-rouge">FSM_FORKNUM</code>, file suffix <code class="language-plaintext highlighter-rouge">_fsm</code>). Rather than recording exact byte counts, the FSM stores free space at a granularity of <code class="language-plaintext highlighter-rouge">BLCKSZ / 256</code> (32 bytes with the default 8 KB page size), using a single byte per heap page. A value of 255 means nearly a full page is free; 0 means the page is full.</p>
+
+<p>The FSM is organized as a <strong>three-level tree of pages</strong>, where each FSM page internally contains a <strong>binary tree</strong> (max-heap) of byte values. This design allows finding a page with sufficient free space in O(log N) time, where N is the number of heap pages.</p>
+
+<p>The FSM is not WAL-logged. It is a hint structure that self-corrects: if it is lost or corrupted, the worst case is temporarily suboptimal page selection. VACUUM rebuilds it from scratch.</p>
+
+<h2 id="key-source-files">Key Source Files</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>File</th>
+      <th>Purpose</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/storage/freespace.h</code></td>
+      <td>Public API: <code class="language-plaintext highlighter-rouge">GetPageWithFreeSpace()</code>, <code class="language-plaintext highlighter-rouge">RecordPageWithFreeSpace()</code></td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/storage/fsm_internals.h</code></td>
+      <td><code class="language-plaintext highlighter-rouge">FSMPageData</code> struct, per-page binary tree constants</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/storage/freespace/freespace.c</code></td>
+      <td>Higher-level FSM logic: tree traversal across pages</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/storage/freespace/fsmpage.c</code></td>
+      <td>Within-page binary tree operations: <code class="language-plaintext highlighter-rouge">fsm_search_avail()</code>, <code class="language-plaintext highlighter-rouge">fsm_set_avail()</code></td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/storage/freespace/indexfsm.c</code></td>
+      <td>Simplified FSM interface for index free space</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/storage/freespace/README</code></td>
+      <td>Comprehensive design document for the FSM</td>
+    </tr>
+  </tbody>
+</table>
+
+<h2 id="how-it-works">How It Works</h2>
+
+<h3 id="space-encoding">Space Encoding</h3>
+
+<p>Free space is encoded as a single byte using integer division:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>stored_value = free_bytes / (BLCKSZ / 256)
+             = free_bytes / 32          (for BLCKSZ = 8192)
+</code></pre></div></div>
+
+<p>This means the FSM can distinguish free space in 32-byte increments. When searching for space to hold a tuple of size S bytes, the search value is:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>search_value = (S + 31) / 32           (rounding up)
+</code></pre></div></div>
+
+<h3 id="within-page-binary-tree">Within-Page Binary Tree</h3>
+
+<p>Each FSM page contains a binary tree stored as an array in <code class="language-plaintext highlighter-rouge">FSMPageData</code>:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">typedef</span> <span class="k">struct</span>
+<span class="p">{</span>
+    <span class="kt">int</span>     <span class="n">fp_next_slot</span><span class="p">;</span>                       <span class="cm">/* round-robin starting slot */</span>
+    <span class="n">uint8</span>   <span class="n">fp_nodes</span><span class="p">[</span><span class="n">FLEXIBLE_ARRAY_MEMBER</span><span class="p">];</span>    <span class="cm">/* binary tree array */</span>
+<span class="p">}</span> <span class="n">FSMPageData</span><span class="p">;</span>
+</code></pre></div></div>
+
+<p>The tree has two regions in <code class="language-plaintext highlighter-rouge">fp_nodes[]</code>:</p>
+<ul>
+  <li>Indices <code class="language-plaintext highlighter-rouge">0</code> to <code class="language-plaintext highlighter-rouge">NonLeafNodesPerPage - 1</code>: internal (non-leaf) nodes storing the maximum value of their children.</li>
+  <li>Indices <code class="language-plaintext highlighter-rouge">NonLeafNodesPerPage</code> to <code class="language-plaintext highlighter-rouge">NodesPerPage - 1</code>: leaf nodes, each representing one heap page.</li>
+</ul>
+
+<p>With default <code class="language-plaintext highlighter-rouge">BLCKSZ = 8192</code>:</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>Constant</th>
+      <th>Value</th>
+      <th>Formula</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">NodesPerPage</code></td>
+      <td>~8140</td>
+      <td><code class="language-plaintext highlighter-rouge">BLCKSZ - MAXALIGN(SizeOfPageHeaderData) - offsetof(FSMPageData, fp_nodes)</code></td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">NonLeafNodesPerPage</code></td>
+      <td>4095</td>
+      <td><code class="language-plaintext highlighter-rouge">BLCKSZ / 2 - 1</code></td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">LeafNodesPerPage</code></td>
+      <td>~4045</td>
+      <td><code class="language-plaintext highlighter-rouge">NodesPerPage - NonLeafNodesPerPage</code></td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">SlotsPerFSMPage</code></td>
+      <td>~4045</td>
+      <td>Same as <code class="language-plaintext highlighter-rouge">LeafNodesPerPage</code></td>
+    </tr>
+  </tbody>
+</table>
+
+<p>The binary tree is not quite perfect because the page header consumes some space, so a few rightmost leaf nodes are missing.</p>
+
+<pre><code class="language-mermaid">graph TD
+    subgraph "FSM Page (binary tree in array)"
+        R["Root [0]&lt;br/&gt;max=200"]
+        L1["[1]&lt;br/&gt;max=200"]
+        R1["[2]&lt;br/&gt;max=150"]
+        L2["[3]&lt;br/&gt;200"]
+        R2["[4]&lt;br/&gt;100"]
+        L3["[5]&lt;br/&gt;150"]
+        R3["[6]&lt;br/&gt;50"]
+    end
+
+    R --- L1
+    R --- R1
+    L1 --- L2
+    L1 --- R2
+    R1 --- L3
+    R1 --- R3
+
+    style L2 fill:#c8e6c9
+    style R2 fill:#fff9c4
+    style L3 fill:#c8e6c9
+    style R3 fill:#fff9c4
+
+    note["Leaf nodes (green/yellow)&lt;br/&gt;= one heap page each&lt;br/&gt;Internal nodes = max of children"]
+</code></pre>
+
+<p><strong>Search</strong> (<code class="language-plaintext highlighter-rouge">fsm_search_avail</code>): Starting from the root, descend to a leaf where <code class="language-plaintext highlighter-rouge">value &gt;= minvalue</code>. When both children qualify, use <code class="language-plaintext highlighter-rouge">fp_next_slot</code> to alternate, spreading concurrent inserts across different pages.</p>
+
+<p><strong>Update</strong> (<code class="language-plaintext highlighter-rouge">fsm_set_avail</code>): Set a leaf’s value, then bubble up by recomputing each ancestor as <code class="language-plaintext highlighter-rouge">max(left_child, right_child)</code> until reaching the root or finding no change.</p>
+
+<h3 id="three-level-tree-of-pages">Three-Level Tree of Pages</h3>
+
+<p>A single FSM page with ~4045 slots can track ~4045 heap pages (~31 MB). To support PostgreSQL’s maximum relation size of 2^32 blocks (~32 TB), the FSM uses a three-level tree of pages:</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>Level</th>
+      <th>Contains</th>
+      <th>Represents</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>0 (leaf)</td>
+      <td>Leaf values = free space on individual heap pages</td>
+      <td>~4045 heap pages per FSM page</td>
+    </tr>
+    <tr>
+      <td>1</td>
+      <td>Leaf values = root values from level-0 pages</td>
+      <td>~4045 level-0 pages</td>
+    </tr>
+    <tr>
+      <td>2 (root)</td>
+      <td>Leaf values = root values from level-1 pages</td>
+      <td>~4045 level-1 pages</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>The root page is always at physical block 0 of the FSM fork. With three levels: <code class="language-plaintext highlighter-rouge">4045^3 &gt; 66 billion &gt; 2^32</code>, so three levels always suffice.</p>
+
+<pre><code class="language-mermaid">graph TD
+    subgraph "Level 2 (root FSM page, block 0)"
+        R2ROOT["Root of level-2 page&lt;br/&gt;= max free space in entire relation"]
+        R2L0["Slot 0: max from L1-page-0"]
+        R2L1["Slot 1: max from L1-page-1"]
+    end
+
+    subgraph "Level 1 (FSM pages)"
+        L1P0["L1 Page 0"]
+        L1P0S0["Slot 0: max from L0-page-0"]
+        L1P0S1["Slot 1: max from L0-page-1"]
+    end
+
+    subgraph "Level 0 (leaf FSM pages)"
+        L0P0["L0 Page 0"]
+        L0P0S["Slots = free space&lt;br/&gt;for heap pages 0..4044"]
+        L0P1["L0 Page 1"]
+        L0P1S["Slots = free space&lt;br/&gt;for heap pages 4045..8089"]
+    end
+
+    R2L0 --&gt; L1P0
+    L1P0S0 --&gt; L0P0
+    L1P0S1 --&gt; L0P1
+
+    subgraph "Heap Pages"
+        HP["heap page 0, 1, 2, ... 4044"]
+    end
+
+    L0P0S --&gt; HP
+</code></pre>
+
+<p>The physical block number for a given <code class="language-plaintext highlighter-rouge">(level, logical_page)</code> is computed by a formula that counts how many pages at each level precede it:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>block = n + (n/F + 1) + (n/F^2 + 1) + ... + 1
+</code></pre></div></div>
+
+<p>where <code class="language-plaintext highlighter-rouge">F = SlotsPerFSMPage</code> and <code class="language-plaintext highlighter-rouge">n</code> is the logical page number at level 0.</p>
+
+<h3 id="search-algorithm-across-pages">Search Algorithm (Across Pages)</h3>
+
+<ol>
+  <li>Start at the root page (level 2, block 0).</li>
+  <li>Call <code class="language-plaintext highlighter-rouge">fsm_search_avail()</code> to find a qualifying slot.</li>
+  <li>The slot number identifies a child page at the next lower level.</li>
+  <li>Descend to that child page and repeat.</li>
+  <li>At level 0, the slot number directly identifies a heap page.</li>
+</ol>
+
+<p>Only one FSM page is locked (shared lock) at a time; the parent is released before locking the child. If the child has been concurrently modified and no longer has enough space, the search restarts from the root after correcting the parent’s stale value.</p>
+
+<h3 id="update-algorithm">Update Algorithm</h3>
+
+<p>When VACUUM (or INSERT after a failed search) learns the actual free space on a heap page:</p>
+
+<ol>
+  <li>Compute the level-0 FSM page and slot for the heap page.</li>
+  <li>Call <code class="language-plaintext highlighter-rouge">fsm_set_avail()</code> to update the leaf and bubble up within the page.</li>
+  <li>If the root of the level-0 page changed, propagate to the parent slot on the level-1 page.</li>
+  <li>Continue propagating up to level 2 if needed.</li>
+</ol>
+
+<h3 id="recovery-and-self-correction">Recovery and Self-Correction</h3>
+
+<p>The FSM is not WAL-logged. Recovery mechanisms:</p>
+
+<ul>
+  <li><strong>Corruption detection during search</strong>: If a parent node claims space is available but the child disagrees, the child page is rebuilt (<code class="language-plaintext highlighter-rouge">fsm_rebuild_page()</code>).</li>
+  <li><strong>Corruption detection during update</strong>: After setting a value and bubbling up, if the root is less than the value just set, the page is rebuilt.</li>
+  <li><strong>VACUUM</strong>: Rewrites all level-0 FSM entries with actual free space from heap pages, then calls <code class="language-plaintext highlighter-rouge">FreeSpaceMapVacuumRange()</code> to propagate upward.</li>
+  <li><strong>RBM_ZERO_ON_ERROR</strong>: FSM pages are read with this flag, so checksum mismatches cause the page to be zeroed rather than raising an error.</li>
+  <li><strong>MarkBufferDirtyHint()</strong>: FSM writes use hint-bit-style dirty marking, which includes full-page images in WAL only when <code class="language-plaintext highlighter-rouge">wal_log_hints</code> is enabled.</li>
+</ul>
+
+<h2 id="connections">Connections</h2>
+
+<ul>
+  <li><strong>INSERT</strong>: Calls <code class="language-plaintext highlighter-rouge">GetPageWithFreeSpace()</code> to find a target page. If no page has enough space, the relation is extended.</li>
+  <li><strong>VACUUM</strong>: Updates FSM entries for every page it processes, reflecting the actual free space after dead tuple removal.</li>
+  <li><strong>Buffer Manager</strong>: FSM pages are read and written through the standard buffer manager, using <code class="language-plaintext highlighter-rouge">FSM_FORKNUM</code>.</li>
+  <li><strong>smgr</strong>: The FSM fork is a separate file on disk (e.g., <code class="language-plaintext highlighter-rouge">16384_fsm</code>), managed by the same smgr/md infrastructure.</li>
+  <li><strong>Page Layout</strong>: FSM pages use the standard <code class="language-plaintext highlighter-rouge">PageHeaderData</code> header, but the content area is the <code class="language-plaintext highlighter-rouge">FSMPageData</code> binary tree rather than line pointers and tuples.</li>
+  <li><strong>HOT Updates</strong>: When a HOT update frees space on a page, the FSM is updated so future inserts can use that space.</li>
+</ul>
+
+
+      <hr>
+
+      <!-- Prev / Next / Up navigation -->
+      
+      
+      
+
+      <div class="clearfix" style="margin-top: 2rem;">
+        
+          
+          
+
+          
+            
+            <a class="btn btn-primary float-left" href="/postgresql/01-storage/buffer-manager.html" title="Buffer Manager">&larr; Previous</a>
+          
+
+          
+            
+            <a class="btn btn-primary float-right" href="/postgresql/01-storage/page-layout.html" title="Page Layout">Next &rarr;</a>
+          
+        
+      </div>
+
+      
+      <div style="text-align: center; margin-top: 1rem;">
+        <a href="/postgresql-internals/">&uarr; Back to Table of Contents</a>
+      </div>
+      
+
+    </div>
+  </div>
+</div>
+
+
+  <!-- Footer -->
+
+<hr>
+
+<footer>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <ul class="list-inline text-center">
+          
+          <li class="list-inline-item">
+            <a href="mailto:amitava.dev@proton.me" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="far fa-envelope fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          
+          
+          <li class="list-inline-item">
+            <a href="https://www.linkedin.com/in/amitavaag" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-linkedin fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          <li class="list-inline-item">
+            <a href="https://github.com/ikouchiha47" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-github fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+        </ul>
+
+        <p class="copyright text-muted">
+          Build with: 
+          <a 
+            href="https://github.com/StartBootstrap/startbootstrap-clean-blog-jekyll"
+            class="text-gray"
+            target="_blank">startbootstrap-clean-blog-jekyll</a></p>
+      </div>
+    </div>
+  </div>
+</footer>
+
+
+  <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="/assets/vendor/blog/js/scripts.js"></script>
+
+<script src="/assets/scripts.js"></script>
+
+
+
+
+
+  <script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+
+    document.querySelectorAll('pre > code.language-mermaid').forEach((codeBlock) => {
+      codeBlock.parentElement.outerHTML = `<pre class="mermaid">${codeBlock.textContent}</pre>`;
+    });
+
+
+    mermaid.initialize({ startOnLoad: true, theme: 'forest' });
+</script>
+
+
+  
+
+</body>
+
+</html>

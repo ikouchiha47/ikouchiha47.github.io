@@ -1,0 +1,728 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+  <title>
+    Hooks - iko&#39;s logs
+    
+  </title>
+
+  <meta name="description" content="">
+  <meta property="og:description" content="">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Hooks">
+  <meta property="og:url" content="https://ikouchiha47.github.io/postgresql/15-extensions/hooks.html">
+
+  
+
+  <link href='https://fonts.googleapis.com/css?family=Lora:400,700,400italic,700italic' rel='stylesheet' type='text/css'>
+  <link href='https://fonts.googleapis.com/css?family=Open+Sans:300italic,400italic,600italic,700italic,800italic,400,300,600,700,800' rel='stylesheet' type='text/css'>
+
+  <!-- <script src="https://use.fontawesome.com/releases/v5.15.3/js/all.js" crossorigin="anonymous"></script> -->
+  <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.15.4/css/all.css" integrity="sha384-DyZ88mC6Up2uqS4h/KRgHuoeGwBcD4Ng9SiP4dIRy0EXTlnuz47vAwmeGwVChigm" crossorigin="anonymous"/>
+
+  <link rel="stylesheet" href="/assets/main.css">
+  <link rel="canonical" href="https://ikouchiha47.github.io/postgresql/15-extensions/hooks.html">
+  <link rel="alternate" type="application/rss+xml" title="iko&#39;s logs" href="/feed.xml">
+
+  <meta name="google-site-verification" content="lWkg6gIxJgzEKX_5XnhcxCtPE9QknaimFWWos_dTvPM" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fira+Sans:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Inconsolata:wght@200..900&family=Jersey+25&family=Kanit:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Merriweather+Sans:ital,wght@0,300..800;1,300..800&family=Nanum+Gothic+Coding&family=Space+Grotesk:wght@300..700&family=Titillium+Web:ital,wght@0,200;0,300;0,400;0,600;0,700;0,900;1,200;1,300;1,400;1,600;1,700&display=swap" rel="stylesheet">
+
+</head>
+
+
+<body>
+
+  <!-- Navigation -->
+<nav class="navbar navbar-expand-lg navbar-light fixed-top" id="mainNav">
+  <div class="container">
+    <a class="navbar-brand" href="/">iko&#39;s logs</a>
+    <button class="navbar-toggler navbar-toggler-right" type="button" data-toggle="collapse" data-target="#navbarResponsive" aria-controls="navbarResponsive" aria-expanded="false" aria-label="Toggle navigation">
+      Menu
+      <i class="fa fa-bars"></i>
+    </button>
+    <div class="collapse navbar-collapse" id="navbarResponsive">
+      <ul class="navbar-nav ml-auto">
+        <li class="nav-item">
+          <a class="nav-link" href="/">Home</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/about">About</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/posts">Posts</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/contact">Contact</a>
+        </li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+
+  <!-- Page Header -->
+
+<header class="masthead">
+
+  <div class="overlay"></div>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <div class="post-heading">
+          <h1>Hooks</h1>
+          
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="container space-grotesk">
+  <div class="row">
+    <div class="col-lg-8 col-md-10 mx-auto">
+
+      <!-- Breadcrumb -->
+      <nav aria-label="breadcrumb" style="margin-bottom: 1.5rem;">
+        <ol class="breadcrumb" style="background: transparent; padding: 0;">
+          
+            <li class="breadcrumb-item"><a href="/postgresql-internals/">PostgreSQL Internals Deep Dive</a></li>
+          
+          
+            
+              <li class="breadcrumb-item"><a href="/postgresql/15-extensions/">Extensions</a></li>
+            
+          
+          <li class="breadcrumb-item active" aria-current="page">Hooks</li>
+        </ol>
+      </nav>
+
+      <h1 id="hooks-intercepting-core-code-paths">Hooks: Intercepting Core Code Paths</h1>
+
+<blockquote>
+  <p><em>A PostgreSQL hook is a global function pointer initialized to NULL. When an extension sets it to a non-NULL value, the core code calls the extension’s function instead of (or in addition to) its default behavior. This single mechanism is how pg_stat_statements tracks queries, how sepgsql enforces mandatory access control, and how Citus reroutes queries to distributed shards.</em></p>
+</blockquote>
+
+<h2 id="overview">Overview</h2>
+
+<p>PostgreSQL exposes dozens of hooks across the planner, executor, authentication, utility command processing, and logging subsystems. Each hook follows the same pattern: a global variable of a typedef’d function-pointer type, declared with <code class="language-plaintext highlighter-rouge">PGDLLIMPORT</code> so shared libraries can see and set it. The core code checks whether the pointer is non-NULL before calling it, and provides a <code class="language-plaintext highlighter-rouge">standard_*</code> fallback function that implements the default behavior.</p>
+
+<p>This design has three important properties. First, it is zero-cost when unused – a NULL check is a single branch instruction. Second, it supports chaining – each extension saves the previous hook value and calls it, forming a call chain. Third, it is not thread-safe – but that does not matter because PostgreSQL uses processes, not threads, and hooks are set once during <code class="language-plaintext highlighter-rouge">_PG_init</code>.</p>
+
+<pre><code class="language-mermaid">flowchart TD
+    Call["Core function called&lt;br/&gt;(e.g. planner())"]
+    Check{"hook_name != NULL?"}
+    Hook["Call hook function&lt;br/&gt;(ext_b_planner)"]
+    Prev["Hook calls prev_hook&lt;br/&gt;(ext_a_planner)"]
+    PrevNull{"prev_hook != NULL?"}
+    Standard["standard_planner()&lt;br/&gt;(original implementation)"]
+    Result["Return result"]
+
+    Call --&gt; Check
+    Check --&gt;|"No (no extensions)"| Standard
+    Check --&gt;|"Yes"| Hook
+    Hook --&gt; Prev
+    Prev --&gt; PrevNull
+    PrevNull --&gt;|"Yes (more extensions)"| Prev
+    PrevNull --&gt;|"No (end of chain)"| Standard
+    Standard --&gt; Result
+</code></pre>
+
+<h2 id="key-source-files">Key Source Files</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>File</th>
+      <th>Purpose</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/optimizer/planner.h</code></td>
+      <td><code class="language-plaintext highlighter-rouge">planner_hook</code>, <code class="language-plaintext highlighter-rouge">create_upper_paths_hook</code>, <code class="language-plaintext highlighter-rouge">planner_setup_hook</code>, <code class="language-plaintext highlighter-rouge">planner_shutdown_hook</code></td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/optimizer/paths.h</code></td>
+      <td><code class="language-plaintext highlighter-rouge">set_rel_pathlist_hook</code>, <code class="language-plaintext highlighter-rouge">set_join_pathlist_hook</code>, <code class="language-plaintext highlighter-rouge">join_search_hook</code>, <code class="language-plaintext highlighter-rouge">join_path_setup_hook</code></td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/optimizer/plancat.h</code></td>
+      <td><code class="language-plaintext highlighter-rouge">get_relation_info_hook</code></td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/executor/executor.h</code></td>
+      <td><code class="language-plaintext highlighter-rouge">ExecutorStart_hook</code>, <code class="language-plaintext highlighter-rouge">ExecutorRun_hook</code>, <code class="language-plaintext highlighter-rouge">ExecutorFinish_hook</code>, <code class="language-plaintext highlighter-rouge">ExecutorEnd_hook</code>, <code class="language-plaintext highlighter-rouge">ExecutorCheckPerms_hook</code></td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/libpq/auth.h</code></td>
+      <td><code class="language-plaintext highlighter-rouge">ClientAuthentication_hook</code>, <code class="language-plaintext highlighter-rouge">ldap_password_hook</code></td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/utils/elog.h</code></td>
+      <td><code class="language-plaintext highlighter-rouge">emit_log_hook</code></td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/tcop/utility.h</code></td>
+      <td><code class="language-plaintext highlighter-rouge">ProcessUtility_hook</code></td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/miscadmin.h</code></td>
+      <td><code class="language-plaintext highlighter-rouge">shmem_request_hook</code></td>
+    </tr>
+  </tbody>
+</table>
+
+<h2 id="how-it-works">How It Works</h2>
+
+<h3 id="the-hook-pattern">The Hook Pattern</h3>
+
+<p>Every hook in PostgreSQL follows this three-part structure:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>1. DECLARATION (in a header file):
+
+   typedef ReturnType (*hook_name_type)(Args...);
+   extern PGDLLIMPORT hook_name_type hook_name;
+
+2. DEFAULT VALUE (in a .c file):
+
+   hook_name_type hook_name = NULL;
+
+3. CALL SITE (in core code):
+
+   if (hook_name)
+       result = hook_name(args...);
+   else
+       result = standard_function(args...);
+</code></pre></div></div>
+
+<p>The <code class="language-plaintext highlighter-rouge">PGDLLIMPORT</code> annotation ensures the symbol is visible from shared libraries on all platforms, including Windows where DLL symbol visibility is explicit.</p>
+
+<h3 id="hook-chaining">Hook Chaining</h3>
+
+<p>When multiple extensions install the same hook, they form a chain. The installation order (determined by the order in <code class="language-plaintext highlighter-rouge">shared_preload_libraries</code>) determines the call order – the last extension loaded is the first called:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>shared_preload_libraries = 'ext_a, ext_b'
+
+Loading order:          ext_a._PG_init()  then  ext_b._PG_init()
+
+ext_a saves:            prev = NULL (original)
+ext_a installs:         planner_hook = ext_a_planner
+
+ext_b saves:            prev = ext_a_planner
+ext_b installs:         planner_hook = ext_b_planner
+
+Call chain when planner runs:
+
+    planner()
+      |
+      +--&gt; planner_hook (= ext_b_planner)
+              |
+              +--&gt; ext_b's prev_hook (= ext_a_planner)
+                      |
+                      +--&gt; ext_a's prev_hook (= NULL)
+                              |
+                              +--&gt; standard_planner()
+</code></pre></div></div>
+
+<h3 id="planner-hooks">Planner Hooks</h3>
+
+<p>The planner offers the richest set of hooks, allowing extensions to intercept planning at multiple granularities:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>  Query arrives
+       |
+       v
+  +--------------------+
+  | planner_hook       |  Replace or wrap the entire planner
+  | (planner.h)        |  pg_hint_plan, Citus use this
+  +--------------------+
+       |
+       v
+  +--------------------+
+  | planner_setup_hook |  Runs after PlannerGlobal is initialized,
+  | (planner.h)        |  before actual planning begins
+  +--------------------+
+       |
+       v
+  +--------------------+
+  | get_relation_info  |  Intercept relation metadata gathering
+  | _hook (plancat.h)  |  (index list, stats, etc.)
+  +--------------------+
+       |
+       v
+  +--------------------+
+  | set_rel_pathlist   |  Add or remove paths for a single relation
+  | _hook (paths.h)    |  (custom scan providers use this)
+  +--------------------+
+       |
+       v
+  +--------------------+
+  | set_join_pathlist  |  Add custom join paths
+  | _hook (paths.h)    |
+  +--------------------+
+       |
+       v
+  +--------------------+
+  | join_search_hook   |  Replace the entire join-order search
+  | (paths.h)          |  (e.g., replace dynamic programming
+  +--------------------+   with genetic algorithm)
+       |
+       v
+  +--------------------+
+  | create_upper_paths |  Add paths for post-scan/join processing
+  | _hook (planner.h)  |  (GROUP BY, ORDER BY, LIMIT, etc.)
+  +--------------------+
+       |
+       v
+  +--------------------+
+  | planner_shutdown   |  Runs before PlannerGlobal is freed
+  | _hook (planner.h)  |  Cleanup, stats collection
+  +--------------------+
+</code></pre></div></div>
+
+<h4 id="planner_hook">planner_hook</h4>
+
+<p>The most powerful planner hook. It receives the parsed <code class="language-plaintext highlighter-rouge">Query</code> tree and must return a <code class="language-plaintext highlighter-rouge">PlannedStmt</code>:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="cm">/* src/include/optimizer/planner.h */</span>
+<span class="k">typedef</span> <span class="n">PlannedStmt</span> <span class="o">*</span><span class="p">(</span><span class="o">*</span><span class="n">planner_hook_type</span><span class="p">)</span> <span class="p">(</span><span class="n">Query</span> <span class="o">*</span><span class="n">parse</span><span class="p">,</span>
+                                           <span class="k">const</span> <span class="kt">char</span> <span class="o">*</span><span class="n">query_string</span><span class="p">,</span>
+                                           <span class="kt">int</span> <span class="n">cursorOptions</span><span class="p">,</span>
+                                           <span class="n">ParamListInfo</span> <span class="n">boundParams</span><span class="p">,</span>
+                                           <span class="n">ExplainState</span> <span class="o">*</span><span class="n">es</span><span class="p">);</span>
+<span class="k">extern</span> <span class="n">PGDLLIMPORT</span> <span class="n">planner_hook_type</span> <span class="n">planner_hook</span><span class="p">;</span>
+</code></pre></div></div>
+
+<p>Extensions that use this hook typically call <code class="language-plaintext highlighter-rouge">standard_planner</code> for normal queries and only intervene for specific patterns. Citus, for example, intercepts distributed queries here and replaces them with plans that route to worker nodes.</p>
+
+<h4 id="create_upper_paths_hook">create_upper_paths_hook</h4>
+
+<p>Called once per <code class="language-plaintext highlighter-rouge">UpperRelationKind</code> stage, this hook lets extensions inject custom paths for aggregation, sorting, limits, and other upper-level processing:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">typedef</span> <span class="nf">void</span> <span class="p">(</span><span class="o">*</span><span class="n">create_upper_paths_hook_type</span><span class="p">)</span> <span class="p">(</span><span class="n">PlannerInfo</span> <span class="o">*</span><span class="n">root</span><span class="p">,</span>
+                                              <span class="n">UpperRelationKind</span> <span class="n">stage</span><span class="p">,</span>
+                                              <span class="n">RelOptInfo</span> <span class="o">*</span><span class="n">input_rel</span><span class="p">,</span>
+                                              <span class="n">RelOptInfo</span> <span class="o">*</span><span class="n">output_rel</span><span class="p">,</span>
+                                              <span class="kt">void</span> <span class="o">*</span><span class="n">extra</span><span class="p">);</span>
+</code></pre></div></div>
+
+<p>The <code class="language-plaintext highlighter-rouge">stage</code> parameter tells the extension which upper-planning phase is executing (e.g., <code class="language-plaintext highlighter-rouge">UPPERREL_GROUP_AGG</code>, <code class="language-plaintext highlighter-rouge">UPPERREL_ORDERED</code>, <code class="language-plaintext highlighter-rouge">UPPERREL_FINAL</code>).</p>
+
+<h3 id="executor-hooks">Executor Hooks</h3>
+
+<p>The executor hooks form a symmetric set wrapping the four phases of query execution:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="cm">/* src/include/executor/executor.h */</span>
+<span class="k">typedef</span> <span class="nf">void</span> <span class="p">(</span><span class="o">*</span><span class="n">ExecutorStart_hook_type</span><span class="p">)</span> <span class="p">(</span><span class="n">QueryDesc</span> <span class="o">*</span><span class="n">queryDesc</span><span class="p">,</span> <span class="kt">int</span> <span class="n">eflags</span><span class="p">);</span>
+<span class="k">typedef</span> <span class="nf">void</span> <span class="p">(</span><span class="o">*</span><span class="n">ExecutorRun_hook_type</span><span class="p">)</span> <span class="p">(</span><span class="n">QueryDesc</span> <span class="o">*</span><span class="n">queryDesc</span><span class="p">,</span>
+                                       <span class="n">ScanDirection</span> <span class="n">direction</span><span class="p">,</span>
+                                       <span class="n">uint64</span> <span class="n">count</span><span class="p">);</span>
+<span class="k">typedef</span> <span class="nf">void</span> <span class="p">(</span><span class="o">*</span><span class="n">ExecutorFinish_hook_type</span><span class="p">)</span> <span class="p">(</span><span class="n">QueryDesc</span> <span class="o">*</span><span class="n">queryDesc</span><span class="p">);</span>
+<span class="k">typedef</span> <span class="nf">void</span> <span class="p">(</span><span class="o">*</span><span class="n">ExecutorEnd_hook_type</span><span class="p">)</span> <span class="p">(</span><span class="n">QueryDesc</span> <span class="o">*</span><span class="n">queryDesc</span><span class="p">);</span>
+</code></pre></div></div>
+
+<p>Each hook has a corresponding <code class="language-plaintext highlighter-rouge">standard_*</code> function:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>  ExecutorStart()
+       |
+       +---&gt; ExecutorStart_hook? --yes--&gt; hook(queryDesc, eflags)
+       |                           no
+       +---&gt; standard_ExecutorStart(queryDesc, eflags)
+
+  ExecutorRun()
+       |
+       +---&gt; ExecutorRun_hook? --yes--&gt; hook(queryDesc, direction, count)
+       |                         no
+       +---&gt; standard_ExecutorRun(queryDesc, direction, count)
+
+  ExecutorFinish()
+       |
+       +---&gt; ExecutorFinish_hook? --yes--&gt; hook(queryDesc)
+       |                            no
+       +---&gt; standard_ExecutorFinish(queryDesc)
+
+  ExecutorEnd()
+       |
+       +---&gt; ExecutorEnd_hook? --yes--&gt; hook(queryDesc)
+       |                         no
+       +---&gt; standard_ExecutorEnd(queryDesc)
+</code></pre></div></div>
+
+<p><strong>pg_stat_statements</strong> is the canonical example. It installs all four hooks:</p>
+<ul>
+  <li><code class="language-plaintext highlighter-rouge">ExecutorStart_hook</code>: records the start timestamp</li>
+  <li><code class="language-plaintext highlighter-rouge">ExecutorRun_hook</code>: passes through to <code class="language-plaintext highlighter-rouge">standard_ExecutorRun</code></li>
+  <li><code class="language-plaintext highlighter-rouge">ExecutorFinish_hook</code>: passes through</li>
+  <li><code class="language-plaintext highlighter-rouge">ExecutorEnd_hook</code>: calculates elapsed time, accumulates statistics in shared memory</li>
+</ul>
+
+<h4 id="executorcheckperms_hook">ExecutorCheckPerms_hook</h4>
+
+<p>A special executor hook for row-level security extensions:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">typedef</span> <span class="nf">bool</span> <span class="p">(</span><span class="o">*</span><span class="n">ExecutorCheckPerms_hook_type</span><span class="p">)</span> <span class="p">(</span><span class="n">List</span> <span class="o">*</span><span class="n">rangeTable</span><span class="p">,</span>
+                                              <span class="n">List</span> <span class="o">*</span><span class="n">rtePermInfos</span><span class="p">,</span>
+                                              <span class="n">bool</span> <span class="n">ereport_on_violation</span><span class="p">);</span>
+</code></pre></div></div>
+
+<p>The <strong>sepgsql</strong> extension uses this to enforce SELinux mandatory access control policies on table access. If the hook returns <code class="language-plaintext highlighter-rouge">false</code> and <code class="language-plaintext highlighter-rouge">ereport_on_violation</code> is true, the query is rejected with a permission error.</p>
+
+<h3 id="authentication-hooks">Authentication Hooks</h3>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="cm">/* src/include/libpq/auth.h */</span>
+<span class="k">typedef</span> <span class="nf">void</span> <span class="p">(</span><span class="o">*</span><span class="n">ClientAuthentication_hook_type</span><span class="p">)</span> <span class="p">(</span><span class="n">Port</span> <span class="o">*</span><span class="p">,</span> <span class="kt">int</span><span class="p">);</span>
+<span class="k">extern</span> <span class="n">PGDLLIMPORT</span> <span class="n">ClientAuthentication_hook_type</span> <span class="n">ClientAuthentication_hook</span><span class="p">;</span>
+</code></pre></div></div>
+
+<p>This hook is called after PostgreSQL’s built-in authentication succeeds or fails. The second parameter is the authentication status. Extensions like <strong>auth_delay</strong> use this to add a configurable delay after failed login attempts (to slow down brute-force attacks).</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="cm">/* Password transformation hook for LDAP */</span>
+<span class="k">typedef</span> <span class="kt">char</span> <span class="o">*</span><span class="p">(</span><span class="o">*</span><span class="n">auth_password_hook_typ</span><span class="p">)</span> <span class="p">(</span><span class="kt">char</span> <span class="o">*</span><span class="n">input</span><span class="p">);</span>
+<span class="k">extern</span> <span class="n">PGDLLIMPORT</span> <span class="n">auth_password_hook_typ</span> <span class="n">ldap_password_hook</span><span class="p">;</span>
+</code></pre></div></div>
+
+<h3 id="logging-hook">Logging Hook</h3>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="cm">/* src/include/utils/elog.h */</span>
+<span class="k">typedef</span> <span class="nf">void</span> <span class="p">(</span><span class="o">*</span><span class="n">emit_log_hook_type</span><span class="p">)</span> <span class="p">(</span><span class="n">ErrorData</span> <span class="o">*</span><span class="n">edata</span><span class="p">);</span>
+<span class="k">extern</span> <span class="n">PGDLLIMPORT</span> <span class="n">emit_log_hook_type</span> <span class="n">emit_log_hook</span><span class="p">;</span>
+</code></pre></div></div>
+
+<p>Called for every log message that passes the <code class="language-plaintext highlighter-rouge">log_min_messages</code> threshold. The <code class="language-plaintext highlighter-rouge">ErrorData</code> struct contains the message text, severity, SQLSTATE code, and source location. Extensions like <strong>pgaudit</strong> use this to route audit events to external logging systems.</p>
+
+<h2 id="key-data-structures">Key Data Structures</h2>
+
+<h3 id="querydesc-executor-hook-parameter">QueryDesc (executor hook parameter)</h3>
+
+<p>The <code class="language-plaintext highlighter-rouge">QueryDesc</code> is the central state object passed to all executor hooks. It contains everything needed to execute a query:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>QueryDesc
+ +-- operation       : CmdType (SELECT, INSERT, UPDATE, DELETE)
+ +-- plannedstmt     : PlannedStmt* (the plan tree)
+ +-- sourceText      : const char* (original SQL string)
+ +-- snapshot        : Snapshot (MVCC visibility snapshot)
+ +-- crosscheck_snapshot : Snapshot (for RI checks)
+ +-- dest            : DestReceiver* (where to send results)
+ +-- params          : ParamListInfo (bind parameters)
+ +-- queryEnv        : QueryEnvironment*
+ +-- instrument_options : int (EXPLAIN ANALYZE flags)
+ +-- estate          : EState* (runtime executor state, set by ExecutorStart)
+ +-- planstate       : PlanState* (root of executor plan tree)
+ +-- totaltime       : InstrumentState* (timing for EXPLAIN ANALYZE)
+</code></pre></div></div>
+
+<h3 id="errordata-logging-hook-parameter">ErrorData (logging hook parameter)</h3>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>ErrorData
+ +-- elevel          : int (DEBUG5..PANIC)
+ +-- sqlerrcode      : int (5-character SQLSTATE as int)
+ +-- message         : char* (primary error message)
+ +-- detail          : char* (optional detail)
+ +-- hint            : char* (optional hint)
+ +-- context         : char* (call stack context)
+ +-- filename        : const char* (source file)
+ +-- lineno          : int (source line)
+ +-- funcname        : const char* (source function)
+</code></pre></div></div>
+
+<h2 id="complete-hook-inventory">Complete Hook Inventory</h2>
+
+<p>The following table lists all major hooks available in PostgreSQL. Each is a global function pointer that defaults to NULL:</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>Hook</th>
+      <th>Header</th>
+      <th>Purpose</th>
+      <th>Notable Users</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">planner_hook</code></td>
+      <td>planner.h</td>
+      <td>Replace/wrap entire planner</td>
+      <td>Citus, pg_hint_plan</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">planner_setup_hook</code></td>
+      <td>planner.h</td>
+      <td>Post-PlannerGlobal init</td>
+      <td> </td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">planner_shutdown_hook</code></td>
+      <td>planner.h</td>
+      <td>Pre-PlannerGlobal cleanup</td>
+      <td> </td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">create_upper_paths_hook</code></td>
+      <td>planner.h</td>
+      <td>Add upper-relation paths</td>
+      <td>Citus, TimescaleDB</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">get_relation_info_hook</code></td>
+      <td>plancat.h</td>
+      <td>Intercept relation metadata</td>
+      <td>HypoPG</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">set_rel_pathlist_hook</code></td>
+      <td>paths.h</td>
+      <td>Add/remove relation paths</td>
+      <td>Custom scan providers</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">set_join_pathlist_hook</code></td>
+      <td>paths.h</td>
+      <td>Add custom join paths</td>
+      <td> </td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">join_search_hook</code></td>
+      <td>paths.h</td>
+      <td>Replace join-order search</td>
+      <td>pg_hint_plan</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">join_path_setup_hook</code></td>
+      <td>paths.h</td>
+      <td>Initialize join path data</td>
+      <td> </td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">ExecutorStart_hook</code></td>
+      <td>executor.h</td>
+      <td>Wrap executor startup</td>
+      <td>pg_stat_statements</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">ExecutorRun_hook</code></td>
+      <td>executor.h</td>
+      <td>Wrap tuple retrieval</td>
+      <td>pg_stat_statements</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">ExecutorFinish_hook</code></td>
+      <td>executor.h</td>
+      <td>Wrap post-scan cleanup</td>
+      <td>pg_stat_statements</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">ExecutorEnd_hook</code></td>
+      <td>executor.h</td>
+      <td>Wrap executor shutdown</td>
+      <td>pg_stat_statements</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">ExecutorCheckPerms_hook</code></td>
+      <td>executor.h</td>
+      <td>Override permission checks</td>
+      <td>sepgsql</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">ClientAuthentication_hook</code></td>
+      <td>auth.h</td>
+      <td>Post-authentication callback</td>
+      <td>auth_delay</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">ldap_password_hook</code></td>
+      <td>auth.h</td>
+      <td>Transform LDAP passwords</td>
+      <td> </td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">emit_log_hook</code></td>
+      <td>elog.h</td>
+      <td>Intercept log messages</td>
+      <td>pgaudit</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">shmem_request_hook</code></td>
+      <td>miscadmin.h</td>
+      <td>Request shared memory</td>
+      <td>pg_stat_statements</td>
+    </tr>
+  </tbody>
+</table>
+
+<h2 id="practical-example-how-pg_stat_statements-uses-hooks">Practical Example: How pg_stat_statements Uses Hooks</h2>
+
+<p>pg_stat_statements installs hooks at five points:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>_PG_init()
+  |
+  +-- shmem_request_hook     --&gt; request shared memory for stats hash table
+  |
+  +-- planner_hook           --&gt; normalize query text, track planning time
+  |
+  +-- ExecutorStart_hook     --&gt; record start time
+  +-- ExecutorRun_hook       --&gt; chain to standard (needed for timing)
+  +-- ExecutorFinish_hook    --&gt; chain to standard
+  +-- ExecutorEnd_hook       --&gt; calculate elapsed time, update stats entry
+</code></pre></div></div>
+
+<p>On every query completion, the <code class="language-plaintext highlighter-rouge">ExecutorEnd</code> hook:</p>
+<ol>
+  <li>Computes wall-clock time and resource usage deltas</li>
+  <li>Looks up (or creates) an entry in the shared hash table keyed by query ID</li>
+  <li>Atomically updates counters: <code class="language-plaintext highlighter-rouge">calls</code>, <code class="language-plaintext highlighter-rouge">total_time</code>, <code class="language-plaintext highlighter-rouge">rows</code>, <code class="language-plaintext highlighter-rouge">shared_blks_hit</code>, etc.</li>
+  <li>Chains to the previous <code class="language-plaintext highlighter-rouge">ExecutorEnd</code> hook (or <code class="language-plaintext highlighter-rouge">standard_ExecutorEnd</code>)</li>
+</ol>
+
+<h2 id="connections-to-other-chapters">Connections to Other Chapters</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>Chapter</th>
+      <th>Connection</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><a href="../07-query-optimizer/">Chapter 7: Query Optimizer</a></td>
+      <td>Planner hooks operate on <code class="language-plaintext highlighter-rouge">Query</code>, <code class="language-plaintext highlighter-rouge">PlannerInfo</code>, <code class="language-plaintext highlighter-rouge">RelOptInfo</code>, and <code class="language-plaintext highlighter-rouge">Path</code> structures documented there</td>
+    </tr>
+    <tr>
+      <td><a href="../08-executor/">Chapter 8: Executor</a></td>
+      <td>Executor hooks wrap the <code class="language-plaintext highlighter-rouge">ExecutorStart</code>/<code class="language-plaintext highlighter-rouge">Run</code>/<code class="language-plaintext highlighter-rouge">Finish</code>/<code class="language-plaintext highlighter-rouge">End</code> lifecycle; <code class="language-plaintext highlighter-rouge">QueryDesc</code> is the executor’s central state</td>
+    </tr>
+    <tr>
+      <td><a href="../10-memory/">Chapter 10: Memory</a></td>
+      <td>Hook functions execute within the same memory contexts as the core code they intercept</td>
+    </tr>
+    <tr>
+      <td><a href="../13-statistics/">Chapter 13: Statistics</a></td>
+      <td>pg_stat_statements uses executor hooks to collect per-query statistics</td>
+    </tr>
+  </tbody>
+</table>
+
+
+      <hr>
+
+      <!-- Prev / Next / Up navigation -->
+      
+      
+      
+
+      <div class="clearfix" style="margin-top: 2rem;">
+        
+          
+          
+
+          
+            
+            <a class="btn btn-primary float-left" href="/postgresql/15-extensions/fdw.html" title="Foreign Data Wrappers">&larr; Previous</a>
+          
+
+          
+        
+      </div>
+
+      
+      <div style="text-align: center; margin-top: 1rem;">
+        <a href="/postgresql-internals/">&uarr; Back to Table of Contents</a>
+      </div>
+      
+
+    </div>
+  </div>
+</div>
+
+
+  <!-- Footer -->
+
+<hr>
+
+<footer>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <ul class="list-inline text-center">
+          
+          <li class="list-inline-item">
+            <a href="mailto:amitava.dev@proton.me" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="far fa-envelope fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          
+          
+          <li class="list-inline-item">
+            <a href="https://www.linkedin.com/in/amitavaag" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-linkedin fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          <li class="list-inline-item">
+            <a href="https://github.com/ikouchiha47" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-github fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+        </ul>
+
+        <p class="copyright text-muted">
+          Build with: 
+          <a 
+            href="https://github.com/StartBootstrap/startbootstrap-clean-blog-jekyll"
+            class="text-gray"
+            target="_blank">startbootstrap-clean-blog-jekyll</a></p>
+      </div>
+    </div>
+  </div>
+</footer>
+
+
+  <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="/assets/vendor/blog/js/scripts.js"></script>
+
+<script src="/assets/scripts.js"></script>
+
+
+
+
+
+  <script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+
+    document.querySelectorAll('pre > code.language-mermaid').forEach((codeBlock) => {
+      codeBlock.parentElement.outerHTML = `<pre class="mermaid">${codeBlock.textContent}</pre>`;
+    });
+
+
+    mermaid.initialize({ startOnLoad: true, theme: 'forest' });
+</script>
+
+
+  
+
+</body>
+
+</html>

@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+  <title>
+    Transactions &amp; MVCC - iko&#39;s logs
+    
+  </title>
+
+  <meta name="description" content="">
+  <meta property="og:description" content="">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Transactions &amp; MVCC">
+  <meta property="og:url" content="https://ikouchiha47.github.io/postgresql/03-transactions/">
+
+  
+
+  <link href='https://fonts.googleapis.com/css?family=Lora:400,700,400italic,700italic' rel='stylesheet' type='text/css'>
+  <link href='https://fonts.googleapis.com/css?family=Open+Sans:300italic,400italic,600italic,700italic,800italic,400,300,600,700,800' rel='stylesheet' type='text/css'>
+
+  <!-- <script src="https://use.fontawesome.com/releases/v5.15.3/js/all.js" crossorigin="anonymous"></script> -->
+  <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.15.4/css/all.css" integrity="sha384-DyZ88mC6Up2uqS4h/KRgHuoeGwBcD4Ng9SiP4dIRy0EXTlnuz47vAwmeGwVChigm" crossorigin="anonymous"/>
+
+  <link rel="stylesheet" href="/assets/main.css">
+  <link rel="canonical" href="https://ikouchiha47.github.io/postgresql/03-transactions/">
+  <link rel="alternate" type="application/rss+xml" title="iko&#39;s logs" href="/feed.xml">
+
+  <meta name="google-site-verification" content="lWkg6gIxJgzEKX_5XnhcxCtPE9QknaimFWWos_dTvPM" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fira+Sans:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Inconsolata:wght@200..900&family=Jersey+25&family=Kanit:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Merriweather+Sans:ital,wght@0,300..800;1,300..800&family=Nanum+Gothic+Coding&family=Space+Grotesk:wght@300..700&family=Titillium+Web:ital,wght@0,200;0,300;0,400;0,600;0,700;0,900;1,200;1,300;1,400;1,600;1,700&display=swap" rel="stylesheet">
+
+</head>
+
+
+<body>
+
+  <!-- Navigation -->
+<nav class="navbar navbar-expand-lg navbar-light fixed-top" id="mainNav">
+  <div class="container">
+    <a class="navbar-brand" href="/">iko&#39;s logs</a>
+    <button class="navbar-toggler navbar-toggler-right" type="button" data-toggle="collapse" data-target="#navbarResponsive" aria-controls="navbarResponsive" aria-expanded="false" aria-label="Toggle navigation">
+      Menu
+      <i class="fa fa-bars"></i>
+    </button>
+    <div class="collapse navbar-collapse" id="navbarResponsive">
+      <ul class="navbar-nav ml-auto">
+        <li class="nav-item">
+          <a class="nav-link" href="/">Home</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/about">About</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/posts">Posts</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/contact">Contact</a>
+        </li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+
+  <!-- Page Header -->
+
+<header class="masthead">
+
+  <div class="overlay"></div>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <div class="post-heading">
+          <h1>Transactions & MVCC</h1>
+          
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="container space-grotesk">
+  <div class="row">
+    <div class="col-lg-8 col-md-10 mx-auto">
+
+      <!-- Breadcrumb -->
+      <nav aria-label="breadcrumb" style="margin-bottom: 1.5rem;">
+        <ol class="breadcrumb" style="background: transparent; padding: 0;">
+          
+            <li class="breadcrumb-item"><a href="/postgresql-internals/">PostgreSQL Internals Deep Dive</a></li>
+          
+          
+          <li class="breadcrumb-item active" aria-current="page">Transactions & MVCC</li>
+        </ol>
+      </nav>
+
+      <h1 id="chapter-3-transactions--mvcc">Chapter 3: Transactions &amp; MVCC</h1>
+
+<p>PostgreSQL implements concurrency control through Multi-Version Concurrency Control (MVCC), a design where readers never block writers and writers never block readers. Rather than locking rows in place, PostgreSQL keeps multiple physical versions of each row and uses visibility rules to determine which version a given transaction can see.</p>
+
+<p>This chapter walks through the full machinery that makes this possible – from the transaction ID stamped on every tuple, through the snapshot mechanism that decides visibility, to the commit log that records final outcomes.</p>
+
+<h2 id="why-mvcc-matters">Why MVCC Matters</h2>
+
+<p>Traditional lock-based concurrency (Strict Two-Phase Locking) forces readers to wait for writers and vice versa. MVCC eliminates this contention at the cost of storing old row versions and periodically cleaning them up (VACUUM). The tradeoff is overwhelmingly positive for read-heavy workloads, which describes most OLTP systems.</p>
+
+<h2 id="chapter-overview">Chapter Overview</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>Section</th>
+      <th>What It Covers</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><a href="mvcc.html">MVCC and Tuple Versioning</a></td>
+      <td>HeapTupleHeaderData, xmin/xmax, t_infomask hint bits, visibility rules</td>
+    </tr>
+    <tr>
+      <td><a href="snapshots.html">Snapshots</a></td>
+      <td>SnapshotData, ProcArray, GetSnapshotData(), xmin horizon</td>
+    </tr>
+    <tr>
+      <td><a href="isolation-levels.html">Isolation Levels</a></td>
+      <td>Read Committed vs Repeatable Read vs Serializable behavior</td>
+    </tr>
+    <tr>
+      <td><a href="ssi.html">Serializable Snapshot Isolation</a></td>
+      <td>Cahill/Fekete algorithm, predicate locks, rw-conflict detection</td>
+    </tr>
+    <tr>
+      <td><a href="clog-and-subtrans.html">CLOG and Subtransactions</a></td>
+      <td>Commit log (pg_xact), subtransaction tracking (pg_subtrans), SLRU buffer</td>
+    </tr>
+    <tr>
+      <td><a href="two-phase-commit.html">Two-Phase Commit</a></td>
+      <td>PREPARE TRANSACTION, GlobalTransactionData, crash recovery</td>
+    </tr>
+  </tbody>
+</table>
+
+<h2 id="key-source-files-at-a-glance">Key Source Files at a Glance</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>File</th>
+      <th>Purpose</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/access/htup_details.h</code></td>
+      <td>HeapTupleHeaderData, infomask flags</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/utils/snapshot.h</code></td>
+      <td>SnapshotData, SnapshotType enum</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/storage/proc.h</code></td>
+      <td>PGPROC shared-memory struct</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/storage/procarray.h</code></td>
+      <td>GetSnapshotData(), TransactionIdIsInProgress()</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/access/transam/xact.c</code></td>
+      <td>Top-level transaction lifecycle</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/access/transam/clog.c</code></td>
+      <td>Commit log read/write</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/access/transam/subtrans.c</code></td>
+      <td>Subtransaction parent mapping</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/access/transam/twophase.c</code></td>
+      <td>Two-phase commit</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/storage/lmgr/predicate.c</code></td>
+      <td>SSI predicate lock manager</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/access/heap/heapam_visibility.c</code></td>
+      <td>HeapTupleSatisfiesMVCC() and friends</td>
+    </tr>
+  </tbody>
+</table>
+
+<h2 id="how-the-pieces-fit-together">How the Pieces Fit Together</h2>
+
+<pre><code class="language-mermaid">flowchart TD
+    subgraph "Transaction Lifecycle"
+        BEGIN["BEGIN"] --&gt; ASSIGN["Assign XID (lazy)"]
+        ASSIGN --&gt; OPS["INSERT / UPDATE / DELETE"]
+        OPS --&gt; COMMIT["COMMIT"]
+        COMMIT --&gt; CLOG["Write status to CLOG"]
+    end
+
+    subgraph "Tuple Versioning"
+        OPS --&gt;|"stamps xmin"| INSERT_TUPLE["New tuple version"]
+        OPS --&gt;|"stamps xmax"| OLD_TUPLE["Old tuple version"]
+    end
+
+    subgraph "Visibility Decision"
+        QUERY["SELECT"] --&gt; SNAP["Get Snapshot"]
+        SNAP --&gt; VIS{"HeapTupleSatisfiesMVCC()"}
+        VIS --&gt;|"check xmin/xmax against snapshot"| VISIBLE["Return row"]
+        VIS --&gt;|"not visible"| SKIP["Skip row"]
+        VIS --&gt;|"hint bit unknown"| CLOG_LOOKUP["Look up CLOG"]
+        CLOG_LOOKUP --&gt; SET_HINT["Set hint bits on tuple"]
+        SET_HINT --&gt; VIS
+    end
+</code></pre>
+
+<h2 id="the-transaction-id-space">The Transaction ID Space</h2>
+
+<p>PostgreSQL uses 32-bit transaction IDs that wrap around. The <code class="language-plaintext highlighter-rouge">FullTransactionId</code> (64-bit, epoch + xid) prevents ambiguity. All XID comparisons use modular arithmetic defined in <code class="language-plaintext highlighter-rouge">src/include/access/transam.h</code>:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="cm">/* TransactionIdPrecedes -- is id1 logically before id2? */</span>
+<span class="cp">#define TransactionIdPrecedes(id1, id2) \
+    ((int32) ((id1) - (id2)) &lt; 0)
+</span></code></pre></div></div>
+
+<p>This means roughly 2 billion transactions can exist between the oldest active transaction and the newest before wraparound becomes dangerous – the reason <code class="language-plaintext highlighter-rouge">autovacuum</code> exists and why <code class="language-plaintext highlighter-rouge">xid wraparound</code> is a production concern.</p>
+
+<h2 id="connections-to-other-chapters">Connections to Other Chapters</h2>
+
+<ul>
+  <li><strong>Chapter 2 (Shared Memory and Process Model)</strong>: The ProcArray lives in shared memory; every backend has a PGPROC slot.</li>
+  <li><strong>Chapter 4 (Buffer Manager)</strong>: Hint bits are written back through the buffer manager, which can cause dirty pages.</li>
+  <li><strong>Chapter 5 (WAL)</strong>: COMMIT is durable only after the WAL record is flushed. CLOG pages are also WAL-logged.</li>
+  <li><strong>Chapter 8 (VACUUM)</strong>: Dead tuple versions (xmax committed, no snapshot can see them) are reclaimed by VACUUM.</li>
+</ul>
+
+
+      <hr>
+
+      <!-- Prev / Next / Up navigation -->
+      
+      
+      
+
+      <div class="clearfix" style="margin-top: 2rem;">
+        
+          
+          
+
+          
+            
+            <a class="btn btn-primary float-left" href="/postgresql/02-access-methods/table-am-api.html" title="Table AM API">&larr; Previous</a>
+          
+
+          
+            
+            <a class="btn btn-primary float-right" href="/postgresql/03-transactions/clog-and-subtrans.html" title="CLOG and Subtransactions">Next &rarr;</a>
+          
+        
+      </div>
+
+      
+      <div style="text-align: center; margin-top: 1rem;">
+        <a href="/postgresql-internals/">&uarr; Back to Table of Contents</a>
+      </div>
+      
+
+    </div>
+  </div>
+</div>
+
+
+  <!-- Footer -->
+
+<hr>
+
+<footer>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <ul class="list-inline text-center">
+          
+          <li class="list-inline-item">
+            <a href="mailto:amitava.dev@proton.me" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="far fa-envelope fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          
+          
+          <li class="list-inline-item">
+            <a href="https://www.linkedin.com/in/amitavaag" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-linkedin fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          <li class="list-inline-item">
+            <a href="https://github.com/ikouchiha47" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-github fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+        </ul>
+
+        <p class="copyright text-muted">
+          Build with: 
+          <a 
+            href="https://github.com/StartBootstrap/startbootstrap-clean-blog-jekyll"
+            class="text-gray"
+            target="_blank">startbootstrap-clean-blog-jekyll</a></p>
+      </div>
+    </div>
+  </div>
+</footer>
+
+
+  <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="/assets/vendor/blog/js/scripts.js"></script>
+
+<script src="/assets/scripts.js"></script>
+
+
+
+
+
+  <script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+
+    document.querySelectorAll('pre > code.language-mermaid').forEach((codeBlock) => {
+      codeBlock.parentElement.outerHTML = `<pre class="mermaid">${codeBlock.textContent}</pre>`;
+    });
+
+
+    mermaid.initialize({ startOnLoad: true, theme: 'forest' });
+</script>
+
+
+  
+
+</body>
+
+</html>

@@ -1,0 +1,666 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+  <title>
+    ProcArray and PGPROC - iko&#39;s logs
+    
+  </title>
+
+  <meta name="description" content="">
+  <meta property="og:description" content="">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="ProcArray and PGPROC">
+  <meta property="og:url" content="https://ikouchiha47.github.io/postgresql/11-ipc/procarray.html">
+
+  
+
+  <link href='https://fonts.googleapis.com/css?family=Lora:400,700,400italic,700italic' rel='stylesheet' type='text/css'>
+  <link href='https://fonts.googleapis.com/css?family=Open+Sans:300italic,400italic,600italic,700italic,800italic,400,300,600,700,800' rel='stylesheet' type='text/css'>
+
+  <!-- <script src="https://use.fontawesome.com/releases/v5.15.3/js/all.js" crossorigin="anonymous"></script> -->
+  <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.15.4/css/all.css" integrity="sha384-DyZ88mC6Up2uqS4h/KRgHuoeGwBcD4Ng9SiP4dIRy0EXTlnuz47vAwmeGwVChigm" crossorigin="anonymous"/>
+
+  <link rel="stylesheet" href="/assets/main.css">
+  <link rel="canonical" href="https://ikouchiha47.github.io/postgresql/11-ipc/procarray.html">
+  <link rel="alternate" type="application/rss+xml" title="iko&#39;s logs" href="/feed.xml">
+
+  <meta name="google-site-verification" content="lWkg6gIxJgzEKX_5XnhcxCtPE9QknaimFWWos_dTvPM" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fira+Sans:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Inconsolata:wght@200..900&family=Jersey+25&family=Kanit:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Merriweather+Sans:ital,wght@0,300..800;1,300..800&family=Nanum+Gothic+Coding&family=Space+Grotesk:wght@300..700&family=Titillium+Web:ital,wght@0,200;0,300;0,400;0,600;0,700;0,900;1,200;1,300;1,400;1,600;1,700&display=swap" rel="stylesheet">
+
+</head>
+
+
+<body>
+
+  <!-- Navigation -->
+<nav class="navbar navbar-expand-lg navbar-light fixed-top" id="mainNav">
+  <div class="container">
+    <a class="navbar-brand" href="/">iko&#39;s logs</a>
+    <button class="navbar-toggler navbar-toggler-right" type="button" data-toggle="collapse" data-target="#navbarResponsive" aria-controls="navbarResponsive" aria-expanded="false" aria-label="Toggle navigation">
+      Menu
+      <i class="fa fa-bars"></i>
+    </button>
+    <div class="collapse navbar-collapse" id="navbarResponsive">
+      <ul class="navbar-nav ml-auto">
+        <li class="nav-item">
+          <a class="nav-link" href="/">Home</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/about">About</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/posts">Posts</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/contact">Contact</a>
+        </li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+
+  <!-- Page Header -->
+
+<header class="masthead">
+
+  <div class="overlay"></div>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <div class="post-heading">
+          <h1>ProcArray and PGPROC</h1>
+          
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="container space-grotesk">
+  <div class="row">
+    <div class="col-lg-8 col-md-10 mx-auto">
+
+      <!-- Breadcrumb -->
+      <nav aria-label="breadcrumb" style="margin-bottom: 1.5rem;">
+        <ol class="breadcrumb" style="background: transparent; padding: 0;">
+          
+            <li class="breadcrumb-item"><a href="/postgresql-internals/">PostgreSQL Internals Deep Dive</a></li>
+          
+          
+            
+              <li class="breadcrumb-item"><a href="/postgresql/11-ipc/">IPC</a></li>
+            
+          
+          <li class="breadcrumb-item active" aria-current="page">ProcArray and PGPROC</li>
+        </ol>
+      </nav>
+
+      <h1 id="procarray-and-pgproc">ProcArray and PGPROC</h1>
+
+<p>Every PostgreSQL backend gets a <code class="language-plaintext highlighter-rouge">PGPROC</code> slot in shared memory. The <strong>ProcArray</strong>
+is the subsystem that tracks which of those slots are active and maintains dense,
+cache-friendly arrays of per-backend transaction state. Its most critical consumer
+is <code class="language-plaintext highlighter-rouge">GetSnapshotData()</code>, which scans these arrays on every snapshot-taking query to
+determine which transactions are currently in progress.</p>
+
+<pre><code class="language-mermaid">flowchart LR
+    subgraph SharedMem["Shared Memory"]
+        subgraph PA["ProcArray"]
+            dense["Dense Arrays\nxids[] subxidStates[]\nstatusFlags[]"]
+        end
+        subgraph PGPROC["PGPROC Slots"]
+            p1["PGPROC[0]\nxid=100\nxmin=95"]
+            p2["PGPROC[1]\nxid=102\nxmin=98"]
+            p3["PGPROC[2]\nidle"]
+        end
+    end
+
+    GetSnap["GetSnapshotData()"] --&gt;|"scan dense arrays"| dense
+    dense -.-&gt;|"index into"| p1
+    dense -.-&gt;|"index into"| p2
+
+    GetSnap --&gt;|"returns"| Snap["Snapshot\nxmin=95 xmax=103\nxip={100,102}"]
+
+    style GetSnap fill:#fff3e6,stroke:#333
+    style Snap fill:#e6ffe6,stroke:#333
+</code></pre>
+
+<hr />
+
+<h2 id="overview">Overview</h2>
+
+<p>Two distinct but related structures work together:</p>
+
+<ol>
+  <li>
+    <p><strong>PGPROC</strong> – A large struct in shared memory, one per backend (plus extras for
+autovacuum, background workers, prepared transactions, and auxiliary processes).
+Contains the backend’s latch, lock wait state, XID, xmin, virtual XID, and more.</p>
+  </li>
+  <li>
+    <p><strong>ProcArray</strong> – A compact structure that indexes into the PGPROC array and
+maintains dense “mirrored” arrays for hot fields (<code class="language-plaintext highlighter-rouge">xids[]</code>, <code class="language-plaintext highlighter-rouge">subxidStates[]</code>,
+<code class="language-plaintext highlighter-rouge">statusFlags[]</code>). These dense arrays exist so that <code class="language-plaintext highlighter-rouge">GetSnapshotData()</code> can scan
+all running XIDs without touching the much larger PGPROC structs, minimizing
+cache line misses.</p>
+  </li>
+</ol>
+
+<hr />
+
+<h2 id="key-source-files">Key Source Files</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>File</th>
+      <th>Role</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/storage/proc.h</code></td>
+      <td><code class="language-plaintext highlighter-rouge">PGPROC</code> struct, <code class="language-plaintext highlighter-rouge">PROC_HDR</code> (ProcGlobal), flag constants</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/storage/lmgr/proc.c</code></td>
+      <td>PGPROC initialization, <code class="language-plaintext highlighter-rouge">InitProcess</code>, sleep/wakeup</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/storage/procarray.h</code></td>
+      <td>ProcArray public API</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/storage/ipc/procarray.c</code></td>
+      <td>ProcArray management, <code class="language-plaintext highlighter-rouge">GetSnapshotData</code>, visibility horizons</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/storage/procnumber.h</code></td>
+      <td><code class="language-plaintext highlighter-rouge">ProcNumber</code> type definition</td>
+    </tr>
+  </tbody>
+</table>
+
+<hr />
+
+<h2 id="how-it-works">How It Works</h2>
+
+<h3 id="pgproc-allocation">PGPROC Allocation</h3>
+
+<p>At startup, <code class="language-plaintext highlighter-rouge">InitProcGlobal()</code> allocates a contiguous array of PGPROC structs:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>Total PGPROCs = MaxBackends
+              + NUM_SPECIAL_WORKER_PROCS (2: autovac launcher, slotsync)
+              + max_prepared_xacts
+              + NUM_AUXILIARY_PROCS (6 + MAX_IO_WORKERS)
+</code></pre></div></div>
+
+<p>These PGPROCs are linked into freelists (<code class="language-plaintext highlighter-rouge">ProcGlobal-&gt;freeProcs</code>,
+<code class="language-plaintext highlighter-rouge">autovacFreeProcs</code>, <code class="language-plaintext highlighter-rouge">bgworkerFreeProcs</code>, <code class="language-plaintext highlighter-rouge">walsenderFreeProcs</code>). When a new backend
+starts, <code class="language-plaintext highlighter-rouge">InitProcess()</code> pulls a PGPROC from the appropriate freelist, initializes
+it, and calls <code class="language-plaintext highlighter-rouge">ProcArrayAdd()</code> to register it in the ProcArray.</p>
+
+<h3 id="the-dense-arrays">The Dense Arrays</h3>
+
+<p><code class="language-plaintext highlighter-rouge">PROC_HDR</code> (aliased as <code class="language-plaintext highlighter-rouge">ProcGlobal</code>) holds both the PGPROC array and the mirrored
+dense arrays:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="cm">/* src/include/storage/proc.h */</span>
+<span class="k">typedef</span> <span class="k">struct</span> <span class="n">PROC_HDR</span>
+<span class="p">{</span>
+    <span class="n">PGPROC</span>         <span class="o">*</span><span class="n">allProcs</span><span class="p">;</span>          <span class="cm">/* Full array of PGPROC structs */</span>
+    <span class="n">TransactionId</span>  <span class="o">*</span><span class="n">xids</span><span class="p">;</span>              <span class="cm">/* Dense: mirrors PGPROC.xid */</span>
+    <span class="n">XidCacheStatus</span> <span class="o">*</span><span class="n">subxidStates</span><span class="p">;</span>      <span class="cm">/* Dense: mirrors PGPROC.subxidStatus */</span>
+    <span class="n">uint8</span>          <span class="o">*</span><span class="n">statusFlags</span><span class="p">;</span>       <span class="cm">/* Dense: mirrors PGPROC.statusFlags */</span>
+    <span class="n">uint32</span>          <span class="n">allProcCount</span><span class="p">;</span>      <span class="cm">/* Length of allProcs */</span>
+    <span class="cm">/* ... freelists, spinlocks, group clear state ... */</span>
+<span class="p">}</span> <span class="n">PROC_HDR</span><span class="p">;</span>
+</code></pre></div></div>
+
+<p>The dense arrays are indexed by <code class="language-plaintext highlighter-rouge">PGPROC-&gt;pgxactoff</code>, which is the backend’s
+current position within the ProcArray. This offset can change when backends are
+added or removed, so accessing the dense arrays requires holding either
+<code class="language-plaintext highlighter-rouge">ProcArrayLock</code> or <code class="language-plaintext highlighter-rouge">XidGenLock</code>.</p>
+
+<p>The design rationale has three parts:</p>
+
+<ol>
+  <li>
+    <p><strong>Tight loops</strong> – <code class="language-plaintext highlighter-rouge">GetSnapshotData()</code> can iterate <code class="language-plaintext highlighter-rouge">ProcGlobal-&gt;xids[]</code> in a
+tight loop, hitting far fewer cache lines than if it had to chase pointers through
+scattered PGPROC structs.</p>
+  </li>
+  <li>
+    <p><strong>Cache isolation</strong> – Frequently changing fields (<code class="language-plaintext highlighter-rouge">xmin</code>) live in different cache
+lines from rarely changing fields (<code class="language-plaintext highlighter-rouge">xid</code>, <code class="language-plaintext highlighter-rouge">statusFlags</code>), preventing false sharing.</p>
+  </li>
+  <li>
+    <p><strong>Local fast path</strong> – A backend can read its own <code class="language-plaintext highlighter-rouge">MyProc-&gt;xid</code> without locks
+(it is the only writer), avoiding the need to touch the dense arrays for self-checks.</p>
+  </li>
+</ol>
+
+<h3 id="procarray-structure">ProcArray Structure</h3>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="cm">/* src/backend/storage/ipc/procarray.c */</span>
+<span class="k">typedef</span> <span class="k">struct</span> <span class="n">ProcArrayStruct</span>
+<span class="p">{</span>
+    <span class="kt">int</span>     <span class="n">numProcs</span><span class="p">;</span>                     <span class="cm">/* Active entries */</span>
+    <span class="kt">int</span>     <span class="n">maxProcs</span><span class="p">;</span>                     <span class="cm">/* Array capacity */</span>
+
+    <span class="cm">/* Hot standby: known-assigned XIDs from the primary */</span>
+    <span class="kt">int</span>     <span class="n">maxKnownAssignedXids</span><span class="p">;</span>
+    <span class="kt">int</span>     <span class="n">numKnownAssignedXids</span><span class="p">;</span>
+    <span class="kt">int</span>     <span class="n">tailKnownAssignedXids</span><span class="p">;</span>
+    <span class="kt">int</span>     <span class="n">headKnownAssignedXids</span><span class="p">;</span>
+    <span class="n">TransactionId</span> <span class="n">lastOverflowedXid</span><span class="p">;</span>
+
+    <span class="cm">/* Replication slot horizons */</span>
+    <span class="n">TransactionId</span> <span class="n">replication_slot_xmin</span><span class="p">;</span>
+    <span class="n">TransactionId</span> <span class="n">replication_slot_catalog_xmin</span><span class="p">;</span>
+
+    <span class="cm">/* Flexible array of indexes into ProcGlobal-&gt;allProcs */</span>
+    <span class="kt">int</span>     <span class="n">pgprocnos</span><span class="p">[</span><span class="n">FLEXIBLE_ARRAY_MEMBER</span><span class="p">];</span>
+<span class="p">}</span> <span class="n">ProcArrayStruct</span><span class="p">;</span>
+</code></pre></div></div>
+
+<p><code class="language-plaintext highlighter-rouge">pgprocnos[]</code> is the heart of ProcArray: it lists the <code class="language-plaintext highlighter-rouge">ProcNumber</code> of every
+currently active backend. When combined with <code class="language-plaintext highlighter-rouge">ProcGlobal-&gt;allProcs</code>, it provides
+O(1) lookup from ProcNumber to PGPROC.</p>
+
+<hr />
+
+<h2 id="getsnapshotdata-the-hot-path">GetSnapshotData: The Hot Path</h2>
+
+<p><code class="language-plaintext highlighter-rouge">GetSnapshotData()</code> is called at the start of every transaction (or statement, in
+READ COMMITTED mode). It must determine:</p>
+
+<ul>
+  <li><code class="language-plaintext highlighter-rouge">xmin</code> – The oldest XID that might still be running (nothing older can be
+considered in-progress).</li>
+  <li><code class="language-plaintext highlighter-rouge">xmax</code> – One past the latest XID that was assigned before this snapshot.</li>
+  <li><code class="language-plaintext highlighter-rouge">xip[]</code> – The list of XIDs that are currently in progress.</li>
+</ul>
+
+<p>The algorithm (simplified):</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>1.  Acquire ProcArrayLock in shared mode
+2.  Read the current nextXid as xmax
+3.  For each entry in ProcGlobal-&gt;xids[0..numProcs-1]:
+        if xid != InvalidTransactionId:
+            add xid to snapshot-&gt;xip[]
+            track oldest xid as xmin
+4.  Handle subtransaction XIDs (subxidStates[], subxids caches)
+5.  Release ProcArrayLock
+6.  Store xmin into MyProc-&gt;xmin (under lock)
+</code></pre></div></div>
+
+<p>This is PostgreSQL’s most contended read path. The dense array design ensures
+that step 3 touches minimal memory. On modern hardware with SIMD support,
+<code class="language-plaintext highlighter-rouge">pg_lfind32()</code> can be used to scan the XID array even faster.</p>
+
+<h3 id="the-subxid-cache">The Subxid Cache</h3>
+
+<p>Each PGPROC caches up to <code class="language-plaintext highlighter-rouge">PGPROC_MAX_CACHED_SUBXIDS</code> (64) subtransaction XIDs in
+its <code class="language-plaintext highlighter-rouge">subxids</code> array. If a transaction has more than 64 subtransactions, the cache
+overflows and <code class="language-plaintext highlighter-rouge">subxidStatus.overflowed</code> is set to <code class="language-plaintext highlighter-rouge">true</code>. When any cache has
+overflowed, <code class="language-plaintext highlighter-rouge">GetSnapshotData</code> must also consult <code class="language-plaintext highlighter-rouge">pg_subtrans</code> to determine
+subtransaction parentage, which is significantly slower.</p>
+
+<hr />
+
+<h2 id="key-data-structures">Key Data Structures</h2>
+
+<h3 id="pgproc-selected-fields">PGPROC (Selected Fields)</h3>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">struct</span> <span class="n">PGPROC</span>
+<span class="p">{</span>
+    <span class="cm">/* List management */</span>
+    <span class="n">dlist_node</span>    <span class="n">links</span><span class="p">;</span>
+    <span class="n">dlist_head</span>   <span class="o">*</span><span class="n">procgloballist</span><span class="p">;</span>      <span class="cm">/* Which freelist owns us */</span>
+
+    <span class="cm">/* Synchronization */</span>
+    <span class="n">PGSemaphore</span>   <span class="n">sem</span><span class="p">;</span>                 <span class="cm">/* Sleep semaphore (for LWLock waits) */</span>
+    <span class="n">ProcWaitStatus</span> <span class="n">waitStatus</span><span class="p">;</span>
+    <span class="n">Latch</span>         <span class="n">procLatch</span><span class="p">;</span>           <span class="cm">/* Wake-up signal from other procs */</span>
+
+    <span class="cm">/* Transaction identity */</span>
+    <span class="n">TransactionId</span> <span class="n">xid</span><span class="p">;</span>                 <span class="cm">/* Current top-level XID, or Invalid */</span>
+    <span class="n">TransactionId</span> <span class="n">xmin</span><span class="p">;</span>                <span class="cm">/* Oldest XID we consider running */</span>
+
+    <span class="cm">/* Process identity */</span>
+    <span class="kt">int</span>           <span class="n">pid</span><span class="p">;</span>                 <span class="cm">/* OS process ID; 0 for prepared xacts */</span>
+    <span class="kt">int</span>           <span class="n">pgxactoff</span><span class="p">;</span>           <span class="cm">/* Index into dense arrays */</span>
+    <span class="k">struct</span> <span class="p">{</span>
+        <span class="n">ProcNumber</span>    <span class="n">procNumber</span><span class="p">;</span>      <span class="cm">/* Slot number in allProcs */</span>
+        <span class="n">LocalTransactionId</span> <span class="n">lxid</span><span class="p">;</span>       <span class="cm">/* Local (virtual) transaction ID */</span>
+    <span class="p">}</span> <span class="n">vxid</span><span class="p">;</span>
+
+    <span class="n">Oid</span>           <span class="n">databaseId</span><span class="p">;</span>
+    <span class="n">Oid</span>           <span class="n">roleId</span><span class="p">;</span>
+    <span class="n">BackendType</span>   <span class="n">backendType</span><span class="p">;</span>
+
+    <span class="cm">/* Lock wait state */</span>
+    <span class="n">uint8</span>         <span class="n">lwWaiting</span><span class="p">;</span>
+    <span class="n">uint8</span>         <span class="n">lwWaitMode</span><span class="p">;</span>
+    <span class="n">proclist_node</span> <span class="n">lwWaitLink</span><span class="p">;</span>
+    <span class="n">LOCK</span>         <span class="o">*</span><span class="n">waitLock</span><span class="p">;</span>
+    <span class="n">PROCLOCK</span>     <span class="o">*</span><span class="n">waitProcLock</span><span class="p">;</span>
+
+    <span class="cm">/* Checkpoint delay */</span>
+    <span class="kt">int</span>           <span class="n">delayChkptFlags</span><span class="p">;</span>
+
+    <span class="cm">/* Status flags (mirrored in ProcGlobal-&gt;statusFlags) */</span>
+    <span class="n">uint8</span>         <span class="n">statusFlags</span><span class="p">;</span>         <span class="cm">/* PROC_IS_AUTOVACUUM, PROC_IN_VACUUM, etc. */</span>
+
+    <span class="cm">/* Subtransaction cache */</span>
+    <span class="n">XidCacheStatus</span> <span class="n">subxidStatus</span><span class="p">;</span>       <span class="cm">/* {count, overflowed} */</span>
+    <span class="k">struct</span> <span class="n">XidCache</span> <span class="n">subxids</span><span class="p">;</span>           <span class="cm">/* Up to 64 cached subxids */</span>
+
+    <span class="cm">/* Group XID clear (optimization for commit) */</span>
+    <span class="n">bool</span>          <span class="n">procArrayGroupMember</span><span class="p">;</span>
+    <span class="n">pg_atomic_uint32</span> <span class="n">procArrayGroupNext</span><span class="p">;</span>
+    <span class="n">TransactionId</span> <span class="n">procArrayGroupMemberXid</span><span class="p">;</span>
+
+    <span class="cm">/* Wait event tracking */</span>
+    <span class="n">uint32</span>        <span class="n">wait_event_info</span><span class="p">;</span>
+
+    <span class="cm">/* Fast-path locking */</span>
+    <span class="n">LWLock</span>        <span class="n">fpInfoLock</span><span class="p">;</span>
+    <span class="n">uint64</span>       <span class="o">*</span><span class="n">fpLockBits</span><span class="p">;</span>
+    <span class="n">Oid</span>          <span class="o">*</span><span class="n">fpRelId</span><span class="p">;</span>
+
+    <span class="cm">/* Lock groups (for parallel query) */</span>
+    <span class="n">PGPROC</span>       <span class="o">*</span><span class="n">lockGroupLeader</span><span class="p">;</span>
+    <span class="n">dlist_head</span>    <span class="n">lockGroupMembers</span><span class="p">;</span>
+    <span class="n">dlist_node</span>    <span class="n">lockGroupLink</span><span class="p">;</span>
+<span class="p">};</span>
+</code></pre></div></div>
+
+<h3 id="status-flags">Status Flags</h3>
+
+<table>
+  <thead>
+    <tr>
+      <th>Flag</th>
+      <th>Meaning</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">PROC_IS_AUTOVACUUM</code></td>
+      <td>This is an autovacuum worker</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">PROC_IN_VACUUM</code></td>
+      <td>Currently running VACUUM</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">PROC_IN_SAFE_IC</code></td>
+      <td>Running safe CREATE INDEX CONCURRENTLY</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">PROC_VACUUM_FOR_WRAPAROUND</code></td>
+      <td>Anti-wraparound vacuum</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">PROC_IN_LOGICAL_DECODING</code></td>
+      <td>Doing logical decoding outside a transaction</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">PROC_AFFECTS_ALL_HORIZONS</code></td>
+      <td>xmin counts for all databases</td>
+    </tr>
+  </tbody>
+</table>
+
+<hr />
+
+<h2 id="diagram-procarray-and-dense-arrays">Diagram: ProcArray and Dense Arrays</h2>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>ProcGlobal (PROC_HDR)
++-------------------------------------------------------+
+| allProcs  ----&gt;  [PGPROC 0] [PGPROC 1] ... [PGPROC N]|
+|                                                        |
+| xids[]           [  xid_0  ] [  xid_1  ] ... [xid_k]  |  Dense: only
+| subxidStates[]   [ state_0 ] [ state_1 ] ... [stat_k]  |  active procs,
+| statusFlags[]    [ flags_0 ] [ flags_1 ] ... [flg_k ]  |  k = numProcs
++-------------------------------------------------------+
+
+ProcArrayStruct
++-------------------------------------------------------+
+| numProcs = k                                           |
+| pgprocnos[] = [ 3, 7, 12, 0, ... ]                    |
+|                 |  |   |   |                           |
+|                 |  |   |   +-&gt; ProcGlobal-&gt;allProcs[0] |
+|                 |  |   +----&gt; ProcGlobal-&gt;allProcs[12] |
+|                 |  +--------&gt; ProcGlobal-&gt;allProcs[7]  |
+|                 +-----------&gt; ProcGlobal-&gt;allProcs[3]  |
++-------------------------------------------------------+
+
+Mapping:
+  ProcGlobal-&gt;xids[i]  mirrors  allProcs[pgprocnos[i]].xid
+  where i = allProcs[pgprocnos[i]].pgxactoff
+</code></pre></div></div>
+
+<hr />
+
+<h2 id="group-xid-clear-commit-optimization">Group XID Clear: Commit Optimization</h2>
+
+<p>When a transaction commits, it must clear its XID from the ProcArray. This requires
+<code class="language-plaintext highlighter-rouge">ProcArrayLock</code> in exclusive mode, which creates contention under high commit rates.</p>
+
+<p>The <strong>group XID clear</strong> optimization batches this work. Instead of each committing
+backend acquiring the lock individually:</p>
+
+<ol>
+  <li>The committing backend adds itself to a lock-free linked list
+(<code class="language-plaintext highlighter-rouge">procArrayGroupFirst</code>, linked via <code class="language-plaintext highlighter-rouge">procArrayGroupNext</code>).</li>
+  <li>The first backend in the group acquires <code class="language-plaintext highlighter-rouge">ProcArrayLock</code> exclusively.</li>
+  <li>It walks the list and clears the XID for every member.</li>
+  <li>It releases the lock and wakes all group members.</li>
+</ol>
+
+<p>This amortizes one lock acquisition across many commits, significantly reducing
+contention on write-heavy workloads.</p>
+
+<p>A similar group optimization exists for CLOG updates (<code class="language-plaintext highlighter-rouge">clogGroupFirst</code>).</p>
+
+<hr />
+
+<h2 id="visibility-horizons">Visibility Horizons</h2>
+
+<p>ProcArray computes several critical XID thresholds used by VACUUM and HOT pruning:</p>
+
+<ul>
+  <li>
+    <p><strong><code class="language-plaintext highlighter-rouge">GetOldestNonRemovableTransactionId()</code></strong> – The oldest XID that any running
+transaction, replication slot, or prepared transaction might need. VACUUM cannot
+remove tuples deleted by XIDs newer than this.</p>
+  </li>
+  <li>
+    <p><strong><code class="language-plaintext highlighter-rouge">GetOldestActiveTransactionId()</code></strong> – The oldest XID with an active transaction.
+Used for computing safe truncation points.</p>
+  </li>
+  <li>
+    <p><strong>GlobalVisTest</strong> – A two-phase visibility test that avoids scanning ProcArray
+on every visibility check. It computes <code class="language-plaintext highlighter-rouge">definitely_needed</code> and <code class="language-plaintext highlighter-rouge">maybe_needed</code>
+boundaries during snapshot creation, and only falls back to the full ProcArray
+scan when an XID falls in the ambiguous zone.</p>
+  </li>
+</ul>
+
+<hr />
+
+<h2 id="hot-standby-knownassignedxids">Hot Standby: KnownAssignedXids</h2>
+
+<p>On a streaming replica, backends do not run their own transactions with XIDs.
+However, the replica must know which XIDs are running on the primary to build
+correct snapshots. The <strong>KnownAssignedXids</strong> array (part of <code class="language-plaintext highlighter-rouge">ProcArrayStruct</code>)
+tracks these:</p>
+
+<ul>
+  <li><code class="language-plaintext highlighter-rouge">RecordKnownAssignedTransactionIds()</code> adds XIDs as they appear in WAL.</li>
+  <li><code class="language-plaintext highlighter-rouge">ExpireTreeKnownAssignedTransactionIds()</code> removes XIDs when their commit/abort
+records arrive.</li>
+  <li><code class="language-plaintext highlighter-rouge">GetSnapshotData()</code> on the standby merges KnownAssignedXids into the snapshot’s
+<code class="language-plaintext highlighter-rouge">xip[]</code> array.</li>
+</ul>
+
+<hr />
+
+<h2 id="connections">Connections</h2>
+
+<ul>
+  <li>
+    <p><strong><a href="shared-memory.md">Shared Memory</a></strong> – The entire PGPROC array and ProcArray
+are allocated from the fixed shared memory region at startup.</p>
+  </li>
+  <li>
+    <p><strong><a href="latches-and-events.md">Latches and Wait Events</a></strong> – <code class="language-plaintext highlighter-rouge">PGPROC.procLatch</code> is
+the primary mechanism for waking a backend. SetLatch is used after group XID
+clear to wake waiting committers.</p>
+  </li>
+  <li>
+    <p><strong>Chapter 3 (Transactions)</strong> – <code class="language-plaintext highlighter-rouge">GetSnapshotData()</code> is the bridge between IPC and
+MVCC. Snapshot <code class="language-plaintext highlighter-rouge">xmin</code>/<code class="language-plaintext highlighter-rouge">xmax</code>/<code class="language-plaintext highlighter-rouge">xip[]</code> directly determine tuple visibility.</p>
+  </li>
+  <li>
+    <p><strong>Chapter 5 (Locking)</strong> – PGPROC contains lock wait state (<code class="language-plaintext highlighter-rouge">waitLock</code>,
+<code class="language-plaintext highlighter-rouge">waitProcLock</code>, <code class="language-plaintext highlighter-rouge">lwWaitLink</code>) and fast-path lock slots.</p>
+  </li>
+  <li>
+    <p><strong>Chapter 8 (Executor)</strong> – Parallel query uses <code class="language-plaintext highlighter-rouge">lockGroupLeader</code> and
+<code class="language-plaintext highlighter-rouge">lockGroupMembers</code> in PGPROC to treat the leader and workers as a single lock
+group, preventing self-deadlock.</p>
+  </li>
+</ul>
+
+
+      <hr>
+
+      <!-- Prev / Next / Up navigation -->
+      
+      
+      
+
+      <div class="clearfix" style="margin-top: 2rem;">
+        
+          
+          
+
+          
+            
+            <a class="btn btn-primary float-left" href="/postgresql/11-ipc/message-queues.html" title="Message Queues">&larr; Previous</a>
+          
+
+          
+            
+            <a class="btn btn-primary float-right" href="/postgresql/11-ipc/shared-memory.html" title="Shared Memory">Next &rarr;</a>
+          
+        
+      </div>
+
+      
+      <div style="text-align: center; margin-top: 1rem;">
+        <a href="/postgresql-internals/">&uarr; Back to Table of Contents</a>
+      </div>
+      
+
+    </div>
+  </div>
+</div>
+
+
+  <!-- Footer -->
+
+<hr>
+
+<footer>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <ul class="list-inline text-center">
+          
+          <li class="list-inline-item">
+            <a href="mailto:amitava.dev@proton.me" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="far fa-envelope fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          
+          
+          <li class="list-inline-item">
+            <a href="https://www.linkedin.com/in/amitavaag" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-linkedin fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          <li class="list-inline-item">
+            <a href="https://github.com/ikouchiha47" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-github fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+        </ul>
+
+        <p class="copyright text-muted">
+          Build with: 
+          <a 
+            href="https://github.com/StartBootstrap/startbootstrap-clean-blog-jekyll"
+            class="text-gray"
+            target="_blank">startbootstrap-clean-blog-jekyll</a></p>
+      </div>
+    </div>
+  </div>
+</footer>
+
+
+  <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="/assets/vendor/blog/js/scripts.js"></script>
+
+<script src="/assets/scripts.js"></script>
+
+
+
+
+
+  <script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+
+    document.querySelectorAll('pre > code.language-mermaid').forEach((codeBlock) => {
+      codeBlock.parentElement.outerHTML = `<pre class="mermaid">${codeBlock.textContent}</pre>`;
+    });
+
+
+    mermaid.initialize({ startOnLoad: true, theme: 'forest' });
+</script>
+
+
+  
+
+</body>
+
+</html>

@@ -1,0 +1,498 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+  <title>
+    IPC - iko&#39;s logs
+    
+  </title>
+
+  <meta name="description" content="">
+  <meta property="og:description" content="">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="IPC">
+  <meta property="og:url" content="https://ikouchiha47.github.io/postgresql/11-ipc/">
+
+  
+
+  <link href='https://fonts.googleapis.com/css?family=Lora:400,700,400italic,700italic' rel='stylesheet' type='text/css'>
+  <link href='https://fonts.googleapis.com/css?family=Open+Sans:300italic,400italic,600italic,700italic,800italic,400,300,600,700,800' rel='stylesheet' type='text/css'>
+
+  <!-- <script src="https://use.fontawesome.com/releases/v5.15.3/js/all.js" crossorigin="anonymous"></script> -->
+  <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.15.4/css/all.css" integrity="sha384-DyZ88mC6Up2uqS4h/KRgHuoeGwBcD4Ng9SiP4dIRy0EXTlnuz47vAwmeGwVChigm" crossorigin="anonymous"/>
+
+  <link rel="stylesheet" href="/assets/main.css">
+  <link rel="canonical" href="https://ikouchiha47.github.io/postgresql/11-ipc/">
+  <link rel="alternate" type="application/rss+xml" title="iko&#39;s logs" href="/feed.xml">
+
+  <meta name="google-site-verification" content="lWkg6gIxJgzEKX_5XnhcxCtPE9QknaimFWWos_dTvPM" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fira+Sans:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Inconsolata:wght@200..900&family=Jersey+25&family=Kanit:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Merriweather+Sans:ital,wght@0,300..800;1,300..800&family=Nanum+Gothic+Coding&family=Space+Grotesk:wght@300..700&family=Titillium+Web:ital,wght@0,200;0,300;0,400;0,600;0,700;0,900;1,200;1,300;1,400;1,600;1,700&display=swap" rel="stylesheet">
+
+</head>
+
+
+<body>
+
+  <!-- Navigation -->
+<nav class="navbar navbar-expand-lg navbar-light fixed-top" id="mainNav">
+  <div class="container">
+    <a class="navbar-brand" href="/">iko&#39;s logs</a>
+    <button class="navbar-toggler navbar-toggler-right" type="button" data-toggle="collapse" data-target="#navbarResponsive" aria-controls="navbarResponsive" aria-expanded="false" aria-label="Toggle navigation">
+      Menu
+      <i class="fa fa-bars"></i>
+    </button>
+    <div class="collapse navbar-collapse" id="navbarResponsive">
+      <ul class="navbar-nav ml-auto">
+        <li class="nav-item">
+          <a class="nav-link" href="/">Home</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/about">About</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/posts">Posts</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/contact">Contact</a>
+        </li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+
+  <!-- Page Header -->
+
+<header class="masthead">
+
+  <div class="overlay"></div>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <div class="post-heading">
+          <h1>IPC</h1>
+          
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="container space-grotesk">
+  <div class="row">
+    <div class="col-lg-8 col-md-10 mx-auto">
+
+      <!-- Breadcrumb -->
+      <nav aria-label="breadcrumb" style="margin-bottom: 1.5rem;">
+        <ol class="breadcrumb" style="background: transparent; padding: 0;">
+          
+            <li class="breadcrumb-item"><a href="/postgresql-internals/">PostgreSQL Internals Deep Dive</a></li>
+          
+          
+          <li class="breadcrumb-item active" aria-current="page">IPC</li>
+        </ol>
+      </nav>
+
+      <h1 id="chapter-11-inter-process-communication">Chapter 11: Inter-Process Communication</h1>
+
+<p>PostgreSQL is a multi-process system. Every client connection gets its own backend
+process, and a constellation of auxiliary processes (checkpointer, background writer,
+WAL writer, autovacuum, etc.) runs alongside them. These processes must coordinate
+constantly: they share buffer pages, transaction state, lock tables, and statistics.
+The IPC subsystem provides the primitives that make all of this work.</p>
+
+<hr />
+
+<h2 id="why-ipc-matters">Why IPC Matters</h2>
+
+<p>A single <code class="language-plaintext highlighter-rouge">SELECT</code> touches IPC in at least three ways:</p>
+
+<ol>
+  <li><strong>Shared memory</strong> – the backend reads buffer pages and catalog caches that live
+in a memory region mapped into every process.</li>
+  <li><strong>ProcArray</strong> – to build a snapshot the backend scans dense arrays in shared
+memory that track every running transaction.</li>
+  <li><strong>Latches</strong> – when the backend needs to wait (for a lock, for WAL flush, for I/O
+completion) it sleeps on a latch that another process will set.</li>
+</ol>
+
+<p>Parallel queries add two more:</p>
+
+<ol>
+  <li><strong>Dynamic shared memory (DSM)</strong> – the leader allocates a segment that workers
+attach to, holding query state and tuple queues.</li>
+  <li><strong>Shared-memory message queues (<code class="language-plaintext highlighter-rouge">shm_mq</code>)</strong> – workers stream result tuples back
+to the leader through lock-free ring buffers in that DSM segment.</li>
+</ol>
+
+<hr />
+
+<h2 id="subsystem-map">Subsystem Map</h2>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>+----------------------------------------------------------------------+
+|                        Postmaster (pid 1)                            |
+|   Creates the main shared memory region at startup via shmem.c       |
++----------------------------------------------------------------------+
+        |  fork()
+        v
++------------------+  +------------------+  +------------------+
+| Backend (pid N)  |  | Backend (pid M)  |  | Checkpointer     |
+|                  |  |                  |  |                  |
+| MyProc (PGPROC)  |  | MyProc (PGPROC)  |  | MyProc (PGPROC)  |
+| procLatch        |  | procLatch        |  | procLatch        |
++--------+---------+  +--------+---------+  +--------+---------+
+         |                     |                      |
+         +----------+----------+----------------------+
+                    |
+         +----------v-----------+
+         |   Main Shared Memory  |
+         |                       |
+         |  +------------------+ |
+         |  | Shmem Index      | |   shmem.c -- hash table of named regions
+         |  +------------------+ |
+         |  | Buffer Pool      | |   bufmgr.c
+         |  +------------------+ |
+         |  | Lock Tables      | |   lock.c, lwlock.c
+         |  +------------------+ |
+         |  | ProcArray        | |   procarray.c -- dense XID arrays
+         |  +------------------+ |
+         |  | PGPROC[]         | |   proc.c -- per-process structs
+         |  +------------------+ |
+         |  | DSM Control      | |   dsm.c -- tracks dynamic segments
+         |  +------------------+ |
+         +-----------+-----------+
+                     |
+         +-----------v-----------+
+         | Dynamic Shared Memory  |
+         |  (per parallel query)  |
+         |                        |
+         |  shm_toc (TOC)         |
+         |  shm_mq  (ring bufs)  |
+         |  query state, params   |
+         +------------------------+
+</code></pre></div></div>
+
+<hr />
+
+<h2 id="key-source-files">Key Source Files</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>File</th>
+      <th>Purpose</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/storage/ipc/shmem.c</code></td>
+      <td>Fixed shared memory allocator and Shmem Index</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/storage/ipc/ipci.c</code></td>
+      <td>Orchestrates shared memory initialization at startup</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/storage/ipc/dsm.c</code></td>
+      <td>Dynamic shared memory segment lifecycle</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/storage/ipc/dsm_impl.c</code></td>
+      <td>Platform backends for DSM (POSIX, SysV, mmap, Windows)</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/storage/ipc/latch.c</code></td>
+      <td>Latch set/reset/wait primitives</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/storage/ipc/waiteventset.c</code></td>
+      <td>Multiplexed waiting (epoll/kqueue/poll/Windows)</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/storage/ipc/procarray.c</code></td>
+      <td>ProcArray management and snapshot construction</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/storage/lmgr/proc.c</code></td>
+      <td>PGPROC initialization and process sleep/wakeup</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/storage/ipc/shm_mq.c</code></td>
+      <td>Single-reader single-writer shared memory queues</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/storage/ipc/shm_toc.c</code></td>
+      <td>Table of contents for DSM segments</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/storage/ipc/pmsignal.c</code></td>
+      <td>Postmaster signal management</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/storage/ipc/procsignal.c</code></td>
+      <td>Inter-backend signaling (SIGUSR1-based)</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/storage/ipc/sinvaladt.c</code></td>
+      <td>Shared invalidation message infrastructure</td>
+    </tr>
+  </tbody>
+</table>
+
+<hr />
+
+<h2 id="chapter-roadmap">Chapter Roadmap</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>Section</th>
+      <th>What You Will Learn</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><a href="shared-memory.md">Shared Memory</a></td>
+      <td>How the main shared memory region is created and subdivided; dynamic shared memory for parallel queries; the four DSM implementation backends</td>
+    </tr>
+    <tr>
+      <td><a href="latches-and-events.md">Latches and Wait Events</a></td>
+      <td>How processes sleep and wake each other; the Latch abstraction; WaitEventSet and its platform-specific implementations; the self-pipe trick vs epoll/kqueue</td>
+    </tr>
+    <tr>
+      <td><a href="procarray.md">ProcArray and PGPROC</a></td>
+      <td>The PGPROC struct that represents every process in shared memory; how ProcArray tracks running transactions; how GetSnapshotData builds MVCC snapshots from dense arrays</td>
+    </tr>
+    <tr>
+      <td><a href="message-queues.md">Message Queues</a></td>
+      <td>shm_mq ring buffers for parallel worker communication; shm_toc for organizing DSM segments; how parallel query moves tuples between processes</td>
+    </tr>
+  </tbody>
+</table>
+
+<hr />
+
+<h2 id="the-initialization-sequence">The Initialization Sequence</h2>
+
+<p>When the postmaster starts, <code class="language-plaintext highlighter-rouge">CreateSharedMemoryAndSemaphores()</code> in <code class="language-plaintext highlighter-rouge">ipci.c</code>
+orchestrates the creation of the entire shared memory region:</p>
+
+<ol>
+  <li>
+    <p><strong>Calculate total size</strong> – <code class="language-plaintext highlighter-rouge">CalculateShmemSize()</code> calls every subsystem’s
+<code class="language-plaintext highlighter-rouge">*ShmemSize()</code> function (e.g., <code class="language-plaintext highlighter-rouge">BufferShmemSize()</code>, <code class="language-plaintext highlighter-rouge">ProcArrayShmemSize()</code>,
+<code class="language-plaintext highlighter-rouge">LockShmemSize()</code>) and sums the results.</p>
+  </li>
+  <li>
+    <p><strong>Create the OS-level segment</strong> – <code class="language-plaintext highlighter-rouge">PGSharedMemoryCreate()</code> calls into the
+platform layer (<code class="language-plaintext highlighter-rouge">sysv_shmem.c</code> or <code class="language-plaintext highlighter-rouge">win32_shmem.c</code>) to allocate the region.</p>
+  </li>
+  <li>
+    <p><strong>Initialize the allocator</strong> – <code class="language-plaintext highlighter-rouge">InitShmemAllocator()</code> sets up the bump allocator
+that hands out chunks from the region.</p>
+  </li>
+  <li>
+    <p><strong>Initialize the Shmem Index</strong> – <code class="language-plaintext highlighter-rouge">InitShmemIndex()</code> creates the hash table that
+maps string names to locations within the segment.</p>
+  </li>
+  <li>
+    <p><strong>Initialize each subsystem</strong> – <code class="language-plaintext highlighter-rouge">CreateOrAttachShmemStructs()</code> calls every
+subsystem’s <code class="language-plaintext highlighter-rouge">*ShmemInit()</code> function. Each one uses <code class="language-plaintext highlighter-rouge">ShmemInitStruct()</code> to either
+allocate a new chunk or attach to an existing one (important for <code class="language-plaintext highlighter-rouge">EXEC_BACKEND</code>
+platforms where backends cannot simply inherit pointers via <code class="language-plaintext highlighter-rouge">fork()</code>).</p>
+  </li>
+  <li>
+    <p><strong>Initialize DSM control</strong> – <code class="language-plaintext highlighter-rouge">dsm_postmaster_startup()</code> sets up the control
+segment that tracks all dynamic shared memory segments.</p>
+  </li>
+  <li>
+    <p><strong>Run extension hooks</strong> – <code class="language-plaintext highlighter-rouge">shmem_startup_hook</code> lets extensions like <code class="language-plaintext highlighter-rouge">pg_stat_statements</code>
+allocate their own shared memory regions.</p>
+  </li>
+</ol>
+
+<hr />
+
+<h2 id="how-ipc-connects-to-other-subsystems">How IPC Connects to Other Subsystems</h2>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>    Locking (Ch 5)                Transactions (Ch 3)
+    LWLocks protect               Snapshots built from
+    shared memory structures      ProcArray dense arrays
+         |                              |
+         +------+               +-------+
+                |               |
+                v               v
+         +------+---------------+------+
+         |       IPC Subsystem          |
+         |  shmem, DSM, latches,        |
+         |  ProcArray, shm_mq           |
+         +------+---------------+------+
+                |               |
+         +------+               +-------+
+         |                              |
+         v                              v
+    Buffer Manager (Ch 1)         Executor (Ch 8)
+    Buffer descriptors and        Parallel query uses
+    pages live in shared memory   DSM + shm_mq for workers
+</code></pre></div></div>
+
+<hr />
+
+<h2 id="connections">Connections</h2>
+
+<ul>
+  <li>
+    <p><strong>Chapter 1 (Storage)</strong> – The buffer pool is the largest consumer of shared memory.
+Buffer descriptors, the buffer mapping hash table, and the actual page frames are
+all allocated from the main shared memory region during startup.</p>
+  </li>
+  <li>
+    <p><strong>Chapter 3 (Transactions)</strong> – MVCC snapshots are built by reading ProcArray’s
+dense XID arrays. The <code class="language-plaintext highlighter-rouge">xmin</code> horizon that controls tuple visibility and vacuum
+is computed from these same arrays.</p>
+  </li>
+  <li>
+    <p><strong>Chapter 5 (Locking)</strong> – LWLocks and heavyweight locks both reside in shared
+memory. Latches are the sleep/wakeup mechanism underneath lock waits.</p>
+  </li>
+  <li>
+    <p><strong>Chapter 8 (Executor)</strong> – Parallel query creates DSM segments, attaches <code class="language-plaintext highlighter-rouge">shm_toc</code>
+tables of contents, and uses <code class="language-plaintext highlighter-rouge">shm_mq</code> queues to stream tuples between the leader
+and worker processes.</p>
+  </li>
+  <li>
+    <p><strong>Chapter 10 (Memory)</strong> – DSA (Dynamic Shared Area) builds on top of DSM to
+provide a <code class="language-plaintext highlighter-rouge">palloc</code>-like allocator within dynamic shared memory segments.</p>
+  </li>
+  <li>
+    <p><strong>Chapter 12 (Replication)</strong> – WAL sender and receiver processes use latches and
+shared memory to coordinate streaming replication state.</p>
+  </li>
+</ul>
+
+
+      <hr>
+
+      <!-- Prev / Next / Up navigation -->
+      
+      
+      
+
+      <div class="clearfix" style="margin-top: 2rem;">
+        
+          
+          
+
+          
+            
+            <a class="btn btn-primary float-left" href="/postgresql/10-memory/resource-owners.html" title="Resource Owners">&larr; Previous</a>
+          
+
+          
+            
+            <a class="btn btn-primary float-right" href="/postgresql/11-ipc/latches-and-events.html" title="Latches and Wait Events">Next &rarr;</a>
+          
+        
+      </div>
+
+      
+      <div style="text-align: center; margin-top: 1rem;">
+        <a href="/postgresql-internals/">&uarr; Back to Table of Contents</a>
+      </div>
+      
+
+    </div>
+  </div>
+</div>
+
+
+  <!-- Footer -->
+
+<hr>
+
+<footer>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <ul class="list-inline text-center">
+          
+          <li class="list-inline-item">
+            <a href="mailto:amitava.dev@proton.me" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="far fa-envelope fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          
+          
+          <li class="list-inline-item">
+            <a href="https://www.linkedin.com/in/amitavaag" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-linkedin fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          <li class="list-inline-item">
+            <a href="https://github.com/ikouchiha47" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-github fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+        </ul>
+
+        <p class="copyright text-muted">
+          Build with: 
+          <a 
+            href="https://github.com/StartBootstrap/startbootstrap-clean-blog-jekyll"
+            class="text-gray"
+            target="_blank">startbootstrap-clean-blog-jekyll</a></p>
+      </div>
+    </div>
+  </div>
+</footer>
+
+
+  <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="/assets/vendor/blog/js/scripts.js"></script>
+
+<script src="/assets/scripts.js"></script>
+
+
+
+
+
+  <script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+
+    document.querySelectorAll('pre > code.language-mermaid').forEach((codeBlock) => {
+      codeBlock.parentElement.outerHTML = `<pre class="mermaid">${codeBlock.textContent}</pre>`;
+    });
+
+
+    mermaid.initialize({ startOnLoad: true, theme: 'forest' });
+</script>
+
+
+  
+
+</body>
+
+</html>

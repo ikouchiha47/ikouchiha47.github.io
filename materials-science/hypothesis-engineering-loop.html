@@ -1,0 +1,689 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+  <title>
+    From Paper Chaos to Testable Hypotheses - iko&#39;s logs
+    
+  </title>
+
+  <meta name="description" content="">
+  <meta property="og:description" content="">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="From Paper Chaos to Testable Hypotheses">
+  <meta property="og:url" content="https://ikouchiha47.github.io/materials-science/hypothesis-engineering-loop.html">
+
+  
+
+  <link href='https://fonts.googleapis.com/css?family=Lora:400,700,400italic,700italic' rel='stylesheet' type='text/css'>
+  <link href='https://fonts.googleapis.com/css?family=Open+Sans:300italic,400italic,600italic,700italic,800italic,400,300,600,700,800' rel='stylesheet' type='text/css'>
+
+  <!-- <script src="https://use.fontawesome.com/releases/v5.15.3/js/all.js" crossorigin="anonymous"></script> -->
+  <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.15.4/css/all.css" integrity="sha384-DyZ88mC6Up2uqS4h/KRgHuoeGwBcD4Ng9SiP4dIRy0EXTlnuz47vAwmeGwVChigm" crossorigin="anonymous"/>
+
+  <link rel="stylesheet" href="/assets/main.css">
+  <link rel="canonical" href="https://ikouchiha47.github.io/materials-science/hypothesis-engineering-loop.html">
+  <link rel="alternate" type="application/rss+xml" title="iko&#39;s logs" href="/feed.xml">
+
+  <meta name="google-site-verification" content="lWkg6gIxJgzEKX_5XnhcxCtPE9QknaimFWWos_dTvPM" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fira+Sans:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Inconsolata:wght@200..900&family=Jersey+25&family=Kanit:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Merriweather+Sans:ital,wght@0,300..800;1,300..800&family=Nanum+Gothic+Coding&family=Space+Grotesk:wght@300..700&family=Titillium+Web:ital,wght@0,200;0,300;0,400;0,600;0,700;0,900;1,200;1,300;1,400;1,600;1,700&display=swap" rel="stylesheet">
+
+</head>
+
+
+<body>
+
+  <!-- Navigation -->
+<nav class="navbar navbar-expand-lg navbar-light fixed-top" id="mainNav">
+  <div class="container">
+    <a class="navbar-brand" href="/">iko&#39;s logs</a>
+    <button class="navbar-toggler navbar-toggler-right" type="button" data-toggle="collapse" data-target="#navbarResponsive" aria-controls="navbarResponsive" aria-expanded="false" aria-label="Toggle navigation">
+      Menu
+      <i class="fa fa-bars"></i>
+    </button>
+    <div class="collapse navbar-collapse" id="navbarResponsive">
+      <ul class="navbar-nav ml-auto">
+        <li class="nav-item">
+          <a class="nav-link" href="/">Home</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/about">About</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/posts">Posts</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/contact">Contact</a>
+        </li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+
+  <!-- Page Header -->
+
+<header class="masthead">
+
+  <div class="overlay"></div>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <div class="post-heading">
+          <h1>From Paper Chaos to Testable Hypotheses</h1>
+          
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="container space-grotesk">
+  <div class="row">
+    <div class="col-lg-8 col-md-10 mx-auto">
+
+      <!-- Breadcrumb -->
+      <nav aria-label="breadcrumb" style="margin-bottom: 1.5rem;">
+        <ol class="breadcrumb" style="background: transparent; padding: 0;">
+          
+            <li class="breadcrumb-item"><a href="/p/b8e2c4/materials-science-notes/">Materials Science Engineering Notes</a></li>
+          
+          
+          <li class="breadcrumb-item active" aria-current="page">From Paper Chaos to Testable Hypotheses</li>
+        </ol>
+      </nav>
+
+      <p>A materials science researcher reads a new preprint about LK-99. Then another. Then eight more, each contradicting the last. Some claim superconductivity. Others blame Cu2S impurities. One reports diamagnetic response above the transition. Another shows XRD peaks that should not be there.</p>
+
+<p>The researcher is not confused because they lack expertise. They are stuck because the literature itself is conflicted, and the cost of testing the wrong hypothesis first is three weeks of compute time and a grad student’s morale.</p>
+
+<p>This is the problem we built for.</p>
+
+<h2 id="what-a-researcher-actually-needs">What a Researcher Actually Needs</h2>
+
+<p>Before diving into architecture, consider what a materials researcher dealing with a contested claim actually needs:</p>
+
+<ol>
+  <li><strong>A ranked reading of the evidence</strong> — not “here are ten papers”, but “here is what they collectively say, where they disagree, and which disagreement is most testable.”</li>
+  <li><strong>A concrete test plan</strong> — not “consider running first-principles calculations”, but a workspace with scripts, validation targets, and success criteria ready to execute.</li>
+  <li><strong>Material candidates evaluated before the expensive run</strong> — not “Cu2S is worth investigating”, but “here is the energy landscape for Cu2S, Ag2S, and Cu2Se from ML predictions, and here is which one actually discriminates between hypotheses.”</li>
+  <li><strong>An audit trail that a PI can review</strong> — every hypothesis traces back to specific paper sections, every experiment has explicit falsification criteria, every result is JSON-serializable.</li>
+</ol>
+
+<h2 id="the-core-loop">The Core Loop</h2>
+
+<p>Our system runs a three-part loop:</p>
+
+<ol>
+  <li>Read and cross-reference a paper set.</li>
+  <li>Generate ranked hypotheses with falsification criteria.</li>
+  <li>Materialize those hypotheses into executable experiment workspaces.</li>
+</ol>
+
+<pre><code class="language-mermaid">graph LR
+    P[Paper Set] --&gt; H[Hypothesis Generation]
+    H --&gt; W[Workspace Assembly]
+    W --&gt; E[Experiment Execution]
+    E --&gt; J[Final Evaluation]
+    J --&gt; N[Next Iteration]
+    N --&gt; H
+    style P fill:#f3f4f6,stroke:#6366f1,color:#111827
+    style N fill:#eef2ff,stroke:#6366f1,color:#111827
+</code></pre>
+
+<p>The important detail: each stage emits structured outputs, not freeform text. That keeps the system composable and debuggable.</p>
+
+<h2 id="stage-1-hypothesis-generation-across-a-paper-chain">Stage 1: Hypothesis Generation Across a Paper Chain</h2>
+
+<p>The hypothesis engine does not produce one “best guess” and stop. It builds a ranked set of testable claims, each with:</p>
+
+<ul>
+  <li>a mechanism statement</li>
+  <li>supporting and counter evidence from specific paper sections</li>
+  <li>explicit falsification criteria</li>
+  <li>suggested experimental methods with estimated cost</li>
+  <li>physical parameters extracted from the corpus</li>
+</ul>
+
+<p>Think of it as a compiler pass over literature. Raw prose in, typed claims out.</p>
+
+<p>A typical deep pass over a paper chain uses a phased strategy:</p>
+
+<ul>
+  <li>scan the full corpus for contradictions and convergences</li>
+  <li>deep-read high-signal sections (results, methods, supplementary data)</li>
+  <li>synthesize contradictions into ranked hypotheses with confidence scores</li>
+</ul>
+
+<p>This separation matters. Without it, systems either stay shallow or burn cycles in unstructured exploration. A researcher already knows how to deep-read one paper. What they cannot do efficiently is cross-reference ten papers, identify the three testable disagreements, and rank them by information gain.</p>
+
+<h3 id="what-a-generated-hypothesis-actually-looks-like">What a Generated Hypothesis Actually Looks Like</h3>
+
+<p>This is a trimmed output from a real run against the LK-99 paper corpus:</p>
+
+<div class="language-json highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="p">{</span><span class="w">
+  </span><span class="nl">"hypothesis_id"</span><span class="p">:</span><span class="w"> </span><span class="s2">"H001"</span><span class="p">,</span><span class="w">
+  </span><span class="nl">"statement"</span><span class="p">:</span><span class="w"> </span><span class="s2">"The anomalous resistivity drop observed in LK-99 at ~385 K is caused by a first-order structural phase transition in Cu2S impurity phases, not superconductivity."</span><span class="p">,</span><span class="w">
+  </span><span class="nl">"confidence"</span><span class="p">:</span><span class="w"> </span><span class="mf">0.75</span><span class="p">,</span><span class="w">
+  </span><span class="nl">"mechanism"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Cu2S undergoes a known monoclinic-to-hexagonal phase transition at 377-380 K, causing a sudden change in resistivity of Cu2S inclusions embedded in the Pb-apatite matrix."</span><span class="p">,</span><span class="w">
+  </span><span class="nl">"supporting_evidence"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="w">
+    </span><span class="p">{</span><span class="nl">"paper_id"</span><span class="p">:</span><span class="w"> </span><span class="s2">"2307.12008"</span><span class="p">,</span><span class="w"> </span><span class="nl">"finding"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Sharp resistivity drop at ~385 K in polycrystalline LK-99"</span><span class="p">},</span><span class="w">
+    </span><span class="p">{</span><span class="nl">"paper_id"</span><span class="p">:</span><span class="w"> </span><span class="s2">"2308.01516"</span><span class="p">,</span><span class="w"> </span><span class="nl">"finding"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Cu2S phase detected via XRD in LK-99 samples"</span><span class="p">}</span><span class="w">
+  </span><span class="p">],</span><span class="w">
+  </span><span class="nl">"counter_evidence"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="w">
+    </span><span class="p">{</span><span class="nl">"paper_id"</span><span class="p">:</span><span class="w"> </span><span class="s2">"2307.12037"</span><span class="p">,</span><span class="w"> </span><span class="nl">"finding"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Diamagnetic response persists above 385 K in some samples"</span><span class="p">}</span><span class="w">
+  </span><span class="p">],</span><span class="w">
+  </span><span class="nl">"falsification_criteria"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="w">
+    </span><span class="s2">"Cu2S phase transition temperature differs from observed LK-99 transition by &gt; 20 K"</span><span class="p">,</span><span class="w">
+    </span><span class="s2">"Cu2S resistivity change at transition is &lt; 10% of LK-99 observed change"</span><span class="p">,</span><span class="w">
+    </span><span class="s2">"No Cu2S detected in XRD patterns of samples showing resistivity drop"</span><span class="w">
+  </span><span class="p">]</span><span class="w">
+</span><span class="p">}</span><span class="w">
+</span></code></pre></div></div>
+
+<p>Every hypothesis carries explicit falsification criteria. The system is not trying to confirm a belief. It is trying to find the fastest way to rule one out.</p>
+
+<p>For a researcher, this means the first conversation with a PI about which experiment to run next starts with data, not intuition. For a group with limited compute budget, it means the most information-dense experiment gets priority.</p>
+
+<h3 id="what-this-produced-in-a-real-run">What This Produced in a Real Run</h3>
+
+<p>We ran this pipeline end-to-end against the LK-99 corpus: ten papers spanning the original claim, replication attempts, and debunking analyses.</p>
+
+<p>The hypothesis engine generated three ranked hypotheses. H001 (Cu2S phase transition, confidence 0.75) was selected for workspace execution. The system then generated experiment instructions, provisioned a Docker container with compute access, and ran five experiments autonomously:</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>Stage</th>
+      <th>Duration</th>
+      <th>What happened</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Hypothesis generation</td>
+      <td>~30 seconds</td>
+      <td>3 ranked hypotheses with falsification criteria</td>
+    </tr>
+    <tr>
+      <td>Instruction synthesis</td>
+      <td>~15 seconds</td>
+      <td><code class="language-plaintext highlighter-rouge">instructions.md</code> + <code class="language-plaintext highlighter-rouge">hypothesis.json</code> + <code class="language-plaintext highlighter-rouge">physical_parameters.json</code></td>
+    </tr>
+    <tr>
+      <td>Workspace provisioning</td>
+      <td>~2.5 minutes</td>
+      <td>Container with compute API client, templates, data files</td>
+    </tr>
+    <tr>
+      <td>Experiment execution</td>
+      <td>~16.5 minutes</td>
+      <td>5 Python scripts written, executed, outputs verified</td>
+    </tr>
+    <tr>
+      <td>Analysis report</td>
+      <td>~3.5 minutes</td>
+      <td>Structured verdict with evidence chain</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>The runner agent wrote each script, called the compute gateway for ML predictions and materials database queries, verified outputs against validation targets, and moved to the next experiment. When one script produced an unexpected energy value, the agent flagged it in the results rather than silently continuing.</p>
+
+<p>The final analysis report scored 5 out of 5 on target keyword coverage and produced a composite evaluation score of 1.0 against the held-out resolution paper. The system correctly identified the Cu2S phase transition as the dominant mechanism, consistent with the later consensus in the literature.</p>
+
+<blockquote>
+  <p><em>This does not mean the system is complete or the best at what it does. It is one data point on one controversy. The value is having a repeatable evaluation harness — run it against different paper sets, different domains, and see how the system fares against both manual review and other autonomous discovery approaches. The score tells you where you are, not that you’ve arrived.</em></p>
+</blockquote>
+
+<blockquote>
+  <p><strong>Important caveat:</strong> The LK-99 controversy was widely covered and discussed before the foundational model’s training cutoff. The papers, the debates, and the eventual consensus were all in the training data. So scoring 5/5 here doesn’t demonstrate true discovery — it demonstrates that the system can structure and surface what the model already knows. A fairer test would use a controversy that resolved <em>after</em> the model’s training cutoff, where the model genuinely cannot have seen the answer. Until that test is run, this score measures retrieval and reasoning architecture, not novel scientific discovery.</p>
+</blockquote>
+
+<p>Total wall-clock time from “here are ten papers” to “here is a scientific verdict with evidence”: approximately 23 minutes.</p>
+
+<p>For context, a graduate student doing this manually — reading the papers, setting up the calculations, running them, and writing an analysis — would typically need one to two weeks.</p>
+
+<h2 id="material-discovery-is-part-of-the-loop-not-a-separate-workflow">Material Discovery Is Part of the Loop, Not a Separate Workflow</h2>
+
+<p>The biggest shift is this: hypothesis generation and material discovery are not sequential stages. They are coupled in the same agent loop.</p>
+
+<p>When the agent proposes a mechanism, it can immediately test feasibility against candidate materials, known structures, and computed properties through its tool set. That changes the role of discovery from “later validation” to “real-time pruning.”</p>
+
+<h3 id="the-design_material-tool-from-one-hypothesis-to-a-material-family">The <code class="language-plaintext highlighter-rouge">design_material</code> Tool: From One Hypothesis to a Material Family</h3>
+
+<p>This is where the loop gets interesting for researchers who think in terms of compositional space, not individual compounds.</p>
+
+<p>The system includes a <code class="language-plaintext highlighter-rouge">design_material</code> tool that proposes new material compositions by element substitution on known crystal structures. Given a source structure from a materials property database and a substitution map, it:</p>
+
+<ol>
+  <li>Applies the substitution to the crystal structure (e.g., replace all Cu atoms with Ag)</li>
+  <li>Runs an ML property prediction on the modified structure (~1 second)</li>
+  <li>Returns predicted energy, forces, stability assessment, lattice parameters, and a CIF file</li>
+  <li>Registers the designed material as a trackable entity in the answer state</li>
+</ol>
+
+<p>This is not a lookup. It is a structural transformation followed by a physics prediction.</p>
+
+<h3 id="derived-hypotheses-how-one-experiment-spawns-the-next">Derived Hypotheses: How One Experiment Spawns the Next</h3>
+
+<p>Here is the pattern that makes this a loop rather than a pipeline:</p>
+
+<p>Suppose H001 states that Cu2S impurity phase transitions explain the LK-99 resistivity anomaly. The agent runs experiments on Cu2S and the evidence supports the hypothesis. A naive system would stop here and declare victory.</p>
+
+<p>But a materials researcher would immediately ask: <em>Does this mechanism generalize? What about Ag2S? Cu2Se? What if I substitute the cation and the transition disappears?</em></p>
+
+<p>This is exactly what the next iteration does. The agent can call <code class="language-plaintext highlighter-rouge">design_material</code> to create Ag2S from the Cu2S template:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>design_material(
+  material_id="mp-560588",     # Cu2S (chalcocite)
+  substitutions={"Cu": "Ag"},  # Replace Cu with Ag
+  relax=True                   # Predict properties with ML potential
+)
+</code></pre></div></div>
+
+<p>The ML potential returns the predicted energy landscape for Ag2S. If the monoclinic-to-hexagonal transition energy differs significantly from Cu2S, that strengthens H001 by providing a negative control: a structurally related sulfide where the mechanism should not produce the same resistivity anomaly.</p>
+
+<p>This generates a derived hypothesis:</p>
+
+<blockquote>
+  <p><strong>H001a:</strong> “If the Cu2S phase transition mechanism is correct, substituting Cu with Ag should eliminate the resistivity anomaly near 385 K, because Ag2S undergoes its monoclinic-to-orthorhombic transition at 450 K — outside the LK-99 observation window.”</p>
+</blockquote>
+
+<p>The derived hypothesis carries its own falsification criteria, its own material references, and its own experiment plan. It feeds back into the loop as a new workspace.</p>
+
+<pre><code class="language-mermaid">graph TD
+    H1[H001: Cu2S Phase Transition] --&gt; DM[design_material: Cu to Ag]
+    DM --&gt; P[ML Prediction: Ag2S]
+    P --&gt; H1a[H001a: Ag2S Negative Control]
+    H1a --&gt; W[New Workspace]
+    W --&gt; E[Experiment: Compare Cu2S vs Ag2S]
+    E --&gt; V[Verdict: Mechanism Specificity]
+    V --&gt; H2[H002: Next Hypothesis]
+    style H1 fill:#f3f4f6,stroke:#6366f1,color:#111827
+    style V fill:#eef2ff,stroke:#6366f1,color:#111827
+</code></pre>
+
+<p>The researcher gets a systematic exploration of compositional space, not a single-point answer.</p>
+
+<p>In practice, this means:</p>
+
+<ul>
+  <li>impossible candidates are eliminated before expensive first-principles runs</li>
+  <li>promising material families are expanded with structure-aware variants</li>
+  <li>each hypothesis carries discovery context with database IDs, not just text rationale</li>
+  <li>negative controls are generated automatically, not as an afterthought</li>
+</ul>
+
+<p>For a university group with limited compute budget, this reduces dead-end simulations by pruning with ML screening (~1 second) before committing to first-principles calculations (~20-120 seconds each). For an engineering team, it reduces iteration latency from days to minutes. For investors evaluating a materials startup, it provides a measurable, auditable trail of what was explored and why.</p>
+
+<h2 id="tool-impact-inside-the-hypothesis-agent">Tool Impact Inside the Hypothesis Agent</h2>
+
+<p>A good agent toolset is not about having many tools. It is about making each tool change a decision boundary.</p>
+
+<p>In our hypothesis loop, tool calls do three high-value jobs:</p>
+
+<ul>
+  <li><strong>Evidence compression:</strong> distill multi-paper contradictions into comparable hypothesis objects with confidence scores and falsification criteria</li>
+  <li><strong>Discovery grounding:</strong> retrieve known materials, design new compositions, and validate structural feasibility before downstream execution</li>
+  <li><strong>Execution readiness:</strong> package selected hypotheses into reproducible workspaces with explicit commands, status tracking, and analysis hooks</li>
+</ul>
+
+<p>The compute tools available inside the loop span the full fidelity ladder:</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>Tool</th>
+      <th>Method</th>
+      <th>Cost</th>
+      <th>Use case</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">predict_properties</code></td>
+      <td>ML potential</td>
+      <td>~1s</td>
+      <td>Fast screening across many structures</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">design_material</code></td>
+      <td>Substitution + ML</td>
+      <td>~1s</td>
+      <td>Compositional exploration</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">simulate_md</code></td>
+      <td>ML molecular dynamics</td>
+      <td>~30s</td>
+      <td>Thermal stability, phase transitions</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">compute_phase_diagram</code></td>
+      <td>Thermodynamic DB</td>
+      <td>~2s</td>
+      <td>Stability analysis</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">predict_first_principles</code></td>
+      <td>First-principles</td>
+      <td>~20s</td>
+      <td>High-fidelity single-point energy</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">relax_first_principles</code></td>
+      <td>First-principles</td>
+      <td>~60s</td>
+      <td>Geometry optimization</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">compute_band_structure</code></td>
+      <td>First-principles</td>
+      <td>~120s</td>
+      <td>Electronic structure</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">compute_dos</code></td>
+      <td>First-principles</td>
+      <td>~120s</td>
+      <td>Density of states</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>The agent navigates this fidelity ladder during hypothesis evaluation: screen with ML predictions, confirm with first-principles calculations, report with explicit error bars. A researcher manually managing this ladder across ten candidate materials would spend most of their time on bookkeeping. The system handles the bookkeeping and lets the researcher focus on the science.</p>
+
+<p>The result is a system that does not just “suggest ideas.” It commits ideas into testable operating artifacts with compute results attached.</p>
+
+<h2 id="stage-2-workspace-synthesis-not-just-generated-code">Stage 2: Workspace Synthesis, Not Just “Generated Code”</h2>
+
+<p>Once a hypothesis is selected, we do not generate one throwaway script.</p>
+
+<p>We generate a full research workspace with:</p>
+
+<ul>
+  <li><code class="language-plaintext highlighter-rouge">instructions.md</code> (research context, experiment list, success criteria)</li>
+  <li><code class="language-plaintext highlighter-rouge">data/hypothesis.json</code> (structured claim + metadata)</li>
+  <li><code class="language-plaintext highlighter-rouge">data/physical_parameters.json</code> (numeric anchors from the literature)</li>
+  <li>experiment command templates and agent roles</li>
+  <li>analysis/report scaffolding</li>
+</ul>
+
+<pre><code class="language-mermaid">graph TD
+    H[Hypothesis + Metadata] --&gt; I[instructions.md]
+    H --&gt; D[data/*.json]
+    I --&gt; S[Workspace Skeleton]
+    D --&gt; S
+    S --&gt; Q[Queued Execution Steps]
+    Q --&gt; R[Results + Reports]
+    style H fill:#f3f4f6,stroke:#6366f1,color:#111827
+    style R fill:#eef2ff,stroke:#6366f1,color:#111827
+</code></pre>
+
+<h3 id="a-generated-experiment-plan">A Generated Experiment Plan</h3>
+
+<p>Here is a trimmed excerpt from an experiment specification produced for the Cu2S phase transition hypothesis:</p>
+
+<div class="language-markdown highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="gu">### Experiment 1: Cu2S Phase Transition Energy Landscape</span>
+
+<span class="gs">**Objective:**</span> Determine the energy difference between monoclinic and hexagonal Cu2S phases.
+
+<span class="gs">**Approach:**</span> Use ML potential to compute total energies for both Cu2S polymorphs. Calculate relative stability and approximate transition temperature.
+
+<span class="gs">**Expected Output:**</span> <span class="sb">`results/cu2s_energy_difference.json`</span>
+
+<span class="gs">**Validation Targets:**</span> T_Cu2S_transition_K = 377 K +/- 10 K
+</code></pre></div></div>
+
+<p>Four experiments like this are generated from a single hypothesis. Each has explicit inputs, outputs, and validation targets. The workspace includes data files, a compute API client, and agent roles to execute every step autonomously.</p>
+
+<h2 id="stage-3-internal-compute-gateway-security-by-topology">Stage 3: Internal Compute Gateway (Security by Topology)</h2>
+
+<p>A key requirement is running materials computation from experiment containers without leaking upstream credentials.</p>
+
+<p>This is not a theoretical concern. Experiment containers run agent-generated code. They call ML prediction services, first-principles solvers, and materials databases. Each of those services requires authentication — API keys, database credentials, service tokens. If the experiment container holds those credentials directly, a single code generation error could expose them in logs, error messages, or network traces.</p>
+
+<p>We solve this with an internal compute gateway that enforces security through network topology, not policy:</p>
+
+<ul>
+  <li>experiment containers call a local gateway endpoint on a private Docker network</li>
+  <li>the gateway forwards requests to upstream compute services, injecting credentials server-side</li>
+  <li>containers never see, store, or transmit upstream secrets</li>
+  <li>if the gateway cannot reach a service, it returns a clean 503 — the container knows something is unavailable, but learns nothing about the upstream topology</li>
+</ul>
+
+<pre><code class="language-mermaid">graph LR
+    C[Experiment Container] --&gt; G[Internal Compute Gateway]
+    G --&gt; M[ML Property Service]
+    G --&gt; F[First-Principles Service]
+    G --&gt; DB[Materials Property Database]
+    style C fill:#f3f4f6,stroke:#6366f1,color:#111827
+    style DB fill:#eef2ff,stroke:#6366f1,color:#111827
+</code></pre>
+
+<p>The 503 response is a deliberate design choice. When the gateway has no upstream URL configured for a service, the response is identical to a temporary outage: a generic “service unavailable.” The experiment container cannot distinguish between “this service is not configured” and “this service is temporarily down.” That ambiguity is the security property. An experiment that probes endpoint availability learns nothing about the infrastructure behind the gateway.</p>
+
+<p>For developers, this gives a clean client module inside each workspace — a single base URL, no credential management. For security teams, it constrains the credential blast radius by design: even if a container is fully compromised, the attacker gains access to zero upstream credentials and cannot map the service topology.</p>
+
+<p>For researchers, the benefit is simpler: the compute client inside the workspace just works. They do not need to manage API keys for ML services, first-principles solvers, or the materials database. They point at the gateway, and the gateway handles the rest.</p>
+
+<h2 id="what-this-means-in-practice">What This Means in Practice</h2>
+
+<h3 id="for-researchers-reading-contested-claims">For researchers reading contested claims</h3>
+
+<p>You drop a paper set into a workspace and get back ranked hypotheses with explicit evidence chains, not a summary paragraph. Each hypothesis tells you which papers support it, which contradict it, and what specific measurement would falsify it. That is the starting point for a lab meeting, not a literature review.</p>
+
+<p>The system then generates a full experiment plan and executes it. You get results in 23 minutes, not two weeks. If the results support the hypothesis, the system proposes derived hypotheses by exploring related material compositions. If the results falsify it, the next-highest-ranked hypothesis gets its turn.</p>
+
+<h3 id="for-university-materials-groups-with-limited-compute">For university materials groups with limited compute</h3>
+
+<p>The fidelity ladder matters here. ML screening at ~1 second per structure lets you evaluate fifty candidate materials before committing a single first-principles run at ~2 minutes each. The <code class="language-plaintext highlighter-rouge">design_material</code> tool generates structural variants programmatically, so compositional exploration does not require manual CIF editing.</p>
+
+<p>A group that previously explored three compositions per week can now screen fifty and confirm the top five from first principles in a single afternoon.</p>
+
+<h3 id="for-pis-reviewing-student-work">For PIs reviewing student work</h3>
+
+<p>Every hypothesis carries a JSON-serializable audit trail: which papers contributed, what confidence level was assigned, what would falsify it, and what experiments were run. The analysis report includes explicit validation targets and whether they were met.</p>
+
+<p>This means a PI can review a student’s hypothesis-to-experiment cycle by reading structured outputs, not by re-running calculations or trusting narrative summaries.</p>
+
+<h3 id="for-engineering-teams-and-investors">For engineering teams and investors</h3>
+
+<p>The moat is in orchestration quality: the speed and reliability of moving from ambiguous evidence to executable, auditable experimental decisions.</p>
+
+<p>Progress is not a narrative. It is a data structure. Each iteration of the loop produces:</p>
+
+<ul>
+  <li>a versioned hypothesis with provenance</li>
+  <li>a workspace with deterministic assembly (same inputs, same workspace)</li>
+  <li>experiment results with explicit success/failure criteria</li>
+  <li>a structured verdict that feeds the next iteration</li>
+</ul>
+
+<p>For investors evaluating a materials discovery company, this is the difference between “we ran some simulations” and “here is the decision tree, here are the branch points, and here is the evidence at each node.” The loop is auditable end-to-end because every intermediate artifact is JSON-serializable and every tool call is logged with inputs and outputs.</p>
+
+<h2 id="the-withheld-final-paper-check">The “Withheld Final Paper” Check</h2>
+
+<p>The hypothesis agent was reverse-engineered from this evaluation method. We started with the question: <em>how do you know if a hypothesis engine is any good?</em> The answer shaped the architecture.</p>
+
+<p>The pattern:</p>
+
+<ul>
+  <li>pick a resolved scientific controversy with a known outcome</li>
+  <li>build the paper chain <em>without</em> the final resolution paper</li>
+  <li>feed the incomplete chain to the hypothesis agent</li>
+  <li>score the generated hypotheses against the withheld paper using an LLM-as-a-judge</li>
+</ul>
+
+<p>The judge model receives the generated hypothesis, the withheld resolution paper, and a scoring rubric. It evaluates on target keyword coverage (did the hypothesis identify the right mechanism, materials, and phenomena?), directional correctness (does it point toward the same conclusion?), and falsification quality (are the proposed tests the ones that would actually resolve the question?). The scores are structured — not a vibes-based “looks good” — so we can track improvements across agent iterations.</p>
+
+<p>This evaluation loop was the testing ground before the agent was ever used on live research questions. Every change to the reasoning loop, tool selection, or hypothesis ranking was validated against held-out papers first.</p>
+
+<p>In our LK-99 run, the system scored 5/5 on target keyword coverage against the withheld consensus paper, with a composite evaluation score of 1.0. The hypothesis it ranked highest was the one the community eventually converged on. The same caveat applies here — LK-99 was in the training data. This validates the architecture’s ability to structure known knowledge, not its ability to discover the unknown.</p>
+
+<h2 id="engineering-principles-we-optimized-for">Engineering Principles We Optimized For</h2>
+
+<ol>
+  <li><strong>Structured outputs over narrative outputs</strong> — every hypothesis, experiment, and verdict is a typed data structure</li>
+  <li><strong>Deterministic assembly over ad hoc generation</strong> — same hypothesis produces the same workspace, every time</li>
+  <li><strong>Discovery integrated into hypothesis generation</strong> — <code class="language-plaintext highlighter-rouge">design_material</code> and property prediction run inside the reasoning loop, not after it</li>
+  <li><strong>Secure internal routing over distributed secret handling</strong> — credentials never enter experiment containers</li>
+  <li><strong>Asynchronous execution with explicit status lifecycle</strong> — workspaces report provisioning, running, completed, or failed states via SSE</li>
+  <li><strong>Evaluation loops that can disagree with your prior belief</strong> — falsification criteria are first-class citizens, not afterthoughts</li>
+</ol>
+
+<p>Those principles let us support multi-paper reasoning and material discovery without turning the system into a black box.</p>
+
+<p>If you want to see this loop in action, open the app and run a hypothesis-to-workspace cycle on your own paper set.</p>
+
+<h2 id="references-lk-99-paper-corpus">References: LK-99 Paper Corpus</h2>
+
+<p>The input chain (10 papers fed to the hypothesis agent):</p>
+
+<ol>
+  <li>Lee et al., “The First Room-Temperature Ambient-Pressure Superconductor” — <a href="https://arxiv.org/abs/2307.12008">arXiv:2307.12008</a></li>
+  <li>Lee et al., “Superconductor Pb₁₀₋ₓCuₓ(PO₄)₆O showing levitation at room temperature” — <a href="https://arxiv.org/abs/2307.12037">arXiv:2307.12037</a></li>
+  <li>Si &amp; Held, “Origin of correlated isolated flat bands in copper-substituted lead phosphate apatite” — <a href="https://arxiv.org/abs/2307.16892">arXiv:2307.16892</a></li>
+  <li>Kumar et al., “Synthesis of possible room temperature superconductor LK-99:Pb₉Cu(PO₄)₆O” — <a href="https://arxiv.org/abs/2307.16402">arXiv:2307.16402</a></li>
+  <li>Griffin, “Electronic Structure and Vibrational Stability of Copper-substituted Lead Apatite” — <a href="https://arxiv.org/abs/2308.01135">arXiv:2308.01135</a></li>
+  <li>Hou et al., “Successful growth and room temperature ambient-pressure magnetic levitation of LK-99” — <a href="https://arxiv.org/abs/2308.01516">arXiv:2308.01516</a></li>
+  <li>Liu et al., “Absence of superconductivity in LK-99 at ambient conditions” — <a href="https://arxiv.org/abs/2308.03544">arXiv:2308.03544</a></li>
+  <li>Guo et al., “First order transition in Pb₁₀₋ₓCuₓ(PO₄)₆O containing Cu₂S” — <a href="https://arxiv.org/abs/2308.04353">arXiv:2308.04353</a></li>
+  <li>Jain et al., “Superionic phase transition of copper(I) sulfide and its implication for purported superconductivity of LK-99” — <a href="https://arxiv.org/abs/2308.05222">arXiv:2308.05222</a></li>
+  <li>Puphal et al., “Single crystal synthesis, structure, and magnetism of Pb₁₀₋ₓCuₓ(PO₄)₆O” — <a href="https://arxiv.org/abs/2308.06256">arXiv:2308.06256</a></li>
+</ol>
+
+<p>Withheld resolution paper (used for LLM-as-judge evaluation):</p>
+
+<ul>
+  <li>Habamahoro et al., “Replication and study of anomalies in LK-99 — the alleged ambient-pressure, room-temperature superconductor” — <a href="https://arxiv.org/abs/2311.03558">arXiv:2311.03558</a></li>
+</ul>
+
+
+
+      <hr>
+
+      <!-- Prev / Next / Up navigation -->
+      
+      
+      
+
+      <div class="clearfix" style="margin-top: 2rem;">
+        
+          
+          
+
+          
+            
+            <a class="btn btn-primary float-left" href="/materials-science/anatomy-of-a-research-agent.html" title="Anatomy of a Research Agent">&larr; Previous</a>
+          
+
+          
+            
+            <a class="btn btn-primary float-right" href="/materials-science/progressive-indexing.html" title="Progressive Indexing: Making Papers Searchable in Seconds">Next &rarr;</a>
+          
+        
+      </div>
+
+      
+      <div style="text-align: center; margin-top: 1rem;">
+        <a href="/p/b8e2c4/materials-science-notes/">&uarr; Back to Table of Contents</a>
+      </div>
+      
+
+    </div>
+  </div>
+</div>
+
+
+  <!-- Footer -->
+
+<hr>
+
+<footer>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <ul class="list-inline text-center">
+          
+          <li class="list-inline-item">
+            <a href="mailto:amitava.dev@proton.me" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="far fa-envelope fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          
+          
+          <li class="list-inline-item">
+            <a href="https://www.linkedin.com/in/amitavaag" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-linkedin fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          <li class="list-inline-item">
+            <a href="https://github.com/ikouchiha47" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-github fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+        </ul>
+
+        <p class="copyright text-muted">
+          Build with: 
+          <a 
+            href="https://github.com/StartBootstrap/startbootstrap-clean-blog-jekyll"
+            class="text-gray"
+            target="_blank">startbootstrap-clean-blog-jekyll</a></p>
+      </div>
+    </div>
+  </div>
+</footer>
+
+
+  <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="/assets/vendor/blog/js/scripts.js"></script>
+
+<script src="/assets/scripts.js"></script>
+
+
+
+
+
+  <script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+
+    document.querySelectorAll('pre > code.language-mermaid').forEach((codeBlock) => {
+      codeBlock.parentElement.outerHTML = `<pre class="mermaid">${codeBlock.textContent}</pre>`;
+    });
+
+
+    mermaid.initialize({ startOnLoad: true, theme: 'forest' });
+</script>
+
+
+  
+
+</body>
+
+</html>

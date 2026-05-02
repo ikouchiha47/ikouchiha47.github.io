@@ -1,0 +1,696 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+  <title>
+    Path Generation - iko&#39;s logs
+    
+  </title>
+
+  <meta name="description" content="">
+  <meta property="og:description" content="">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Path Generation">
+  <meta property="og:url" content="https://ikouchiha47.github.io/postgresql/07-query-optimizer/path-generation.html">
+
+  
+
+  <link href='https://fonts.googleapis.com/css?family=Lora:400,700,400italic,700italic' rel='stylesheet' type='text/css'>
+  <link href='https://fonts.googleapis.com/css?family=Open+Sans:300italic,400italic,600italic,700italic,800italic,400,300,600,700,800' rel='stylesheet' type='text/css'>
+
+  <!-- <script src="https://use.fontawesome.com/releases/v5.15.3/js/all.js" crossorigin="anonymous"></script> -->
+  <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.15.4/css/all.css" integrity="sha384-DyZ88mC6Up2uqS4h/KRgHuoeGwBcD4Ng9SiP4dIRy0EXTlnuz47vAwmeGwVChigm" crossorigin="anonymous"/>
+
+  <link rel="stylesheet" href="/assets/main.css">
+  <link rel="canonical" href="https://ikouchiha47.github.io/postgresql/07-query-optimizer/path-generation.html">
+  <link rel="alternate" type="application/rss+xml" title="iko&#39;s logs" href="/feed.xml">
+
+  <meta name="google-site-verification" content="lWkg6gIxJgzEKX_5XnhcxCtPE9QknaimFWWos_dTvPM" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fira+Sans:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Inconsolata:wght@200..900&family=Jersey+25&family=Kanit:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Merriweather+Sans:ital,wght@0,300..800;1,300..800&family=Nanum+Gothic+Coding&family=Space+Grotesk:wght@300..700&family=Titillium+Web:ital,wght@0,200;0,300;0,400;0,600;0,700;0,900;1,200;1,300;1,400;1,600;1,700&display=swap" rel="stylesheet">
+
+</head>
+
+
+<body>
+
+  <!-- Navigation -->
+<nav class="navbar navbar-expand-lg navbar-light fixed-top" id="mainNav">
+  <div class="container">
+    <a class="navbar-brand" href="/">iko&#39;s logs</a>
+    <button class="navbar-toggler navbar-toggler-right" type="button" data-toggle="collapse" data-target="#navbarResponsive" aria-controls="navbarResponsive" aria-expanded="false" aria-label="Toggle navigation">
+      Menu
+      <i class="fa fa-bars"></i>
+    </button>
+    <div class="collapse navbar-collapse" id="navbarResponsive">
+      <ul class="navbar-nav ml-auto">
+        <li class="nav-item">
+          <a class="nav-link" href="/">Home</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/about">About</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/posts">Posts</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/contact">Contact</a>
+        </li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+
+  <!-- Page Header -->
+
+<header class="masthead">
+
+  <div class="overlay"></div>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <div class="post-heading">
+          <h1>Path Generation</h1>
+          
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="container space-grotesk">
+  <div class="row">
+    <div class="col-lg-8 col-md-10 mx-auto">
+
+      <!-- Breadcrumb -->
+      <nav aria-label="breadcrumb" style="margin-bottom: 1.5rem;">
+        <ol class="breadcrumb" style="background: transparent; padding: 0;">
+          
+            <li class="breadcrumb-item"><a href="/postgresql-internals/">PostgreSQL Internals Deep Dive</a></li>
+          
+          
+            
+              <li class="breadcrumb-item"><a href="/postgresql/07-query-optimizer/">Query Optimizer</a></li>
+            
+          
+          <li class="breadcrumb-item active" aria-current="page">Path Generation</li>
+        </ol>
+      </nav>
+
+      <h1 id="path-generation">Path Generation</h1>
+
+<p>Path generation is the core of the optimizer. For every relation (base table, subquery, or join combination), PostgreSQL enumerates all plausible access strategies as lightweight <code class="language-plaintext highlighter-rouge">Path</code> nodes. These Paths are then compared by cost, and only the cheapest survivors feed into higher-level join planning. The key files are <code class="language-plaintext highlighter-rouge">allpaths.c</code>, <code class="language-plaintext highlighter-rouge">indxpath.c</code>, and <code class="language-plaintext highlighter-rouge">joinpath.c</code>.</p>
+
+<hr />
+
+<h2 id="summary">Summary</h2>
+
+<p>Path generation proceeds in two stages:</p>
+
+<ol>
+  <li><strong>Base-relation paths</strong> – for each table in the query, generate paths for sequential scan, index scans, bitmap scans, TID scans, and any specialized scans (function scans, CTE scans, etc.).</li>
+  <li><strong>Join-relation paths</strong> – for each pair of relations that can be joined, generate paths for nested loop, merge join, and hash join, using the base-relation or lower-join paths as inputs.</li>
+</ol>
+
+<p>Each generated Path is passed through <code class="language-plaintext highlighter-rouge">add_path()</code>, which implements a Pareto-dominance check: a path is discarded if another path for the same relation is cheaper on both startup and total cost and has equal-or-better sort ordering and parameterization.</p>
+
+<pre><code class="language-mermaid">graph TD
+    subgraph "Phase 1: Base Relations"
+        A_REL["RelOptInfo {A}"]
+        A_SEQ["SeqScan Path"]
+        A_IDX["IndexScan Path&lt;br/&gt;(A_x_idx)"]
+        A_BMP["BitmapScan Path"]
+        B_REL["RelOptInfo {B}"]
+        B_SEQ["SeqScan Path"]
+        B_IDX["IndexScan Path&lt;br/&gt;(B_y_idx)"]
+        B_PARAM["Parameterized&lt;br/&gt;IndexScan Path&lt;br/&gt;(needs A.x)"]
+    end
+
+    subgraph "Phase 2: Join Relations"
+        AB_REL["RelOptInfo {A,B}"]
+        NL["NestLoop&lt;br/&gt;(SeqScan A, ParamIdx B)"]
+        HJ["HashJoin&lt;br/&gt;(SeqScan A, SeqScan B)"]
+        MJ["MergeJoin&lt;br/&gt;(IdxScan A, IdxScan B)"]
+    end
+
+    ADD["add_path() filter&lt;br/&gt;keep Pareto-optimal"]
+    SURVIVORS["Surviving paths&lt;br/&gt;in {A,B}.pathlist"]
+
+    A_REL --&gt; A_SEQ
+    A_REL --&gt; A_IDX
+    A_REL --&gt; A_BMP
+    B_REL --&gt; B_SEQ
+    B_REL --&gt; B_IDX
+    B_REL --&gt; B_PARAM
+
+    A_SEQ --&gt; AB_REL
+    A_IDX --&gt; AB_REL
+    B_SEQ --&gt; AB_REL
+    B_IDX --&gt; AB_REL
+    B_PARAM --&gt; AB_REL
+
+    AB_REL --&gt; NL
+    AB_REL --&gt; HJ
+    AB_REL --&gt; MJ
+
+    NL --&gt; ADD
+    HJ --&gt; ADD
+    MJ --&gt; ADD
+    ADD --&gt; SURVIVORS
+
+    style A_REL fill:#e6f3ff,stroke:#333
+    style B_REL fill:#e6f3ff,stroke:#333
+    style AB_REL fill:#fff3e6,stroke:#333
+    style SURVIVORS fill:#e6ffe6,stroke:#333
+</code></pre>
+
+<hr />
+
+<h2 id="key-source-files">Key Source Files</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>File</th>
+      <th>Purpose</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/optimizer/path/allpaths.c</code></td>
+      <td><code class="language-plaintext highlighter-rouge">make_one_rel()</code>, <code class="language-plaintext highlighter-rouge">set_base_rel_pathlists()</code>, <code class="language-plaintext highlighter-rouge">set_rel_pathlist()</code></td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/optimizer/path/indxpath.c</code></td>
+      <td><code class="language-plaintext highlighter-rouge">create_index_paths()</code> – index scan path generation</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/optimizer/path/joinpath.c</code></td>
+      <td><code class="language-plaintext highlighter-rouge">add_paths_to_joinrel()</code> – join path generation</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/optimizer/path/joinrels.c</code></td>
+      <td><code class="language-plaintext highlighter-rouge">join_search_one_level()</code>, <code class="language-plaintext highlighter-rouge">make_join_rel()</code></td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/optimizer/path/tidpath.c</code></td>
+      <td>TID scan path generation</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/optimizer/util/pathnode.c</code></td>
+      <td><code class="language-plaintext highlighter-rouge">add_path()</code>, path creation helpers</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/optimizer/util/relnode.c</code></td>
+      <td><code class="language-plaintext highlighter-rouge">build_simple_rel()</code>, <code class="language-plaintext highlighter-rouge">build_join_rel()</code></td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/optimizer/util/plancat.c</code></td>
+      <td><code class="language-plaintext highlighter-rouge">get_relation_info()</code> – catalog lookups for rel metadata</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/nodes/pathnodes.h</code></td>
+      <td>Path, IndexPath, NestPath, MergePath, HashPath definitions</td>
+    </tr>
+  </tbody>
+</table>
+
+<hr />
+
+<h2 id="how-it-works">How It Works</h2>
+
+<h3 id="phase-1-base-relation-paths">Phase 1: Base-Relation Paths</h3>
+
+<p><code class="language-plaintext highlighter-rouge">set_base_rel_pathlists()</code> iterates over every base relation in the query and calls <code class="language-plaintext highlighter-rouge">set_rel_pathlist()</code> for each. The behavior depends on the relation type:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>set_rel_pathlist(rel)
+  switch on rel-&gt;rtekind:
+    RTE_RELATION:
+      create_seqscan_path()         -- always generated
+      create_index_paths()          -- for each usable index
+      create_tidscan_paths()        -- if WHERE has ctid = const
+      consider_parallel_paths()     -- parallel seq/index scans
+    RTE_SUBQUERY:
+      set_subquery_pathlist()       -- plan subquery recursively
+    RTE_FUNCTION:
+      create_functionscan_path()
+    RTE_VALUES:
+      create_valuesscan_path()
+    RTE_CTE:
+      create_ctescan_path()
+    ...
+</code></pre></div></div>
+
+<h4 id="sequential-scan">Sequential Scan</h4>
+
+<p>Always generated. A single <code class="language-plaintext highlighter-rouge">Path</code> node with <code class="language-plaintext highlighter-rouge">pathtype = T_SeqScan</code>. Cost is based on the number of pages and tuples:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>startup_cost = 0
+total_cost   = seq_page_cost * pages + cpu_tuple_cost * tuples
+</code></pre></div></div>
+
+<h4 id="index-scans-indxpathc">Index Scans (indxpath.c)</h4>
+
+<p><code class="language-plaintext highlighter-rouge">create_index_paths()</code> is one of the most complex functions in the optimizer. For each index on the relation, it:</p>
+
+<ol>
+  <li>
+    <p><strong>Matches clauses to index columns.</strong> Checks each RestrictInfo in the relation’s <code class="language-plaintext highlighter-rouge">baserestrictinfo</code> and <code class="language-plaintext highlighter-rouge">joininfo</code> lists against each index column. A clause matches if it uses an operator from the index’s operator family and references the indexed column.</p>
+  </li>
+  <li>
+    <p><strong>Builds index path groups.</strong> For each set of matching clauses, creates an <code class="language-plaintext highlighter-rouge">IndexPath</code> representing a plain index scan or an index-only scan (if the index covers all needed columns via <code class="language-plaintext highlighter-rouge">amcanreturn</code>).</p>
+  </li>
+  <li>
+    <p><strong>Considers parameterized paths.</strong> If a join clause like <code class="language-plaintext highlighter-rouge">t1.x = t2.y</code> matches an index on <code class="language-plaintext highlighter-rouge">t2.y</code>, a parameterized IndexPath is created that expects <code class="language-plaintext highlighter-rouge">t1.x</code> as a runtime parameter. This path is only usable as the inner side of a nested loop.</p>
+  </li>
+  <li>
+    <p><strong>Bitmap scans.</strong> Multiple index scans on the same table can be combined with BitmapAnd/BitmapOr nodes. <code class="language-plaintext highlighter-rouge">create_index_paths()</code> generates <code class="language-plaintext highlighter-rouge">BitmapHeapPath</code> nodes for these combinations. This is useful when no single index matches all clauses but the intersection or union of multiple indexes does.</p>
+  </li>
+</ol>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>Index Path Selection:
+
+  RestrictInfo list --&gt; match_clauses_to_index()
+                            |
+                            v
+                      matched clauses
+                            |
+            +---------------+---------------+
+            v               v               v
+      IndexPath       IndexPath       BitmapHeapPath
+   (plain scan)    (index-only)     (multi-index combo)
+</code></pre></div></div>
+
+<h4 id="parallel-paths">Parallel Paths</h4>
+
+<p>If <code class="language-plaintext highlighter-rouge">max_parallel_workers_per_gather &gt; 0</code> and the relation is large enough, parallel variants of sequential scans and index scans are generated. These go into <code class="language-plaintext highlighter-rouge">rel-&gt;partial_pathlist</code> and are later wrapped in <code class="language-plaintext highlighter-rouge">GatherPath</code> or <code class="language-plaintext highlighter-rouge">GatherMergePath</code> nodes.</p>
+
+<h3 id="phase-2-join-relation-paths">Phase 2: Join-Relation Paths</h3>
+
+<p>After all base-relation paths are generated, the optimizer combines relations into joins. For each join pair, <code class="language-plaintext highlighter-rouge">add_paths_to_joinrel()</code> in <code class="language-plaintext highlighter-rouge">joinpath.c</code> considers three join methods:</p>
+
+<h4 id="nested-loop-join">Nested Loop Join</h4>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>For each outer path O and each inner path I:
+  create NestPath(O, I)
+  If I is parameterized by O's relation:
+    The join clause is pushed into I as an index condition
+  Else:
+    The join clause is applied as a filter after the join
+</code></pre></div></div>
+
+<p>Nested loop is the only method that can exploit parameterized inner paths (index lookups driven by the outer row). It is particularly effective for small-outer/large-inner combinations.</p>
+
+<p><strong>Materialization:</strong> If the inner path is expensive to rescan, a <code class="language-plaintext highlighter-rouge">MaterialPath</code> or <code class="language-plaintext highlighter-rouge">MemoizePath</code> wrapper is added to cache the inner results.</p>
+
+<h4 id="merge-join">Merge Join</h4>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>For each pair of pathkeys matching a join clause:
+  Sort outer if needed
+  Sort inner if needed
+  create MergePath(sorted_outer, sorted_inner)
+</code></pre></div></div>
+
+<p>Merge join requires both inputs to be sorted on the join key. If an input already has the right sort order (from an index scan or a lower merge join), no explicit sort is needed. The optimizer checks pathkeys to detect this.</p>
+
+<h4 id="hash-join">Hash Join</h4>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>For each hashable join clause:
+  create HashPath(outer, inner)
+  Inner side is hashed into a hash table
+  Outer side probes the hash table
+</code></pre></div></div>
+
+<p>Hash join has no ordering requirements but has high startup cost (building the hash table). It is often the winner for large equi-joins when neither side has a useful sort order.</p>
+
+<h3 id="the-add_path-filter">The add_path() Filter</h3>
+
+<p>Every generated path passes through <code class="language-plaintext highlighter-rouge">add_path()</code> in <code class="language-plaintext highlighter-rouge">pathnode.c</code>. This function maintains the Pareto frontier of paths for each RelOptInfo:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>add_path(rel, new_path):
+  for each existing_path in rel-&gt;pathlist:
+    if new_path dominates existing_path:
+      remove existing_path
+    if existing_path dominates new_path:
+      discard new_path, return
+  add new_path to rel-&gt;pathlist
+</code></pre></div></div>
+
+<p><strong>Dominance criteria:</strong></p>
+<ul>
+  <li>Lower or equal total_cost</li>
+  <li>Lower or equal startup_cost</li>
+  <li>Equal or better pathkeys (sort ordering)</li>
+  <li>Same or subset parameterization</li>
+  <li>Fewer or equal disabled_nodes</li>
+</ul>
+
+<p>This pruning is critical for keeping planning time manageable. Without it, the number of paths would explode exponentially with the number of tables.</p>
+
+<hr />
+
+<h2 id="key-data-structures">Key Data Structures</h2>
+
+<h3 id="path-base-type">Path (base type)</h3>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">typedef</span> <span class="k">struct</span> <span class="n">Path</span>
+<span class="p">{</span>
+    <span class="n">NodeTag</span>     <span class="n">type</span><span class="p">;</span>
+    <span class="n">NodeTag</span>     <span class="n">pathtype</span><span class="p">;</span>       <span class="cm">/* T_SeqScan, T_IndexScan, etc. */</span>
+    <span class="n">RelOptInfo</span> <span class="o">*</span><span class="n">parent</span><span class="p">;</span>         <span class="cm">/* the relation this is a path for */</span>
+    <span class="n">PathTarget</span> <span class="o">*</span><span class="n">pathtarget</span><span class="p">;</span>     <span class="cm">/* list of Vars/Exprs, width, cost */</span>
+    <span class="n">ParamPathInfo</span> <span class="o">*</span><span class="n">param_info</span><span class="p">;</span>  <span class="cm">/* parameterization, or NULL */</span>
+    <span class="n">bool</span>        <span class="n">parallel_aware</span><span class="p">;</span> <span class="cm">/* engage parallel-aware logic? */</span>
+    <span class="n">bool</span>        <span class="n">parallel_safe</span><span class="p">;</span>  <span class="cm">/* OK to use as part of parallel plan? */</span>
+    <span class="kt">int</span>         <span class="n">parallel_workers</span><span class="p">;</span> <span class="cm">/* desired # of parallel workers */</span>
+    <span class="kt">double</span>      <span class="n">rows</span><span class="p">;</span>           <span class="cm">/* estimated number of result tuples */</span>
+    <span class="n">Cost</span>        <span class="n">startup_cost</span><span class="p">;</span>   <span class="cm">/* cost expended before fetching any tuples */</span>
+    <span class="n">Cost</span>        <span class="n">total_cost</span><span class="p">;</span>     <span class="cm">/* total cost (including startup) */</span>
+    <span class="kt">int</span>         <span class="n">disabled_nodes</span><span class="p">;</span> <span class="cm">/* count of disabled nodes at/below */</span>
+    <span class="n">List</span>       <span class="o">*</span><span class="n">pathkeys</span><span class="p">;</span>       <span class="cm">/* sort ordering of output */</span>
+<span class="p">}</span> <span class="n">Path</span><span class="p">;</span>
+</code></pre></div></div>
+
+<h3 id="indexpath">IndexPath</h3>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">typedef</span> <span class="k">struct</span> <span class="n">IndexPath</span>
+<span class="p">{</span>
+    <span class="n">Path</span>        <span class="n">path</span><span class="p">;</span>
+    <span class="n">IndexOptInfo</span> <span class="o">*</span><span class="n">indexinfo</span><span class="p">;</span>    <span class="cm">/* the index */</span>
+    <span class="n">List</span>       <span class="o">*</span><span class="n">indexclauses</span><span class="p">;</span>   <span class="cm">/* index qual conditions */</span>
+    <span class="n">List</span>       <span class="o">*</span><span class="n">indexorderbys</span><span class="p">;</span>  <span class="cm">/* ORDER BY expressions for amcanorderbyop */</span>
+    <span class="n">List</span>       <span class="o">*</span><span class="n">indexorderbycols</span><span class="p">;</span>
+    <span class="n">ScanDirection</span> <span class="n">indexscandir</span><span class="p">;</span> <span class="cm">/* forward or backward */</span>
+    <span class="n">Cost</span>        <span class="n">indextotalcost</span><span class="p">;</span> <span class="cm">/* total cost of index scan itself */</span>
+    <span class="n">Selectivity</span> <span class="n">indexselectivity</span><span class="p">;</span> <span class="cm">/* selectivity of index */</span>
+<span class="p">}</span> <span class="n">IndexPath</span><span class="p">;</span>
+</code></pre></div></div>
+
+<h3 id="nestpath-mergepath-hashpath">NestPath, MergePath, HashPath</h3>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">typedef</span> <span class="k">struct</span> <span class="n">NestPath</span>       <span class="cm">/* also base for MergePath, HashPath */</span>
+<span class="p">{</span>
+    <span class="n">Path</span>        <span class="n">path</span><span class="p">;</span>
+    <span class="n">JoinType</span>    <span class="n">jointype</span><span class="p">;</span>
+    <span class="n">bool</span>        <span class="n">inner_unique</span><span class="p">;</span>  <span class="cm">/* inner has at most one match per outer? */</span>
+    <span class="n">Path</span>       <span class="o">*</span><span class="n">outerjoinpath</span><span class="p">;</span> <span class="cm">/* path for outer side */</span>
+    <span class="n">Path</span>       <span class="o">*</span><span class="n">innerjoinpath</span><span class="p">;</span> <span class="cm">/* path for inner side */</span>
+    <span class="n">List</span>       <span class="o">*</span><span class="n">joinrestrictinfo</span><span class="p">;</span> <span class="cm">/* RestrictInfos to apply to join */</span>
+<span class="p">}</span> <span class="n">JoinPath</span><span class="p">;</span>   <span class="cm">/* NestPath is a typedef for JoinPath */</span>
+
+<span class="k">typedef</span> <span class="k">struct</span> <span class="n">MergePath</span>
+<span class="p">{</span>
+    <span class="n">JoinPath</span>    <span class="n">jpath</span><span class="p">;</span>
+    <span class="n">List</span>       <span class="o">*</span><span class="n">path_mergeclauses</span><span class="p">;</span>  <span class="cm">/* join clauses used for merge */</span>
+    <span class="n">List</span>       <span class="o">*</span><span class="n">outersortkeys</span><span class="p">;</span>      <span class="cm">/* keys to sort outer, or NIL */</span>
+    <span class="n">List</span>       <span class="o">*</span><span class="n">innersortkeys</span><span class="p">;</span>      <span class="cm">/* keys to sort inner, or NIL */</span>
+    <span class="n">bool</span>        <span class="n">skip_mark_restore</span><span class="p">;</span>  <span class="cm">/* can avoid mark/restore? */</span>
+    <span class="n">bool</span>        <span class="n">materialize_inner</span><span class="p">;</span>  <span class="cm">/* should inner be materialized? */</span>
+<span class="p">}</span> <span class="n">MergePath</span><span class="p">;</span>
+
+<span class="k">typedef</span> <span class="k">struct</span> <span class="n">HashPath</span>
+<span class="p">{</span>
+    <span class="n">JoinPath</span>    <span class="n">jpath</span><span class="p">;</span>
+    <span class="n">List</span>       <span class="o">*</span><span class="n">path_hashclauses</span><span class="p">;</span>   <span class="cm">/* join clauses used for hashing */</span>
+    <span class="kt">int</span>         <span class="n">num_batches</span><span class="p">;</span>        <span class="cm">/* estimated # of hash batches */</span>
+    <span class="kt">double</span>      <span class="n">inner_rows_total</span><span class="p">;</span>   <span class="cm">/* inner rows including skipped ones */</span>
+<span class="p">}</span> <span class="n">HashPath</span><span class="p">;</span>
+</code></pre></div></div>
+
+<h3 id="reloptinfo-path-relevant-fields">RelOptInfo (path-relevant fields)</h3>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">typedef</span> <span class="k">struct</span> <span class="n">RelOptInfo</span>
+<span class="p">{</span>
+    <span class="p">...</span>
+    <span class="n">List</span>       <span class="o">*</span><span class="n">pathlist</span><span class="p">;</span>           <span class="cm">/* Paths for this relation */</span>
+    <span class="n">List</span>       <span class="o">*</span><span class="n">ppilist</span><span class="p">;</span>            <span class="cm">/* ParamPathInfos used in pathlist */</span>
+    <span class="n">List</span>       <span class="o">*</span><span class="n">partial_pathlist</span><span class="p">;</span>   <span class="cm">/* partial Paths (for parallel) */</span>
+    <span class="n">Path</span>       <span class="o">*</span><span class="n">cheapest_startup_path</span><span class="p">;</span>
+    <span class="n">Path</span>       <span class="o">*</span><span class="n">cheapest_total_path</span><span class="p">;</span>
+    <span class="n">List</span>       <span class="o">*</span><span class="n">cheapest_parameterized_paths</span><span class="p">;</span>
+    <span class="p">...</span>
+<span class="p">}</span> <span class="n">RelOptInfo</span><span class="p">;</span>
+</code></pre></div></div>
+
+<h3 id="indexoptinfo">IndexOptInfo</h3>
+
+<p>Describes an index available on a relation. Populated by <code class="language-plaintext highlighter-rouge">get_relation_info()</code> from the catalogs:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">typedef</span> <span class="k">struct</span> <span class="n">IndexOptInfo</span>
+<span class="p">{</span>
+    <span class="n">Oid</span>         <span class="n">indexoid</span><span class="p">;</span>       <span class="cm">/* OID of the index */</span>
+    <span class="n">Oid</span>         <span class="n">reltablespace</span><span class="p">;</span>
+    <span class="n">RelOptInfo</span> <span class="o">*</span><span class="n">rel</span><span class="p">;</span>           <span class="cm">/* back-pointer to table's RelOptInfo */</span>
+    <span class="kt">int</span>         <span class="n">ncolumns</span><span class="p">;</span>      <span class="cm">/* number of columns in index */</span>
+    <span class="kt">int</span>         <span class="n">nkeycolumns</span><span class="p">;</span>   <span class="cm">/* number of key (non-INCLUDE) columns */</span>
+    <span class="kt">int</span>        <span class="o">*</span><span class="n">indexkeys</span><span class="p">;</span>     <span class="cm">/* column numbers, or 0 for expression */</span>
+    <span class="n">Oid</span>        <span class="o">*</span><span class="n">opfamily</span><span class="p">;</span>      <span class="cm">/* operator families for each column */</span>
+    <span class="n">Oid</span>        <span class="o">*</span><span class="n">opcintype</span><span class="p">;</span>     <span class="cm">/* opclass declared input data types */</span>
+    <span class="n">bool</span>        <span class="n">unique</span><span class="p">;</span>        <span class="cm">/* is this a unique index? */</span>
+    <span class="n">bool</span>        <span class="n">amcanorderbyop</span><span class="p">;</span>
+    <span class="n">bool</span>        <span class="n">amcanreturn</span><span class="p">;</span>   <span class="cm">/* supports index-only scans? */</span>
+    <span class="n">bool</span>        <span class="n">amhasgetbitmap</span><span class="p">;</span>
+    <span class="p">...</span>
+<span class="p">}</span> <span class="n">IndexOptInfo</span><span class="p">;</span>
+</code></pre></div></div>
+
+<hr />
+
+<h2 id="diagram-path-generation-for-a-two-table-join">Diagram: Path Generation for a Two-Table Join</h2>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>Table A                              Table B
+  |                                    |
+  v                                    v
+set_rel_pathlist(A)              set_rel_pathlist(B)
+  +-- SeqScan Path                 +-- SeqScan Path
+  +-- IndexScan(A_x_idx)          +-- IndexScan(B_y_idx)
+  +-- BitmapScan(A_z_idx)         +-- IndexOnly(B_y_idx)
+                                   +-- Parameterized IndexScan
+                                       on B_y_idx (needs A.x)
+       |                                    |
+       +--------------------+---------------+
+                            |
+                            v
+                add_paths_to_joinrel({A,B})
+                    |
+                    +-- NestLoop(SeqScan(A), SeqScan(B))
+                    +-- NestLoop(SeqScan(A), ParamIdx(B))  &lt;-- uses B_y_idx
+                    +-- NestLoop(IdxScan(A), SeqScan(B))
+                    +-- MergeJoin(IdxScan(A), IdxScan(B))  &lt;-- both already sorted
+                    +-- MergeJoin(SeqScan(A)+Sort, SeqScan(B)+Sort)
+                    +-- HashJoin(SeqScan(A), SeqScan(B))
+                    +-- ... more combinations ...
+                            |
+                            v
+                      add_path() filters
+                      keep Pareto-optimal paths
+                            |
+                            v
+                   {A,B}.pathlist (survivors)
+</code></pre></div></div>
+
+<hr />
+
+<h2 id="parameterized-paths">Parameterized Paths</h2>
+
+<p>A parameterized path uses a join clause from a not-yet-joined relation as an index condition. This is how PostgreSQL handles nested-loop-with-inner-index-scan efficiently.</p>
+
+<p><strong>Example:</strong></p>
+<div class="language-sql highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">SELECT</span> <span class="o">*</span> <span class="k">FROM</span> <span class="n">orders</span> <span class="n">o</span> <span class="k">JOIN</span> <span class="n">customers</span> <span class="k">c</span> <span class="k">ON</span> <span class="n">o</span><span class="p">.</span><span class="n">cust_id</span> <span class="o">=</span> <span class="k">c</span><span class="p">.</span><span class="n">id</span>
+</code></pre></div></div>
+
+<p>If there is an index on <code class="language-plaintext highlighter-rouge">customers.id</code>, the optimizer creates a parameterized IndexPath for <code class="language-plaintext highlighter-rouge">customers</code> that treats <code class="language-plaintext highlighter-rouge">o.cust_id</code> as a runtime parameter. This path’s <code class="language-plaintext highlighter-rouge">param_info</code> records that it requires values from the <code class="language-plaintext highlighter-rouge">orders</code> relation.</p>
+
+<p>When this path is used as the inner side of a NestLoop, the executor passes each <code class="language-plaintext highlighter-rouge">o.cust_id</code> value down into the index scan, achieving efficient point lookups.</p>
+
+<p>Parameterized paths compete with non-parameterized paths in <code class="language-plaintext highlighter-rouge">add_path()</code>. The comparison accounts for both cost and the estimated number of rows (since parameterized paths typically return fewer rows per invocation).</p>
+
+<hr />
+
+<h2 id="parallel-path-generation">Parallel Path Generation</h2>
+
+<p>For large tables, PostgreSQL can split the scan work across multiple workers:</p>
+
+<ol>
+  <li>
+    <p><strong>Partial paths</strong> are generated by <code class="language-plaintext highlighter-rouge">set_rel_pathlist()</code> and stored in <code class="language-plaintext highlighter-rouge">rel-&gt;partial_pathlist</code>. A partial path returns only a subset of the relation’s rows (whichever block range the worker is assigned).</p>
+  </li>
+  <li>
+    <p><strong>Gather paths</strong> wrap a partial path to collect results from all workers. <code class="language-plaintext highlighter-rouge">GatherPath</code> produces unsorted output; <code class="language-plaintext highlighter-rouge">GatherMergePath</code> preserves the order of an ordered partial path.</p>
+  </li>
+  <li>
+    <p><strong>Parallel joins</strong> can be built on top of partial paths. A <code class="language-plaintext highlighter-rouge">HashPath</code> with <code class="language-plaintext highlighter-rouge">parallel_aware = true</code> uses a shared hash table across workers.</p>
+  </li>
+</ol>
+
+<p>The decision of whether to parallelize depends on the relation size versus <code class="language-plaintext highlighter-rouge">min_parallel_table_scan_size</code> and the availability of parallel workers.</p>
+
+<hr />
+
+<h2 id="connections">Connections</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>Subsystem</th>
+      <th>Relationship</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><a href="preprocessing">Preprocessing</a></td>
+      <td>Provides the simplified query tree with flattened joins</td>
+    </tr>
+    <tr>
+      <td><a href="cost-model">Cost Model</a></td>
+      <td>Every path creation call invokes a cost function from costsize.c</td>
+    </tr>
+    <tr>
+      <td><a href="join-ordering">Join Ordering</a></td>
+      <td>Controls which pairs of relations are joined, invoking add_paths_to_joinrel() for each</td>
+    </tr>
+    <tr>
+      <td><a href="geqo">GEQO</a></td>
+      <td>Alternative join-order search that still uses the same path generation for each join</td>
+    </tr>
+    <tr>
+      <td><a href="plan-creation">Plan Creation</a></td>
+      <td>Converts the winning Path tree into an executable Plan tree</td>
+    </tr>
+    <tr>
+      <td><a href="../02-access-methods/">Access Methods</a></td>
+      <td>Index AMs declare capabilities (amcostestimate, amcanreturn, amhasgetbitmap)</td>
+    </tr>
+    <tr>
+      <td><a href="../13-statistics/">Statistics</a></td>
+      <td>Selectivity of index clauses comes from pg_statistic via clausesel.c</td>
+    </tr>
+  </tbody>
+</table>
+
+
+      <hr>
+
+      <!-- Prev / Next / Up navigation -->
+      
+      
+      
+
+      <div class="clearfix" style="margin-top: 2rem;">
+        
+          
+          
+
+          
+            
+            <a class="btn btn-primary float-left" href="/postgresql/07-query-optimizer/join-ordering.html" title="Join Ordering">&larr; Previous</a>
+          
+
+          
+            
+            <a class="btn btn-primary float-right" href="/postgresql/07-query-optimizer/plan-creation.html" title="Plan Creation">Next &rarr;</a>
+          
+        
+      </div>
+
+      
+      <div style="text-align: center; margin-top: 1rem;">
+        <a href="/postgresql-internals/">&uarr; Back to Table of Contents</a>
+      </div>
+      
+
+    </div>
+  </div>
+</div>
+
+
+  <!-- Footer -->
+
+<hr>
+
+<footer>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <ul class="list-inline text-center">
+          
+          <li class="list-inline-item">
+            <a href="mailto:amitava.dev@proton.me" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="far fa-envelope fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          
+          
+          <li class="list-inline-item">
+            <a href="https://www.linkedin.com/in/amitavaag" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-linkedin fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          <li class="list-inline-item">
+            <a href="https://github.com/ikouchiha47" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-github fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+        </ul>
+
+        <p class="copyright text-muted">
+          Build with: 
+          <a 
+            href="https://github.com/StartBootstrap/startbootstrap-clean-blog-jekyll"
+            class="text-gray"
+            target="_blank">startbootstrap-clean-blog-jekyll</a></p>
+      </div>
+    </div>
+  </div>
+</footer>
+
+
+  <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="/assets/vendor/blog/js/scripts.js"></script>
+
+<script src="/assets/scripts.js"></script>
+
+
+
+
+
+  <script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+
+    document.querySelectorAll('pre > code.language-mermaid').forEach((codeBlock) => {
+      codeBlock.parentElement.outerHTML = `<pre class="mermaid">${codeBlock.textContent}</pre>`;
+    });
+
+
+    mermaid.initialize({ startOnLoad: true, theme: 'forest' });
+</script>
+
+
+  
+
+</body>
+
+</html>

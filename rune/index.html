@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+  <title>
+    RUNE - iko&#39;s logs
+    
+  </title>
+
+  <meta name="description" content="Building a wrist gesture controller for smart devices — TV, bulbs, plugs, desktop. Not a fitness tracker.">
+  <meta property="og:description" content="Building a wrist gesture controller for smart devices — TV, bulbs, plugs, desktop. Not a fitness tracker.">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="RUNE">
+  <meta property="og:url" content="https://ikouchiha47.github.io/rune/">
+
+  
+
+  <link href='https://fonts.googleapis.com/css?family=Lora:400,700,400italic,700italic' rel='stylesheet' type='text/css'>
+  <link href='https://fonts.googleapis.com/css?family=Open+Sans:300italic,400italic,600italic,700italic,800italic,400,300,600,700,800' rel='stylesheet' type='text/css'>
+
+  <!-- <script src="https://use.fontawesome.com/releases/v5.15.3/js/all.js" crossorigin="anonymous"></script> -->
+  <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.15.4/css/all.css" integrity="sha384-DyZ88mC6Up2uqS4h/KRgHuoeGwBcD4Ng9SiP4dIRy0EXTlnuz47vAwmeGwVChigm" crossorigin="anonymous"/>
+
+  <link rel="stylesheet" href="/assets/main.css">
+  <link rel="canonical" href="https://ikouchiha47.github.io/rune/">
+  <link rel="alternate" type="application/rss+xml" title="iko&#39;s logs" href="/feed.xml">
+
+  <meta name="google-site-verification" content="lWkg6gIxJgzEKX_5XnhcxCtPE9QknaimFWWos_dTvPM" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fira+Sans:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Inconsolata:wght@200..900&family=Jersey+25&family=Kanit:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Merriweather+Sans:ital,wght@0,300..800;1,300..800&family=Nanum+Gothic+Coding&family=Space+Grotesk:wght@300..700&family=Titillium+Web:ital,wght@0,200;0,300;0,400;0,600;0,700;0,900;1,200;1,300;1,400;1,600;1,700&display=swap" rel="stylesheet">
+
+</head>
+
+
+<body>
+
+  <!-- Navigation -->
+<nav class="navbar navbar-expand-lg navbar-light fixed-top" id="mainNav">
+  <div class="container">
+    <a class="navbar-brand" href="/">iko&#39;s logs</a>
+    <button class="navbar-toggler navbar-toggler-right" type="button" data-toggle="collapse" data-target="#navbarResponsive" aria-controls="navbarResponsive" aria-expanded="false" aria-label="Toggle navigation">
+      Menu
+      <i class="fa fa-bars"></i>
+    </button>
+    <div class="collapse navbar-collapse" id="navbarResponsive">
+      <ul class="navbar-nav ml-auto">
+        <li class="nav-item">
+          <a class="nav-link" href="/">Home</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/about">About</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/posts">Posts</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/contact">Contact</a>
+        </li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+
+  <!-- Page Header -->
+
+<header class="masthead" style="background: #1a1a2e">
+
+  <div class="overlay"></div>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <div class="post-heading">
+          <h1>RUNE</h1>
+          
+          <h2 class="subheading">A gesture wearable that doesn't track your steps</h2>
+          
+          <span class="meta">Posted by
+            <a href="#">ikouchiha47</a>
+            on April 25, 2026
+          </span>
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="container space-grotesk">
+  <div class="row">
+    <div class="col-lg-8 col-md-10 mx-auto">
+
+      <p><img src="/assets/rune/img/IMG_20260502_device_box.jpg" alt="RUNE — plastic box prototype, blue BLE indicator, desk setup" style="max-width:100%;height:auto;display:block;margin:0 auto 1.5rem;" /></p>
+
+<p>RUNE is a wrist-worn gesture controller. Flick right — D-pad right. Pitch down — back. Hold still — nothing happens, which is the correct default. It talks to smart TVs, bulbs, plugs, and desktop inputs over BLE. No voice. No phone in hand. No accent required.</p>
+
+<p>You don’t need an accent to control a smart device. (Alexa 😉😉)</p>
+
+<hr />
+
+<h2 id="what-its-not">What it’s not</h2>
+
+<p>It’s not a fitness tracker. This is a deliberate product decision, not an oversight.</p>
+
+<p>Knowing your HRV every 20 minutes doesn’t improve your health unless you’re doing something with that number. Most people aren’t. If you’re outside having a good time wearing a Rolex, and you glance at your wrist, you can tell — you’re having a good time.</p>
+
+<p>RUNE is a tool you put on when you want to control something, then take off and wear a real watch. Different category entirely.</p>
+
+<hr />
+
+<h2 id="how-it-works">How it works</h2>
+
+<p>Firmware runs on an nRF52840 with a BNO085 — a 9-axis IMU that does sensor fusion on its own ARM Cortex-M0+ at 400Hz. Gesture segmentation happens on the chip: it classifies when motion starts, what shape it makes, and sends a label over BLE.</p>
+
+<p>The phone app is the bridge. It receives the gesture, maps it to a device action, and fires the command — Android TV D-pad injection, smart plug HTTP, whatever. The execution logic lives in TypeScript, not C++.</p>
+
+<p>That split exists for a reason. Iterating gesture matching at phone-flash speed is 10× faster than Arduino-reflash speed. The firmware stays minimal; the app handles the policy layer. Also: I ain’t trusting an LLM with firmware I don’t understand yet. The C++ side is written and reviewed line by line.</p>
+
+<hr />
+
+<h2 id="the-roadmap">The roadmap</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>Phase</th>
+      <th>What ships</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><strong>RUNE-I</strong></td>
+      <td>Ship to real users, phone-paired, OTA updates</td>
+    </tr>
+    <tr>
+      <td><strong>RUNE-II</strong></td>
+      <td>Push compute on-device, add memory module</td>
+    </tr>
+    <tr>
+      <td><strong>RUNE-III</strong></td>
+      <td>Complex gestures — DTW or on-device ML (might split 3A/3B)</td>
+    </tr>
+    <tr>
+      <td><strong>RUNE-IV</strong></td>
+      <td>Custom PCB, lower profile, IR transmitter/receiver</td>
+    </tr>
+    <tr>
+      <td><strong>RUNE-V</strong></td>
+      <td>EMG pads for intent detection, extendable via pogo pins</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>Everything before RUNE-IV is software. That’s intentional — validate the interaction model before spinning custom silicon. RUNE-V is the version that turns it into something you might actually want on your wrist: clip on the EMG module when you need it, leave it off when you don’t.</p>
+
+<hr />
+
+<h2 id="the-series">The series</h2>
+
+<p><strong><a href="/rune/01-hardware">Part 1: The hardware</a></strong>
+What’s in it, what it cost (not cheap), and how it evolved from a glowing breadboard to a plastic box on velcro to a Three.js case model. Thanks to SM Electronics Kodhalli and Robocraze.</p>
+
+<p><strong><a href="/rune/02-sensor-wars">Part 2: The sensor wars</a></strong>
+Why 6-DOF failed, what the Kalman gain has to do with it, and why a magnetometer doesn’t fix the problem indoors.</p>
+
+<p><strong><a href="/rune/03-wakeup">Part 3: The chip wouldn’t wake up</a></strong>
+Two layered bugs in the sleep/wake path, including a concurrency issue in the SparkFun library that took two days to find.</p>
+
+<p><strong><a href="/rune/04-gestures">Part 4: Eight problems called gesture detection</a></strong>
+Segmentation, drift, axis isolation, combo sequences — each one looks simple until you’ve shipped it wrong once.</p>
+
+<p><strong><a href="/rune/05-calibration">Part 5: Calibration, from 125 seconds to 3</a></strong>
+MASR throttling, stable windows, and why the timer has to fire in <code class="language-plaintext highlighter-rouge">loop()</code> regardless of IMU events.</p>
+
+<p><strong><a href="/rune/06-app">Part 6: The app</a></strong>
+Claude built most of it. Humans tested the joints. The androidtvremote2 protocol, DTW, and what required a real TV.</p>
+
+<p><strong><a href="/rune/07-power">Part 7: Power on 300mAh</a></strong>
+Adaptive sample rates, staged sleep tiers, and the nine hours we spent watching INT blink at nothing.</p>
+
+<p><strong><a href="/rune/08-gesture-symbols">Research on RUNE-III: Recognising Symbols in the Air</a></strong>
+DTW, feature vectors, the $1 recognizer, shapelets, HMMs — five approaches to 1-shot gesture matching, ranked by how much they ask of you.</p>
+
+<hr />
+
+<p>The hardware exists. The gestures work. The parts that were broken are documented in the posts above, not papered over.</p>
+
+<p><strong><a href="/rune/09-epilogue">Epilogue: Read the Datasheet</a></strong>
+Every meaningful fix came from reading something first. Not Googling “BNO085 not working” and hoping for a hit. Reading the SH-2 Reference Manual. Reading the SparkFun library source. Reading the datasheet section on MASR. Every time something broke in a non-obvious way, the answer was in a document that existed before the problem did.</p>
+
+
+      <hr>
+
+      
+
+      
+      
+      
+
+      
+        
+        <h2>Table of Contents</h2>
+        <ol>
+        
+          <li><a href="/rune/01-hardware.html">RUNE Part 1: The Hardware</a></li>
+        
+          <li><a href="/rune/02-sensor-wars.html">RUNE Part 2: The Sensor Wars</a></li>
+        
+          <li><a href="/rune/03-wakeup.html">RUNE Part 3: The Chip Wouldn't Wake Up</a></li>
+        
+          <li><a href="/rune/04-gestures.html">RUNE Part 4: Eight Problems Called Gesture Detection</a></li>
+        
+          <li><a href="/rune/05-calibration.html">RUNE Part 5: Calibration, From 125 Seconds to 3</a></li>
+        
+          <li><a href="/rune/06-app.html">RUNE Part 6: The App</a></li>
+        
+          <li><a href="/rune/07-power.html">Part 7: Power on 300mAh</a></li>
+        
+          <li><a href="/rune/08-gesture-symbols.html">Research on RUNE-III: Recognising Symbols in the Air</a></li>
+        
+          <li><a href="/rune/09-epilogue.html">RUNE Epilogue: Read the Datasheet</a></li>
+        
+        </ol>
+      
+
+    </div>
+  </div>
+</div>
+
+
+  <!-- Footer -->
+
+<hr>
+
+<footer>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <ul class="list-inline text-center">
+          
+          <li class="list-inline-item">
+            <a href="mailto:amitava.dev@proton.me" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="far fa-envelope fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          
+          
+          <li class="list-inline-item">
+            <a href="https://www.linkedin.com/in/amitavaag" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-linkedin fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          <li class="list-inline-item">
+            <a href="https://github.com/ikouchiha47" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-github fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+        </ul>
+
+        <p class="copyright text-muted">
+          Build with: 
+          <a 
+            href="https://github.com/StartBootstrap/startbootstrap-clean-blog-jekyll"
+            class="text-gray"
+            target="_blank">startbootstrap-clean-blog-jekyll</a></p>
+      </div>
+    </div>
+  </div>
+</footer>
+
+
+  <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="/assets/vendor/blog/js/scripts.js"></script>
+
+<script src="/assets/scripts.js"></script>
+
+
+
+
+
+  <script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+
+    document.querySelectorAll('pre > code.language-mermaid').forEach((codeBlock) => {
+      codeBlock.parentElement.outerHTML = `<pre class="mermaid">${codeBlock.textContent}</pre>`;
+    });
+
+
+    mermaid.initialize({ startOnLoad: true, theme: 'forest' });
+</script>
+
+
+  
+
+</body>
+
+</html>

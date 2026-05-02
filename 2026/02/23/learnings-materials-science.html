@@ -1,0 +1,963 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+  <title>
+    Learnings from Building LLM Systems - iko&#39;s logs
+    
+  </title>
+
+  <meta name="description" content="My previous employment was at a company in the Digital asset management space, working on making short form commercial videos, towards the end.">
+  <meta property="og:description" content="My previous employment was at a company in the Digital asset management space, working on making short form commercial videos, towards the end.">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Learnings from Building LLM Systems">
+  <meta property="og:url" content="https://ikouchiha47.github.io/2026/02/23/learnings-materials-science.html">
+
+  
+
+  <link href='https://fonts.googleapis.com/css?family=Lora:400,700,400italic,700italic' rel='stylesheet' type='text/css'>
+  <link href='https://fonts.googleapis.com/css?family=Open+Sans:300italic,400italic,600italic,700italic,800italic,400,300,600,700,800' rel='stylesheet' type='text/css'>
+
+  <!-- <script src="https://use.fontawesome.com/releases/v5.15.3/js/all.js" crossorigin="anonymous"></script> -->
+  <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.15.4/css/all.css" integrity="sha384-DyZ88mC6Up2uqS4h/KRgHuoeGwBcD4Ng9SiP4dIRy0EXTlnuz47vAwmeGwVChigm" crossorigin="anonymous"/>
+
+  <link rel="stylesheet" href="/assets/main.css">
+  <link rel="canonical" href="https://ikouchiha47.github.io/2026/02/23/learnings-materials-science.html">
+  <link rel="alternate" type="application/rss+xml" title="iko&#39;s logs" href="/feed.xml">
+
+  <meta name="google-site-verification" content="lWkg6gIxJgzEKX_5XnhcxCtPE9QknaimFWWos_dTvPM" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fira+Sans:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Inconsolata:wght@200..900&family=Jersey+25&family=Kanit:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Merriweather+Sans:ital,wght@0,300..800;1,300..800&family=Nanum+Gothic+Coding&family=Space+Grotesk:wght@300..700&family=Titillium+Web:ital,wght@0,200;0,300;0,400;0,600;0,700;0,900;1,200;1,300;1,400;1,600;1,700&display=swap" rel="stylesheet">
+
+</head>
+
+
+<body>
+
+  <!-- Navigation -->
+<nav class="navbar navbar-expand-lg navbar-light fixed-top" id="mainNav">
+  <div class="container">
+    <a class="navbar-brand" href="/">iko&#39;s logs</a>
+    <button class="navbar-toggler navbar-toggler-right" type="button" data-toggle="collapse" data-target="#navbarResponsive" aria-controls="navbarResponsive" aria-expanded="false" aria-label="Toggle navigation">
+      Menu
+      <i class="fa fa-bars"></i>
+    </button>
+    <div class="collapse navbar-collapse" id="navbarResponsive">
+      <ul class="navbar-nav ml-auto">
+        <li class="nav-item">
+          <a class="nav-link" href="/">Home</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/about">About</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/posts">Posts</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/contact">Contact</a>
+        </li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+
+  <!-- Page Header -->
+
+<header class="masthead" style="background: #000">
+
+  <div class="overlay"></div>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <div class="post-heading">
+          <h1>Learnings from Building LLM Systems</h1>
+          
+          <h2 class="subheading">What building an LLM-powered research platform actually looks like</h2>
+          
+          <span class="meta">Posted by
+            <a href="#">ikouchiha47</a>
+            on February 23, 2026 &middot; <span class="reading-time" title="Estimated read time">
+  
+   48 mins  read </span>
+
+          </span>
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="container space-grotesk">
+  <div class="row">
+    <div class="col-lg-8 col-md-10 mx-auto">
+
+      <p>My previous employment was at a company in the <code class="language-plaintext highlighter-rouge">Digital asset management</code> space, working on making short form commercial videos, towards the end.</p>
+
+<p>One of the USP was, consistent character generation, which was until <a href="https://blog.google/technology/ai/nano-banana-pro/">Nano Banana</a>, and soon other mainstream models caught up. So the switch was to
+generate short form commercial videos.
+Once the shop closed, I spent time reflecting on how things went, and how the overlap landscape changes with AI in picture.
+One of those thoughts gave birth to <a href="https://github.com/ikouchiha47/krearts">krearts</a></p>
+
+<p>During the time I was also:</p>
+
+<ul>
+  <li>Helping bootstrap an LLM-powered research platform for materials scientists.
+The kind where researchers upload papers, ask questions, and get structured answers with citations. Not a chatbot. A system.</li>
+  <li>Was trying to make hot-chocolate, because 90% of hot chocolate served in Bangalore is either a middle-class bourvita drink with extra hot water,
+and the rest 10% adds a bunch of non-sense to hide their pathetic hot-chocolate.</li>
+</ul>
+
+<p>This blog documents some of the observations, in building a research oriented framework, and my understanding of this space, apart from code.</p>
+
+<hr />
+
+<h2 id="the-gpt-wrapper-fallacy">The GPT wrapper fallacy</h2>
+
+<p>When people see ChatGPT, Claude, Grok — the assumption is that building an LLM product is just API calls with a nice UI. Upload a PDF, call the model, return the answer. Ship it.</p>
+
+<p>The gap between <em>using</em> these tools and <em>building with</em> them is massive.</p>
+
+<p>Attachment parsing alone is a project. Scientific PDFs have multi-column layouts, inline equations, tables that span pages, figures with captions that reference other figures. Getting clean text out of that isn’t <code class="language-plaintext highlighter-rouge">pdf2text</code>. It’s a pipeline — layout detection, table extraction, figure-caption association, section boundary identification. And every format is different. A Nature paper looks nothing like an arXiv preprint.</p>
+
+<p>Then there’s retrieval. Without preprocessing and indexing:</p>
+<ul>
+  <li>Every question re-parses everything from scratch.</li>
+  <li>Every query pays the full cost of understanding the document.</li>
+</ul>
+
+<p>The first prototype worked exactly this way - no tagging of sections, no embeddings, only enriched extractions.</p>
+
+<p><strong>It was slow, and it had to be tweaked continuously to support new types of queries</strong></p>
+
+<p>Corrective RAG, structured extraction, citation grounding — each turned out to be its own subsystem with its own failure modes.
+The “wrapper” ended up being the smallest part of the system.</p>
+
+<p><a href="https://docs.crewai.com/">Crewai</a> should get more credit, it is like the <code class="language-plaintext highlighter-rouge">rails</code> of <code class="language-plaintext highlighter-rouge">ruby</code>.
+Especially the memory management, extensibility, tooling and integrations. It also has a inbuilt support for varieties of doc format.
+For a smaller startup with captial, one could throw <code class="language-plaintext highlighter-rouge">GPUs</code> and <code class="language-plaintext highlighter-rouge">docling</code> at the problem, 
+Otherwise choose to build the intermediate stages.</p>
+
+<p>Similar could be said for langchain and langgraph. But I would relate it more to <code class="language-plaintext highlighter-rouge">sinatra</code>.</p>
+
+<p><strong>N.B: Watchout for the event management system of crewai, its a app level global situation, but one can use async context to map events to connections</strong></p>
+
+<hr />
+
+<h2 id="what-actually-happens-to-a-query">What actually happens to a query</h2>
+
+<p>A user types: <em>“What compositions showed the lowest formation energy across these three papers?”</em></p>
+
+<p>The naive assumption is “send to LLM, get answer.” In practice, there’s a whole pipeline before the model ever sees the question:</p>
+
+<p><strong>Query expansion.</strong> The raw question gets rewritten. “Formation energy” might need to expand to “enthalpy of formation,” “DFT-computed stability,” or specific notation like ΔHf. A single user question becomes multiple retrieval queries.</p>
+
+<p><strong>Intent classification.</strong> Is this a comparison across papers? A lookup in a single table? A synthesis question that needs reasoning? The retrieval strategy changes depending on the answer.</p>
+
+<p><strong>Hybrid retrieval.</strong> Full-text search (FTS), n-gram matching, and semantic embeddings each catch different things. FTS finds exact terms. N-grams handle partial matches and chemical formulas that embedding models mangle. Embeddings capture semantic similarity — “thermal stability” matching “resistance to decomposition.”</p>
+
+<p><strong>Reranking.</strong> The initial retrieval casts a wide net. A reranker (cross-encoder or LLM-based) scores each chunk against the original question for fine-grained relevance. This is where you go from “related passages” to “the actual answer is in these three paragraphs.”</p>
+
+<blockquote>
+  <p>Reciprocal Rank Fusion (RRF) merges results from different retrieval methods into a single ranked list. The LLM then reasons over the top results instead of just returning links.</p>
+</blockquote>
+
+<p>None of this retrieval composition is new. Google has done this for decades. The difference is composing these with an LLM reasoning loop instead of hand-tuned ranking signals.</p>
+
+<p><strong>What this replaces:</strong>
+Traditionally, doing this well meant deploying <strong>Elasticsearch or Solr</strong> — heavy infrastructure with its own operational cost, query DSLs, analyzers, synonym dictionaries, spell-check configs, and tokenizer tuning.</p>
+
+<p>With an LLM and vector search, a lot of that goes away:</p>
+
+<ul>
+  <li><strong>Spell correction, synonyms, query reformulation</strong> — handled natively by the LLM. “therml stability” still matches “thermal stability” because the embedding is close enough, and the LLM rewrites the query anyway.</li>
+  <li><strong>The search cluster itself</strong> — a vector database (or even just <code class="language-plaintext highlighter-rouge">pgvector</code>) plus FTS on Postgres replaces what used to require a dedicated search deployment.</li>
+</ul>
+
+<blockquote>
+  <p>The complexity of maintainance cost and migration costs, associated with elasticsearch, and its java baked ecosystem reduces to something much simpler - <code class="language-plaintext highlighter-rouge">GPUs</code>, <code class="language-plaintext highlighter-rouge">Database</code>, and <code class="language-plaintext highlighter-rouge">API calls</code></p>
+</blockquote>
+
+<hr />
+
+<h2 id="the-preprocessing-tax">The preprocessing tax</h2>
+
+<p>Without an embedding and indexing pipeline, every query pays the full cost. Parse the PDF. Chunk it. Embed the chunks. Search. Answer. For a 40-page paper, that’s 30+ seconds before the user sees anything.</p>
+
+<p>The alternative is progressive indexing: make the paper useful immediately and build deeper indexes in the background.</p>
+
+<p>This works in tiers:</p>
+
+<ol>
+  <li><strong>Instant</strong> — Raw text extraction + section splitting. The paper is searchable within seconds.</li>
+  <li><strong>Fast</strong> — Table detection, figure extraction, metadata parsing. Available within a minute.</li>
+  <li><strong>Deep</strong> — Full embedding generation, entity extraction, cross-reference resolution. Runs in the background.</li>
+</ol>
+
+<p>A query that arrives at tier 1 gets FTS-only retrieval. Not perfect, but fast and useful. By the time the researcher has read the first answer and typed a follow-up, tier 2 or 3 is ready.</p>
+
+<p>The key insight: researchers don’t upload a paper and immediately ask their hardest question. They start with “what’s this about?” and work their way to specifics. Progressive indexing matches the system’s readiness to the user’s actual behavior.</p>
+
+<p>This is the same pattern behind <a href="/2025/10/02/media-search.html">Cinestar’s</a> five-phase video indexing pipeline — make a video searchable the moment it’s uploaded (phase 0, basic metadata), then progressively refine with multi-modal enrichment, coarse segmentation, fine segmentation, and cross-reference passes.</p>
+
+<p>The domain is different but the architecture is identical: immediate utility, background refinement, each tier unlocking better search quality.</p>
+
+<hr />
+
+<h2 id="graph-rag--where-it-fits">Graph RAG — where it fits</h2>
+
+<p>Graph RAG has real value. But the costs are real too.</p>
+
+<h3 id="single-document-usually-not-worth-it">Single document: usually not worth it</h3>
+
+<p>Building a knowledge graph over <strong>one document</strong> requires:</p>
+<ul>
+  <li>Full entity extraction — identifying entities, properties, conditions, methods</li>
+  <li>Relationship extraction between them</li>
+  <li>Co-reference resolution</li>
+  <li>Building a traversable graph</li>
+</ul>
+
+<p>For a single document, this is expensive relative to the payoff. A well-chunked document with good metadata gets roughly 80% of the way there.</p>
+
+<p><strong>The better alternative</strong> — <code class="language-plaintext highlighter-rouge">section_covers</code>.</p>
+
+<p>No matter how unstructured a PDF layout looks, the domain and the humans in it have a structure. Every scientific paper has an implicit hierarchy — title, abstract, hypothesis, methods, results, conclusion. The sections might be named differently, merged together, or split across pages, but the structure is always there. Researchers read papers this way instinctively.</p>
+
+<p>The idea: teach the LLM this structure through the prompt, and have it classify each chunk during ingestion. The classification is an array — <code class="language-plaintext highlighter-rouge">["methods", "results", "datasets"]</code> — not a single label, because sections overflow. A “methods” section often contains datasets and preliminary results too.</p>
+
+<p><strong>How the LLM knows the structure.</strong> The agent prompt is hierarchically organized with custom tags — identity, capabilities, workflows, security, output rules — each scoped and nested. Within this, the paper-reading workflows define phased strategies:</p>
+
+<ul>
+  <li><strong>Summarization:</strong> extract six elements from any paper — hypothesis, claim, evidence, assumption, experiment, result — mapped to section types</li>
+  <li><strong>Comparison:</strong> compare across papers element-by-element, using section types as the navigation axis</li>
+  <li><strong>Hypothesis generation:</strong> scan → deep-read → synthesize, with section-aware retrieval at each phase</li>
+</ul>
+
+<p>The <code class="language-plaintext highlighter-rouge">Researcher</code> agent, is given detailed instructions on how a “researcher” reads — which sections to check first for which kind of question, when to fall back to broader reading, how to cross-reference across documents.</p>
+
+<p>At query time, filtering by section type is a simple indexed array lookup.
+“Show me just the methods across these three papers” — no graph traversal needed. The LLM can then drive a ReAct loop to compare across sections, navigate the hierarchy, and synthesize — all without an entity graph.</p>
+
+<h3 id="across-a-workspace-over-time-where-it-shines">Across a workspace over time: where it shines</h3>
+
+<p>Researchers don’t work with one paper. They work with a dozens of papers, experimental notes, simulation results, reviewer feedback. Over weeks and months, connections accumulate:</p>
+<ul>
+  <li>This paper’s synthesis conditions produced the same phase as that paper’s computational prediction</li>
+  <li>This reviewer’s objection was addressed by that experiment</li>
+  <li>This failed hypothesis ruled out a class of compositions</li>
+</ul>
+
+<p>That’s where a knowledge graph becomes valuable. <strong>Not blind LLM extraction</strong> — asking a model to “extract all entities” from a paper produces confident garbage.</p>
+
+<p>What works is:</p>
+<ul>
+  <li><strong>Curated, validated connections</strong> built incrementally</li>
+  <li><strong>Human-in-the-loop validation</strong> for each new paper and result</li>
+  <li>The graph grows as the research grows</li>
+</ul>
+
+<blockquote>
+  <p>Graph RAG for single-document retrieval is usually overkill. Graph RAG as an epistemic knowledge web built over months of research — that’s where it becomes worth the investment.</p>
+</blockquote>
+
+<hr />
+
+<h2 id="the-cage-and-the-wind">The cage and the wind</h2>
+
+<p>Models get switched. Pricing changes, a new model drops with better structured output, an open-source option gets good enough for a subtask. Each time, it means rewriting prompts and fixing output parsing — unless the system is built for it.</p>
+
+<p>The prompt is the cage geometry — it shapes the output. But real portability comes from treating LLM output as untrusted input.</p>
+
+<ul>
+  <li>Expected a JSON object with specific fields? Parse it, validate the schema, check the types.</li>
+  <li>Expected citations? Verify they reference real passages in the retrieved chunks.</li>
+  <li>Expected a numerical comparison? Check that the numbers actually appear in the source material.</li>
+</ul>
+
+<p>When validation fails, the system retries with a corrective prompt that includes the validation error. Self-correcting loops. In practice, most queries resolve in one pass. Some need two. When it takes three, the problem is almost always in the prompt design or the retrieval, not the model.</p>
+
+<p>This leads to a useful model-agnostic metric: not “which model is best” but “how many correction cycles does this model need for this task.” GPT-4 might need one cycle where Claude needs two, or vice versa, depending on the task class. The system handles both.</p>
+
+<p>One observation: most open-source models share failure modes — they’re fine-tuned from the same bases. A correction loop that handles Llama’s JSON formatting quirks tends to handle Mistral’s too. Build the cage right and the wind can change direction.</p>
+
+<hr />
+
+<h2 id="the-context-window-problem">The Context Window Problem</h2>
+
+<p>I wished I could write very passionately about these things, but I don’t really find much challange or learnings
+in terms of high level abstractions.</p>
+
+<p>Some of the instruction following of LLM has gotten better over time, so the <code class="language-plaintext highlighter-rouge">ReACT</code> is a good place to start at.
+So the only two things that remain:</p>
+
+<ol>
+  <li>Handle Compression of Context</li>
+  <li>Use memory agent with a storage backed, and expose the tools of the agent.</li>
+</ol>
+
+<p>The interesting parts are in the:</p>
+<ul>
+  <li>details of how to better store or structure the data for storage.</li>
+  <li>combining sparse and dense embeddings</li>
+  <li>how year or month long conversations can be retrieved.</li>
+</ul>
+
+<p>Rest of everything even <code class="language-plaintext highlighter-rouge">RLM</code>s sounds like a fancy FAD to me.</p>
+
+<blockquote>
+  <p>Using python env to run code, to get information from context. And if it gets the code wrong does it retry? how many tokens per roundtrip? how do you run it securely? how about the llm lieeeeessssss in the code?.</p>
+</blockquote>
+
+<p><strong>ReACT</strong> should be evolved into, <code class="language-plaintext highlighter-rouge">ParallelReACT</code>, <code class="language-plaintext highlighter-rouge">Goal Planning</code>, and other mechanisms that are already well established in gaming systems. Instead of <em>Why don’t we replace a simple predictible agent and retrival system into a token vaccum and a security knightmare, rather than have a proper data structure and ways to query them!! SQL is for insane people</em></p>
+
+<hr />
+
+<h2 id="video-generation-spatial-awareness-and-hot-chocolate">Video Generation, Spatial Awareness and Hot Chocolate</h2>
+
+<p>Foundational models are trained on a lot of data. The assumption is that because of how embedding spaces work, the LLM would be the one that sees all patterns — but more powerful.</p>
+
+<p>Maybe it does. But what it does and doesn’t depends on <strong>how it was trained</strong>. Combining different domains means mapping them to the same embedding space. General LLMs are not an answer to this.</p>
+
+<h3 id="domain-knowledge-has-layers">Domain knowledge has layers</h3>
+
+<p>In video generation, the underlying models have to be tweaked enough to guard how the LLM generates media. The nuances are real:</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>Level</th>
+      <th>What it determines</th>
+      <th>Example</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><strong>Macro</strong></td>
+      <td>Physics, environment, scene composition</td>
+      <td>Bags are not displayed the same way as watches</td>
+    </tr>
+    <tr>
+      <td><strong>Micro</strong></td>
+      <td>Audience, messaging, tone</td>
+      <td>A wrist watch is not advertised the same way as a wall clock. A mechanical watch is not advertised the same way as a quartz.</td>
+    </tr>
+    <tr>
+      <td><strong>Cultural</strong></td>
+      <td>Aesthetics, conventions, expectations</td>
+      <td>A Japanese website looks nothing like a US-built website. Japanese fashion magazines are structured for data extraction — what to wear, how to pair it, what it’s for.</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>LLMs tend to take the path of least work. Hence the need for detailed planning, guardrails, and extensive instruction following. If these foundational models had all this world knowledge baked in, why would anyone need custom embedding models?</p>
+
+<blockquote>
+  <p>This sounds more like a Mixture of Experts, but constrained to a domain.</p>
+</blockquote>
+
+<h3 id="llms-lack-spatial-awareness">LLMs lack spatial awareness</h3>
+
+<p>When working with non-textual data, it’s fairly impossible for an LLM to predict things in real life. Back in very late 2025, none of the LLM models were consistently good at:</p>
+<ul>
+  <li>Dynamic camera angles mid-scene</li>
+  <li>Heavy action sequences — even something simple as parkour would fall apart</li>
+  <li>Predicting anything that needs <strong>visual cues or real-world feedback loops</strong></li>
+</ul>
+
+<p>The failure has multiple layers, and it’s well-documented:</p>
+
+<ul>
+  <li><strong>Text encoders lose spatial information before generation even starts.</strong> CLIP-based encoders (used in most diffusion models) establish representations in early layers and don’t compose spatially. T5-based encoders (Imagen, DeepFloyd) do ~10% better because they process sequentially — but still fall short. (<a href="https://arxiv.org/abs/2311.17937">Unlocking Spatial Comprehension in T2I Diffusion Models</a>)</li>
+  <li><strong>Training data rarely contains explicit spatial language.</strong> Captions say “a dog in a park” not “a dog positioned 2 meters left of a bench.” The models have minimal exposure to spatial relations like “inside”, “below”, “smaller than.” (<a href="https://arxiv.org/html/2403.00587">Improving Explicit Spatial Relationships in T2I Generation</a>)</li>
+  <li><strong>No internal 3D or physics model.</strong> The generator learns statistical co-occurrence — “pocket” appears with “phone”, “boombox” appears with “music player” — but never learns that a pocket has a fixed volume, or that an object must be smaller than its container.</li>
+  <li>Ask an image model for “a big music player bulging in someone’s pocket” — you’ll get a person holding a boombox. It retrieved the strongest visual pattern for “big music player”, never computed whether it fits inside the pocket.</li>
+  <li><a href="https://arxiv.org/abs/2307.06350">T2I-CompBench</a> (NeurIPS 2023) confirms <strong>spatial relationships are the weakest category</strong> across all tested models. OpenAI’s own <a href="https://arxiv.org/html/2402.17177v2">Sora technical report</a> acknowledges failures in physics, causality, and left/right differentiation.</li>
+</ul>
+
+<p>The precise term from the literature: <strong>statistical co-occurrence without compositional constraint satisfaction</strong>. The models know what things look like together, but can’t enforce constraints between them.</p>
+
+<blockquote>
+  <p>LLMs are probabilistic systems. <code class="language-plaintext highlighter-rouge">If you expect a probabilistic system to reliably (do X), it will probably, reliably (do X)</code></p>
+</blockquote>
+
+<h3 id="the-hot-chocolate-test">The hot chocolate test</h3>
+
+<p>GPT has a lot of information about how good hot chocolate is made. It can tell you how different countries and regions like theirs, <strong>if you ask for it</strong>. It has access to all kinds of recipes, ratings, discussions — enough for a fair idea.</p>
+
+<p>But an LLM has never <strong>seen or tasted</strong> hot chocolate. It relies on what I call <strong>“collective truth”</strong>. So it can’t accurately predict how changes in quantities lead to different taste.</p>
+
+<p>This is the same with materials research — CHGNet and other tools provide contextual models with <strong>computation baked in</strong>, rather than an LLM trying to predict outcomes.</p>
+
+<p>When I asked the LLM to adjust quantities for 4 people, the amount of water and sugar was way off from reality. <strong>What actually worked:</strong></p>
+<ul>
+  <li>The LLM knew the <strong>desired result</strong> of each step — “a creamy paste, not pudding-thick, but not watery”</li>
+  <li>The LLM knew what <strong>good taste means</strong> (not going into the details of one-shot or ReAct)</li>
+  <li>But it needed <strong>real-world feedback</strong> to get the quantities right</li>
+</ul>
+
+<h3 id="the-sensory-gap">The sensory gap</h3>
+
+<p>For automation, this means: as long as the LLM has access to eyes, ears and other senses into the real world, foundational models can actively guide towards real-life usable outcomes.</p>
+
+<p>The same principles apply to sequential or batched image and video generation — with a corrective feedback loop. But costs shoot up.</p>
+
+<p><em>With enough effort — YOLO for vision, RPi Zero or ESP32 to capture images in batches, actual instruments and sensors providing continuous feedback — most real-life applications of AI will come when we add sensory elements to it. The LLM continuously validates against the desired outcome at each stage.
+The easier version would be just to let an app do the compute</em></p>
+
+<hr />
+
+<h2 id="ui-in-the-era-of-llms">UI in the era of LLMs</h2>
+
+<p>This is still a very interesting field, which is realted to one of my projects, <code class="language-plaintext highlighter-rouge">adaptui</code>. I think, one day, <code class="language-plaintext highlighter-rouge">UI</code> would be built on fly.
+The cost is an inherent problem - not just token cost, but time taken. It would obviously take less time to just generate data
+for a static UI, than letting an llm decide an UI. Like any other system design, we can divide the UI into two parts, static and dynamic, as well.</p>
+
+<p>Many of the recent day llms also understand <code class="language-plaintext highlighter-rouge">react components</code> (from reactjs), tailwind, icons etc. So it would be intereseting to see
+where that goes. Maybe most apps will be replaced by a <code class="language-plaintext highlighter-rouge">SuperApp</code>, with some UI protocol allowing different brands to have consistency and control over some parts of the app.</p>
+
+<p>A good middleground right now is somewhere in between:</p>
+<ul>
+  <li>Either the LLM can generate the data and the html component, which has to be rendered safetly on FE</li>
+  <li>Or, the LLM is given the data and the expected response structure, that is associated with a response schema.
+The <code class="language-plaintext highlighter-rouge">response schema</code> in this case can be used to populate the data in the corresponding <code class="language-plaintext highlighter-rouge">react</code> component.</li>
+</ul>
+
+<p>The second one, requires some upfront thinking, like a <code class="language-plaintext highlighter-rouge">react component</code> builder, on what parts to allow to change and what is the
+expected data structure. Again, the problem here is the same:</p>
+
+<blockquote>
+  <p>More things we leave it to the LLM, more the latency and chances of error increases, and hence more error recovery mechanism.</p>
+</blockquote>
+
+<p>On a bad day, you will really have a bad day.</p>
+
+<hr />
+<h2 id="testing-from-both-directions">Testing from both directions</h2>
+
+<p>Not being a materials science expert meant there was no way to eyeball whether the system was producing good hypotheses. So the build happened in two directions simultaneously.</p>
+
+<h3 id="direction-1-build-the-subsystems">Direction 1: Build the subsystems</h3>
+
+<p>Same approach as building a compiler — lexer, parser, codegen, each independently testable:</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>Subsystem</th>
+      <th>What it does</th>
+      <th>Testable in isolation?</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Document pipeline</td>
+      <td>Parse, chunk, index scientific PDFs</td>
+      <td>Yes — output is structured text, verifiable</td>
+    </tr>
+    <tr>
+      <td>Retrieval</td>
+      <td>Hybrid search across indexed papers</td>
+      <td>Yes — relevance scoring against known queries</td>
+    </tr>
+    <tr>
+      <td>Domain tools</td>
+      <td>CHGNet, GPAW, materials databases</td>
+      <td>Yes — known inputs, known outputs</td>
+    </tr>
+    <tr>
+      <td>Agents</td>
+      <td>Orchestrate tools, maintain context</td>
+      <td>Yes — given fixed retrieval, does the plan make sense</td>
+    </tr>
+    <tr>
+      <td>Experiment runner</td>
+      <td>Execute computational experiments</td>
+      <td>Yes — scripts produce reproducible results</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>Each piece could be validated without domain expertise. The document pipeline either extracts tables correctly or it doesn’t. CHGNet either returns a valid energy prediction or it doesn’t.</p>
+
+<h3 id="direction-2-build-the-evaluation">Direction 2: Build the evaluation</h3>
+
+<p>The harder question: <strong>does the whole system, end-to-end, produce hypotheses that are actually good?</strong></p>
+
+<p>The approach:</p>
+<ul>
+  <li>Pick a <strong>resolved scientific controversy</strong> with a known outcome (LK-99 superconductivity)</li>
+  <li>Build the paper chain <strong>without</strong> the final resolution paper</li>
+  <li>Feed the incomplete chain to the system <strong>in a conversational pattern</strong> — not “tell me the answer”, but the way a researcher would actually explore: “what are the competing claims?”, “what experiments would resolve this?”, “which hypothesis has the strongest evidence?”</li>
+  <li>Score the generated hypotheses against the withheld paper</li>
+</ul>
+
+<p>The conversational pattern matters. A direct request — “what caused the LK-99 results?” — would test whether the model memorized the answer. A conversational exploration tests whether the <em>system architecture</em> can guide reasoning through literature, contradictions, and evidence toward a defensible hypothesis.</p>
+
+<p>The hypothesis engine was essentially reverse-engineered from this evaluation. The question “how do you know if it’s any good?” shaped every architectural decision — what agents exist, how they communicate, what tools they call, how hypotheses get ranked.</p>
+
+<hr />
+
+<h2 id="shipping-llm-powered-apps">Shipping LLM Powered Apps</h2>
+
+<p>The obvious first move is a web app. Upload papers, ask questions, get answers. Fastest to ship, easiest to demo. For a lot of teams, it’s the right choice.
+But once the architecture is model-agnostic, it doesn’t actually <em>need</em> to be centralized.</p>
+
+<p>The workspace, the agents, the retrieval layer — all of it can run on a researcher’s machine or a lab’s own infrastructure. That opens up delivery options worth considering.</p>
+
+<h3 id="the-options-as-i-see-them">The options as I see them</h3>
+
+<table>
+  <thead>
+    <tr>
+      <th> </th>
+      <th><strong>Web / SaaS</strong></th>
+      <th><strong>Editor (JetBrains / Cursor-style)</strong></th>
+      <th><strong>VSCode / Codium plugin</strong></th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><strong>Where the workspace lives</strong></td>
+      <td>Cloud</td>
+      <td>Researcher’s machine or lab infra</td>
+      <td>Researcher’s machine</td>
+    </tr>
+    <tr>
+      <td><strong>Model inference</strong></td>
+      <td>Hosted endpoints</td>
+      <td>Local, lab cluster, or hosted — their choice</td>
+      <td>Same</td>
+    </tr>
+    <tr>
+      <td><strong>Data residency</strong></td>
+      <td>Provider-managed</td>
+      <td>User-managed</td>
+      <td>User-managed</td>
+    </tr>
+    <tr>
+      <td><strong>Git-backed tracking</strong></td>
+      <td>Possible but uncommon</td>
+      <td>Natural fit — queries, experiments, hypotheses all versioned</td>
+      <td>Same</td>
+    </tr>
+    <tr>
+      <td><strong>Lab equipment access</strong></td>
+      <td>Via API tunnels</td>
+      <td>Direct — instruments register as tools</td>
+      <td>Direct</td>
+    </tr>
+    <tr>
+      <td><strong>Distribution</strong></td>
+      <td>URL</td>
+      <td>Installer / package manager</td>
+      <td>Marketplace (shared across Codium-based editors)</td>
+    </tr>
+    <tr>
+      <td><strong>Trade-off</strong></td>
+      <td>Fastest to ship. Data residency is a conversation with every enterprise customer.</td>
+      <td>Most integrated, most opinionated. Bigger upfront investment.</td>
+      <td>Lowest barrier to adoption. Less integrated long-term.</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>No single right answer:</p>
+
+<ul>
+  <li>SaaS is simpler to operate</li>
+  <li>An editor gives researchers a workspace that feels like <em>theirs</em></li>
+  <li>A plugin meets them where they already are</li>
+  <li>Different labs, different constraints, different choices</li>
+</ul>
+
+<p>The interesting observation is that a model-agnostic design (the cage and the wind) is what makes these options possible at all.</p>
+
+<h3 id="what-local-delivery-unlocks">What local delivery unlocks</h3>
+
+<p><strong>Git-based tracking.</strong> When the workspace is local, versioning research artifacts in git becomes natural. Every query, experiment config, hypothesis — versioned. Branch a research direction. Diff two experimental setups. Revert a dead end. Researchers already think in version control for code; extending it to research is a small step.</p>
+
+<p><strong>The device-driver pattern.</strong> With local or lab-hosted infrastructure, physical equipment can connect directly. The framework defines the tool interface; labs implement the connector for their instruments — a synthesis furnace, an XRD machine, a spectrophotometer. Same interface as any other tool in the registry. This is harder to pull off through a cloud intermediary, though not impossible.</p>
+
+<blockquote>
+  <p>Once inference is swappable — hosted, self-hosted, open-source, Model Garden, whatever — the delivery question becomes about where the <em>data</em> lives, not where the <em>model</em> lives.</p>
+</blockquote>
+
+<p>In terms of business models, at the time of writing this, I see three prevalent ones.</p>
+
+<ol>
+  <li>That bets on the foundational model being better, using simple adapters, all forms of prompt and context engineering, to build a product.</li>
+  <li>The ones that are building their own foundational models, embedding models, ocr and other llm-ification of existing tools.</li>
+  <li>They have a or a bunch of products, and LLM, VLM, Vector Embeddings are a driver of the product. These could be services industry as well, providing custom implementations on top of different models.</li>
+</ol>
+
+<p>The 1st one however, would probably not survive, if it’s not a niche the big players don’t want to focus on, and public data is unavailable. Without a proper moat, the fear of being invalidated or competitor proliferation is much higher.</p>
+
+<p>The DocuSign incident is a glaring example — OpenAI launched DocuGPT, and DocuSign’s stock <a href="https://finance.yahoo.com/news/docusign-docu-falls-12-openai-044456722.html">dropped 17%</a> overnight. Open-source alternatives like <a href="https://www.opensignlabs.com/">OpenSign</a> and <a href="https://documenso.com/">Documenso</a> were already circling.</p>
+
+<p>When everyone has a gun, you need a bigger gun (leverage).</p>
+
+<hr />
+
+<h2 id="thoughts">Thoughts</h2>
+
+<p>Overall, as I understand, llm’s use on textual data, is pretty limited use of this technology. Yes one can convert a natural language to an sql query.
+The system you might have built, using agents and tools, to produce a valid grounded query, might as well be one shotable with a long enough context window.</p>
+
+<p>So there isn’t much inherent value in building such systems. Looking back, I realize, for sure, if an MVP or bootstrapped product, is headon with
+existing features available on the available SaaS platform, and is presented to the users, the <strong>in-evitable, un-avoidable and un-answereable question, how is that different from GPT</strong>,
+will be presented.</p>
+
+<p>In all honesty, its probably not, because building a production grade ChatGPT like interface, with all the functionalities and edge cases take time.
+It would be similar to asking <code class="language-plaintext highlighter-rouge">Build me Twitter</code>. <em>Sure, but why?</em></p>
+
+<blockquote>
+  <p>The users do not and should not care about such engineering challenges.</p>
+</blockquote>
+
+<ul>
+  <li>Businesses should identify an actual gap or pain-point, which is much narrow, and yet generic enough for 10 people.</li>
+  <li>Evaluate where in a LLM and its Senses are needed, if at all.</li>
+  <li>Build on the narrow domain, and choose the pain points early on. Especially for bootstrap teams or startups, choosing the right battle is necessary</li>
+</ul>
+
+<p>Chat becomes another interface to communicate with the system, much like REST. And hence the comparison against GPT or other models never come along.</p>
+
+<p>Overall I dont feel like much has affected in terms of how one does business.
+When the internet came along, there were loads of websites just built with no actual substance, and as time went by,
+the web just became a medium or enabler for actual labour.</p>
+
+<p>I think the same will happen for AI, most companies, whose identities are based around LLM will not survive in the end.
+Anything and most things, that was generated or is one shotable by an LLM, will eventually get replicated and saturated.</p>
+
+<p>So one way I guess could be to build wrappers very fast, on multiple domains. I mean, there are 100s and 1000s of n8n workflows,
+skills, subagents, entire repositories of “leaked” prompts for agentic coding tools.</p>
+
+<p>The only leverage these tools have is funding. If funding, networking and marketing were readily available, everyone could sell their own spinoff of <code class="language-plaintext highlighter-rouge">opencode</code>.
+Which again is business as usual. There are a lot of twitter clones, and reddit alternatives, but the rate of success doesn’t depend on just code execution.</p>
+
+<blockquote>
+  <p>Code execution at base level has always been cheap. Especially in India, where culture is mostly managerial driven. CxOs all over the world, earn disproportionately more, not because they can write code.</p>
+</blockquote>
+
+<p>And it’s getting cheaper. Cross-provider deployment can be automated pretty easily now — Terraform, Pulumi, SST, whatever your flavor. Code generation is commoditized. Porting concepts from one language’s ecosystem to another is a weekend project with a coding agent. Elixir’s supervision trees in Go, Python’s Ray actors in Rust, Ruby’s convention-over-configuration patterns anywhere — the implementation barrier between “I know this pattern exists” and “it’s running in my stack” has collapsed. Which means the moat is never in the code.</p>
+
+<h3 id="org-changes">Org changes</h3>
+
+<p>I don’t think this is new practice now, but still to acknowledge, AI has caused some cultural shifts in org.
+It also has somehow set the wrong expectations from a lot of people. In a way, I feel the bigger question is missed.</p>
+
+<p>It begins with educating everyone alike, juniors, seniors, management, stakeholders.</p>
+
+<p>This is both in terms of work volume and work culture. Both of them can be solved to a good extent using code and conventions.
+Maybe in the near future, instead of <code class="language-plaintext highlighter-rouge">full-stack engineers</code>, we have actual <code class="language-plaintext highlighter-rouge">product engineers</code>, who can understand product and the build it as well.</p>
+
+<p>Until then, platforms in the org needs to bridge this gap. In such a style of development, a developer would need to be able to identify such parts of a system in the architecture planning stage. Building abstractions, configurations, and the right interfaces and pipelines which allows the developers to be able to handoff some or most of the work to the specific dept.</p>
+
+<p>A backend dev, building a service layer, doesn’t need to what prompts are being used, what ml models are running. He/She would instead build a system, where:</p>
+<ul>
+  <li>Prompts are versioned and the source is decoupled</li>
+  <li>Loads of configurations for models or family of models, the location of model, finetuned or not is not his headache.</li>
+  <li><strong>Eval framework</strong>, no matter how lightweight, to compare against golden data</li>
+  <li>Monitoring and logging</li>
+  <li>Keeping a data migration plan between versions ready.</li>
+</ul>
+
+<hr />
+
+<h2 id="the-bigger-question">The Bigger Question</h2>
+
+<p>If you have a look at <a href="https://github.com/ikouchiha47/claude-scientific-skills">claude-skills-repo</a>, I can alwaya
+go and create a few <code class="language-plaintext highlighter-rouge">sub-agents</code>, prompt so financial-analysis to life, looking at geographical data, charts etc.,
+and one could write a few scripts, which can be directly used to run backtesting and quant-analysis.</p>
+
+<p>There is this other thing - if something can be built with ai, it can be replicated with ai.</p>
+
+<p>So the question still is, if its possible to let things happen automatically:</p>
+<ul>
+  <li>then how does business look?</li>
+  <li>how does the concept of fairness evolve, is it going to be first mover?, only deep tech? or deep connections and pockets?</li>
+  <li>software engineers are not essential? a doctor could vibe code some app.</li>
+</ul>
+
+<h3 id="the-hidden-cost-of-development">The hidden cost of development</h3>
+
+<p>I look back at my experience with building cinestar, and I had no choice but to keep vibe coding, like a druggie.
+What started off as maybe at max a week like hackathon, turned into a 2-3 month tussle with the LLM:</p>
+<ul>
+  <li>constantly lying/skipping</li>
+  <li>writing tests to satisfy its own understanding</li>
+  <li>missing the data gathering phases</li>
+  <li>fixing one thing, breaking other things</li>
+  <li>refactor nightmare</li>
+</ul>
+
+<p>In hindsight, if I had done an <code class="language-plaintext highlighter-rouge">assist</code> mode, instead of <code class="language-plaintext highlighter-rouge">vibe</code> mode, it would be been a much better experience.</p>
+
+<p><strong>So, even if you know what needs to be done, seeing the entire codebase playout from inception to delivery and refactor, cycles still need human suffering behind it</strong></p>
+
+<blockquote>
+  <p>You are/should be objectively faster at writing a binary search without mistakes, than an LLM, and can do it multiple times without losing money.</p>
+</blockquote>
+
+<p>And I am not entirely sure, the people higher up in the org is necessarily using AI to write and deliver code, as soon as he gets back from a client meeting. Nor do I think they should do it at a bigger org, where more complex things are at play.</p>
+
+<p>I am also not entirely sure, why would a doctor be trusted with a vibe coded application, to use for anything substantial in his work.</p>
+
+<p>As we move more closer to the real world, we see that apart from LLMs there are more focussed models and maths which do-not hallucinate. <strong>Here, probably, LLM becomes a driver</strong> . Eventually the outcomes predicted has to be tested in the real world,
+which was quite evident from our <code class="language-plaintext highlighter-rouge">hot chochlate</code> stint.</p>
+
+<h3 id="replication-and-ux-problem">Replication and UX problem</h3>
+
+<p>I could not only argue that, Cinestar can be replicated, and be replicated faster, but also say, this whole project can be a collection of <code class="language-plaintext highlighter-rouge">skills</code> and <code class="language-plaintext highlighter-rouge">sub-agents</code>. For the <code class="language-plaintext highlighter-rouge">terminal-ly</code> challanged, we could expose a website or an app or a plugin.</p>
+
+<p>The replication problem has exsisted, but the time to replicate has come down by a lot (arguably). Lets assume that it improves over time. So what’s left?</p>
+
+<p>What actually holds value:</p>
+
+<ol>
+  <li><strong>Data moats</strong>, not code moats. The software is replicable. Your proprietary dataset isn’t. The memory agent recording execution pathways, curated knowledge, internal algorithms/workflows/secret sauces — that’s probably the moat. The code is commodity. The accumulated intelligence isn’t.</li>
+  <li><strong>Distribution &gt; creation</strong>. Always was true, now brutally so. Two identical products — the one with users wins. It’s not just speed, it’s access to the audience, and also the type of audience.</li>
+  <li><strong>Domain depth</strong>: Kknowing that NMDC drops after earthquakes near Bellary, that INR depreciation eats nominal returns, that specific credit card reward structures can be arbitraged — an AI can discover these things, but <strong>Someone has to know to ask the right questions</strong>. The person who’s lived in Indian markets for years asks better questions than someone who just has the same tools.</li>
+</ol>
+
+<p>The UX is also quite scattered:</p>
+<ul>
+  <li>Devs use it in a certain set of ways. Editors, TUIs, Plugins</li>
+  <li>General dumb public, who would let products have complete autonomy of devices</li>
+  <li>Non-devs who are entering into the dev territory. These are people who just want to build.</li>
+</ul>
+
+<p>Overall, even if some systems are built, maintaining them would require engineers, so the task or way of execution
+in the lower layer changes. As long as there is a core product/problem which requires more work than just prompting
+it out, finer integrations, are the ones that do end up surviving and keeping the influx of engineers.</p>
+
+<ul>
+  <li>Platform/infra engineers — Core services, Devops + Data Engineers</li>
+  <li>Security engineers — attack surface grows with AI-generated code</li>
+  <li>Domain specialists who code and audit — the quant trader, the biotech researcher, the fintech person</li>
+  <li>“Taste” roles — product sense, design judgment, editorial quality</li>
+</ul>
+
+<p>** I wonder is it always going to be biased towards people who have better networking, capital and influence?**</p>
+
+<p>I guess, Yes. But that was always true. The industry genuienly hates software engineers. There is quite some science to this,
+but it rarely reflects in the way the IT system functions.</p>
+
+<p>If I consider, that people always saw <code class="language-plaintext highlighter-rouge">Software engineering</code> as a temporary anomaly, a means to an end — a 30-year window where a person with a laptop and skill could create outsized value without capital or connections, and</p>
+
+<p>What’s replacing it is closer to how every other industry works:</p>
+
+<ul>
+  <li>Capital lets you run more experiments faster (more API calls, more compute, more data)</li>
+  <li>Network gives you distribution and domain access</li>
+  <li>Speed matters because the first mover accumulates the data/users that become the moat</li>
+</ul>
+
+<blockquote>
+  <p>A person building AI-driven quant tools in their bedroom can absolutely beat a bank’s trading desk on idea generation. But the bank has the capital to act on those ideas at scale, the regulatory access to trade, and the data feeds and a lot more compute and brains and speed(lol, so much more speed its diabolical)</p>
+</blockquote>
+
+<p>So the bedroom builder either joins the bank, sells to the bank, or finds a niche the bank doesn’t care about.</p>
+
+<p>Not to mention, this shit is not for consumers, at all. All windows users, using powershell to run claude code, yeah sure. So whatever consumer adoption comes, that is going through the business/products they consume.</p>
+
+<p>So <strong>computer science as a discipline will still be valid</strong>, the stuff in between might eventually become production-line, like amazon factory workers, where someone just monitors metrics, and the llm crashes systems, causes a crowrdstrike like incident and then blames it on the CTO’s family.</p>
+
+<hr />
+
+<h2 id="what-id-tell-someone-starting-this">What I’d tell someone starting this</h2>
+
+<p>Some non-negotiables:</p>
+<ul>
+  <li>Configurability: as much as possible, especially with prompts, model names/bundles, iteration counts, embeeders, stores, anything that is experiment land (which is anything that the language models and embeddings touches)</li>
+  <li>VersionSystem: for schema changes and prompt changes</li>
+  <li>Conventions for collaboration: allow for people to participate. <strong>Platform engineers now need to consider non-tech people as junior developers, so that other teams can make the changes in-dependently</strong></li>
+  <li>Abstractions: This is not the what design pattern to use.
+If I were a famous person, I would add an <code class="language-plaintext highlighter-rouge">C</code> (changability) at the end of <code class="language-plaintext highlighter-rouge">CAP</code>.</li>
+</ul>
+
+<p><strong>Systems now not only need to worry about Read and Write patterns, but also which parts of the whole system can be replaced. This is Strategy Pattern applied at a more org and infra level</strong></p>
+
+<p>Once you think, you have a problem, you should explore with existing system. A path could look like so:</p>
+
+<ul>
+  <li>Start with finding what is your delivery mechanism, and pin point on 2 maybe. This also forces you to write code for future expansion</li>
+  <li>Try the whole workflow manually with your favourite tools, <code class="language-plaintext highlighter-rouge">chatgpt.com</code>, <code class="language-plaintext highlighter-rouge">codex</code>, <code class="language-plaintext highlighter-rouge">claude</code>.</li>
+  <li>In case you have no idea about the field, you can use a similar approach of <code class="language-plaintext highlighter-rouge">Simulation</code>, let the llm figure out test and train and target datasets.</li>
+  <li>Try to build the system using exsisting opensource tools, without much code, just bare-bones.</li>
+  <li>If the above turns out to be not so diffucult, that you can wrap the tui in a API and SSE, find something else or other business model. Otherise,</li>
+  <li>If the above turns out can not be completely done with a claude/opencode skills and subagents or n8n, it means you have leverage and a solution.</li>
+  <li>So even if the workflow can be built by someone, neither the provider, nor the competitor would have access to the propeitory stuff.</li>
+  <li>Once you have a system, which works with these already established tools like above, rebuilt them in code.</li>
+  <li>Run against a bunch of queries, and multi turn conversations, and track the tools used, total iterations taken. Try ot against different models and embeddings, So, <strong>making things configurable should come from day one</strong></li>
+  <li>This is where you start to see failures, and correction loops of the agent.</li>
+  <li>Start tweaking the prompts and tool descriptions, add the memory/storage layer, think about the <strong>intermediate pre-processing steps</strong>, as we saw with the <code class="language-plaintext highlighter-rouge">section_covers</code>.</li>
+</ul>
+
+<p><strong>Remember, LLMs and neural nets end of the day are high on patterns, and how humans have interracted with the system. This realisation
+should help you organise the data access patterns and tool prompts for them</strong></p>
+
+<ul>
+  <li>Build correction loops from day one. If the system can’t handle a malformed LLM response gracefully, it can’t handle production.</li>
+  <li>Measure retrieval quality separately from generation quality. When the answer is wrong, it’s almost always because retrieval surfaced the wrong context, not because the model can’t reason.</li>
+  <li>Treat every shortcut as debt. Skipping the indexing pipeline feels fast until every query takes 30 seconds. Hardcoding prompts for one model feels easy until you need to switch. Building for one document format feels simple until researchers upload the weird one.</li>
+</ul>
+
+<p>This post is the map. The territory is in the implementation.</p>
+
+
+      <hr>
+      <div class="row mb-5 mt-5">
+  <div class="col-md-6 d-flex align-items-end ">
+    <span>Thanks. <i>mind sharing?</i></span>
+  </div>
+
+  <!-- Right Column with Social Media Icons (on the right for larger screens, on bottom for smaller screens) -->
+  <div class="col-md-6 order-md-2 order-1 text-md-right text-center mt-3 mt-md-0">
+    <div>
+
+      <a
+          href="https://www.linkedin.com/sharing/share-offsite?url=ikouchiha47.github.io/2026/02/23/learnings-materials-science.html"
+          onclick="window.open(this.href, 'pop-up', 'left=20,top=20,width=500,height=500,toolbar=1,resizable=0'); return false;"
+          class="d-inline-block mr-2"
+       >
+        <span class="fa-stack fa-lg" style="color: #0077b5;">
+          <i class="fas fa-square fa-stack-2x"></i>
+          <i class="fab fa-linkedin fa-stack-1x fa-inverse"></i>
+        </span>
+      </a>
+
+      <a
+          href="https://twitter.com/intent/tweet?text=Learnings from Building LLM Systems&url=ikouchiha47.github.io/2026/02/23/learnings-materials-science.html"
+          onclick="window.open(this.href, 'pop-up', 'left=20,top=20,width=500,height=500,toolbar=1,resizable=0'); return false;"
+          class="d-inline-block mr-2">
+        <span class="fa-stack fa-lg" style="color: #1DA1F2;">
+          <i class="fas fa-square fa-stack-2x"></i>
+          <i class="fab fa-twitter fa-stack-1x fa-inverse"></i>
+        </span>
+      </a>
+
+      <a
+          href="http://www.reddit.com/submit?url=ikouchiha47.github.io/2026/02/23/learnings-materials-science.html"
+          onclick="window.open(this.href, 'pop-up', 'left=20,top=20,width=500,height=500,toolbar=1,resizable=0'); return false;"
+          class="d-inline-block mr-2">
+        <span class="fa-stack fa-lg" style="color: #FF4500;">
+          <i class="fas fa-square fa-stack-2x"></i>
+          <i class="fab fa-reddit fa-stack-1x fa-inverse"></i>
+        </span>
+      </a>
+    </div>
+  </div>
+</div>
+
+<hr/>
+
+
+      <div class="clearfix">
+
+        
+        <a class="btn btn-primary float-left" href="/postgresql-internals/" data-toggle="tooltip" data-placement="top" title="PostgreSQL Internals Deep Dive">&larr; Previous<span class="d-none d-md-inline">
+            Post</span></a>
+        
+        
+        <a class="btn btn-primary float-right" href="/rune/" data-toggle="tooltip" data-placement="top" title="RUNE">Next<span class="d-none d-md-inline">
+            Post</span> &rarr;</a>
+        
+
+      </div>
+
+    </div>
+  </div>
+</div>
+
+
+  <!-- Footer -->
+
+<hr>
+
+<footer>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <ul class="list-inline text-center">
+          
+          <li class="list-inline-item">
+            <a href="mailto:amitava.dev@proton.me" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="far fa-envelope fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          
+          
+          <li class="list-inline-item">
+            <a href="https://www.linkedin.com/in/amitavaag" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-linkedin fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          <li class="list-inline-item">
+            <a href="https://github.com/ikouchiha47" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-github fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+        </ul>
+
+        <p class="copyright text-muted">
+          Build with: 
+          <a 
+            href="https://github.com/StartBootstrap/startbootstrap-clean-blog-jekyll"
+            class="text-gray"
+            target="_blank">startbootstrap-clean-blog-jekyll</a></p>
+      </div>
+    </div>
+  </div>
+</footer>
+
+
+  <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="/assets/vendor/blog/js/scripts.js"></script>
+
+<script src="/assets/scripts.js"></script>
+
+
+
+
+
+  <script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+
+    document.querySelectorAll('pre > code.language-mermaid').forEach((codeBlock) => {
+      codeBlock.parentElement.outerHTML = `<pre class="mermaid">${codeBlock.textContent}</pre>`;
+    });
+
+
+    mermaid.initialize({ startOnLoad: true, theme: 'forest' });
+</script>
+
+
+  
+
+</body>
+
+</html>

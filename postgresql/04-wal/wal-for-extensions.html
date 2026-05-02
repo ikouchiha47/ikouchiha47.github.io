@@ -1,0 +1,580 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+  <title>
+    WAL for Extensions - iko&#39;s logs
+    
+  </title>
+
+  <meta name="description" content="">
+  <meta property="og:description" content="">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="WAL for Extensions">
+  <meta property="og:url" content="https://ikouchiha47.github.io/postgresql/04-wal/wal-for-extensions.html">
+
+  
+
+  <link href='https://fonts.googleapis.com/css?family=Lora:400,700,400italic,700italic' rel='stylesheet' type='text/css'>
+  <link href='https://fonts.googleapis.com/css?family=Open+Sans:300italic,400italic,600italic,700italic,800italic,400,300,600,700,800' rel='stylesheet' type='text/css'>
+
+  <!-- <script src="https://use.fontawesome.com/releases/v5.15.3/js/all.js" crossorigin="anonymous"></script> -->
+  <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.15.4/css/all.css" integrity="sha384-DyZ88mC6Up2uqS4h/KRgHuoeGwBcD4Ng9SiP4dIRy0EXTlnuz47vAwmeGwVChigm" crossorigin="anonymous"/>
+
+  <link rel="stylesheet" href="/assets/main.css">
+  <link rel="canonical" href="https://ikouchiha47.github.io/postgresql/04-wal/wal-for-extensions.html">
+  <link rel="alternate" type="application/rss+xml" title="iko&#39;s logs" href="/feed.xml">
+
+  <meta name="google-site-verification" content="lWkg6gIxJgzEKX_5XnhcxCtPE9QknaimFWWos_dTvPM" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fira+Sans:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Inconsolata:wght@200..900&family=Jersey+25&family=Kanit:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Merriweather+Sans:ital,wght@0,300..800;1,300..800&family=Nanum+Gothic+Coding&family=Space+Grotesk:wght@300..700&family=Titillium+Web:ital,wght@0,200;0,300;0,400;0,600;0,700;0,900;1,200;1,300;1,400;1,600;1,700&display=swap" rel="stylesheet">
+
+</head>
+
+
+<body>
+
+  <!-- Navigation -->
+<nav class="navbar navbar-expand-lg navbar-light fixed-top" id="mainNav">
+  <div class="container">
+    <a class="navbar-brand" href="/">iko&#39;s logs</a>
+    <button class="navbar-toggler navbar-toggler-right" type="button" data-toggle="collapse" data-target="#navbarResponsive" aria-controls="navbarResponsive" aria-expanded="false" aria-label="Toggle navigation">
+      Menu
+      <i class="fa fa-bars"></i>
+    </button>
+    <div class="collapse navbar-collapse" id="navbarResponsive">
+      <ul class="navbar-nav ml-auto">
+        <li class="nav-item">
+          <a class="nav-link" href="/">Home</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/about">About</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/posts">Posts</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/contact">Contact</a>
+        </li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+
+  <!-- Page Header -->
+
+<header class="masthead">
+
+  <div class="overlay"></div>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <div class="post-heading">
+          <h1>WAL for Extensions</h1>
+          
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="container space-grotesk">
+  <div class="row">
+    <div class="col-lg-8 col-md-10 mx-auto">
+
+      <!-- Breadcrumb -->
+      <nav aria-label="breadcrumb" style="margin-bottom: 1.5rem;">
+        <ol class="breadcrumb" style="background: transparent; padding: 0;">
+          
+            <li class="breadcrumb-item"><a href="/postgresql-internals/">PostgreSQL Internals Deep Dive</a></li>
+          
+          
+            
+              <li class="breadcrumb-item"><a href="/postgresql/04-wal/">Write-Ahead Logging</a></li>
+            
+          
+          <li class="breadcrumb-item active" aria-current="page">WAL for Extensions</li>
+        </ol>
+      </nav>
+
+      <h1 id="wal-for-extensions-generic-wal-and-custom-resource-managers">WAL for Extensions: Generic WAL and Custom Resource Managers</h1>
+
+<h2 id="summary">Summary</h2>
+
+<p>Extensions that modify data pages need crash safety, but implementing a full
+resource manager is complex. PostgreSQL provides two mechanisms for extensions:
+the <strong>Generic WAL API</strong> (simple, page-diff-based, no custom replay logic) and
+<strong>Custom Resource Managers</strong> (full control, custom record types and replay).
+This page covers both approaches, their trade-offs, and how to use them.</p>
+
+<h2 id="overview">Overview</h2>
+
+<p>The core problem: an extension creates a new index access method or data
+structure stored in PostgreSQL pages. If those pages are modified without WAL
+logging, a crash will leave them inconsistent. The extension needs to either:</p>
+
+<ol>
+  <li>
+    <p><strong>Use Generic WAL</strong> – let PostgreSQL compute page diffs automatically and
+replay them generically. No custom <code class="language-plaintext highlighter-rouge">rm_redo()</code> needed. Available since
+PostgreSQL 9.6.</p>
+  </li>
+  <li>
+    <p><strong>Register a Custom Resource Manager</strong> – define a new <code class="language-plaintext highlighter-rouge">RmgrId</code>, implement
+<code class="language-plaintext highlighter-rouge">rm_redo()</code> and other callbacks, and use the standard <code class="language-plaintext highlighter-rouge">XLogInsert()</code> API.
+Available since PostgreSQL 16.</p>
+  </li>
+</ol>
+
+<h2 id="key-source-files">Key Source Files</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>File</th>
+      <th>Purpose</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/access/generic_xlog.h</code></td>
+      <td>Generic WAL API: <code class="language-plaintext highlighter-rouge">GenericXLogStart</code>, <code class="language-plaintext highlighter-rouge">GenericXLogRegisterBuffer</code>, etc.</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/access/transam/generic_xlog.c</code></td>
+      <td>Generic WAL implementation: page diffing, redo</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/access/xlog_internal.h</code></td>
+      <td><code class="language-plaintext highlighter-rouge">RmgrData</code> struct, <code class="language-plaintext highlighter-rouge">RegisterCustomRmgr()</code></td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/access/xloginsert.h</code></td>
+      <td>Standard WAL insertion API used by custom rmgrs</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/access/rmgr.h</code></td>
+      <td>Resource manager ID definitions</td>
+    </tr>
+  </tbody>
+</table>
+
+<h2 id="how-it-works">How It Works</h2>
+
+<h3 id="generic-wal-api">Generic WAL API</h3>
+
+<p>Generic WAL is designed for simplicity. The extension does not define any WAL
+record format or replay logic. Instead, it:</p>
+
+<ol>
+  <li>Calls <code class="language-plaintext highlighter-rouge">GenericXLogStart()</code> to begin a WAL-logged operation.</li>
+  <li>Registers up to <code class="language-plaintext highlighter-rouge">MAX_GENERIC_XLOG_PAGES</code> (4) buffers with
+<code class="language-plaintext highlighter-rouge">GenericXLogRegisterBuffer()</code>, receiving a copy of each page to modify.</li>
+  <li>Modifies the page copies in-place.</li>
+  <li>Calls <code class="language-plaintext highlighter-rouge">GenericXLogFinish()</code> to compute diffs, write the WAL record, and
+apply changes to the real buffers atomically.</li>
+</ol>
+
+<p>If something goes wrong, <code class="language-plaintext highlighter-rouge">GenericXLogAbort()</code> discards all changes.</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="cm">/* src/include/access/generic_xlog.h */</span>
+<span class="cp">#define MAX_GENERIC_XLOG_PAGES  XLR_NORMAL_MAX_BLOCK_ID  </span><span class="cm">/* 4 */</span><span class="cp">
+#define GENERIC_XLOG_FULL_IMAGE 0x0001
+</span>
+<span class="n">GenericXLogState</span> <span class="o">*</span><span class="nf">GenericXLogStart</span><span class="p">(</span><span class="n">Relation</span> <span class="n">relation</span><span class="p">);</span>
+<span class="n">Page</span> <span class="nf">GenericXLogRegisterBuffer</span><span class="p">(</span><span class="n">GenericXLogState</span> <span class="o">*</span><span class="n">state</span><span class="p">,</span> <span class="n">Buffer</span> <span class="n">buffer</span><span class="p">,</span> <span class="kt">int</span> <span class="n">flags</span><span class="p">);</span>
+<span class="n">XLogRecPtr</span> <span class="nf">GenericXLogFinish</span><span class="p">(</span><span class="n">GenericXLogState</span> <span class="o">*</span><span class="n">state</span><span class="p">);</span>
+<span class="kt">void</span> <span class="nf">GenericXLogAbort</span><span class="p">(</span><span class="n">GenericXLogState</span> <span class="o">*</span><span class="n">state</span><span class="p">);</span>
+</code></pre></div></div>
+
+<h4 id="usage-example">Usage Example</h4>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="n">GenericXLogState</span> <span class="o">*</span><span class="n">state</span><span class="p">;</span>
+<span class="n">Page</span>              <span class="n">page</span><span class="p">;</span>
+
+<span class="n">state</span> <span class="o">=</span> <span class="n">GenericXLogStart</span><span class="p">(</span><span class="n">rel</span><span class="p">);</span>
+
+<span class="cm">/* Register a buffer -- get a page copy to modify */</span>
+<span class="n">page</span> <span class="o">=</span> <span class="n">GenericXLogRegisterBuffer</span><span class="p">(</span><span class="n">state</span><span class="p">,</span> <span class="n">buffer</span><span class="p">,</span> <span class="mi">0</span><span class="p">);</span>
+
+<span class="cm">/* Modify the page copy (not the real buffer page) */</span>
+<span class="n">memcpy</span><span class="p">(</span><span class="n">PageGetContents</span><span class="p">(</span><span class="n">page</span><span class="p">)</span> <span class="o">+</span> <span class="n">offset</span><span class="p">,</span> <span class="n">data</span><span class="p">,</span> <span class="n">len</span><span class="p">);</span>
+
+<span class="cm">/* Finish: computes diff, writes WAL record, applies to real page */</span>
+<span class="n">GenericXLogFinish</span><span class="p">(</span><span class="n">state</span><span class="p">);</span>
+</code></pre></div></div>
+
+<h4 id="how-diffs-work">How Diffs Work</h4>
+
+<p><code class="language-plaintext highlighter-rouge">GenericXLogFinish()</code> compares the original page with the modified copy and
+stores the differences. During replay, <code class="language-plaintext highlighter-rouge">generic_redo()</code> fetches the page and
+applies the same diffs. If a full-page image is included (because this is the
+first modification after a checkpoint), the diff is not needed – the FPI
+is used directly.</p>
+
+<p>The <code class="language-plaintext highlighter-rouge">GENERIC_XLOG_FULL_IMAGE</code> flag forces a full-page image regardless of
+the FPI policy. This is useful when the extension completely rewrites a page.</p>
+
+<h4 id="generic-wal-replay">Generic WAL Replay</h4>
+
+<p>The resource manager callbacks for generic WAL are built into PostgreSQL:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="cm">/* src/backend/access/transam/generic_xlog.c */</span>
+<span class="kt">void</span> <span class="nf">generic_redo</span><span class="p">(</span><span class="n">XLogReaderState</span> <span class="o">*</span><span class="n">record</span><span class="p">);</span>        <span class="cm">/* apply page diffs */</span>
+<span class="k">const</span> <span class="kt">char</span> <span class="o">*</span><span class="nf">generic_identify</span><span class="p">(</span><span class="n">uint8</span> <span class="n">info</span><span class="p">);</span>           <span class="cm">/* "GENERIC" */</span>
+<span class="kt">void</span> <span class="nf">generic_desc</span><span class="p">(</span><span class="n">StringInfo</span> <span class="n">buf</span><span class="p">,</span> <span class="n">XLogReaderState</span> <span class="o">*</span><span class="n">record</span><span class="p">);</span>
+<span class="kt">void</span> <span class="nf">generic_mask</span><span class="p">(</span><span class="kt">char</span> <span class="o">*</span><span class="n">page</span><span class="p">,</span> <span class="n">BlockNumber</span> <span class="n">blkno</span><span class="p">);</span>   <span class="cm">/* mask for consistency */</span>
+</code></pre></div></div>
+
+<h4 id="limitations-of-generic-wal">Limitations of Generic WAL</h4>
+
+<ul>
+  <li>Maximum 4 pages per WAL record (<code class="language-plaintext highlighter-rouge">MAX_GENERIC_XLOG_PAGES</code>).</li>
+  <li>No custom replay logic – you cannot do anything smarter than page diffs.</li>
+  <li>No logical decoding support – generic WAL records are opaque to logical
+replication.</li>
+  <li>The diff-based approach may be less space-efficient than a purpose-built
+record format for certain operations.</li>
+</ul>
+
+<h3 id="custom-resource-managers">Custom Resource Managers</h3>
+
+<p>For extensions that need more control – custom record formats, efficient
+replay, logical decoding support, or more than 4 pages per record – PostgreSQL
+provides the custom resource manager API.</p>
+
+<h4 id="registration">Registration</h4>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="cm">/* src/include/access/xlog_internal.h:356 */</span>
+<span class="k">extern</span> <span class="kt">void</span> <span class="nf">RegisterCustomRmgr</span><span class="p">(</span><span class="n">RmgrId</span> <span class="n">rmid</span><span class="p">,</span> <span class="k">const</span> <span class="n">RmgrData</span> <span class="o">*</span><span class="n">rmgr</span><span class="p">);</span>
+</code></pre></div></div>
+
+<p>The extension calls <code class="language-plaintext highlighter-rouge">RegisterCustomRmgr()</code> during <code class="language-plaintext highlighter-rouge">_PG_init()</code>, providing a
+unique <code class="language-plaintext highlighter-rouge">RmgrId</code> in the range <code class="language-plaintext highlighter-rouge">RM_EXPERIMENTAL_ID</code> to <code class="language-plaintext highlighter-rouge">RM_MAX_CUSTOM_ID</code> and
+a filled-in <code class="language-plaintext highlighter-rouge">RmgrData</code> struct:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="cm">/* src/include/access/xlog_internal.h:339 */</span>
+<span class="k">typedef</span> <span class="k">struct</span> <span class="n">RmgrData</span>
+<span class="p">{</span>
+    <span class="k">const</span> <span class="kt">char</span> <span class="o">*</span><span class="n">rm_name</span><span class="p">;</span>
+    <span class="kt">void</span> <span class="p">(</span><span class="o">*</span><span class="n">rm_redo</span><span class="p">)(</span><span class="n">XLogReaderState</span> <span class="o">*</span><span class="n">record</span><span class="p">);</span>      <span class="cm">/* REQUIRED: replay */</span>
+    <span class="kt">void</span> <span class="p">(</span><span class="o">*</span><span class="n">rm_desc</span><span class="p">)(</span><span class="n">StringInfo</span> <span class="n">buf</span><span class="p">,</span> <span class="n">XLogReaderState</span> <span class="o">*</span><span class="n">record</span><span class="p">);</span>  <span class="cm">/* describe */</span>
+    <span class="k">const</span> <span class="kt">char</span> <span class="o">*</span><span class="p">(</span><span class="o">*</span><span class="n">rm_identify</span><span class="p">)(</span><span class="n">uint8</span> <span class="n">info</span><span class="p">);</span>        <span class="cm">/* name an op */</span>
+    <span class="kt">void</span> <span class="p">(</span><span class="o">*</span><span class="n">rm_startup</span><span class="p">)(</span><span class="kt">void</span><span class="p">);</span>                      <span class="cm">/* startup hook */</span>
+    <span class="kt">void</span> <span class="p">(</span><span class="o">*</span><span class="n">rm_cleanup</span><span class="p">)(</span><span class="kt">void</span><span class="p">);</span>                      <span class="cm">/* cleanup hook */</span>
+    <span class="kt">void</span> <span class="p">(</span><span class="o">*</span><span class="n">rm_mask</span><span class="p">)(</span><span class="kt">char</span> <span class="o">*</span><span class="n">pagedata</span><span class="p">,</span> <span class="n">BlockNumber</span> <span class="n">blkno</span><span class="p">);</span>  <span class="cm">/* consistency mask */</span>
+    <span class="kt">void</span> <span class="p">(</span><span class="o">*</span><span class="n">rm_decode</span><span class="p">)(...);</span>                        <span class="cm">/* logical decoding */</span>
+<span class="p">}</span> <span class="n">RmgrData</span><span class="p">;</span>
+</code></pre></div></div>
+
+<h4 id="writing-custom-wal-records">Writing Custom WAL Records</h4>
+
+<p>Custom resource managers use the standard WAL insertion API:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="n">XLogBeginInsert</span><span class="p">();</span>
+<span class="n">XLogRegisterData</span><span class="p">(</span><span class="o">&amp;</span><span class="n">my_record_data</span><span class="p">,</span> <span class="k">sizeof</span><span class="p">(</span><span class="n">my_record_data</span><span class="p">));</span>
+<span class="n">XLogRegisterBuffer</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">buffer</span><span class="p">,</span> <span class="n">REGBUF_STANDARD</span><span class="p">);</span>
+<span class="n">XLogRegisterBufData</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">extra_data</span><span class="p">,</span> <span class="n">extra_len</span><span class="p">);</span>
+<span class="n">XLogRecPtr</span> <span class="n">lsn</span> <span class="o">=</span> <span class="n">XLogInsert</span><span class="p">(</span><span class="n">MY_RMGR_ID</span><span class="p">,</span> <span class="n">MY_OPERATION_TYPE</span><span class="p">);</span>
+</code></pre></div></div>
+
+<p>The <code class="language-plaintext highlighter-rouge">xl_info</code> high 4 bits encode the operation type, giving each resource
+manager up to 16 distinct operation types.</p>
+
+<h4 id="implementing-rm_redo">Implementing rm_redo</h4>
+
+<p>The <code class="language-plaintext highlighter-rouge">rm_redo()</code> callback must be <strong>idempotent</strong> – applying it twice must
+produce the same result. The standard pattern:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">static</span> <span class="kt">void</span>
+<span class="nf">my_redo</span><span class="p">(</span><span class="n">XLogReaderState</span> <span class="o">*</span><span class="n">record</span><span class="p">)</span>
+<span class="p">{</span>
+    <span class="n">uint8</span>       <span class="n">info</span> <span class="o">=</span> <span class="n">XLogRecGetInfo</span><span class="p">(</span><span class="n">record</span><span class="p">)</span> <span class="o">&amp;</span> <span class="o">~</span><span class="n">XLR_INFO_MASK</span><span class="p">;</span>
+    <span class="n">Buffer</span>      <span class="n">buffer</span><span class="p">;</span>
+    <span class="n">Page</span>        <span class="n">page</span><span class="p">;</span>
+
+    <span class="k">if</span> <span class="p">(</span><span class="n">XLogRecGetBlockTagExtended</span><span class="p">(</span><span class="n">record</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="p">...))</span>
+    <span class="p">{</span>
+        <span class="cm">/* If we have a full-page image, just restore it */</span>
+        <span class="k">if</span> <span class="p">(</span><span class="n">XLogRecBlockImageApply</span><span class="p">(</span><span class="n">record</span><span class="p">,</span> <span class="mi">0</span><span class="p">))</span>
+            <span class="k">return</span><span class="p">;</span>
+
+        <span class="cm">/* Otherwise, apply incremental change */</span>
+        <span class="n">buffer</span> <span class="o">=</span> <span class="n">XLogInitBufferForRedo</span><span class="p">(</span><span class="n">record</span><span class="p">,</span> <span class="mi">0</span><span class="p">);</span>
+        <span class="n">page</span> <span class="o">=</span> <span class="n">BufferGetPage</span><span class="p">(</span><span class="n">buffer</span><span class="p">);</span>
+
+        <span class="cm">/* Check LSN to ensure idempotency */</span>
+        <span class="k">if</span> <span class="p">(</span><span class="n">PageGetLSN</span><span class="p">(</span><span class="n">page</span><span class="p">)</span> <span class="o">&gt;=</span> <span class="n">record</span><span class="o">-&gt;</span><span class="n">EndRecPtr</span><span class="p">)</span>
+        <span class="p">{</span>
+            <span class="n">UnlockReleaseBuffer</span><span class="p">(</span><span class="n">buffer</span><span class="p">);</span>
+            <span class="k">return</span><span class="p">;</span>
+        <span class="p">}</span>
+
+        <span class="cm">/* Apply the change */</span>
+        <span class="n">my_apply_change</span><span class="p">(</span><span class="n">page</span><span class="p">,</span> <span class="n">XLogRecGetData</span><span class="p">(</span><span class="n">record</span><span class="p">));</span>
+
+        <span class="n">PageSetLSN</span><span class="p">(</span><span class="n">page</span><span class="p">,</span> <span class="n">record</span><span class="o">-&gt;</span><span class="n">EndRecPtr</span><span class="p">);</span>
+        <span class="n">MarkBufferDirty</span><span class="p">(</span><span class="n">buffer</span><span class="p">);</span>
+        <span class="n">UnlockReleaseBuffer</span><span class="p">(</span><span class="n">buffer</span><span class="p">);</span>
+    <span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div></div>
+
+<h3 id="choosing-between-generic-wal-and-custom-resource-managers">Choosing Between Generic WAL and Custom Resource Managers</h3>
+
+<table>
+  <thead>
+    <tr>
+      <th>Criterion</th>
+      <th>Generic WAL</th>
+      <th>Custom Resource Manager</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Complexity</td>
+      <td>Low – no replay code needed</td>
+      <td>High – must implement rm_redo</td>
+    </tr>
+    <tr>
+      <td>Pages per record</td>
+      <td>Up to 4</td>
+      <td>Up to 32 (XLR_MAX_BLOCK_ID)</td>
+    </tr>
+    <tr>
+      <td>WAL efficiency</td>
+      <td>Page diffs (can be large)</td>
+      <td>Custom format (can be compact)</td>
+    </tr>
+    <tr>
+      <td>Logical decoding</td>
+      <td>Not supported</td>
+      <td>Supported via rm_decode</td>
+    </tr>
+    <tr>
+      <td>Replay performance</td>
+      <td>Generic diff application</td>
+      <td>Custom optimized replay</td>
+    </tr>
+    <tr>
+      <td>Availability</td>
+      <td>PostgreSQL 9.6+</td>
+      <td>PostgreSQL 16+</td>
+    </tr>
+  </tbody>
+</table>
+
+<h3 id="wal-record-flow-for-extensions">WAL Record Flow for Extensions</h3>
+
+<pre><code class="language-mermaid">flowchart TD
+    subgraph "Generic WAL Path"
+        G1["GenericXLogStart(rel)"] --&gt; G2["GenericXLogRegisterBuffer()"]
+        G2 --&gt; G3["Modify page copy"]
+        G3 --&gt; G4["GenericXLogFinish()"]
+        G4 --&gt; G5["Compute page diff"]
+        G5 --&gt; G6["XLogInsert(RM_GENERIC_ID, ...)"]
+    end
+
+    subgraph "Custom Rmgr Path"
+        C1["XLogBeginInsert()"] --&gt; C2["XLogRegisterBuffer()"]
+        C2 --&gt; C3["XLogRegisterData()"]
+        C3 --&gt; C4["XLogInsert(MY_RMGR_ID, ...)"]
+    end
+
+    subgraph "Common Path"
+        G6 --&gt; W["XLogInsertRecord()"]
+        C4 --&gt; W
+        W --&gt; X["WAL Buffer"]
+        X --&gt; Y["pg_wal/ segment file"]
+    end
+
+    subgraph "Recovery"
+        Y --&gt; R["XLogReadRecord()"]
+        R --&gt; R2{"rmgr ID?"}
+        R2 --&gt;|RM_GENERIC_ID| R3["generic_redo():&lt;br/&gt;apply page diffs"]
+        R2 --&gt;|MY_RMGR_ID| R4["my_redo():&lt;br/&gt;custom replay"]
+    end
+
+    style G4 fill:#e8f4e8
+    style C4 fill:#e8e8f4
+    style R fill:#f4e8e8
+</code></pre>
+
+<h2 id="key-data-structures">Key Data Structures</h2>
+
+<h3 id="genericxlogstate-opaque-to-callers">GenericXLogState (opaque to callers)</h3>
+
+<p>Internally, <code class="language-plaintext highlighter-rouge">GenericXLogState</code> tracks up to 4 buffer/page pairs. For each
+registered buffer, it stores the original page content and the modified copy.
+<code class="language-plaintext highlighter-rouge">GenericXLogFinish()</code> compares these to produce a delta. The struct is defined
+in <code class="language-plaintext highlighter-rouge">generic_xlog.c</code> and is not exposed in the header.</p>
+
+<h3 id="rmgrdata-resource-manager-table-entry">RmgrData (resource manager table entry)</h3>
+
+<p>The global <code class="language-plaintext highlighter-rouge">RmgrTable[]</code> array is indexed by <code class="language-plaintext highlighter-rouge">RmgrId</code>. Built-in resource
+managers occupy IDs 0 through approximately 16. Custom resource managers use
+IDs 128-255 (<code class="language-plaintext highlighter-rouge">RM_EXPERIMENTAL_ID</code> through <code class="language-plaintext highlighter-rouge">RM_MAX_CUSTOM_ID</code>). If a WAL
+record references an unregistered rmgr ID during recovery, PostgreSQL calls
+<code class="language-plaintext highlighter-rouge">RmgrNotFound()</code> and halts recovery with an error.</p>
+
+<p class="warning">If a standby or recovery target does not have the extension loaded (and thus
+the custom rmgr is not registered), recovery will fail when it encounters the
+custom WAL record. Extensions using custom resource managers must be installed
+on all standbys and backup restore targets.</p>
+
+<h2 id="connections">Connections</h2>
+
+<ul>
+  <li>
+    <p><strong><a href="wal-internals">WAL Internals</a></strong> – both Generic WAL and custom resource
+managers ultimately use <code class="language-plaintext highlighter-rouge">XLogInsertRecord()</code> to write WAL records. The record
+format, buffer registration, and FPI logic are shared.</p>
+  </li>
+  <li>
+    <p><strong><a href="recovery">Recovery</a></strong> – custom <code class="language-plaintext highlighter-rouge">rm_redo()</code> callbacks are invoked during
+the recovery replay loop. The idempotency and LSN-checking requirements apply
+equally to built-in and custom resource managers.</p>
+  </li>
+  <li>
+    <p><strong><a href="../02-access-methods/">Access Methods (Ch. 2)</a></strong> – custom index access
+methods (Table AM / Index AM) are the primary consumers of these APIs.
+Built-in AMs like B-tree and GIN each have their own resource manager.</p>
+  </li>
+  <li>
+    <p><strong><a href="../15-extensions/">Extensions (Ch. 15)</a></strong> – the custom resource manager
+API is part of the broader extension infrastructure. Background workers and
+custom access methods often need WAL support.</p>
+  </li>
+  <li>
+    <p><strong><a href="../12-replication/">Replication (Ch. 12)</a></strong> – custom resource managers can
+implement <code class="language-plaintext highlighter-rouge">rm_decode()</code> to support logical decoding of their WAL records,
+enabling logical replication of extension-managed data.</p>
+  </li>
+</ul>
+
+
+      <hr>
+
+      <!-- Prev / Next / Up navigation -->
+      
+      
+      
+
+      <div class="clearfix" style="margin-top: 2rem;">
+        
+          
+          
+
+          
+            
+            <a class="btn btn-primary float-left" href="/postgresql/04-wal/recovery.html" title="Recovery">&larr; Previous</a>
+          
+
+          
+            
+            <a class="btn btn-primary float-right" href="/postgresql/04-wal/wal-internals.html" title="WAL Internals">Next &rarr;</a>
+          
+        
+      </div>
+
+      
+      <div style="text-align: center; margin-top: 1rem;">
+        <a href="/postgresql-internals/">&uarr; Back to Table of Contents</a>
+      </div>
+      
+
+    </div>
+  </div>
+</div>
+
+
+  <!-- Footer -->
+
+<hr>
+
+<footer>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <ul class="list-inline text-center">
+          
+          <li class="list-inline-item">
+            <a href="mailto:amitava.dev@proton.me" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="far fa-envelope fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          
+          
+          <li class="list-inline-item">
+            <a href="https://www.linkedin.com/in/amitavaag" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-linkedin fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          <li class="list-inline-item">
+            <a href="https://github.com/ikouchiha47" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-github fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+        </ul>
+
+        <p class="copyright text-muted">
+          Build with: 
+          <a 
+            href="https://github.com/StartBootstrap/startbootstrap-clean-blog-jekyll"
+            class="text-gray"
+            target="_blank">startbootstrap-clean-blog-jekyll</a></p>
+      </div>
+    </div>
+  </div>
+</footer>
+
+
+  <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="/assets/vendor/blog/js/scripts.js"></script>
+
+<script src="/assets/scripts.js"></script>
+
+
+
+
+
+  <script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+
+    document.querySelectorAll('pre > code.language-mermaid').forEach((codeBlock) => {
+      codeBlock.parentElement.outerHTML = `<pre class="mermaid">${codeBlock.textContent}</pre>`;
+    });
+
+
+    mermaid.initialize({ startOnLoad: true, theme: 'forest' });
+</script>
+
+
+  
+
+</body>
+
+</html>

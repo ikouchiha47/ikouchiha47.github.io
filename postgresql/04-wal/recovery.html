@@ -1,0 +1,573 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+  <title>
+    Recovery - iko&#39;s logs
+    
+  </title>
+
+  <meta name="description" content="">
+  <meta property="og:description" content="">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Recovery">
+  <meta property="og:url" content="https://ikouchiha47.github.io/postgresql/04-wal/recovery.html">
+
+  
+
+  <link href='https://fonts.googleapis.com/css?family=Lora:400,700,400italic,700italic' rel='stylesheet' type='text/css'>
+  <link href='https://fonts.googleapis.com/css?family=Open+Sans:300italic,400italic,600italic,700italic,800italic,400,300,600,700,800' rel='stylesheet' type='text/css'>
+
+  <!-- <script src="https://use.fontawesome.com/releases/v5.15.3/js/all.js" crossorigin="anonymous"></script> -->
+  <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.15.4/css/all.css" integrity="sha384-DyZ88mC6Up2uqS4h/KRgHuoeGwBcD4Ng9SiP4dIRy0EXTlnuz47vAwmeGwVChigm" crossorigin="anonymous"/>
+
+  <link rel="stylesheet" href="/assets/main.css">
+  <link rel="canonical" href="https://ikouchiha47.github.io/postgresql/04-wal/recovery.html">
+  <link rel="alternate" type="application/rss+xml" title="iko&#39;s logs" href="/feed.xml">
+
+  <meta name="google-site-verification" content="lWkg6gIxJgzEKX_5XnhcxCtPE9QknaimFWWos_dTvPM" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fira+Sans:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Inconsolata:wght@200..900&family=Jersey+25&family=Kanit:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Merriweather+Sans:ital,wght@0,300..800;1,300..800&family=Nanum+Gothic+Coding&family=Space+Grotesk:wght@300..700&family=Titillium+Web:ital,wght@0,200;0,300;0,400;0,600;0,700;0,900;1,200;1,300;1,400;1,600;1,700&display=swap" rel="stylesheet">
+
+</head>
+
+
+<body>
+
+  <!-- Navigation -->
+<nav class="navbar navbar-expand-lg navbar-light fixed-top" id="mainNav">
+  <div class="container">
+    <a class="navbar-brand" href="/">iko&#39;s logs</a>
+    <button class="navbar-toggler navbar-toggler-right" type="button" data-toggle="collapse" data-target="#navbarResponsive" aria-controls="navbarResponsive" aria-expanded="false" aria-label="Toggle navigation">
+      Menu
+      <i class="fa fa-bars"></i>
+    </button>
+    <div class="collapse navbar-collapse" id="navbarResponsive">
+      <ul class="navbar-nav ml-auto">
+        <li class="nav-item">
+          <a class="nav-link" href="/">Home</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/about">About</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/posts">Posts</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/contact">Contact</a>
+        </li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+
+  <!-- Page Header -->
+
+<header class="masthead">
+
+  <div class="overlay"></div>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <div class="post-heading">
+          <h1>Recovery</h1>
+          
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="container space-grotesk">
+  <div class="row">
+    <div class="col-lg-8 col-md-10 mx-auto">
+
+      <!-- Breadcrumb -->
+      <nav aria-label="breadcrumb" style="margin-bottom: 1.5rem;">
+        <ol class="breadcrumb" style="background: transparent; padding: 0;">
+          
+            <li class="breadcrumb-item"><a href="/postgresql-internals/">PostgreSQL Internals Deep Dive</a></li>
+          
+          
+            
+              <li class="breadcrumb-item"><a href="/postgresql/04-wal/">Write-Ahead Logging</a></li>
+            
+          
+          <li class="breadcrumb-item active" aria-current="page">Recovery</li>
+        </ol>
+      </nav>
+
+      <h1 id="recovery-crash-recovery-pitr-and-timelines">Recovery: Crash Recovery, PITR, and Timelines</h1>
+
+<h2 id="summary">Summary</h2>
+
+<p>Recovery is the process of replaying WAL records to bring the database to a
+consistent state after a crash, or to a specific point in time for disaster
+recovery. PostgreSQL supports three recovery modes: crash recovery (automatic
+after unclean shutdown), archive recovery (replaying from archived WAL), and
+standby mode (continuous recovery for hot standby). Timelines prevent WAL
+conflicts when multiple recovery histories diverge.</p>
+
+<h2 id="overview">Overview</h2>
+
+<p>When PostgreSQL starts, it reads <code class="language-plaintext highlighter-rouge">pg_control</code> to determine the database state.
+If the state is not <code class="language-plaintext highlighter-rouge">DB_SHUTDOWNED</code>, recovery is needed. The startup process
+reads the <code class="language-plaintext highlighter-rouge">CheckPoint</code> record referenced by <code class="language-plaintext highlighter-rouge">pg_control</code>, then replays all WAL
+from the checkpoint’s redo point forward, calling each record’s resource
+manager <code class="language-plaintext highlighter-rouge">rm_redo()</code> callback.</p>
+
+<p>Recovery modes:</p>
+
+<ul>
+  <li><strong>Crash recovery</strong> – replay from the last checkpoint to the end of available
+WAL in <code class="language-plaintext highlighter-rouge">pg_wal/</code>. No user configuration needed.</li>
+  <li><strong>Archive recovery</strong> – replay from a base backup, fetching WAL segments via
+<code class="language-plaintext highlighter-rouge">restore_command</code>. Optionally stop at a target (PITR). Triggered by the
+presence of <code class="language-plaintext highlighter-rouge">recovery.signal</code>.</li>
+  <li><strong>Standby mode</strong> – like archive recovery, but never finishes. Continuously
+receives WAL from a primary via streaming replication or <code class="language-plaintext highlighter-rouge">restore_command</code>.
+Triggered by <code class="language-plaintext highlighter-rouge">standby.signal</code>.</li>
+</ul>
+
+<h2 id="key-source-files">Key Source Files</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>File</th>
+      <th>Purpose</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/access/transam/xlogrecovery.c</code></td>
+      <td>Main recovery loop, PITR targeting, timeline switching</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/access/transam/xlog.c</code></td>
+      <td><code class="language-plaintext highlighter-rouge">StartupXLOG()</code> – entry point, reads <code class="language-plaintext highlighter-rouge">pg_control</code>, initiates recovery</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/access/transam/xlogreader.c</code></td>
+      <td><code class="language-plaintext highlighter-rouge">XLogReadRecord()</code> – reads and validates WAL records</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/access/transam/xlogprefetcher.c</code></td>
+      <td>Prefetches blocks referenced by upcoming WAL records</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/access/xlogrecovery.h</code></td>
+      <td>Recovery state, target types, public API</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/access/xlog_internal.h</code></td>
+      <td>Timeline history file format, signal file names</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/catalog/pg_control.h</code></td>
+      <td><code class="language-plaintext highlighter-rouge">DBState</code> enum, <code class="language-plaintext highlighter-rouge">CheckPoint</code> struct</td>
+    </tr>
+  </tbody>
+</table>
+
+<h2 id="how-it-works">How It Works</h2>
+
+<h3 id="crash-recovery-sequence">Crash Recovery Sequence</h3>
+
+<pre><code class="language-mermaid">flowchart TD
+    A["PostgreSQL starts"] --&gt; B["Read pg_control"]
+    B --&gt; C{"state ==&lt;br/&gt;DB_SHUTDOWNED?"}
+    C --&gt;|Yes| D["No recovery needed&lt;br/&gt;Enter normal operation"]
+    C --&gt;|No| E["Set state to&lt;br/&gt;DB_IN_CRASH_RECOVERY"]
+    E --&gt; F["Read CheckPoint record&lt;br/&gt;at pg_control.checkPointCopy.redo"]
+    F --&gt; G["Initialize recovery:&lt;br/&gt;set nextXid, nextOid, etc.&lt;br/&gt;from CheckPoint"]
+    G --&gt; H["Replay loop:&lt;br/&gt;XLogReadRecord() +&lt;br/&gt;rm_redo() for each record"]
+    H --&gt; I{"More WAL&lt;br/&gt;available?"}
+    I --&gt;|Yes| H
+    I --&gt;|No| J["End-of-recovery checkpoint"]
+    J --&gt; K["Set state to&lt;br/&gt;DB_IN_PRODUCTION"]
+    K --&gt; L["Accept connections"]
+
+    style E fill:#f4e8e8
+    style H fill:#e8f4e8
+    style K fill:#e8e8f4
+</code></pre>
+
+<h3 id="the-replay-loop">The Replay Loop</h3>
+
+<p>The core of recovery is a loop in <code class="language-plaintext highlighter-rouge">xlogrecovery.c</code> that reads WAL records
+sequentially and dispatches them to resource managers:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>while (record = XLogReadRecord(...))
+{
+    RmgrData rmgr = GetRmgr(record-&gt;xl_rmid);
+    rmgr.rm_redo(record);
+}
+</code></pre></div></div>
+
+<p>Each resource manager’s <code class="language-plaintext highlighter-rouge">rm_redo()</code> callback knows how to apply its record type.
+For example, <code class="language-plaintext highlighter-rouge">heap_redo()</code> handles heap inserts, updates, and deletes;
+<code class="language-plaintext highlighter-rouge">btree_redo()</code> handles B-tree splits and deletions.</p>
+
+<h4 id="fpi-replay">FPI Replay</h4>
+
+<p>When a record includes a full-page image (FPI), the replay is simple: overwrite
+the page with the stored image, ignoring any incremental changes. This makes
+recovery idempotent – replaying the same record twice produces the same result.</p>
+
+<p>Without an FPI, the <code class="language-plaintext highlighter-rouge">rm_redo()</code> function applies the change incrementally.
+Before applying, it checks if the page’s LSN is already &gt;= the record’s LSN.
+If so, the change was already applied (the page was flushed to disk before the
+crash), and the record is skipped.</p>
+
+<h3 id="point-in-time-recovery-pitr">Point-in-Time Recovery (PITR)</h3>
+
+<p>PITR allows recovery to stop at a specific point rather than replaying all
+available WAL. This is configured via <code class="language-plaintext highlighter-rouge">recovery_target_*</code> parameters:</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>Parameter</th>
+      <th>Description</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">recovery_target_time</code></td>
+      <td>Stop at a specific timestamp</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">recovery_target_xid</code></td>
+      <td>Stop after a specific transaction commits</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">recovery_target_lsn</code></td>
+      <td>Stop at a specific WAL position</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">recovery_target_name</code></td>
+      <td>Stop at a named restore point (from <code class="language-plaintext highlighter-rouge">pg_create_restore_point()</code>)</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">recovery_target</code></td>
+      <td><code class="language-plaintext highlighter-rouge">'immediate'</code> – stop as soon as consistency is reached</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>The <code class="language-plaintext highlighter-rouge">recovery_target_action</code> parameter controls what happens when the target
+is reached: <code class="language-plaintext highlighter-rouge">pause</code> (wait for manual promotion), <code class="language-plaintext highlighter-rouge">promote</code> (become primary),
+or <code class="language-plaintext highlighter-rouge">shutdown</code>.</p>
+
+<h4 id="pitr-workflow">PITR Workflow</h4>
+
+<pre><code class="language-mermaid">flowchart LR
+    A["Base backup&lt;br/&gt;(pg_basebackup)"] --&gt; B["Copy to new&lt;br/&gt;data directory"]
+    B --&gt; C["Create recovery.signal&lt;br/&gt;Configure restore_command&lt;br/&gt;Set recovery_target_*"]
+    C --&gt; D["Start PostgreSQL"]
+    D --&gt; E["Archive recovery:&lt;br/&gt;fetch + replay WAL"]
+    E --&gt; F{"Target&lt;br/&gt;reached?"}
+    F --&gt;|No| E
+    F --&gt;|Yes| G["Pause / Promote / Shutdown&lt;br/&gt;(per recovery_target_action)"]
+    G --&gt; H["New timeline begins"]
+
+    style A fill:#e8f4e8
+    style F fill:#f4e8e8
+    style H fill:#e8e8f4
+</code></pre>
+
+<h3 id="timelines">Timelines</h3>
+
+<p>A <strong>timeline</strong> is an integer identifier (<code class="language-plaintext highlighter-rouge">TimeLineID</code>) that distinguishes
+different WAL histories. Every WAL segment file name includes the timeline
+(the first 8 hex digits, e.g., <code class="language-plaintext highlighter-rouge">00000001</code> in <code class="language-plaintext highlighter-rouge">000000010000000000000001</code>).</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="cm">/* src/include/access/xlogdefs.h:63 */</span>
+<span class="k">typedef</span> <span class="n">uint32</span> <span class="n">TimeLineID</span><span class="p">;</span>
+</code></pre></div></div>
+
+<p>Timelines are created when:</p>
+
+<ol>
+  <li>
+    <p><strong>PITR completes</strong> – after recovering to a target point and promoting, a new
+timeline starts. This prevents the new WAL from overwriting archived WAL
+that might be needed for a different recovery.</p>
+  </li>
+  <li>
+    <p><strong>Standby promotion</strong> – when a standby is promoted to primary, it begins a
+new timeline.</p>
+  </li>
+</ol>
+
+<h4 id="timeline-history-files">Timeline History Files</h4>
+
+<p>When a new timeline is created, PostgreSQL writes a <strong>timeline history file</strong>
+(e.g., <code class="language-plaintext highlighter-rouge">00000002.history</code>) that records where the fork happened:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>1   0/50000A0   no recovery target configured
+</code></pre></div></div>
+
+<p>This says: “Timeline 2 forked from timeline 1 at LSN <code class="language-plaintext highlighter-rouge">0/50000A0</code>.” Recovery
+can use these files to determine which WAL segments to read when following
+a specific timeline.</p>
+
+<pre><code class="language-mermaid">gitGraph
+    commit id: "TLI=1 start"
+    commit id: "Checkpoint"
+    commit id: "Normal ops"
+    commit id: "Crash point"
+    branch "Timeline 2 (PITR)"
+    checkout "Timeline 2 (PITR)"
+    commit id: "PITR target"
+    commit id: "New ops on TLI=2"
+    checkout main
+    commit id: "Original continues (archived)"
+</code></pre>
+
+<h3 id="wal-prefetching">WAL Prefetching</h3>
+
+<p>During recovery, the startup process can predict which data blocks will be
+needed by upcoming WAL records (since block references are encoded in the
+record headers). The <strong>WAL prefetcher</strong> (<code class="language-plaintext highlighter-rouge">xlogprefetcher.c</code>) reads ahead in
+the WAL stream and issues prefetch requests for those blocks, overlapping
+I/O with replay CPU work.</p>
+
+<p>This significantly speeds up recovery on systems with high-latency storage.
+Controlled by <code class="language-plaintext highlighter-rouge">recovery_prefetch</code> (default <code class="language-plaintext highlighter-rouge">try</code>).</p>
+
+<h3 id="recovery-consistency-point">Recovery Consistency Point</h3>
+
+<p>During archive recovery, the database is not immediately consistent. It becomes
+consistent at the <strong>consistency point</strong> – the LSN at which all pages modified
+since the base backup have been replayed. After this point, hot standby queries
+can begin. The consistency point is determined from the backup label file
+(<code class="language-plaintext highlighter-rouge">backup_label</code>), which records the start LSN of the backup.</p>
+
+<h3 id="signal-files">Signal Files</h3>
+
+<p>Recovery mode is controlled by signal files in <code class="language-plaintext highlighter-rouge">$PGDATA</code>:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="cm">/* src/include/access/xlog.h:318 */</span>
+<span class="cp">#define RECOVERY_SIGNAL_FILE    "recovery.signal"    </span><span class="cm">/* archive recovery */</span><span class="cp">
+#define STANDBY_SIGNAL_FILE     "standby.signal"     </span><span class="cm">/* standby mode */</span><span class="cp">
+#define PROMOTE_SIGNAL_FILE     "promote"             </span><span class="cm">/* trigger promotion */</span><span class="cp">
+</span></code></pre></div></div>
+
+<ul>
+  <li><code class="language-plaintext highlighter-rouge">recovery.signal</code> – start archive recovery, promote when done (or at target).</li>
+  <li><code class="language-plaintext highlighter-rouge">standby.signal</code> – start standby mode, continuously replay WAL.</li>
+  <li><code class="language-plaintext highlighter-rouge">promote</code> – signal a standby to promote to primary (created by <code class="language-plaintext highlighter-rouge">pg_ctl promote</code>
+or <code class="language-plaintext highlighter-rouge">pg_promote()</code> function).</li>
+</ul>
+
+<h3 id="end-of-recovery-processing">End-of-Recovery Processing</h3>
+
+<p>When recovery completes (either crash recovery reaching end of WAL, or archive
+recovery reaching its target):</p>
+
+<ol>
+  <li>Write an end-of-recovery checkpoint or <code class="language-plaintext highlighter-rouge">XLOG_END_OF_RECOVERY</code> record.</li>
+  <li>If a new timeline is needed, create the timeline history file.</li>
+  <li>Set <code class="language-plaintext highlighter-rouge">pg_control.state = DB_IN_PRODUCTION</code>.</li>
+  <li>Remove signal files (<code class="language-plaintext highlighter-rouge">recovery.signal</code>, <code class="language-plaintext highlighter-rouge">backup_label</code>).</li>
+  <li>Start accepting connections.</li>
+</ol>
+
+<h2 id="key-data-structures">Key Data Structures</h2>
+
+<h3 id="dbstate-system-state-indicator">DBState (system state indicator)</h3>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="cm">/* src/include/catalog/pg_control.h:91 */</span>
+<span class="k">typedef</span> <span class="k">enum</span> <span class="n">DBState</span>
+<span class="p">{</span>
+    <span class="n">DB_STARTUP</span> <span class="o">=</span> <span class="mi">0</span><span class="p">,</span>
+    <span class="n">DB_SHUTDOWNED</span><span class="p">,</span>                <span class="cm">/* clean shutdown completed */</span>
+    <span class="n">DB_SHUTDOWNED_IN_RECOVERY</span><span class="p">,</span>    <span class="cm">/* clean shutdown during recovery */</span>
+    <span class="n">DB_SHUTDOWNING</span><span class="p">,</span>               <span class="cm">/* shutdown in progress */</span>
+    <span class="n">DB_IN_CRASH_RECOVERY</span><span class="p">,</span>         <span class="cm">/* crash recovery in progress */</span>
+    <span class="n">DB_IN_ARCHIVE_RECOVERY</span><span class="p">,</span>       <span class="cm">/* archive recovery in progress */</span>
+    <span class="n">DB_IN_PRODUCTION</span><span class="p">,</span>             <span class="cm">/* normal operation */</span>
+<span class="p">}</span> <span class="n">DBState</span><span class="p">;</span>
+</code></pre></div></div>
+
+<h3 id="xl_end_of_recovery">xl_end_of_recovery</h3>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="cm">/* src/include/access/xlog_internal.h:300 */</span>
+<span class="k">typedef</span> <span class="k">struct</span> <span class="n">xl_end_of_recovery</span>
+<span class="p">{</span>
+    <span class="n">TimestampTz</span> <span class="n">end_time</span><span class="p">;</span>
+    <span class="n">TimeLineID</span>  <span class="n">ThisTimeLineID</span><span class="p">;</span>    <span class="cm">/* new TLI */</span>
+    <span class="n">TimeLineID</span>  <span class="n">PrevTimeLineID</span><span class="p">;</span>    <span class="cm">/* previous TLI we forked from */</span>
+    <span class="kt">int</span>         <span class="n">wal_level</span><span class="p">;</span>
+<span class="p">}</span> <span class="n">xl_end_of_recovery</span><span class="p">;</span>
+</code></pre></div></div>
+
+<h3 id="recovery-state-in-xlogctldata">Recovery State in XLogCtlData</h3>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="cm">/* Inside XLogCtlData (src/backend/access/transam/xlog.c:453) */</span>
+<span class="n">RecoveryState</span> <span class="n">SharedRecoveryState</span><span class="p">;</span>      <span class="cm">/* CRASH, ARCHIVE, or DONE */</span>
+<span class="n">TimeLineID</span>    <span class="n">InsertTimeLineID</span><span class="p">;</span>         <span class="cm">/* TLI for new WAL */</span>
+<span class="n">TimeLineID</span>    <span class="n">PrevTimeLineID</span><span class="p">;</span>           <span class="cm">/* TLI we forked from */</span>
+<span class="n">XLogRecPtr</span>    <span class="n">lastCheckPointRecPtr</span><span class="p">;</span>     <span class="cm">/* latest checkpoint start */</span>
+<span class="n">XLogRecPtr</span>    <span class="n">lastCheckPointEndPtr</span><span class="p">;</span>     <span class="cm">/* latest checkpoint end */</span>
+<span class="n">CheckPoint</span>    <span class="n">lastCheckPoint</span><span class="p">;</span>           <span class="cm">/* latest checkpoint data */</span>
+</code></pre></div></div>
+
+<h2 id="connections">Connections</h2>
+
+<ul>
+  <li>
+    <p><strong><a href="wal-internals">WAL Internals</a></strong> – recovery reads the WAL records that
+the insertion machinery wrote. The record format determines how replay works.</p>
+  </li>
+  <li>
+    <p><strong><a href="checkpoints">Checkpoints</a></strong> – the checkpoint’s redo point is where
+recovery begins. More frequent checkpoints mean shorter recovery times but
+more I/O during normal operation.</p>
+  </li>
+  <li>
+    <p><strong><a href="../03-transactions/">Transactions &amp; MVCC (Ch. 3)</a></strong> – during recovery,
+transaction state (CLOG, running XIDs) is reconstructed from WAL. Hot standby
+needs this to serve consistent read queries.</p>
+  </li>
+  <li>
+    <p><strong><a href="../12-replication/">Replication (Ch. 12)</a></strong> – standby mode is continuous
+recovery. Streaming replication feeds WAL to the standby’s recovery loop.
+Replication conflicts arise when recovery needs to remove data that standby
+queries are reading.</p>
+  </li>
+  <li>
+    <p><strong><a href="../01-storage/">Storage Engine (Ch. 1)</a></strong> – during replay, pages are
+fetched into the buffer pool, modified according to the WAL record, and
+eventually flushed to disk by the checkpointer.</p>
+  </li>
+</ul>
+
+
+      <hr>
+
+      <!-- Prev / Next / Up navigation -->
+      
+      
+      
+
+      <div class="clearfix" style="margin-top: 2rem;">
+        
+          
+          
+
+          
+            
+            <a class="btn btn-primary float-left" href="/postgresql/04-wal/checkpoints.html" title="Checkpoints">&larr; Previous</a>
+          
+
+          
+            
+            <a class="btn btn-primary float-right" href="/postgresql/04-wal/wal-for-extensions.html" title="WAL for Extensions">Next &rarr;</a>
+          
+        
+      </div>
+
+      
+      <div style="text-align: center; margin-top: 1rem;">
+        <a href="/postgresql-internals/">&uarr; Back to Table of Contents</a>
+      </div>
+      
+
+    </div>
+  </div>
+</div>
+
+
+  <!-- Footer -->
+
+<hr>
+
+<footer>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <ul class="list-inline text-center">
+          
+          <li class="list-inline-item">
+            <a href="mailto:amitava.dev@proton.me" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="far fa-envelope fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          
+          
+          <li class="list-inline-item">
+            <a href="https://www.linkedin.com/in/amitavaag" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-linkedin fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          <li class="list-inline-item">
+            <a href="https://github.com/ikouchiha47" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-github fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+        </ul>
+
+        <p class="copyright text-muted">
+          Build with: 
+          <a 
+            href="https://github.com/StartBootstrap/startbootstrap-clean-blog-jekyll"
+            class="text-gray"
+            target="_blank">startbootstrap-clean-blog-jekyll</a></p>
+      </div>
+    </div>
+  </div>
+</footer>
+
+
+  <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="/assets/vendor/blog/js/scripts.js"></script>
+
+<script src="/assets/scripts.js"></script>
+
+
+
+
+
+  <script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+
+    document.querySelectorAll('pre > code.language-mermaid').forEach((codeBlock) => {
+      codeBlock.parentElement.outerHTML = `<pre class="mermaid">${codeBlock.textContent}</pre>`;
+    });
+
+
+    mermaid.initialize({ startOnLoad: true, theme: 'forest' });
+</script>
+
+
+  
+
+</body>
+
+</html>

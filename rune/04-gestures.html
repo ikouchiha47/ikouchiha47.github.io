@@ -1,0 +1,439 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+  <title>
+    RUNE Part 4: Eight Problems Called Gesture Detection - iko&#39;s logs
+    
+  </title>
+
+  <meta name="description" content="Every naive gesture algorithm has the same failure modes. Here&#39;s the taxonomy and the rewrite.">
+  <meta property="og:description" content="Every naive gesture algorithm has the same failure modes. Here&#39;s the taxonomy and the rewrite.">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="RUNE Part 4: Eight Problems Called Gesture Dete...">
+  <meta property="og:url" content="https://ikouchiha47.github.io/rune/04-gestures.html">
+
+  
+
+  <link href='https://fonts.googleapis.com/css?family=Lora:400,700,400italic,700italic' rel='stylesheet' type='text/css'>
+  <link href='https://fonts.googleapis.com/css?family=Open+Sans:300italic,400italic,600italic,700italic,800italic,400,300,600,700,800' rel='stylesheet' type='text/css'>
+
+  <!-- <script src="https://use.fontawesome.com/releases/v5.15.3/js/all.js" crossorigin="anonymous"></script> -->
+  <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.15.4/css/all.css" integrity="sha384-DyZ88mC6Up2uqS4h/KRgHuoeGwBcD4Ng9SiP4dIRy0EXTlnuz47vAwmeGwVChigm" crossorigin="anonymous"/>
+
+  <link rel="stylesheet" href="/assets/main.css">
+  <link rel="canonical" href="https://ikouchiha47.github.io/rune/04-gestures.html">
+  <link rel="alternate" type="application/rss+xml" title="iko&#39;s logs" href="/feed.xml">
+
+  <meta name="google-site-verification" content="lWkg6gIxJgzEKX_5XnhcxCtPE9QknaimFWWos_dTvPM" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fira+Sans:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Inconsolata:wght@200..900&family=Jersey+25&family=Kanit:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Merriweather+Sans:ital,wght@0,300..800;1,300..800&family=Nanum+Gothic+Coding&family=Space+Grotesk:wght@300..700&family=Titillium+Web:ital,wght@0,200;0,300;0,400;0,600;0,700;0,900;1,200;1,300;1,400;1,600;1,700&display=swap" rel="stylesheet">
+
+</head>
+
+
+<body>
+
+  <!-- Navigation -->
+<nav class="navbar navbar-expand-lg navbar-light fixed-top" id="mainNav">
+  <div class="container">
+    <a class="navbar-brand" href="/">iko&#39;s logs</a>
+    <button class="navbar-toggler navbar-toggler-right" type="button" data-toggle="collapse" data-target="#navbarResponsive" aria-controls="navbarResponsive" aria-expanded="false" aria-label="Toggle navigation">
+      Menu
+      <i class="fa fa-bars"></i>
+    </button>
+    <div class="collapse navbar-collapse" id="navbarResponsive">
+      <ul class="navbar-nav ml-auto">
+        <li class="nav-item">
+          <a class="nav-link" href="/">Home</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/about">About</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/posts">Posts</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/contact">Contact</a>
+        </li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+
+  <!-- Page Header -->
+
+<header class="masthead" style="background: #1a0a2e">
+
+  <div class="overlay"></div>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <div class="post-heading">
+          <h1>RUNE Part 4: Eight Problems Called Gesture Detection</h1>
+          
+          <h2 class="subheading">From Euler angle deltas to a gyro integration FSM — and why the naive version fails seven ways</h2>
+          
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="container space-grotesk">
+  <div class="row">
+    <div class="col-lg-8 col-md-10 mx-auto">
+
+      <!-- Breadcrumb -->
+      <nav aria-label="breadcrumb" style="margin-bottom: 1.5rem;">
+        <ol class="breadcrumb" style="background: transparent; padding: 0;">
+          
+            <li class="breadcrumb-item"><a href="/rune/">RUNE</a></li>
+          
+          
+          <li class="breadcrumb-item active" aria-current="page">RUNE Part 4: Eight Problems Called Gesture Detection</li>
+        </ol>
+      </nav>
+
+      <video src="/assets/rune/video/inshot_420422.webm" controls="" width="100%" style="max-width:640px; display:block; margin-bottom:1.5rem;"></video>
+
+<p>The first version of gesture detection was twelve lines: store baseline Euler angles at calibration time, compute delta per sample, emit a gesture if <code class="language-plaintext highlighter-rouge">|delta| &gt; threshold</code>. Simple. Works for a demo. Fails in practice in at least seven distinct ways, each with its own cause and its own fix.</p>
+
+<p>The project has a document — <code class="language-plaintext highlighter-rouge">docs/problems.md</code> — that lists them out. It was written after the twelfth hack to the gesture code stopped working. This is what’s in it.</p>
+
+<hr />
+
+<h2 id="the-taxonomy">The taxonomy</h2>
+
+<p><strong>1. Engagement — when is control active?</strong>
+If pitch continuously maps to brightness, every time you move your arm to scratch your head, brightness changes. All continuous control needs explicit intent gating. Without it, you’re not building a remote — you’re building an annoyance.</p>
+
+<p><strong>2. Reference anchoring — relative to what?</strong>
+“Arm lifted = lights on” — lifted relative to which position? Every user sits differently. Holds their arm differently. The baseline must be captured at engagement time, not factory-set. Otherwise the same arm position means different things per user, per session, per chair.</p>
+
+<p><strong>3. Axis isolation — roll bleeds into pitch</strong>
+When you pronate your wrist (roll), your elbow and shoulder compensate slightly — pitch and yaw drift. For simultaneous independent controls (roll = volume, pitch = brightness), you need to know how much of the observed pitch change is incidental bleed from roll vs intentional. Without this, turning the volume accidentally moves the brightness slider.</p>
+
+<p><strong>4. Output mapping — angle to value curve</strong>
+Volume: logarithmic (human hearing is logarithmic; small changes at low volume matter more). Brightness: linear or slight gamma. “Lights on at elevation X”: threshold + hysteresis, not linear mapping. These are different functions. The algorithm needs to know which applies.</p>
+
+<p><strong>5. Tremor rejection without latency</strong>
+Raw pitch/yaw has 3–8Hz hand tremor. Too much filtering adds latency. Cursor needs &lt; 50ms. Brightness slider can tolerate 100ms. “Lights on” can tolerate 200ms. These are different products with different tolerances.</p>
+
+<p><strong>6. Threshold vs continuous</strong>
+“Arm lifted = lights on” is categorically different from “pitch = brightness value.” The first is an event: one-shot trigger when crossing a level, needs debounce, may latch. The second is a value: tracks position in real time, needs tremor rejection and smooth mapping. The algorithm must know which contract applies before it can emit anything correct.</p>
+
+<p><strong>7. Fatigue</strong>
+Holding your arm at elevation for sustained output (lights stay on while arm is raised) causes fatigue in 30–60 seconds. Latching semantics — crossing fires a toggle, arm can return to rest — are almost always better than holding semantics.</p>
+
+<p><strong>8. Snap/reposition detection</strong>
+When the user re-centers their arm without intending a gesture. The only problem the naive algorithm was even trying to solve.</p>
+
+<p>The naive algorithm addressed #8 partially. The rest weren’t even defined yet.</p>
+
+<hr />
+
+<h2 id="the-hacks-accumulate">The hacks accumulate</h2>
+
+<p>The intermediate firmware accrued: <code class="language-plaintext highlighter-rouge">CROSS_INHIBIT_MS</code>, <code class="language-plaintext highlighter-rouge">FORCE_REARM_MS</code>, <code class="language-plaintext highlighter-rouge">lastGestureMs</code> debounce, stability-classifier rebase, <code class="language-plaintext highlighter-rouge">rollArmed / pitchArmed / yawArmed</code> booleans, <code class="language-plaintext highlighter-rouge">STABILITY_REBASE_HOLDOFF_MS</code>. Each hack fixed one symptom and added one new assumption about ordering. Adding a new gesture type required touching five files. The code was untestable without a physical device in your hand.</p>
+
+<p>This is the point where you stop patching and rewrite.</p>
+
+<hr />
+
+<h2 id="the-rewrite--physics-first">The rewrite — physics first</h2>
+
+<p>A gyroscope measures <strong>angular velocity</strong> (rad/s), not angle. The old firmware converted gyro → quaternion → Euler angles and compared positions to a stored baseline. That introduced drift: if the baseline was set at the wrong moment, every comparison was wrong. The new approach never stores position.</p>
+
+<p><strong>Jerk gate — blocking drift</strong></p>
+
+<div class="language-cpp highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="kt">float</span> <span class="n">jerk</span> <span class="o">=</span> <span class="p">(</span><span class="n">gyroVal</span> <span class="o">-</span> <span class="n">_prevGyro</span><span class="p">)</span> <span class="o">/</span> <span class="n">dt</span><span class="p">;</span>  <span class="c1">// rad/s²</span>
+<span class="k">if</span> <span class="p">(</span><span class="n">fabsf</span><span class="p">(</span><span class="n">jerk</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mf">8.0f</span><span class="p">)</span> <span class="p">{</span>
+  <span class="n">accumulating</span> <span class="o">=</span> <span class="nb">true</span><span class="p">;</span>
+<span class="p">}</span>
+</code></pre></div></div>
+
+<p>Gyro drift is a slow, low-frequency error. It never produces an angular acceleration spike above 8 rad/s². A deliberate wrist flick does. This gate blocks drift from ever entering the integration path.</p>
+
+<p><strong>Windowed integral — measuring the gesture</strong></p>
+
+<div class="language-cpp highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="n">sum</span> <span class="o">+=</span> <span class="n">gyroVal</span> <span class="o">*</span> <span class="n">dt</span><span class="p">;</span>  <span class="c1">// rad/s × s = rad</span>
+<span class="c1">// Threshold: 0.25 rad ≈ 14°</span>
+</code></pre></div></div>
+
+<p>Riemann sum over a 32-sample ring buffer at ~50Hz covers ~640ms — more than enough for any wrist motion. The sign of the integral gives direction for free. No separate direction logic needed.</p>
+
+<p><strong>4-state FSM per axis</strong></p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>IDLE ──(jerk ≥ 8 rad/s²)──► ONSET ──(integral ≥ 0.25 rad within 300ms)──► PEAK
+  ▲                             │                                               │
+  │                       timeout → IDLE                              (gyro &lt; 0.15)
+  │                                                                              │
+  └──────────────────────────────────────────────────────────────────────── DECAY
+                                                                               │
+                                                                  (gyro &lt; 0.03 rad/s)
+                                                                               │
+                                                                      FIRE + → IDLE
+</code></pre></div></div>
+
+<p>Each state rejects a specific class of false positive:</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>State</th>
+      <th>Waiting for</th>
+      <th>Rejects</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>IDLE</td>
+      <td>Jerk spike</td>
+      <td>Slow drift that never spikes</td>
+    </tr>
+    <tr>
+      <td>ONSET</td>
+      <td>Integral to cross threshold</td>
+      <td>Weak twitches that don’t commit, within 300ms</td>
+    </tr>
+    <tr>
+      <td>PEAK</td>
+      <td>Gyro to start dropping</td>
+      <td>Held positions — user freezes at an angle</td>
+    </tr>
+    <tr>
+      <td>DECAY</td>
+      <td>Gyro to fully settle (ZUPT)</td>
+      <td>Mid-flick re-triggers</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>The gesture fires on DECAY→IDLE, not at PEAK. The motion is confirmed complete. The axis is back in IDLE ~100ms later, immediately ready for the next gesture. This is called a Zero-Velocity Update (ZUPT).</p>
+
+<p><strong>Dominant-axis ratio test — replacing CROSS_INHIBIT_MS</strong></p>
+
+<div class="language-cpp highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="kt">float</span> <span class="n">ratio</span> <span class="o">=</span> <span class="n">fabsf</span><span class="p">(</span><span class="n">dominant</span><span class="p">)</span> <span class="o">/</span> <span class="p">(</span><span class="n">fabsf</span><span class="p">(</span><span class="n">other1</span><span class="p">)</span> <span class="o">+</span> <span class="n">fabsf</span><span class="p">(</span><span class="n">other2</span><span class="p">)</span> <span class="o">+</span> <span class="mf">0.001f</span><span class="p">);</span>
+<span class="k">if</span> <span class="p">(</span><span class="n">ratio</span> <span class="o">&gt;=</span> <span class="mf">1.5f</span><span class="p">)</span> <span class="p">{</span> <span class="cm">/* emit */</span> <span class="p">}</span> <span class="k">else</span> <span class="p">{</span> <span class="cm">/* ambiguous, drop */</span> <span class="p">}</span>
+</code></pre></div></div>
+
+<p>A clean deliberate flick concentrates most energy on one axis — ratio typically 3–8. Accidental compound motion splits it — ratio 1.0–1.4. 1.5 sits cleanly in the gap. No timer needed. <code class="language-plaintext highlighter-rouge">CROSS_INHIBIT_MS</code> is deleted.</p>
+
+<hr />
+
+<h2 id="the-gesture-vocabulary">The gesture vocabulary</h2>
+
+<p>From the BLE protocol spec — what the firmware emits and the app maps to actions:</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>Gesture</th>
+      <th>Axis</th>
+      <th>Motion</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">turn_right</code></td>
+      <td>Roll</td>
+      <td>Wrist pronation</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">turn_left</code></td>
+      <td>Roll</td>
+      <td>Wrist supination</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">pitch_up</code></td>
+      <td>Pitch</td>
+      <td>Wrist flexion</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">pitch_down</code></td>
+      <td>Pitch</td>
+      <td>Wrist extension</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">yaw_right</code></td>
+      <td>Yaw</td>
+      <td>Wrist abduction</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">yaw_left</code></td>
+      <td>Yaw</td>
+      <td>Wrist adduction</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">tap</code></td>
+      <td>—</td>
+      <td>BNO085 hardware tap detector</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">shake</code></td>
+      <td>—</td>
+      <td>Linear acceleration threshold</td>
+    </tr>
+  </tbody>
+</table>
+
+<hr />
+
+<h2 id="the-interactionengine">The InteractionEngine</h2>
+
+<p><code class="language-plaintext highlighter-rouge">GestureFilter</code>, <code class="language-plaintext highlighter-rouge">ComboEngine</code>, and <code class="language-plaintext highlighter-rouge">HoldDetector</code> were three classes doing overlapping jobs, wired ad-hoc in <code class="language-plaintext highlighter-rouge">useBLE.ts</code> with mode-specific branching and ordering dependencies. Adding a new behavior required touching all three plus the wiring.</p>
+
+<p>Collapsed into one engine with three rule types, evaluated top-down — first match wins, like Express route ordering:</p>
+
+<p><strong>Terminal</strong> — single token → action, with per-token refractory and snap-back suppression:</p>
+<div class="language-typescript highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="p">{</span> <span class="nl">type</span><span class="p">:</span> <span class="dl">"</span><span class="s2">terminal</span><span class="dl">"</span><span class="p">,</span> <span class="nx">token</span><span class="p">:</span> <span class="dl">"</span><span class="s2">turn_right</span><span class="dl">"</span><span class="p">,</span> <span class="nx">action</span><span class="p">:</span> <span class="dl">"</span><span class="s2">dpad_right</span><span class="dl">"</span><span class="p">,</span> <span class="nx">refractoryMs</span><span class="p">:</span> <span class="mi">200</span> <span class="p">}</span>
+</code></pre></div></div>
+
+<p><strong>Sequence</strong> — N tokens in order within a time window → action:</p>
+<div class="language-typescript highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="p">{</span> <span class="nl">type</span><span class="p">:</span> <span class="dl">"</span><span class="s2">sequence</span><span class="dl">"</span><span class="p">,</span> <span class="nx">tokens</span><span class="p">:</span> <span class="p">[</span><span class="dl">"</span><span class="s2">turn_right</span><span class="dl">"</span><span class="p">,</span> <span class="dl">"</span><span class="s2">turn_right</span><span class="dl">"</span><span class="p">],</span> <span class="nx">windowMs</span><span class="p">:</span> <span class="mi">300</span><span class="p">,</span> <span class="nx">action</span><span class="p">:</span> <span class="dl">"</span><span class="s2">ff</span><span class="dl">"</span> <span class="p">}</span>
+</code></pre></div></div>
+
+<p><strong>Repeat</strong> — entry sequence → fire at interval → cancel on token:</p>
+<div class="language-typescript highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="p">{</span>
+  <span class="nl">type</span><span class="p">:</span> <span class="dl">"</span><span class="s2">repeat</span><span class="dl">"</span><span class="p">,</span>
+  <span class="nx">tokens</span><span class="p">:</span> <span class="p">[</span><span class="dl">"</span><span class="s2">yaw_left</span><span class="dl">"</span><span class="p">,</span> <span class="dl">"</span><span class="s2">yaw_left</span><span class="dl">"</span><span class="p">,</span> <span class="dl">"</span><span class="s2">yaw_left</span><span class="dl">"</span><span class="p">],</span>
+  <span class="nx">windowMs</span><span class="p">:</span> <span class="mi">600</span><span class="p">,</span> <span class="nx">action</span><span class="p">:</span> <span class="dl">"</span><span class="s2">scroll_left</span><span class="dl">"</span><span class="p">,</span>
+  <span class="nx">intervalMs</span><span class="p">:</span> <span class="mi">200</span><span class="p">,</span> <span class="nx">cancelOn</span><span class="p">:</span> <span class="p">[</span><span class="dl">"</span><span class="s2">yaw_right</span><span class="dl">"</span><span class="p">]</span>
+<span class="p">}</span>
+</code></pre></div></div>
+
+<p>Inspired by Unreal Engine’s Enhanced Input System — rules as data, one interpreter. Adding a new behavior means adding a rule object, not a new class.</p>
+
+<p>Hold = triple same gesture. No time-based ambiguity about whether the user is still or just paused. Consistent with how every other intentional action in the vocabulary works.</p>
+
+<hr />
+
+<p>Calibration — the other piece of reference anchoring — is covered separately in <a href="/rune/05-calibration">Part 5</a>. It went from 125 seconds to 3.</p>
+
+
+      <hr>
+
+      <!-- Prev / Next / Up navigation -->
+      
+      
+      
+
+      <div class="clearfix" style="margin-top: 2rem;">
+        
+          
+          
+
+          
+            
+            <a class="btn btn-primary float-left" href="/rune/03-wakeup.html" title="RUNE Part 3: The Chip Wouldn't Wake Up">&larr; Previous</a>
+          
+
+          
+            
+            <a class="btn btn-primary float-right" href="/rune/05-calibration.html" title="RUNE Part 5: Calibration, From 125 Seconds to 3">Next &rarr;</a>
+          
+        
+      </div>
+
+      
+      <div style="text-align: center; margin-top: 1rem;">
+        <a href="/rune/">&uarr; Back to Table of Contents</a>
+      </div>
+      
+
+    </div>
+  </div>
+</div>
+
+
+  <!-- Footer -->
+
+<hr>
+
+<footer>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <ul class="list-inline text-center">
+          
+          <li class="list-inline-item">
+            <a href="mailto:amitava.dev@proton.me" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="far fa-envelope fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          
+          
+          <li class="list-inline-item">
+            <a href="https://www.linkedin.com/in/amitavaag" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-linkedin fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          <li class="list-inline-item">
+            <a href="https://github.com/ikouchiha47" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-github fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+        </ul>
+
+        <p class="copyright text-muted">
+          Build with: 
+          <a 
+            href="https://github.com/StartBootstrap/startbootstrap-clean-blog-jekyll"
+            class="text-gray"
+            target="_blank">startbootstrap-clean-blog-jekyll</a></p>
+      </div>
+    </div>
+  </div>
+</footer>
+
+
+  <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="/assets/vendor/blog/js/scripts.js"></script>
+
+<script src="/assets/scripts.js"></script>
+
+
+
+
+
+  <script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+
+    document.querySelectorAll('pre > code.language-mermaid').forEach((codeBlock) => {
+      codeBlock.parentElement.outerHTML = `<pre class="mermaid">${codeBlock.textContent}</pre>`;
+    });
+
+
+    mermaid.initialize({ startOnLoad: true, theme: 'forest' });
+</script>
+
+
+  
+
+</body>
+
+</html>

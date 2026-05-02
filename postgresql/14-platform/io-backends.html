@@ -1,0 +1,634 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+  <title>
+    I/O Backends - iko&#39;s logs
+    
+  </title>
+
+  <meta name="description" content="">
+  <meta property="og:description" content="">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="I/O Backends">
+  <meta property="og:url" content="https://ikouchiha47.github.io/postgresql/14-platform/io-backends.html">
+
+  
+
+  <link href='https://fonts.googleapis.com/css?family=Lora:400,700,400italic,700italic' rel='stylesheet' type='text/css'>
+  <link href='https://fonts.googleapis.com/css?family=Open+Sans:300italic,400italic,600italic,700italic,800italic,400,300,600,700,800' rel='stylesheet' type='text/css'>
+
+  <!-- <script src="https://use.fontawesome.com/releases/v5.15.3/js/all.js" crossorigin="anonymous"></script> -->
+  <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.15.4/css/all.css" integrity="sha384-DyZ88mC6Up2uqS4h/KRgHuoeGwBcD4Ng9SiP4dIRy0EXTlnuz47vAwmeGwVChigm" crossorigin="anonymous"/>
+
+  <link rel="stylesheet" href="/assets/main.css">
+  <link rel="canonical" href="https://ikouchiha47.github.io/postgresql/14-platform/io-backends.html">
+  <link rel="alternate" type="application/rss+xml" title="iko&#39;s logs" href="/feed.xml">
+
+  <meta name="google-site-verification" content="lWkg6gIxJgzEKX_5XnhcxCtPE9QknaimFWWos_dTvPM" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fira+Sans:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Inconsolata:wght@200..900&family=Jersey+25&family=Kanit:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Merriweather+Sans:ital,wght@0,300..800;1,300..800&family=Nanum+Gothic+Coding&family=Space+Grotesk:wght@300..700&family=Titillium+Web:ital,wght@0,200;0,300;0,400;0,600;0,700;0,900;1,200;1,300;1,400;1,600;1,700&display=swap" rel="stylesheet">
+
+</head>
+
+
+<body>
+
+  <!-- Navigation -->
+<nav class="navbar navbar-expand-lg navbar-light fixed-top" id="mainNav">
+  <div class="container">
+    <a class="navbar-brand" href="/">iko&#39;s logs</a>
+    <button class="navbar-toggler navbar-toggler-right" type="button" data-toggle="collapse" data-target="#navbarResponsive" aria-controls="navbarResponsive" aria-expanded="false" aria-label="Toggle navigation">
+      Menu
+      <i class="fa fa-bars"></i>
+    </button>
+    <div class="collapse navbar-collapse" id="navbarResponsive">
+      <ul class="navbar-nav ml-auto">
+        <li class="nav-item">
+          <a class="nav-link" href="/">Home</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/about">About</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/posts">Posts</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/contact">Contact</a>
+        </li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+
+  <!-- Page Header -->
+
+<header class="masthead">
+
+  <div class="overlay"></div>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <div class="post-heading">
+          <h1>I/O Backends</h1>
+          
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="container space-grotesk">
+  <div class="row">
+    <div class="col-lg-8 col-md-10 mx-auto">
+
+      <!-- Breadcrumb -->
+      <nav aria-label="breadcrumb" style="margin-bottom: 1.5rem;">
+        <ol class="breadcrumb" style="background: transparent; padding: 0;">
+          
+            <li class="breadcrumb-item"><a href="/postgresql-internals/">PostgreSQL Internals Deep Dive</a></li>
+          
+          
+            
+              <li class="breadcrumb-item"><a href="/postgresql/14-platform/">Platform Layer</a></li>
+            
+          
+          <li class="breadcrumb-item active" aria-current="page">I/O Backends</li>
+        </ol>
+      </nav>
+
+      <h1 id="io-backends-io_uring-workers-and-synchronous-fallback">I/O Backends: io_uring, Workers, and Synchronous Fallback</h1>
+
+<h2 id="summary">Summary</h2>
+
+<p>PostgreSQL’s AIO (Asynchronous I/O) subsystem decouples I/O initiation from I/O
+completion, allowing backends to overlap computation with storage latency. The
+subsystem provides three interchangeable <strong>I/O methods</strong> – <code class="language-plaintext highlighter-rouge">io_uring</code> (Linux
+kernel-native), <code class="language-plaintext highlighter-rouge">worker</code> (portable, process-based), and <code class="language-plaintext highlighter-rouge">sync</code> (debugging
+fallback) – behind a single <code class="language-plaintext highlighter-rouge">IoMethodOps</code> interface. This design lets a backend
+call <code class="language-plaintext highlighter-rouge">pgaio_io_acquire()</code>, attach callbacks, and hand the handle down through
+the storage stack without knowing which kernel mechanism will execute the I/O.</p>
+
+<h2 id="overview">Overview</h2>
+
+<pre><code class="language-mermaid">flowchart TD
+    BE["Backend calls\npgaio_io_acquire()"]
+    BE --&gt; PREP["Prepare PgAioHandle\nset callbacks, target fd"]
+    PREP --&gt; SUBMIT["pgaio_io_submit()"]
+    SUBMIT --&gt; DISPATCH{"io_method\ndispatch"}
+    DISPATCH --&gt;|io_uring| URING["io_uring_enter()\nkernel-native async"]
+    DISPATCH --&gt;|worker| WORKER["Wake I/O worker\nprocess-based async"]
+    DISPATCH --&gt;|sync| SYNC["Synchronous\nread()/write()"]
+    URING --&gt; COMPLETE["Completion callback\nupdate BufferDesc / WAL state"]
+    WORKER --&gt; COMPLETE
+    SYNC --&gt; COMPLETE
+    COMPLETE --&gt; DONE["Backend resumes"]
+
+    style URING fill:#e6ffe6,stroke:#333
+    style WORKER fill:#fff3e6,stroke:#333
+    style SYNC fill:#ffe6e6,stroke:#333
+</code></pre>
+
+<p>Traditional PostgreSQL I/O is fully synchronous: a backend calls <code class="language-plaintext highlighter-rouge">read()</code> or
+<code class="language-plaintext highlighter-rouge">write()</code>, blocks until the kernel returns, and only then continues processing.
+The operating system’s page cache hides much of the latency for buffered I/O,
+but critical operations like <code class="language-plaintext highlighter-rouge">fdatasync()</code> and Direct I/O cannot be hidden.</p>
+
+<p>The AIO subsystem addresses this by:</p>
+
+<ol>
+  <li>
+    <p><strong>Pipelining.</strong> A backend can start I/O for several buffers, perform other
+work (CPU-bound query processing, additional I/O submissions), and wait only
+when results are actually needed.</p>
+  </li>
+  <li>
+    <p><strong>Batching.</strong> Multiple I/Os can be submitted to the kernel in a single system
+call (one <code class="language-plaintext highlighter-rouge">io_uring_enter()</code> or one worker wakeup fan-out), reducing
+per-I/O syscall overhead.</p>
+  </li>
+  <li>
+    <p><strong>Completion callbacks.</strong> Shared-memory state (buffer descriptors, WAL
+positions) is updated by registered callbacks that run in any backend,
+decoupling the I/O initiator from the completer.</p>
+  </li>
+</ol>
+
+<h2 id="key-source-files">Key Source Files</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>File</th>
+      <th>Role</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/storage/aio.h</code></td>
+      <td>Public AIO API: handle acquisition, flags, op types</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/storage/aio_internal.h</code></td>
+      <td>Internal: handle state machine, method ops vtable</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/storage/aio/aio.c</code></td>
+      <td>Core handle lifecycle, submission, completion</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/storage/aio/aio_callback.c</code></td>
+      <td>Callback registration and invocation</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/storage/aio/aio_io.c</code></td>
+      <td><code class="language-plaintext highlighter-rouge">pgaio_io_start_readv()</code>, <code class="language-plaintext highlighter-rouge">pgaio_io_start_writev()</code></td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/storage/aio/aio_target.c</code></td>
+      <td>Target-specific (smgr, WAL) describe/reopen logic</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/storage/aio/method_io_uring.c</code></td>
+      <td>Linux io_uring method implementation</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/storage/aio/method_worker.c</code></td>
+      <td>Worker-process method implementation</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/storage/aio/method_sync.c</code></td>
+      <td>Synchronous fallback method</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/storage/aio/read_stream.c</code></td>
+      <td>High-level read-ahead helper</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/storage/aio/README.md</code></td>
+      <td>Comprehensive design rationale</td>
+    </tr>
+  </tbody>
+</table>
+
+<h2 id="how-it-works">How It Works</h2>
+
+<h3 id="the-iomethodops-interface">The IoMethodOps Interface</h3>
+
+<p>Each I/O method implements a vtable of function pointers:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">typedef</span> <span class="k">struct</span> <span class="n">IoMethodOps</span>
+<span class="p">{</span>
+    <span class="n">bool</span>  <span class="n">wait_on_fd_before_close</span><span class="p">;</span>
+
+    <span class="cm">/* Shared memory sizing and initialization */</span>
+    <span class="kt">size_t</span> <span class="p">(</span><span class="o">*</span><span class="n">shmem_size</span><span class="p">)(</span><span class="kt">void</span><span class="p">);</span>
+    <span class="kt">void</span>   <span class="p">(</span><span class="o">*</span><span class="n">shmem_init</span><span class="p">)(</span><span class="n">bool</span> <span class="n">first_time</span><span class="p">);</span>
+    <span class="kt">void</span>   <span class="p">(</span><span class="o">*</span><span class="n">init_backend</span><span class="p">)(</span><span class="kt">void</span><span class="p">);</span>
+
+    <span class="cm">/* Can this IO be executed asynchronously, or must it be sync? */</span>
+    <span class="n">bool</span>   <span class="p">(</span><span class="o">*</span><span class="n">needs_synchronous_execution</span><span class="p">)(</span><span class="n">PgAioHandle</span> <span class="o">*</span><span class="n">ioh</span><span class="p">);</span>
+
+    <span class="cm">/* Submit staged IOs to the kernel */</span>
+    <span class="kt">int</span>    <span class="p">(</span><span class="o">*</span><span class="n">submit</span><span class="p">)(</span><span class="n">uint16</span> <span class="n">num_staged</span><span class="p">,</span> <span class="n">PgAioHandle</span> <span class="o">**</span><span class="n">staged</span><span class="p">);</span>
+
+    <span class="cm">/* Wait for a specific IO to complete */</span>
+    <span class="kt">void</span>   <span class="p">(</span><span class="o">*</span><span class="n">wait_one</span><span class="p">)(</span><span class="n">PgAioHandle</span> <span class="o">*</span><span class="n">ioh</span><span class="p">,</span> <span class="n">uint64</span> <span class="n">ref_generation</span><span class="p">);</span>
+<span class="p">}</span> <span class="n">IoMethodOps</span><span class="p">;</span>
+</code></pre></div></div>
+
+<p>The active method is selected by the <code class="language-plaintext highlighter-rouge">io_method</code> GUC (<code class="language-plaintext highlighter-rouge">sync</code>, <code class="language-plaintext highlighter-rouge">worker</code>, or
+<code class="language-plaintext highlighter-rouge">io_uring</code>) and stored as a global <code class="language-plaintext highlighter-rouge">IoMethodOps</code> pointer.</p>
+
+<h3 id="aio-handle-lifecycle">AIO Handle Lifecycle</h3>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>  pgaio_io_acquire(resowner, &amp;ioret)
+       |
+       v
+  +--[IDLE]--+
+  |  Handle  |   &lt;--- from shared-memory pool (fixed count)
+  +----------+
+       |
+       | pgaio_io_register_callbacks(ioh, CB_ID, flags)
+       | pgaio_io_set_handle_data_32(ioh, data, n)
+       | pgaio_io_set_flag(ioh, PGAIO_HF_*)
+       v
+  +--[DEFINED]-+
+  |  Callbacks |   &lt;--- has target, callbacks, op data
+  |  registered|
+  +------------+
+       |
+       | pgaio_io_start_readv() / pgaio_io_start_writev()
+       |   (called in lower-level code, e.g. md.c, fd.c)
+       v
+  +--[STAGED]--+
+  |  Ready for |   &lt;--- in method's submission queue
+  |  submission|
+  +------------+
+       |
+       | pgaio_submit_staged() or batch-mode exit
+       v
+  +--[SUBMITTED]+
+  |  In-flight  |  &lt;--- kernel / worker is executing the IO
+  +-------------+
+       |
+       | Kernel/worker completes; callbacks invoked
+       v
+  +--[COMPLETED]+
+  |  ioret      |  &lt;--- PgAioReturn filled with result
+  |  filled     |
+  +-------------+
+       |
+       | Handle returned to free pool for reuse
+       v
+  +--[IDLE]----+
+</code></pre></div></div>
+
+<h3 id="method-1-io_uring-linux-51">Method 1: io_uring (Linux 5.1+)</h3>
+
+<p><code class="language-plaintext highlighter-rouge">io_uring</code> is a kernel interface that uses two shared-memory ring buffers
+between userspace and the kernel: a <strong>submission queue (SQ)</strong> for outgoing I/O
+requests and a <strong>completion queue (CQ)</strong> for results.</p>
+
+<p>PostgreSQL creates one io_uring instance per backend in shared memory (during
+postmaster startup), so that any backend can drain completions from another
+backend’s ring. This is critical for avoiding deadlocks when a backend blocks
+while its I/O completions are pending.</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>  Backend A                    Kernel                    Backend B
+  =========                    ======                    =========
+  pgaio_io_start_readv()
+       |
+       v
+  io_uring SQE pushed
+  to ring A's SQ
+       |
+       v
+  io_uring_enter()  --------&gt;  Kernel processes SQE
+                               DMA read from disk
+                               CQE placed in ring A's CQ
+                                              |
+                                              |  (Backend A is busy)
+                                              v
+                               Backend B calls pgaio_uring_wait_one()
+                               Drains CQE from ring A's CQ
+                               Invokes completion callbacks
+                               Updates BufferDesc atomically
+</code></pre></div></div>
+
+<p>Key implementation details:</p>
+
+<ul>
+  <li><strong>One ring per backend.</strong> Each backend submits only to its own ring, avoiding
+submission-side locking.</li>
+  <li><strong>Cross-backend completion.</strong> Any backend can reap CQEs from any ring,
+enabling forward progress even when the issuer is blocked.</li>
+  <li><strong><code class="language-plaintext highlighter-rouge">IOSQE_ASYNC</code> caveat.</strong> When io_uring is told to force async execution, FDs
+must not be closed while I/O is in flight. The <code class="language-plaintext highlighter-rouge">wait_on_fd_before_close</code> flag
+in the ops vtable handles this.</li>
+  <li><strong>Incompatible with <code class="language-plaintext highlighter-rouge">EXEC_BACKEND</code>.</strong> On platforms that emulate <code class="language-plaintext highlighter-rouge">fork()</code> (like
+Windows), the shared ring mappings cannot be inherited, so io_uring is
+disabled.</li>
+</ul>
+
+<h3 id="method-2-worker-all-platforms">Method 2: Worker (All Platforms)</h3>
+
+<p>The worker method is the default and works everywhere PostgreSQL runs. It
+offloads I/O to a pool of dedicated <strong>I/O worker</strong> processes that perform
+traditional synchronous <code class="language-plaintext highlighter-rouge">preadv()</code> / <code class="language-plaintext highlighter-rouge">pwritev()</code> calls.</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>  Backend                    Shared Memory              IO Worker
+  =======                   =============              =========
+  pgaio_io_start_readv()
+       |
+       v
+  Push handle index to
+  PgAioWorkerSubmissionQueue
+  (lock-free ring buffer)
+       |
+       v
+  Wake one idle worker
+  via latch
+                             +-------------------+
+                             | Submission Queue   |
+                             | head, tail, sqes[] |-----&gt; Worker dequeues
+                             +-------------------+        handle index
+                                                              |
+                                                              v
+                                                         preadv(fd, iovs, ...)
+                                                              |
+                                                              v
+                                                         Run completion
+                                                         callbacks in worker
+                                                         process context
+</code></pre></div></div>
+
+<p>Key design choices:</p>
+
+<ul>
+  <li>
+    <p><strong>Fan-out wakeups.</strong> When a batch of I/Os is submitted, one worker is woken.
+That worker, upon finding more items in the queue, wakes up to
+<code class="language-plaintext highlighter-rouge">IO_WORKER_WAKEUP_FANOUT</code> (2) additional workers. This avoids the thundering
+herd of waking all workers at once while still achieving parallel I/O.</p>
+  </li>
+  <li>
+    <p><strong>Synchronous fallback for local-memory I/O.</strong> If an I/O references
+backend-local memory (<code class="language-plaintext highlighter-rouge">PGAIO_HF_REFERENCES_LOCAL</code>), a worker process cannot
+access it. Such I/Os are executed synchronously by the issuing backend, using
+the sync method’s code path.</p>
+  </li>
+  <li>
+    <p><strong>File reopening.</strong> Workers may not have the same file descriptors as the
+issuing backend. The AIO target’s <code class="language-plaintext highlighter-rouge">reopen</code> callback (e.g., for smgr targets)
+provides the path information needed for workers to open the file themselves.</p>
+  </li>
+</ul>
+
+<h3 id="method-3-sync-debugging">Method 3: Sync (Debugging)</h3>
+
+<p>The synchronous method executes all I/O inline within the issuing backend. Its
+<code class="language-plaintext highlighter-rouge">needs_synchronous_execution</code> always returns <code class="language-plaintext highlighter-rouge">true</code>, and its <code class="language-plaintext highlighter-rouge">submit</code> function
+simply errors out (it should never be called, since all I/Os are executed
+before reaching submission).</p>
+
+<p>This method exists for:</p>
+<ul>
+  <li><strong>Regression testing.</strong> Comparing AIO-enabled code paths against synchronous
+execution to isolate AIO-specific bugs.</li>
+  <li><strong>Fallback.</strong> The worker method uses the sync code path internally when it
+encounters I/Os that cannot be offloaded.</li>
+</ul>
+
+<h3 id="completion-callbacks">Completion Callbacks</h3>
+
+<p>Multiple subsystems register callbacks on a single I/O handle. Callbacks are
+identified by integer IDs (not function pointers) because AIO state resides in
+shared memory, and <code class="language-plaintext highlighter-rouge">EXEC_BACKEND</code> builds cannot guarantee consistent function
+addresses across processes due to ASLR.</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>  IO Handle
+  +---------------------------+
+  | callback_ids[0] = SMGR    |  --&gt; Checks for short read, validates offset
+  | callback_ids[1] = BUFMGR  |  --&gt; Verifies checksum, updates BufferDesc
+  | callback_ids[2] = ...     |
+  +---------------------------+
+  | handle_data_32[]          |  --&gt; Buffer IDs, for callbacks to look up
+  +---------------------------+
+</code></pre></div></div>
+
+<p>Callbacks are invoked in registration order and serve two phases:</p>
+<ul>
+  <li><strong>Stage phase:</strong> Called when I/O is about to be submitted (e.g., to increment
+buffer reference counts so the buffer is not evicted while I/O is in flight).</li>
+  <li><strong>Completion phase:</strong> Called when I/O finishes (e.g., to update the buffer
+descriptor’s state flags and verify page checksums).</li>
+</ul>
+
+<h3 id="the-read-stream-helper">The Read Stream Helper</h3>
+
+<p>Most code should not use the low-level AIO API directly. The <strong>Read Stream</strong>
+(<code class="language-plaintext highlighter-rouge">read_stream.c</code>) provides a higher-level abstraction for sequential and
+semi-sequential read patterns:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>  User provides:  callback that returns next BlockNumber
+                  |
+                  v
+  Read Stream:    Maintains a window of in-flight AIO reads
+                  Automatically submits new reads as prior ones complete
+                  Returns completed buffers to caller in order
+                  |
+                  v
+  Result:         Transparent prefetching with configurable depth
+</code></pre></div></div>
+
+<p>This is used by sequential scans, bitmap heap scans, and VACUUM to achieve
+read-ahead without manual AIO handle management.</p>
+
+<h2 id="key-data-structures">Key Data Structures</h2>
+
+<h3 id="pgaiohandle-shared-memory">PgAioHandle (Shared Memory)</h3>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>PgAioHandle
++-------------------------------------+
+| PgAioOp         op                  |  READV or WRITEV
+| PgAioHandleFlags flags              |  LOCAL, SYNCHRONOUS, BUFFERED
+| PgAioTargetID   target              |  SMGR, WAL, etc.
+| uint64           generation         |  Monotonic, for wait-ref validity
+|                                     |
+| PgAioHandleCallbackID  cb_ids[N]    |  Registered completion callbacks
+| uint32           handle_data_32[M]  |  Opaque data for callbacks
+|                                     |
+| target-specific union               |  RelFileLocator, fork, blkno (smgr)
+|                                     |  or TimeLineID, lsn (WAL)
+|                                     |
+| PgAioOpData      op_data            |  fd, iovcnt, offset, iov[]
++-------------------------------------+
+</code></pre></div></div>
+
+<h3 id="pgaioworkersubmissionqueue">PgAioWorkerSubmissionQueue</h3>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>PgAioWorkerSubmissionQueue
++---------------------------+
+| uint32  size              |  Power-of-2 ring buffer size
+| uint32  head              |  Next slot to dequeue (workers)
+| uint32  tail              |  Next slot to enqueue (backends)
+| int     sqes[size]        |  AIO handle indices
++---------------------------+
+
+PgAioWorkerControl
++---------------------------+
+| uint64  idle_worker_mask  |  Bitmask: 1 = worker is idle
+| PgAioWorkerSlot workers[] |
+|   +-- Latch *latch        |  For wakeup
+|   +-- bool   in_use       |
++---------------------------+
+</code></pre></div></div>
+
+<h3 id="iomethod-dispatch">IoMethod Dispatch</h3>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>  GUC io_method = ?
+       |
+       +--- "sync"    ---&gt; pgaio_sync_ops     (method_sync.c)
+       +--- "worker"  ---&gt; pgaio_worker_ops   (method_worker.c)
+       +--- "io_uring" --&gt; pgaio_uring_ops    (method_io_uring.c)
+                              [Linux only, requires USE_LIBURING,
+                               incompatible with EXEC_BACKEND]
+</code></pre></div></div>
+
+<h2 id="connections">Connections</h2>
+
+<ul>
+  <li><strong>Chapter 4 (Buffer Manager):</strong> The buffer manager acquires AIO handles for read I/O, registers the <code class="language-plaintext highlighter-rouge">PGAIO_HCB_SHARED_BUFFER_READV</code> callback, and passes handles down through smgr to md.c. The read stream helper is the primary interface for prefetching into shared buffers.</li>
+  <li><strong>Chapter 5 (WAL):</strong> AIO enables overlapping WAL writes with transaction processing. Combined with <code class="language-plaintext highlighter-rouge">O_DIRECT + O_DSYNC</code>, a single Force Unit Access (FUA) write replaces the traditional write-then-fdatasync two-step, reducing WAL flush latency.</li>
+  <li><strong>Chapter 3 (Storage Manager, md.c):</strong> <code class="language-plaintext highlighter-rouge">md.c</code> translates block numbers into file offsets within segments and calls <code class="language-plaintext highlighter-rouge">pgaio_io_start_readv()</code> / <code class="language-plaintext highlighter-rouge">pgaio_io_start_writev()</code> to define the I/O operation on the handle.</li>
+  <li><strong>Chapter 14 (this chapter), Portability:</strong> The VFD layer (<code class="language-plaintext highlighter-rouge">fd.c</code>) manages file descriptors that AIO handles reference. The worker method’s file-reopening mechanism must work through the VFD indirection.</li>
+  <li><strong>Chapter 12 (Shared Memory):</strong> All AIO handles, the worker submission queue, and io_uring ring buffers reside in shared memory so that any backend can process completions.</li>
+</ul>
+
+
+      <hr>
+
+      <!-- Prev / Next / Up navigation -->
+      
+      
+      
+
+      <div class="clearfix" style="margin-top: 2rem;">
+        
+          
+          
+
+          
+            
+            <a class="btn btn-primary float-left" href="/postgresql/14-platform/atomics.html" title="Atomic Operations and Memory Barriers">&larr; Previous</a>
+          
+
+          
+            
+            <a class="btn btn-primary float-right" href="/postgresql/14-platform/portability.html" title="Portability and OS Abstraction">Next &rarr;</a>
+          
+        
+      </div>
+
+      
+      <div style="text-align: center; margin-top: 1rem;">
+        <a href="/postgresql-internals/">&uarr; Back to Table of Contents</a>
+      </div>
+      
+
+    </div>
+  </div>
+</div>
+
+
+  <!-- Footer -->
+
+<hr>
+
+<footer>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <ul class="list-inline text-center">
+          
+          <li class="list-inline-item">
+            <a href="mailto:amitava.dev@proton.me" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="far fa-envelope fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          
+          
+          <li class="list-inline-item">
+            <a href="https://www.linkedin.com/in/amitavaag" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-linkedin fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          <li class="list-inline-item">
+            <a href="https://github.com/ikouchiha47" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-github fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+        </ul>
+
+        <p class="copyright text-muted">
+          Build with: 
+          <a 
+            href="https://github.com/StartBootstrap/startbootstrap-clean-blog-jekyll"
+            class="text-gray"
+            target="_blank">startbootstrap-clean-blog-jekyll</a></p>
+      </div>
+    </div>
+  </div>
+</footer>
+
+
+  <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="/assets/vendor/blog/js/scripts.js"></script>
+
+<script src="/assets/scripts.js"></script>
+
+
+
+
+
+  <script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+
+    document.querySelectorAll('pre > code.language-mermaid').forEach((codeBlock) => {
+      codeBlock.parentElement.outerHTML = `<pre class="mermaid">${codeBlock.textContent}</pre>`;
+    });
+
+
+    mermaid.initialize({ startOnLoad: true, theme: 'forest' });
+</script>
+
+
+  
+
+</body>
+
+</html>

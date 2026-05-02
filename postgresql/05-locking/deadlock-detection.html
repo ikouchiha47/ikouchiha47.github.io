@@ -1,0 +1,530 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+  <title>
+    Deadlock Detection - iko&#39;s logs
+    
+  </title>
+
+  <meta name="description" content="">
+  <meta property="og:description" content="">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Deadlock Detection">
+  <meta property="og:url" content="https://ikouchiha47.github.io/postgresql/05-locking/deadlock-detection.html">
+
+  
+
+  <link href='https://fonts.googleapis.com/css?family=Lora:400,700,400italic,700italic' rel='stylesheet' type='text/css'>
+  <link href='https://fonts.googleapis.com/css?family=Open+Sans:300italic,400italic,600italic,700italic,800italic,400,300,600,700,800' rel='stylesheet' type='text/css'>
+
+  <!-- <script src="https://use.fontawesome.com/releases/v5.15.3/js/all.js" crossorigin="anonymous"></script> -->
+  <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.15.4/css/all.css" integrity="sha384-DyZ88mC6Up2uqS4h/KRgHuoeGwBcD4Ng9SiP4dIRy0EXTlnuz47vAwmeGwVChigm" crossorigin="anonymous"/>
+
+  <link rel="stylesheet" href="/assets/main.css">
+  <link rel="canonical" href="https://ikouchiha47.github.io/postgresql/05-locking/deadlock-detection.html">
+  <link rel="alternate" type="application/rss+xml" title="iko&#39;s logs" href="/feed.xml">
+
+  <meta name="google-site-verification" content="lWkg6gIxJgzEKX_5XnhcxCtPE9QknaimFWWos_dTvPM" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fira+Sans:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Inconsolata:wght@200..900&family=Jersey+25&family=Kanit:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Merriweather+Sans:ital,wght@0,300..800;1,300..800&family=Nanum+Gothic+Coding&family=Space+Grotesk:wght@300..700&family=Titillium+Web:ital,wght@0,200;0,300;0,400;0,600;0,700;0,900;1,200;1,300;1,400;1,600;1,700&display=swap" rel="stylesheet">
+
+</head>
+
+
+<body>
+
+  <!-- Navigation -->
+<nav class="navbar navbar-expand-lg navbar-light fixed-top" id="mainNav">
+  <div class="container">
+    <a class="navbar-brand" href="/">iko&#39;s logs</a>
+    <button class="navbar-toggler navbar-toggler-right" type="button" data-toggle="collapse" data-target="#navbarResponsive" aria-controls="navbarResponsive" aria-expanded="false" aria-label="Toggle navigation">
+      Menu
+      <i class="fa fa-bars"></i>
+    </button>
+    <div class="collapse navbar-collapse" id="navbarResponsive">
+      <ul class="navbar-nav ml-auto">
+        <li class="nav-item">
+          <a class="nav-link" href="/">Home</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/about">About</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/posts">Posts</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/contact">Contact</a>
+        </li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+
+  <!-- Page Header -->
+
+<header class="masthead">
+
+  <div class="overlay"></div>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <div class="post-heading">
+          <h1>Deadlock Detection</h1>
+          
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="container space-grotesk">
+  <div class="row">
+    <div class="col-lg-8 col-md-10 mx-auto">
+
+      <!-- Breadcrumb -->
+      <nav aria-label="breadcrumb" style="margin-bottom: 1.5rem;">
+        <ol class="breadcrumb" style="background: transparent; padding: 0;">
+          
+            <li class="breadcrumb-item"><a href="/postgresql-internals/">PostgreSQL Internals Deep Dive</a></li>
+          
+          
+            
+              <li class="breadcrumb-item"><a href="/postgresql/05-locking/">Locking</a></li>
+            
+          
+          <li class="breadcrumb-item active" aria-current="page">Deadlock Detection</li>
+        </ol>
+      </nav>
+
+      <h1 id="deadlock-detection">Deadlock Detection</h1>
+
+<p>PostgreSQL uses an optimistic approach to deadlocks: a backend sleeps
+immediately when it cannot acquire a lock, then runs deadlock detection only
+if the wait exceeds <code class="language-plaintext highlighter-rouge">DeadlockTimeout</code> (default: 1 second). The detector
+builds a waits-for graph, searches for cycles, and attempts to resolve them
+by rearranging wait queues before resorting to transaction abort.</p>
+
+<h2 id="overview">Overview</h2>
+
+<p>Because users can request locks in any order, deadlocks are possible with
+heavyweight locks. Rather than preventing them (which would require
+restricting lock ordering), PostgreSQL detects and breaks them after the
+fact. The algorithm distinguishes between “hard” edges (blocked by a held
+lock) and “soft” edges (blocked by queue ordering), and can sometimes resolve
+deadlocks by reordering a wait queue instead of aborting a transaction.</p>
+
+<h2 id="key-source-files">Key Source Files</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>File</th>
+      <th>Purpose</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/storage/lmgr/deadlock.c</code></td>
+      <td><code class="language-plaintext highlighter-rouge">DeadLockCheck</code>, <code class="language-plaintext highlighter-rouge">FindLockCycle</code>, <code class="language-plaintext highlighter-rouge">TopoSort</code></td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/storage/lmgr/proc.c</code></td>
+      <td><code class="language-plaintext highlighter-rouge">ProcSleep</code> – sets the deadlock timer, handles wakeup</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/storage/lmgr/lock.c</code></td>
+      <td><code class="language-plaintext highlighter-rouge">ProcLockWakeup</code> – wakes waiters after lock release or reorder</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/storage/lock.h</code></td>
+      <td><code class="language-plaintext highlighter-rouge">DeadLockState</code> enum, function prototypes</td>
+    </tr>
+  </tbody>
+</table>
+
+<h2 id="how-it-works">How It Works</h2>
+
+<h3 id="triggering-the-check">Triggering the Check</h3>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>ProcSleep(lockMethodTable, lockmode, lock, proclock)
+  |
+  +-- Insert self into lock-&gt;waitProcs queue
+  +-- Release partition LWLock
+  +-- Set timer: DeadlockTimeout (default 1000 ms)
+  +-- PGSemaphoreLock(MyProc-&gt;sem)  -- sleep
+  |
+  +-- [If timer fires before lock is granted:]
+        DeadLockCheck(MyProc)
+          |
+          +-- Acquire ALL 16 lock-manager partition LWLocks
+          |     (in partition-number order to prevent LWLock deadlock)
+          |
+          +-- Run the detection algorithm (see below)
+          |
+          +-- Release all partition LWLocks
+          |
+          +-- Return DeadLockState:
+                DS_NO_DEADLOCK        -- go back to sleep
+                DS_SOFT_DEADLOCK      -- resolved by queue reorder
+                DS_HARD_DEADLOCK      -- must abort this transaction
+                DS_BLOCKED_BY_AUTOVACUUM -- send cancel to autovacuum
+</code></pre></div></div>
+
+<h3 id="the-waits-for-graph-wfg">The Waits-For Graph (WFG)</h3>
+
+<p>The detector constructs a directed graph where:</p>
+
+<ul>
+  <li><strong>Nodes</strong> are processes (or more precisely, lock group leaders).</li>
+  <li><strong>Hard edges</strong>: Process A waits for process B because B <strong>holds</strong> a lock
+that conflicts with A’s request.</li>
+  <li><strong>Soft edges</strong>: Process A waits for process B because B is <strong>ahead of A in
+a wait queue</strong> and B’s request conflicts with A’s request.</li>
+</ul>
+
+<pre><code class="language-mermaid">graph LR
+    T1["T1&lt;br/&gt;holds: AccessExclusiveLock(A)&lt;br/&gt;waits: RowExclusiveLock(B)"]
+    T2["T2&lt;br/&gt;holds: RowExclusiveLock(B)&lt;br/&gt;waits: AccessShareLock(A)"]
+    T3["T3&lt;br/&gt;waits: ShareLock(A)"]
+
+    T1 -- "hard: T1 waits for B,&lt;br/&gt;T2 holds B" --&gt; T2
+    T2 -- "hard: T2 waits for A,&lt;br/&gt;T1 holds A" --&gt; T1
+    T3 -. "soft: T3 behind T2&lt;br/&gt;in queue for A" .-&gt; T2
+
+    style T1 fill:#ffe6e6,stroke:#333
+    style T2 fill:#ffe6e6,stroke:#333
+    style T3 fill:#fff3e6,stroke:#333
+</code></pre>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>Hard edge:  A is waiting, B holds a conflicting lock
+
+  A ---hard---&gt; B
+
+Soft edge:  A is behind B in the same wait queue, their requests conflict
+
+  A ---soft---&gt; B
+
+A cycle involving only hard edges = HARD DEADLOCK (must abort).
+A cycle involving at least one soft edge = SOFT DEADLOCK (may resolve
+by reordering the wait queue to reverse a soft edge).
+</code></pre></div></div>
+
+<h3 id="the-detection-algorithm">The Detection Algorithm</h3>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>DeadLockCheck(startProc)
+  |
+  +-- DeadLockCheckRecurse(startProc):
+  |     |
+  |     +-- FindLockCycle(startProc, softEdges, &amp;nSoftEdges)
+  |     |     |
+  |     |     +-- For each lock the startProc is waiting on:
+  |     |     |     For each PROCLOCK holding a conflicting lock:
+  |     |     |       Add hard edge: startProc -&gt; holder
+  |     |     |       Recurse: FindLockCycle(holder, ...)
+  |     |     |
+  |     |     +-- For each proc ahead of startProc in the wait queue
+  |     |     |   whose request conflicts with startProc's request:
+  |     |     |     Add soft edge: startProc -&gt; that proc
+  |     |     |     Recurse: FindLockCycle(that proc, ...)
+  |     |     |
+  |     |     +-- If recursion returns to startProc: CYCLE FOUND
+  |     |           Collect all soft edges in the cycle
+  |     |           Return true
+  |     |
+  |     +-- If no cycle found: return DS_NO_DEADLOCK
+  |     |
+  |     +-- If cycle found with no soft edges: return DS_HARD_DEADLOCK
+  |     |
+  |     +-- If cycle has soft edges:
+  |           Try reversing each soft edge (one at a time):
+  |             1. Add constraint "move A before B" in B's wait queue
+  |             2. ExpandConstraints: run topological sort on the queue
+  |                If topo sort fails: conflicting constraints, skip
+  |             3. TestConfiguration: re-run FindLockCycle on the
+  |                proposed arrangement for startProc AND both A and B
+  |             4. If no cycle found: ACCEPT this rearrangement
+  |                Apply the new queue order via ProcLockWakeup
+  |                Return DS_SOFT_DEADLOCK
+  |             5. If cycle still found: recurse with additional
+  |                constraints from the new cycle's soft edges
+  |
+  +-- If no rearrangement eliminates all cycles: DS_HARD_DEADLOCK
+</code></pre></div></div>
+
+<h3 id="soft-edge-resolution-example">Soft Edge Resolution Example</h3>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>Initial state:          Lock L wait queue: [B, A, C]
+                        B requests ShareLock
+                        A requests ExclusiveLock (conflicts with B)
+                        C requests ShareLock
+
+Soft edge: A --soft--&gt; B  (A is behind B, their requests conflict)
+
+If a cycle exists through this soft edge, the detector can try
+reversing it by moving A ahead of B:
+
+Proposed queue:         [A, B, C]
+
+Now B --soft--&gt; A (reversed). If this eliminates the cycle and
+creates no new cycles, apply the reordering.
+</code></pre></div></div>
+
+<h3 id="topological-sort">Topological Sort</h3>
+
+<p>When multiple soft edges need reversal, the constraints may conflict. The
+detector uses a topological sort to compute a valid queue ordering:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>TopoSort(lock, constraints, nConstraints, ordering)
+  |
+  +-- Build partial order from constraints:
+  |     Each constraint "A before B" adds an edge A -&gt; B
+  |
+  +-- Emit processes in order, preferring original queue position:
+  |     At each step, emit the earliest-in-original-queue process
+  |     that has no unsatisfied predecessors
+  |
+  +-- If unable to emit all processes: constraints are contradictory
+        Return false (caller tries a different combination)
+</code></pre></div></div>
+
+<h2 id="key-data-structures">Key Data Structures</h2>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="cm">/* One edge in the waits-for graph */</span>
+<span class="k">typedef</span> <span class="k">struct</span> <span class="n">EDGE</span>
+<span class="p">{</span>
+    <span class="n">PGPROC</span>  <span class="o">*</span><span class="n">waiter</span><span class="p">;</span>    <span class="cm">/* leader of the waiting lock group */</span>
+    <span class="n">PGPROC</span>  <span class="o">*</span><span class="n">blocker</span><span class="p">;</span>   <span class="cm">/* leader of the blocking group */</span>
+    <span class="n">LOCK</span>    <span class="o">*</span><span class="n">lock</span><span class="p">;</span>      <span class="cm">/* the lock being waited for */</span>
+    <span class="kt">int</span>      <span class="n">pred</span><span class="p">;</span>      <span class="cm">/* workspace for TopoSort */</span>
+    <span class="kt">int</span>      <span class="n">link</span><span class="p">;</span>      <span class="cm">/* workspace for TopoSort */</span>
+<span class="p">}</span> <span class="n">EDGE</span><span class="p">;</span>
+
+<span class="cm">/* A proposed reordering of a wait queue */</span>
+<span class="k">typedef</span> <span class="k">struct</span> <span class="n">WAIT_ORDER</span>
+<span class="p">{</span>
+    <span class="n">LOCK</span>    <span class="o">*</span><span class="n">lock</span><span class="p">;</span>      <span class="cm">/* the lock whose queue is reordered */</span>
+    <span class="n">PGPROC</span> <span class="o">**</span><span class="n">procs</span><span class="p">;</span>     <span class="cm">/* array of PGPROCs in new order */</span>
+    <span class="kt">int</span>      <span class="n">nProcs</span><span class="p">;</span>
+<span class="p">}</span> <span class="n">WAIT_ORDER</span><span class="p">;</span>
+
+<span class="cm">/* Information about each edge in a detected cycle (for error reporting) */</span>
+<span class="k">typedef</span> <span class="k">struct</span> <span class="n">DEADLOCK_INFO</span>
+<span class="p">{</span>
+    <span class="n">LOCKTAG</span>   <span class="n">locktag</span><span class="p">;</span>
+    <span class="n">LOCKMODE</span>  <span class="n">lockmode</span><span class="p">;</span>
+    <span class="kt">int</span>       <span class="n">pid</span><span class="p">;</span>
+<span class="p">}</span> <span class="n">DEADLOCK_INFO</span><span class="p">;</span>
+
+<span class="cm">/* Possible outcomes */</span>
+<span class="k">typedef</span> <span class="k">enum</span> <span class="n">DeadLockState</span>
+<span class="p">{</span>
+    <span class="n">DS_NOT_YET_CHECKED</span><span class="p">,</span>
+    <span class="n">DS_NO_DEADLOCK</span><span class="p">,</span>
+    <span class="n">DS_SOFT_DEADLOCK</span><span class="p">,</span>       <span class="cm">/* resolved by queue rearrangement */</span>
+    <span class="n">DS_HARD_DEADLOCK</span><span class="p">,</span>       <span class="cm">/* must abort */</span>
+    <span class="n">DS_BLOCKED_BY_AUTOVACUUM</span>
+<span class="p">}</span> <span class="n">DeadLockState</span><span class="p">;</span>
+</code></pre></div></div>
+
+<p>All working memory for the detector is pre-allocated at backend startup
+(sized proportional to <code class="language-plaintext highlighter-rouge">MaxBackends</code>) to ensure the detector never runs out
+of memory.</p>
+
+<h2 id="diagram-deadlock-cycle-detection">Diagram: Deadlock Cycle Detection</h2>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>Transaction T1: holds AccessExclusiveLock on Table A,
+                waits for RowExclusiveLock on Table B
+
+Transaction T2: holds RowExclusiveLock on Table B,
+                waits for AccessShareLock on Table A
+
+Waits-for graph:
+
+    T1 ---hard---&gt; T2  (T1 waits for B, T2 holds B)
+     ^              |
+     |              |
+     +-hard---------+  (T2 waits for A, T1 holds A)
+
+Cycle found: T1 -&gt; T2 -&gt; T1
+No soft edges -&gt; HARD DEADLOCK
+The detecting process (whichever ran DeadLockCheck) aborts.
+</code></pre></div></div>
+
+<h2 id="autovacuum-cancellation">Autovacuum Cancellation</h2>
+
+<p>The deadlock detector is also used to implement autovacuum’s low locking
+priority. When a cycle (or blocking chain) involves an autovacuum worker,
+the detector returns <code class="language-plaintext highlighter-rouge">DS_BLOCKED_BY_AUTOVACUUM</code> instead of
+<code class="language-plaintext highlighter-rouge">DS_HARD_DEADLOCK</code>. The caller then sends a cancel signal to the autovacuum
+worker, allowing the user’s DDL to proceed without aborting a user
+transaction.</p>
+
+<h2 id="correctness-guarantees">Correctness Guarantees</h2>
+
+<ol>
+  <li>
+    <p><strong>No missed deadlocks.</strong> The last process to form a cycle will always
+detect it when its <code class="language-plaintext highlighter-rouge">DeadlockTimeout</code> fires.</p>
+  </li>
+  <li>
+    <p><strong>No unnecessary aborts.</strong> If a soft-edge rearrangement can break the
+cycle, the detector will find it before resorting to abort.</p>
+  </li>
+  <li>
+    <p><strong>No new deadlocks from rearrangement.</strong> The detector verifies the
+proposed queue order by re-running <code class="language-plaintext highlighter-rouge">FindLockCycle</code> from the start process
+and from both endpoints of every reversed edge.</p>
+  </li>
+  <li>
+    <p><strong>Victim selection is arbitrary.</strong> The process that happens to run
+<code class="language-plaintext highlighter-rouge">DeadLockCheck</code> first becomes the victim. This is typically the process
+that has been waiting longest (its timer fires first), but it is not
+guaranteed to be the “cheapest” transaction to abort.</p>
+  </li>
+</ol>
+
+<h2 id="connections">Connections</h2>
+
+<ul>
+  <li><strong>Heavyweight Locks</strong>: The deadlock detector operates on LOCK and PROCLOCK
+structures, accessing them under all 16 partition LWLocks.</li>
+  <li><strong>ProcSleep / ProcWakeup</strong>: <code class="language-plaintext highlighter-rouge">ProcSleep</code> sets the deadlock timer and calls
+<code class="language-plaintext highlighter-rouge">DeadLockCheck</code>. <code class="language-plaintext highlighter-rouge">ProcLockWakeup</code> is called after queue rearrangement to
+wake any waiters that are now grantable.</li>
+  <li><strong>Group Locking</strong>: The detector considers lock group leaders as
+representatives. An edge from A to B means A’s group is blocked by B’s
+group.</li>
+  <li><strong>log_lock_waits GUC</strong>: When enabled, a log message is emitted after
+<code class="language-plaintext highlighter-rouge">DeadlockTimeout</code> if the process is still waiting (even if no deadlock is
+found). This is useful for diagnosing lock contention.</li>
+  <li><strong>pg_stat_activity</strong>: The <code class="language-plaintext highlighter-rouge">wait_event_type = 'Lock'</code> and <code class="language-plaintext highlighter-rouge">wait_event</code>
+columns show which heavyweight lock a backend is waiting for.</li>
+</ul>
+
+
+      <hr>
+
+      <!-- Prev / Next / Up navigation -->
+      
+      
+      
+
+      <div class="clearfix" style="margin-top: 2rem;">
+        
+          
+          
+
+          
+            
+            <a class="btn btn-primary float-left" href="/postgresql/05-locking/" title="Locking">&larr; Previous</a>
+          
+
+          
+            
+            <a class="btn btn-primary float-right" href="/postgresql/05-locking/heavyweight-locks.html" title="Heavyweight Locks">Next &rarr;</a>
+          
+        
+      </div>
+
+      
+      <div style="text-align: center; margin-top: 1rem;">
+        <a href="/postgresql-internals/">&uarr; Back to Table of Contents</a>
+      </div>
+      
+
+    </div>
+  </div>
+</div>
+
+
+  <!-- Footer -->
+
+<hr>
+
+<footer>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <ul class="list-inline text-center">
+          
+          <li class="list-inline-item">
+            <a href="mailto:amitava.dev@proton.me" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="far fa-envelope fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          
+          
+          <li class="list-inline-item">
+            <a href="https://www.linkedin.com/in/amitavaag" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-linkedin fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          <li class="list-inline-item">
+            <a href="https://github.com/ikouchiha47" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-github fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+        </ul>
+
+        <p class="copyright text-muted">
+          Build with: 
+          <a 
+            href="https://github.com/StartBootstrap/startbootstrap-clean-blog-jekyll"
+            class="text-gray"
+            target="_blank">startbootstrap-clean-blog-jekyll</a></p>
+      </div>
+    </div>
+  </div>
+</footer>
+
+
+  <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="/assets/vendor/blog/js/scripts.js"></script>
+
+<script src="/assets/scripts.js"></script>
+
+
+
+
+
+  <script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+
+    document.querySelectorAll('pre > code.language-mermaid').forEach((codeBlock) => {
+      codeBlock.parentElement.outerHTML = `<pre class="mermaid">${codeBlock.textContent}</pre>`;
+    });
+
+
+    mermaid.initialize({ startOnLoad: true, theme: 'forest' });
+</script>
+
+
+  
+
+</body>
+
+</html>

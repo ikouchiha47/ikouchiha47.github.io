@@ -1,0 +1,336 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+  <title>
+    RUNE Part 2: The Sensor Wars - iko&#39;s logs
+    
+  </title>
+
+  <meta name="description" content="The LSM6DS3, Madgwick, EKF, and why the BNO085 works on the first test.">
+  <meta property="og:description" content="The LSM6DS3, Madgwick, EKF, and why the BNO085 works on the first test.">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="RUNE Part 2: The Sensor Wars">
+  <meta property="og:url" content="https://ikouchiha47.github.io/rune/02-sensor-wars.html">
+
+  
+
+  <link href='https://fonts.googleapis.com/css?family=Lora:400,700,400italic,700italic' rel='stylesheet' type='text/css'>
+  <link href='https://fonts.googleapis.com/css?family=Open+Sans:300italic,400italic,600italic,700italic,800italic,400,300,600,700,800' rel='stylesheet' type='text/css'>
+
+  <!-- <script src="https://use.fontawesome.com/releases/v5.15.3/js/all.js" crossorigin="anonymous"></script> -->
+  <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.15.4/css/all.css" integrity="sha384-DyZ88mC6Up2uqS4h/KRgHuoeGwBcD4Ng9SiP4dIRy0EXTlnuz47vAwmeGwVChigm" crossorigin="anonymous"/>
+
+  <link rel="stylesheet" href="/assets/main.css">
+  <link rel="canonical" href="https://ikouchiha47.github.io/rune/02-sensor-wars.html">
+  <link rel="alternate" type="application/rss+xml" title="iko&#39;s logs" href="/feed.xml">
+
+  <meta name="google-site-verification" content="lWkg6gIxJgzEKX_5XnhcxCtPE9QknaimFWWos_dTvPM" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fira+Sans:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Inconsolata:wght@200..900&family=Jersey+25&family=Kanit:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Merriweather+Sans:ital,wght@0,300..800;1,300..800&family=Nanum+Gothic+Coding&family=Space+Grotesk:wght@300..700&family=Titillium+Web:ital,wght@0,200;0,300;0,400;0,600;0,700;0,900;1,200;1,300;1,400;1,600;1,700&display=swap" rel="stylesheet">
+
+</head>
+
+
+<body>
+
+  <!-- Navigation -->
+<nav class="navbar navbar-expand-lg navbar-light fixed-top" id="mainNav">
+  <div class="container">
+    <a class="navbar-brand" href="/">iko&#39;s logs</a>
+    <button class="navbar-toggler navbar-toggler-right" type="button" data-toggle="collapse" data-target="#navbarResponsive" aria-controls="navbarResponsive" aria-expanded="false" aria-label="Toggle navigation">
+      Menu
+      <i class="fa fa-bars"></i>
+    </button>
+    <div class="collapse navbar-collapse" id="navbarResponsive">
+      <ul class="navbar-nav ml-auto">
+        <li class="nav-item">
+          <a class="nav-link" href="/">Home</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/about">About</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/posts">Posts</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/contact">Contact</a>
+        </li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+
+  <!-- Page Header -->
+
+<header class="masthead" style="background: #16213e">
+
+  <div class="overlay"></div>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <div class="post-heading">
+          <h1>RUNE Part 2: The Sensor Wars</h1>
+          
+          <h2 class="subheading">Why 6 degrees of freedom aren't enough, and why a magnetometer doesn't fix it</h2>
+          
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="container space-grotesk">
+  <div class="row">
+    <div class="col-lg-8 col-md-10 mx-auto">
+
+      <!-- Breadcrumb -->
+      <nav aria-label="breadcrumb" style="margin-bottom: 1.5rem;">
+        <ol class="breadcrumb" style="background: transparent; padding: 0;">
+          
+            <li class="breadcrumb-item"><a href="/rune/">RUNE</a></li>
+          
+          
+          <li class="breadcrumb-item active" aria-current="page">RUNE Part 2: The Sensor Wars</li>
+        </ol>
+      </nav>
+
+      <p>The XIAO nRF52840 Sense has an LSM6DS3TR-C 6-DOF IMU soldered directly on. No extra board. Saves ₹800–1000. Removes four jumper wires. One less thing to vibrate loose. It seemed like the obvious choice.</p>
+
+<p>It wasn’t.</p>
+
+<hr />
+
+<h2 id="why-yaw-is-unobservable-on-6-dof">Why yaw is unobservable on 6-DOF</h2>
+
+<p>A 6-DOF IMU has an accelerometer and a gyroscope. No magnetometer.</p>
+
+<p>The accelerometer measures the gravity vector rotated into the sensor frame. When you rotate around the vertical axis — yaw, the axis pointing toward the ceiling — the gravity vector points straight down. Rotating around the vertical axis does not change the horizontal projection of a vector pointing vertically. The accelerometer output is <strong>identical for all yaw angles</strong>.</p>
+
+<p>This isn’t a calibration problem or a software problem. It’s structural.</p>
+
+<p>Formally: the predicted accelerometer measurement <code class="language-plaintext highlighter-rouge">h(q)</code> has a Jacobian <code class="language-plaintext highlighter-rouge">H = ∂h/∂q</code> whose last row contains zeros in the yaw-sensitive quaternion columns. Kalman gain <code class="language-plaintext highlighter-rouge">K = P·Hᵀ·(H·P·Hᵀ + R)⁻¹</code>. Zero <code class="language-plaintext highlighter-rouge">H</code> → zero <code class="language-plaintext highlighter-rouge">K</code> → zero correction to yaw. The update step cannot touch yaw regardless of what the accelerometer sees.</p>
+
+<p>Only the gyroscope integration updates yaw. The LSM6DS3 datasheet specifies a zero-rate offset of ±10°/s. After 10 seconds stationary: ±100° of accumulated error. With a 15° gesture threshold, a perfectly still wrist triggers a false gesture every ~1.5 seconds.</p>
+
+<p>Roll and pitch work fine. When you pronate your wrist, gravity shifts in the X/Y body axes — the accelerometer sees this clearly. Both axes have real correction from the accelerometer. Drift is suppressed. The yaw problem is specific to yaw.</p>
+
+<hr />
+
+<h2 id="what-it-looked-like-in-the-serial-log">What it looked like in the serial log</h2>
+
+<p>Real data, wrist sitting still on a desk:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>[Gesture] yaw_left
+[Gesture] yaw_left   ← 2.1s gap
+[Gesture] yaw_left   ← 2.1s
+[Gesture] yaw_left   ← 2.1s
+[Gesture] yaw_left   ← 2.1s
+</code></pre></div></div>
+
+<p>The 2-second periodicity is not a coincidence. It exactly matches the <code class="language-plaintext highlighter-rouge">lastGestureMs &gt; 2000</code> guard that force-rebases the reference quaternion. Rebase re-arms yaw. Gyro drift immediately crosses the 15° threshold again. Rebase re-arms it again. The loop is deterministic.</p>
+
+<p>This happened with BETA=0.4 Madgwick. Also with an EKF at <code class="language-plaintext highlighter-rouge">Q=1e-5</code>, <code class="language-plaintext highlighter-rouge">R=1e-2</code>. The filter doesn’t matter — they are all mathematically equivalent in their inability to correct yaw from accelerometer data alone. The analysis is in the project’s DESIGN.md: the Jacobian zero is not a tuning issue, it’s a fundamental property of the observable set.</p>
+
+<hr />
+
+<h2 id="just-add-a-magnetometer">“Just add a magnetometer”</h2>
+
+<p>A magnetometer measures the Earth’s magnetic field vector and gives absolute compass heading. Add one, get 9-DOF, fix yaw. Obvious.</p>
+
+<p>The problem is the indoor magnetic environment.</p>
+
+<p>Oculus used a magnetometer in the DK1 headset for yaw correction. They removed it in DK2 because indoor interference — laptops, power cables, metal desk frames, wiring in walls — corrupted the heading estimate badly enough that it was worse than running without correction. <a href="https://docs.slimevr.dev/assets/magnetometer-calibration">SlimeVR</a> ships the BNO085 with the magnetometer <strong>disabled by default</strong> and documents exactly why: home environments produce field variations that make absolute heading unreliable.</p>
+
+<p>More fundamentally: for a discrete gesture device, absolute heading is the wrong thing to measure. I don’t need to know which way is north. I need to know whether the wrist rotated 15° from wherever it was a moment ago. <strong>Rebase</strong> — detect stillness, reset the reference — is the right solution. The magnetometer is the wrong tool for this problem.</p>
+
+<hr />
+
+<h2 id="the-bno085">The BNO085</h2>
+
+<p>The <a href="https://www.ceva-ip.com/wp-content/uploads/2019/10/BNO080_085-Datasheet.pdf">BNO085</a> (CEVA/Bosch) is a 9-DOF sensor with a dedicated ARM Cortex-M0+ running SH-2 firmware. It runs 9-DOF Madgwick at 400Hz internally. Temperature-compensated gyro bias estimation runs continuously. The magnetometer correction happens on the sensor — the host MCU receives a pre-fused quaternion via I2C. No filter code in the Arduino sketch. No drift accumulation to manage on the host side.</p>
+
+<p>All three axes are stable from cold start.</p>
+
+<p>It worked on the first test.</p>
+
+<p>The SH-2 reference manual describes the internal fusion pipeline in detail. The short version: bias tracking, calibration, and sensor fusion run on dedicated silicon at rates and precision that a Cortex-M4 sketch sharing cycles with BLE radio overhead cannot match.</p>
+
+<hr />
+
+<h2 id="the-git-evidence">The git evidence</h2>
+
+<p>Two commits tell the story cleanly:</p>
+
+<ul>
+  <li><code class="language-plaintext highlighter-rouge">7083673</code> — <em>“removes the dependency on BNO085 9DOF and using nRF52840 Sense, costing doesn’t make sense”</em></li>
+  <li><code class="language-plaintext highlighter-rouge">95fca10</code> — <em>“swap active firmware to BNO085, archive LSM6DS3 as nrf52840 bkp”</em></li>
+</ul>
+
+<p>The LSM6DS3 firmware is now <code class="language-plaintext highlighter-rouge">wristturn_nrf52840.ino.bkp</code>. The cost argument in the first commit was real — saving ₹800 sounds reasonable until you spend three weeks fighting a filter that cannot work. The second commit came after one afternoon of testing with the BNO085.</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>Sensor</th>
+      <th>DOF</th>
+      <th>Yaw observable</th>
+      <th>Typical yaw drift</th>
+      <th>Outcome</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>LSM6DS3</td>
+      <td>6 (accel + gyro)</td>
+      <td>No</td>
+      <td>±100° / 10s</td>
+      <td>Roll/pitch only</td>
+    </tr>
+    <tr>
+      <td>LSM9DS1</td>
+      <td>9 (+ mag)</td>
+      <td>Yes (indoors: variable)</td>
+      <td>&lt; 5° / min</td>
+      <td>Unreliable indoors</td>
+    </tr>
+    <tr>
+      <td>BNO085</td>
+      <td>9 (fused, + mag)</td>
+      <td>Yes</td>
+      <td>&lt; 2° / min compensated</td>
+      <td>All axes, reliable</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>The custom PCB path uses the BNO085 bare chip — same sensor, no breakout board markup. The cost is baked in because there is no alternative that actually works for all three axes.</p>
+
+<p>The ₹800 saving would have cost the entire gesture recognition stack.</p>
+
+
+      <hr>
+
+      <!-- Prev / Next / Up navigation -->
+      
+      
+      
+
+      <div class="clearfix" style="margin-top: 2rem;">
+        
+          
+          
+
+          
+            
+            <a class="btn btn-primary float-left" href="/rune/01-hardware.html" title="RUNE Part 1: The Hardware">&larr; Previous</a>
+          
+
+          
+            
+            <a class="btn btn-primary float-right" href="/rune/03-wakeup.html" title="RUNE Part 3: The Chip Wouldn't Wake Up">Next &rarr;</a>
+          
+        
+      </div>
+
+      
+      <div style="text-align: center; margin-top: 1rem;">
+        <a href="/rune/">&uarr; Back to Table of Contents</a>
+      </div>
+      
+
+    </div>
+  </div>
+</div>
+
+
+  <!-- Footer -->
+
+<hr>
+
+<footer>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <ul class="list-inline text-center">
+          
+          <li class="list-inline-item">
+            <a href="mailto:amitava.dev@proton.me" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="far fa-envelope fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          
+          
+          <li class="list-inline-item">
+            <a href="https://www.linkedin.com/in/amitavaag" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-linkedin fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          <li class="list-inline-item">
+            <a href="https://github.com/ikouchiha47" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-github fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+        </ul>
+
+        <p class="copyright text-muted">
+          Build with: 
+          <a 
+            href="https://github.com/StartBootstrap/startbootstrap-clean-blog-jekyll"
+            class="text-gray"
+            target="_blank">startbootstrap-clean-blog-jekyll</a></p>
+      </div>
+    </div>
+  </div>
+</footer>
+
+
+  <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="/assets/vendor/blog/js/scripts.js"></script>
+
+<script src="/assets/scripts.js"></script>
+
+
+
+
+
+  <script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+
+    document.querySelectorAll('pre > code.language-mermaid').forEach((codeBlock) => {
+      codeBlock.parentElement.outerHTML = `<pre class="mermaid">${codeBlock.textContent}</pre>`;
+    });
+
+
+    mermaid.initialize({ startOnLoad: true, theme: 'forest' });
+</script>
+
+
+  
+
+</body>
+
+</html>

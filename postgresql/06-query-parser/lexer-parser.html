@@ -1,0 +1,646 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+  <title>
+    Lexer &amp; Parser - iko&#39;s logs
+    
+  </title>
+
+  <meta name="description" content="">
+  <meta property="og:description" content="">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Lexer &amp; Parser">
+  <meta property="og:url" content="https://ikouchiha47.github.io/postgresql/06-query-parser/lexer-parser.html">
+
+  
+
+  <link href='https://fonts.googleapis.com/css?family=Lora:400,700,400italic,700italic' rel='stylesheet' type='text/css'>
+  <link href='https://fonts.googleapis.com/css?family=Open+Sans:300italic,400italic,600italic,700italic,800italic,400,300,600,700,800' rel='stylesheet' type='text/css'>
+
+  <!-- <script src="https://use.fontawesome.com/releases/v5.15.3/js/all.js" crossorigin="anonymous"></script> -->
+  <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.15.4/css/all.css" integrity="sha384-DyZ88mC6Up2uqS4h/KRgHuoeGwBcD4Ng9SiP4dIRy0EXTlnuz47vAwmeGwVChigm" crossorigin="anonymous"/>
+
+  <link rel="stylesheet" href="/assets/main.css">
+  <link rel="canonical" href="https://ikouchiha47.github.io/postgresql/06-query-parser/lexer-parser.html">
+  <link rel="alternate" type="application/rss+xml" title="iko&#39;s logs" href="/feed.xml">
+
+  <meta name="google-site-verification" content="lWkg6gIxJgzEKX_5XnhcxCtPE9QknaimFWWos_dTvPM" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fira+Sans:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Inconsolata:wght@200..900&family=Jersey+25&family=Kanit:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Merriweather+Sans:ital,wght@0,300..800;1,300..800&family=Nanum+Gothic+Coding&family=Space+Grotesk:wght@300..700&family=Titillium+Web:ital,wght@0,200;0,300;0,400;0,600;0,700;0,900;1,200;1,300;1,400;1,600;1,700&display=swap" rel="stylesheet">
+
+</head>
+
+
+<body>
+
+  <!-- Navigation -->
+<nav class="navbar navbar-expand-lg navbar-light fixed-top" id="mainNav">
+  <div class="container">
+    <a class="navbar-brand" href="/">iko&#39;s logs</a>
+    <button class="navbar-toggler navbar-toggler-right" type="button" data-toggle="collapse" data-target="#navbarResponsive" aria-controls="navbarResponsive" aria-expanded="false" aria-label="Toggle navigation">
+      Menu
+      <i class="fa fa-bars"></i>
+    </button>
+    <div class="collapse navbar-collapse" id="navbarResponsive">
+      <ul class="navbar-nav ml-auto">
+        <li class="nav-item">
+          <a class="nav-link" href="/">Home</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/about">About</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/posts">Posts</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/contact">Contact</a>
+        </li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+
+  <!-- Page Header -->
+
+<header class="masthead">
+
+  <div class="overlay"></div>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <div class="post-heading">
+          <h1>Lexer & Parser</h1>
+          
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="container space-grotesk">
+  <div class="row">
+    <div class="col-lg-8 col-md-10 mx-auto">
+
+      <!-- Breadcrumb -->
+      <nav aria-label="breadcrumb" style="margin-bottom: 1.5rem;">
+        <ol class="breadcrumb" style="background: transparent; padding: 0;">
+          
+            <li class="breadcrumb-item"><a href="/postgresql-internals/">PostgreSQL Internals Deep Dive</a></li>
+          
+          
+            
+              <li class="breadcrumb-item"><a href="/postgresql/06-query-parser/">Parsing & Rewriting</a></li>
+            
+          
+          <li class="breadcrumb-item active" aria-current="page">Lexer & Parser</li>
+        </ol>
+      </nav>
+
+      <h1 id="lexer--parser">Lexer &amp; Parser</h1>
+
+<p><strong>Summary.</strong> The first phase of query processing converts a raw SQL string into a <strong>raw parse tree</strong> – a tree of C structs that faithfully represents the syntactic structure of the statement without any knowledge of the database catalog. This phase is split into two cooperating tools: a Flex-generated lexer (<code class="language-plaintext highlighter-rouge">scan.l</code>) that breaks text into tokens, and a Bison-generated parser (<code class="language-plaintext highlighter-rouge">gram.y</code>) that assembles tokens into tree nodes according to the SQL grammar. Because no catalog lookups occur, parsing can run even inside an aborted transaction.</p>
+
+<hr />
+
+<h2 id="overview">Overview</h2>
+
+<p>PostgreSQL’s parser is a classic two-stage compiler front end:</p>
+
+<ol>
+  <li>
+    <p><strong>Lexical analysis (scanning):</strong> The lexer reads characters from the SQL string and groups them into tokens – keywords, identifiers, numeric literals, operators, string constants, and punctuation. It handles all the messy details: C-style comments, dollar-quoted strings, Unicode escapes, and keyword classification.</p>
+  </li>
+  <li>
+    <p><strong>Syntactic analysis (parsing):</strong> The parser consumes the token stream and matches it against grammar rules. Each grammar rule has an associated action that constructs a parse-tree node. The final result is a <code class="language-plaintext highlighter-rouge">List</code> of <code class="language-plaintext highlighter-rouge">RawStmt</code> nodes, one per semicolon-separated statement in the input.</p>
+  </li>
+</ol>
+
+<p>The entry point is <code class="language-plaintext highlighter-rouge">raw_parser()</code> in <code class="language-plaintext highlighter-rouge">src/backend/parser/parser.c</code>.</p>
+
+<h2 id="key-source-files">Key Source Files</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>File</th>
+      <th>Purpose</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/parser/scan.l</code></td>
+      <td>Flex specification – lexer rules and token definitions</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/parser/gram.y</code></td>
+      <td>Bison specification – SQL grammar and parse-tree construction</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/parser/parser.c</code></td>
+      <td><code class="language-plaintext highlighter-rouge">raw_parser()</code> entry point; coordinates scanner and parser</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/parser/scansup.c</code></td>
+      <td>Helper functions for string escaping during scanning</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/parser/gramparse.h</code></td>
+      <td>Shared declarations between scanner and parser</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/common/keywords.c</code></td>
+      <td>Keyword table and lookup function (shared with frontend tools)</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/parser/kwlist.h</code></td>
+      <td>Master keyword list (included by <code class="language-plaintext highlighter-rouge">keywords.c</code>)</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/nodes/parsenodes.h</code></td>
+      <td>All raw parse tree node definitions</td>
+    </tr>
+  </tbody>
+</table>
+
+<h2 id="how-it-works">How It Works</h2>
+
+<h3 id="the-lexer-scanl">The Lexer: scan.l</h3>
+
+<p><code class="language-plaintext highlighter-rouge">scan.l</code> is a Flex input file that compiles into <code class="language-plaintext highlighter-rouge">scan.c</code>. It defines patterns for every token PostgreSQL recognizes.</p>
+
+<p><strong>Key responsibilities:</strong></p>
+
+<ul>
+  <li>
+    <p><strong>Keyword recognition.</strong> The lexer looks up each identifier in the keyword table. PostgreSQL classifies keywords into categories: <code class="language-plaintext highlighter-rouge">RESERVED_KEYWORD</code>, <code class="language-plaintext highlighter-rouge">UNRESERVED_KEYWORD</code>, <code class="language-plaintext highlighter-rouge">COL_NAME_KEYWORD</code>, and <code class="language-plaintext highlighter-rouge">TYPE_FUNC_NAME_KEYWORD</code>. Only reserved keywords cannot be used as identifiers; the other categories allow context-dependent use.</p>
+  </li>
+  <li>
+    <p><strong>String literals.</strong> Standard single-quoted strings, escape strings (<code class="language-plaintext highlighter-rouge">E'...'</code>), dollar-quoted strings (<code class="language-plaintext highlighter-rouge">$$...$$</code> or <code class="language-plaintext highlighter-rouge">$tag$...$tag$</code>), and Unicode escape strings (<code class="language-plaintext highlighter-rouge">U&amp;'...'</code>).</p>
+  </li>
+  <li>
+    <p><strong>Numeric literals.</strong> Integers, floats, and numeric constants with optional exponents.</p>
+  </li>
+  <li>
+    <p><strong>Operators.</strong> Multi-character operators like <code class="language-plaintext highlighter-rouge">!=</code>, <code class="language-plaintext highlighter-rouge">&gt;=</code>, <code class="language-plaintext highlighter-rouge">::</code>, and user-defined operator sequences.</p>
+  </li>
+  <li>
+    <p><strong>Comments.</strong> Single-line (<code class="language-plaintext highlighter-rouge">-- ...</code>) and block (<code class="language-plaintext highlighter-rouge">/* ... */</code>) comments, including nested block comments.</p>
+  </li>
+  <li>
+    <p><strong>Start conditions.</strong> The lexer uses Flex start conditions (like <code class="language-plaintext highlighter-rouge">&lt;xc&gt;</code> for comments, <code class="language-plaintext highlighter-rouge">&lt;xq&gt;</code> for quoted strings, <code class="language-plaintext highlighter-rouge">&lt;xdolq&gt;</code> for dollar-quoted strings) to handle multi-line constructs correctly.</p>
+  </li>
+</ul>
+
+<p><strong>Token flow:</strong></p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="cm">/* src/backend/parser/parser.c */</span>
+<span class="n">List</span> <span class="o">*</span>
+<span class="nf">raw_parser</span><span class="p">(</span><span class="k">const</span> <span class="kt">char</span> <span class="o">*</span><span class="n">str</span><span class="p">,</span> <span class="n">RawParseMode</span> <span class="n">mode</span><span class="p">)</span>
+<span class="p">{</span>
+    <span class="n">core_yyscan_t</span> <span class="n">yyscanner</span><span class="p">;</span>
+    <span class="n">base_yy_extra_type</span> <span class="n">yyextra</span><span class="p">;</span>
+
+    <span class="cm">/* Initialize flex scanner */</span>
+    <span class="n">yyscanner</span> <span class="o">=</span> <span class="n">scanner_init</span><span class="p">(</span><span class="n">str</span><span class="p">,</span> <span class="o">&amp;</span><span class="n">yyextra</span><span class="p">.</span><span class="n">core_yy_extra</span><span class="p">,</span>
+                             <span class="o">&amp;</span><span class="n">ScanKeywords</span><span class="p">,</span> <span class="n">ScanKeywordTokens</span><span class="p">);</span>
+
+    <span class="cm">/* Initialize bison parser */</span>
+    <span class="n">parser_init</span><span class="p">(</span><span class="o">&amp;</span><span class="n">yyextra</span><span class="p">);</span>
+
+    <span class="cm">/* Parse -- bison calls yylex() as needed */</span>
+    <span class="n">base_yyparse</span><span class="p">(</span><span class="n">yyscanner</span><span class="p">);</span>
+
+    <span class="n">scanner_finish</span><span class="p">(</span><span class="n">yyscanner</span><span class="p">);</span>
+    <span class="k">return</span> <span class="n">yyextra</span><span class="p">.</span><span class="n">parsetree</span><span class="p">;</span>
+<span class="p">}</span>
+</code></pre></div></div>
+
+<p>The parser calls <code class="language-plaintext highlighter-rouge">base_yylex()</code> (a wrapper around the Flex-generated <code class="language-plaintext highlighter-rouge">core_yylex()</code>) each time it needs the next token. The wrapper handles lookahead injection for special parse modes (e.g., PL/pgSQL expression parsing).</p>
+
+<h3 id="the-parser-gramy">The Parser: gram.y</h3>
+
+<p><code class="language-plaintext highlighter-rouge">gram.y</code> is one of the largest Bison grammars in any open-source project – over 18,000 lines. It defines the complete SQL syntax PostgreSQL supports.</p>
+
+<p><strong>Grammar structure:</strong></p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>%union { ... }          -- Token/node value types (YYSTYPE)
+%token ABORT_P ...      -- Terminal symbols (tokens from lexer)
+%type &lt;node&gt; stmt ...   -- Non-terminal type declarations
+
+%%
+stmtblock:  stmtmulti { parsetree = $1; }
+    ;
+
+stmtmulti:  stmtmulti ';' toplevel_stmt
+            { ... append RawStmt to list ... }
+        |   toplevel_stmt
+            { ... create initial list with RawStmt ... }
+    ;
+
+toplevel_stmt:  stmt    { ... wrap in RawStmt ... }
+        |       /* EMPTY */
+    ;
+
+stmt:   SelectStmt
+        | InsertStmt
+        | UpdateStmt
+        | DeleteStmt
+        | CreateStmt
+        | ...           /* ~200 statement types */
+    ;
+</code></pre></div></div>
+
+<p><strong>Key grammar patterns:</strong></p>
+
+<ul>
+  <li>
+    <p><strong>SelectStmt</strong> covers <code class="language-plaintext highlighter-rouge">SELECT</code>, <code class="language-plaintext highlighter-rouge">VALUES</code>, and set operations (<code class="language-plaintext highlighter-rouge">UNION</code>, <code class="language-plaintext highlighter-rouge">INTERSECT</code>, <code class="language-plaintext highlighter-rouge">EXCEPT</code>). A <code class="language-plaintext highlighter-rouge">SELECT ... UNION SELECT</code> becomes a <code class="language-plaintext highlighter-rouge">SelectStmt</code> with <code class="language-plaintext highlighter-rouge">op = SETOP_UNION</code> and left/right children.</p>
+  </li>
+  <li>
+    <p><strong>Expression rules</strong> are layered to encode operator precedence: <code class="language-plaintext highlighter-rouge">a_expr</code> (general expressions), <code class="language-plaintext highlighter-rouge">b_expr</code> (no-operator-ambiguity subset), <code class="language-plaintext highlighter-rouge">c_expr</code> (atomic expressions like columns, constants, function calls).</p>
+  </li>
+  <li>
+    <p><strong>Conflict resolution.</strong> The grammar has a small number of known shift/reduce conflicts, handled by Bison’s default shift preference and explicit <code class="language-plaintext highlighter-rouge">%prec</code> directives.</p>
+  </li>
+</ul>
+
+<h3 id="raw-parse-tree-nodes">Raw Parse Tree Nodes</h3>
+
+<p>Each grammar rule action calls <code class="language-plaintext highlighter-rouge">makeNode()</code> or a helper function to create a node struct. These are “raw” because they contain string names, not OIDs:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="cm">/* Example: SelectStmt for "SELECT name FROM employees WHERE id = 42" */</span>
+<span class="k">typedef</span> <span class="k">struct</span> <span class="n">SelectStmt</span>
+<span class="p">{</span>
+    <span class="n">NodeTag</span>     <span class="n">type</span><span class="p">;</span>
+    <span class="n">List</span>       <span class="o">*</span><span class="n">targetList</span><span class="p">;</span>     <span class="cm">/* [ResTarget: name="name"] */</span>
+    <span class="n">List</span>       <span class="o">*</span><span class="n">fromClause</span><span class="p">;</span>     <span class="cm">/* [RangeVar: relname="employees"] */</span>
+    <span class="n">Node</span>       <span class="o">*</span><span class="n">whereClause</span><span class="p">;</span>    <span class="cm">/* A_Expr: lexpr=ColumnRef("id"),
+                                          rexpr=A_Const(42),
+                                          kind=AEXPR_OP, name="=" */</span>
+    <span class="cm">/* ... groupClause, havingClause, sortClause, etc. */</span>
+<span class="p">}</span> <span class="n">SelectStmt</span><span class="p">;</span>
+</code></pre></div></div>
+
+<p><strong>Important raw-tree node types:</strong></p>
+
+<table>
+  <thead>
+    <tr>
+      <th>Node</th>
+      <th>Purpose</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">RawStmt</code></td>
+      <td>Wrapper with source location; contains the actual statement node</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">SelectStmt</code></td>
+      <td>SELECT, VALUES, and set operations</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">InsertStmt</code></td>
+      <td>INSERT with optional ON CONFLICT</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">UpdateStmt</code></td>
+      <td>UPDATE with target list and WHERE</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">DeleteStmt</code></td>
+      <td>DELETE with USING and WHERE</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">RangeVar</code></td>
+      <td>A table reference by name (schema + relname)</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">ColumnRef</code></td>
+      <td>A column reference by name (possibly qualified)</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">A_Expr</code></td>
+      <td>An operator expression (arithmetic, comparison, etc.)</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">A_Const</code></td>
+      <td>A literal constant (integer, float, string, boolean, NULL)</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">FuncCall</code></td>
+      <td>A function invocation by name</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">ResTarget</code></td>
+      <td>A target-list item (SELECT column or assignment target)</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">TypeCast</code></td>
+      <td>An explicit <code class="language-plaintext highlighter-rouge">CAST(x AS type)</code> or <code class="language-plaintext highlighter-rouge">x::type</code></td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">SortBy</code></td>
+      <td>ORDER BY item with direction and nulls position</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">JoinExpr</code></td>
+      <td>An explicit JOIN in the FROM clause</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">SubLink</code></td>
+      <td>A subquery appearing in an expression (EXISTS, IN, etc.)</td>
+    </tr>
+  </tbody>
+</table>
+
+<h3 id="parse-tree-example">Parse Tree Example</h3>
+
+<p>For the query <code class="language-plaintext highlighter-rouge">SELECT e.name, d.title FROM employees e JOIN departments d ON e.dept_id = d.id WHERE e.active</code>:</p>
+
+<pre><code class="language-mermaid">graph TD
+    RS["RawStmt"]
+    SS["SelectStmt"]
+    RS --&gt; SS
+
+    subgraph "targetList"
+        T1["ResTarget&lt;br/&gt;val: ColumnRef(e, name)"]
+        T2["ResTarget&lt;br/&gt;val: ColumnRef(d, title)"]
+    end
+    SS --&gt;|targetList| T1
+    SS --&gt;|targetList| T2
+
+    subgraph "fromClause"
+        JE["JoinExpr&lt;br/&gt;jointype: JOIN_INNER"]
+        LV["RangeVar&lt;br/&gt;relname: employees&lt;br/&gt;alias: e"]
+        RV["RangeVar&lt;br/&gt;relname: departments&lt;br/&gt;alias: d"]
+        QU["A_Expr (=)&lt;br/&gt;ColumnRef(e, dept_id)&lt;br/&gt;ColumnRef(d, id)"]
+        JE --&gt;|larg| LV
+        JE --&gt;|rarg| RV
+        JE --&gt;|quals| QU
+    end
+    SS --&gt;|fromClause| JE
+
+    subgraph "whereClause"
+        WH["ColumnRef&lt;br/&gt;(e, active)"]
+    end
+    SS --&gt;|whereClause| WH
+</code></pre>
+
+<h2 id="key-data-structures">Key Data Structures</h2>
+
+<h3 id="rawparsemode">RawParseMode</h3>
+
+<p>Controls the parser’s initial mode. The default mode (<code class="language-plaintext highlighter-rouge">RAW_PARSE_DEFAULT</code>) handles normal SQL. Other modes let PL/pgSQL inject a synthetic first token to steer the grammar:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">typedef</span> <span class="k">enum</span> <span class="n">RawParseMode</span>
+<span class="p">{</span>
+    <span class="n">RAW_PARSE_DEFAULT</span> <span class="o">=</span> <span class="mi">0</span><span class="p">,</span>
+    <span class="n">RAW_PARSE_TYPE_NAME</span><span class="p">,</span>
+    <span class="n">RAW_PARSE_PLPGSQL_EXPR</span><span class="p">,</span>
+    <span class="n">RAW_PARSE_PLPGSQL_ASSIGN1</span><span class="p">,</span>
+    <span class="n">RAW_PARSE_PLPGSQL_ASSIGN2</span><span class="p">,</span>
+    <span class="n">RAW_PARSE_PLPGSQL_ASSIGN3</span><span class="p">,</span>
+<span class="p">}</span> <span class="n">RawParseMode</span><span class="p">;</span>
+</code></pre></div></div>
+
+<h3 id="keyword-categories">Keyword Categories</h3>
+
+<p>The keyword table assigns each keyword a category that determines where it can appear as an identifier:</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>Category</th>
+      <th>Can be column name?</th>
+      <th>Can be type/function name?</th>
+      <th>Example keywords</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">RESERVED_KEYWORD</code></td>
+      <td>No</td>
+      <td>No</td>
+      <td><code class="language-plaintext highlighter-rouge">SELECT</code>, <code class="language-plaintext highlighter-rouge">FROM</code>, <code class="language-plaintext highlighter-rouge">WHERE</code></td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">COL_NAME_KEYWORD</code></td>
+      <td>Yes</td>
+      <td>No</td>
+      <td><code class="language-plaintext highlighter-rouge">BETWEEN</code>, <code class="language-plaintext highlighter-rouge">LIKE</code></td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">TYPE_FUNC_NAME_KEYWORD</code></td>
+      <td>Yes</td>
+      <td>Yes</td>
+      <td><code class="language-plaintext highlighter-rouge">INT</code>, <code class="language-plaintext highlighter-rouge">TEXT</code>, <code class="language-plaintext highlighter-rouge">SETOF</code></td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">UNRESERVED_KEYWORD</code></td>
+      <td>Yes</td>
+      <td>Yes</td>
+      <td><code class="language-plaintext highlighter-rouge">ABORT</code>, <code class="language-plaintext highlighter-rouge">BEGIN</code>, <code class="language-plaintext highlighter-rouge">EXPLAIN</code></td>
+    </tr>
+  </tbody>
+</table>
+
+<p>This classification keeps the grammar unambiguous while allowing most keywords to double as identifiers in appropriate contexts.</p>
+
+<h3 id="yystype-union">YYSTYPE Union</h3>
+
+<p>The Bison <code class="language-plaintext highlighter-rouge">%union</code> holds all possible semantic values a grammar symbol can carry:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="o">%</span><span class="k">union</span>
+<span class="p">{</span>
+    <span class="n">core_YYSTYPE</span> <span class="n">core_yystype</span><span class="p">;</span>
+    <span class="kt">int</span>          <span class="n">ival</span><span class="p">;</span>
+    <span class="kt">char</span>        <span class="o">*</span><span class="n">str</span><span class="p">;</span>
+    <span class="k">const</span> <span class="kt">char</span>  <span class="o">*</span><span class="n">keyword</span><span class="p">;</span>
+    <span class="n">bool</span>         <span class="n">boolean</span><span class="p">;</span>
+    <span class="n">Node</span>        <span class="o">*</span><span class="n">node</span><span class="p">;</span>
+    <span class="n">List</span>        <span class="o">*</span><span class="n">list</span><span class="p">;</span>
+    <span class="cm">/* ... other fields for specific constructs */</span>
+<span class="p">}</span>
+</code></pre></div></div>
+
+<h2 id="performance-considerations">Performance Considerations</h2>
+
+<ul>
+  <li>
+    <p><strong>Grammar size.</strong> The generated parser tables are large but the LALR(1) parse algorithm is O(n) in input length. Parsing is rarely a bottleneck.</p>
+  </li>
+  <li>
+    <p><strong>Memory allocation.</strong> All parse-tree nodes are allocated in the current memory context. After analysis, the raw parse tree is typically freed when its context is destroyed.</p>
+  </li>
+  <li>
+    <p><strong>Multi-statement strings.</strong> <code class="language-plaintext highlighter-rouge">raw_parser()</code> handles semicolon-separated statements in a single call, returning a list of <code class="language-plaintext highlighter-rouge">RawStmt</code> nodes. Each has <code class="language-plaintext highlighter-rouge">stmt_location</code> and <code class="language-plaintext highlighter-rouge">stmt_len</code> for error reporting and <code class="language-plaintext highlighter-rouge">pg_stat_statements</code> query normalization.</p>
+  </li>
+</ul>
+
+<h2 id="common-pitfalls">Common Pitfalls</h2>
+
+<blockquote class="warning">
+  <p><strong>Ambiguous grammar constructs.</strong> Adding new syntax to <code class="language-plaintext highlighter-rouge">gram.y</code> requires careful attention to shift/reduce conflicts. PostgreSQL documents the expected number of conflicts in the Makefile; any new conflict must be analyzed and justified.</p>
+</blockquote>
+
+<blockquote class="warning">
+  <p><strong>No catalog access.</strong> The raw parser must never access the catalog. If you see a table OID or type OID in a parse-tree node, you are looking at the analyzed tree (a <code class="language-plaintext highlighter-rouge">Query</code>), not the raw tree.</p>
+</blockquote>
+
+<h2 id="connections">Connections</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>Related Section</th>
+      <th>Relationship</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><a href="semantic-analysis">Semantic Analysis</a></td>
+      <td>Consumes the raw parse tree and resolves all names/types</td>
+    </tr>
+    <tr>
+      <td><a href="rewrite-rules">Rewrite Rules</a></td>
+      <td>Operates on the analyzed Query, not the raw tree</td>
+    </tr>
+    <tr>
+      <td><a href="../09-caches/">Caches (Ch. 9)</a></td>
+      <td>Plan cache stores raw parse trees for re-analysis on invalidation</td>
+    </tr>
+    <tr>
+      <td><a href="../15-extensions/">Extensions (Ch. 15)</a></td>
+      <td><code class="language-plaintext highlighter-rouge">parser_hook</code> allows extensions to inject custom parsing</td>
+    </tr>
+  </tbody>
+</table>
+
+
+      <hr>
+
+      <!-- Prev / Next / Up navigation -->
+      
+      
+      
+
+      <div class="clearfix" style="margin-top: 2rem;">
+        
+          
+          
+
+          
+            
+            <a class="btn btn-primary float-left" href="/postgresql/06-query-parser/" title="Parsing & Rewriting">&larr; Previous</a>
+          
+
+          
+            
+            <a class="btn btn-primary float-right" href="/postgresql/06-query-parser/rewrite-rules.html" title="Rewrite Rules">Next &rarr;</a>
+          
+        
+      </div>
+
+      
+      <div style="text-align: center; margin-top: 1rem;">
+        <a href="/postgresql-internals/">&uarr; Back to Table of Contents</a>
+      </div>
+      
+
+    </div>
+  </div>
+</div>
+
+
+  <!-- Footer -->
+
+<hr>
+
+<footer>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <ul class="list-inline text-center">
+          
+          <li class="list-inline-item">
+            <a href="mailto:amitava.dev@proton.me" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="far fa-envelope fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          
+          
+          <li class="list-inline-item">
+            <a href="https://www.linkedin.com/in/amitavaag" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-linkedin fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          <li class="list-inline-item">
+            <a href="https://github.com/ikouchiha47" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-github fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+        </ul>
+
+        <p class="copyright text-muted">
+          Build with: 
+          <a 
+            href="https://github.com/StartBootstrap/startbootstrap-clean-blog-jekyll"
+            class="text-gray"
+            target="_blank">startbootstrap-clean-blog-jekyll</a></p>
+      </div>
+    </div>
+  </div>
+</footer>
+
+
+  <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="/assets/vendor/blog/js/scripts.js"></script>
+
+<script src="/assets/scripts.js"></script>
+
+
+
+
+
+  <script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+
+    document.querySelectorAll('pre > code.language-mermaid').forEach((codeBlock) => {
+      codeBlock.parentElement.outerHTML = `<pre class="mermaid">${codeBlock.textContent}</pre>`;
+    });
+
+
+    mermaid.initialize({ startOnLoad: true, theme: 'forest' });
+</script>
+
+
+  
+
+</body>
+
+</html>

@@ -1,0 +1,518 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+  <title>
+    Page Layout - iko&#39;s logs
+    
+  </title>
+
+  <meta name="description" content="">
+  <meta property="og:description" content="">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Page Layout">
+  <meta property="og:url" content="https://ikouchiha47.github.io/postgresql/01-storage/page-layout.html">
+
+  
+
+  <link href='https://fonts.googleapis.com/css?family=Lora:400,700,400italic,700italic' rel='stylesheet' type='text/css'>
+  <link href='https://fonts.googleapis.com/css?family=Open+Sans:300italic,400italic,600italic,700italic,800italic,400,300,600,700,800' rel='stylesheet' type='text/css'>
+
+  <!-- <script src="https://use.fontawesome.com/releases/v5.15.3/js/all.js" crossorigin="anonymous"></script> -->
+  <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.15.4/css/all.css" integrity="sha384-DyZ88mC6Up2uqS4h/KRgHuoeGwBcD4Ng9SiP4dIRy0EXTlnuz47vAwmeGwVChigm" crossorigin="anonymous"/>
+
+  <link rel="stylesheet" href="/assets/main.css">
+  <link rel="canonical" href="https://ikouchiha47.github.io/postgresql/01-storage/page-layout.html">
+  <link rel="alternate" type="application/rss+xml" title="iko&#39;s logs" href="/feed.xml">
+
+  <meta name="google-site-verification" content="lWkg6gIxJgzEKX_5XnhcxCtPE9QknaimFWWos_dTvPM" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fira+Sans:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Inconsolata:wght@200..900&family=Jersey+25&family=Kanit:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Merriweather+Sans:ital,wght@0,300..800;1,300..800&family=Nanum+Gothic+Coding&family=Space+Grotesk:wght@300..700&family=Titillium+Web:ital,wght@0,200;0,300;0,400;0,600;0,700;0,900;1,200;1,300;1,400;1,600;1,700&display=swap" rel="stylesheet">
+
+</head>
+
+
+<body>
+
+  <!-- Navigation -->
+<nav class="navbar navbar-expand-lg navbar-light fixed-top" id="mainNav">
+  <div class="container">
+    <a class="navbar-brand" href="/">iko&#39;s logs</a>
+    <button class="navbar-toggler navbar-toggler-right" type="button" data-toggle="collapse" data-target="#navbarResponsive" aria-controls="navbarResponsive" aria-expanded="false" aria-label="Toggle navigation">
+      Menu
+      <i class="fa fa-bars"></i>
+    </button>
+    <div class="collapse navbar-collapse" id="navbarResponsive">
+      <ul class="navbar-nav ml-auto">
+        <li class="nav-item">
+          <a class="nav-link" href="/">Home</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/about">About</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/posts">Posts</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/contact">Contact</a>
+        </li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+
+  <!-- Page Header -->
+
+<header class="masthead">
+
+  <div class="overlay"></div>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <div class="post-heading">
+          <h1>Page Layout</h1>
+          
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="container space-grotesk">
+  <div class="row">
+    <div class="col-lg-8 col-md-10 mx-auto">
+
+      <!-- Breadcrumb -->
+      <nav aria-label="breadcrumb" style="margin-bottom: 1.5rem;">
+        <ol class="breadcrumb" style="background: transparent; padding: 0;">
+          
+            <li class="breadcrumb-item"><a href="/postgresql-internals/">PostgreSQL Internals Deep Dive</a></li>
+          
+          
+            
+              <li class="breadcrumb-item"><a href="/postgresql/01-storage/">Storage Engine</a></li>
+            
+          
+          <li class="breadcrumb-item active" aria-current="page">Page Layout</li>
+        </ol>
+      </nav>
+
+      <h1 id="page-layout">Page Layout</h1>
+
+<p>Every relation in PostgreSQL is stored as an array of fixed-size 8 KB pages (compile-time constant <code class="language-plaintext highlighter-rouge">BLCKSZ</code>). Each page uses a slotted-page design where a header and an array of line pointers grow forward from the beginning, while tuple data grows backward from the end.</p>
+
+<h2 id="overview">Overview</h2>
+
+<p>The slotted-page design provides a critical level of indirection: external references (e.g., from indexes) point to a <em>line pointer number</em> rather than a byte offset, so tuples can be physically rearranged within the page – for compaction or HOT chain management – without invalidating any external pointers.</p>
+
+<p>Pages are the universal unit of I/O in PostgreSQL. Heap pages, index pages, FSM pages, and VM pages all share the same <code class="language-plaintext highlighter-rouge">PageHeaderData</code> header. Access methods differentiate themselves through the “special space” region at the end of the page (e.g., B-tree pages store left/right sibling links there).</p>
+
+<h2 id="key-source-files">Key Source Files</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>File</th>
+      <th>Purpose</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/storage/bufpage.h</code></td>
+      <td><code class="language-plaintext highlighter-rouge">PageHeaderData</code> struct, page access macros and inline functions</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/storage/itemid.h</code></td>
+      <td><code class="language-plaintext highlighter-rouge">ItemIdData</code> (line pointer) struct and flag definitions</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/storage/itemptr.h</code></td>
+      <td><code class="language-plaintext highlighter-rouge">ItemPointerData</code> (TID = block number + offset number)</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/access/htup_details.h</code></td>
+      <td><code class="language-plaintext highlighter-rouge">HeapTupleHeaderData</code>, infomask bits, visibility fields</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/storage/page/bufpage.c</code></td>
+      <td><code class="language-plaintext highlighter-rouge">PageInit()</code>, <code class="language-plaintext highlighter-rouge">PageAddItemExtended()</code>, <code class="language-plaintext highlighter-rouge">PageRepairFragmentation()</code></td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/storage/page/checksum.c</code></td>
+      <td>Page checksum computation</td>
+    </tr>
+  </tbody>
+</table>
+
+<h2 id="how-it-works">How It Works</h2>
+
+<h3 id="physical-page-layout">Physical Page Layout</h3>
+
+<p>A page is divided into five regions. The header and line pointers grow downward (toward higher offsets), while tuples are allocated from the end of the page growing upward (toward lower offsets). Free space sits in the middle.</p>
+
+<pre><code class="language-mermaid">block-beta
+  columns 1
+  block:page["8192 bytes (BLCKSZ)"]
+    A["PageHeaderData (24 bytes)"]
+    B["ItemIdData[] — line pointers (4 bytes each)"]
+    C["pd_lower ──────────────────── FREE SPACE ──────────────────── pd_upper"]
+    D["Tuple Data (grows backward from pd_upper)"]
+    E["Special Space (starts at pd_special, used by indexes)"]
+  end
+</code></pre>
+
+<p>The key invariant is: <code class="language-plaintext highlighter-rouge">SizeOfPageHeaderData &lt;= pd_lower &lt;= pd_upper &lt;= pd_special &lt;= BLCKSZ</code>.</p>
+
+<h3 id="page-header-pageheaderdata">Page Header: PageHeaderData</h3>
+
+<p>Defined in <code class="language-plaintext highlighter-rouge">src/include/storage/bufpage.h</code>:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">typedef</span> <span class="k">struct</span> <span class="n">PageHeaderData</span>
+<span class="p">{</span>
+    <span class="n">PageXLogRecPtr</span> <span class="n">pd_lsn</span><span class="p">;</span>          <span class="cm">/* LSN of last WAL record that modified this page */</span>
+    <span class="n">uint16</span>         <span class="n">pd_checksum</span><span class="p">;</span>     <span class="cm">/* page checksum (if data checksums enabled) */</span>
+    <span class="n">uint16</span>         <span class="n">pd_flags</span><span class="p">;</span>        <span class="cm">/* flag bits: PD_HAS_FREE_LINES, PD_PAGE_FULL, PD_ALL_VISIBLE */</span>
+    <span class="n">LocationIndex</span>  <span class="n">pd_lower</span><span class="p">;</span>        <span class="cm">/* byte offset to start of free space */</span>
+    <span class="n">LocationIndex</span>  <span class="n">pd_upper</span><span class="p">;</span>        <span class="cm">/* byte offset to end of free space */</span>
+    <span class="n">LocationIndex</span>  <span class="n">pd_special</span><span class="p">;</span>      <span class="cm">/* byte offset to start of special space */</span>
+    <span class="n">uint16</span>         <span class="n">pd_pagesize_version</span><span class="p">;</span> <span class="cm">/* page size and layout version packed together */</span>
+    <span class="n">TransactionId</span>  <span class="n">pd_prune_xid</span><span class="p">;</span>    <span class="cm">/* oldest prunable XID (hint for heap pruning) */</span>
+    <span class="n">ItemIdData</span>     <span class="n">pd_linp</span><span class="p">[</span><span class="n">FLEXIBLE_ARRAY_MEMBER</span><span class="p">];</span> <span class="cm">/* line pointer array */</span>
+<span class="p">}</span> <span class="n">PageHeaderData</span><span class="p">;</span>
+</code></pre></div></div>
+
+<p>The total fixed header size (excluding <code class="language-plaintext highlighter-rouge">pd_linp</code>) is 24 bytes (<code class="language-plaintext highlighter-rouge">SizeOfPageHeaderData</code>).</p>
+
+<p><strong>Field details:</strong></p>
+
+<table>
+  <thead>
+    <tr>
+      <th>Field</th>
+      <th>Size</th>
+      <th>Description</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">pd_lsn</code></td>
+      <td>8 bytes</td>
+      <td>WAL LSN; the buffer manager will not flush this page until WAL has been flushed past this LSN</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">pd_checksum</code></td>
+      <td>2 bytes</td>
+      <td>FNV-1a based checksum; zero does not mean “no checksum” – it is a valid checksum value</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">pd_flags</code></td>
+      <td>2 bytes</td>
+      <td>Bit flags: <code class="language-plaintext highlighter-rouge">PD_HAS_FREE_LINES</code> (0x0001), <code class="language-plaintext highlighter-rouge">PD_PAGE_FULL</code> (0x0002), <code class="language-plaintext highlighter-rouge">PD_ALL_VISIBLE</code> (0x0004)</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">pd_lower</code></td>
+      <td>2 bytes</td>
+      <td>Offset to first free byte (end of line pointer array)</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">pd_upper</code></td>
+      <td>2 bytes</td>
+      <td>Offset to last free byte + 1 (start of newest tuple)</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">pd_special</code></td>
+      <td>2 bytes</td>
+      <td>Offset to start of special/opaque area; equals <code class="language-plaintext highlighter-rouge">BLCKSZ</code> for heap pages</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">pd_pagesize_version</code></td>
+      <td>2 bytes</td>
+      <td>High byte = page size / 256, low byte = layout version (currently 4)</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">pd_prune_xid</code></td>
+      <td>4 bytes</td>
+      <td>Hint: oldest XID among potentially prunable tuples</td>
+    </tr>
+  </tbody>
+</table>
+
+<h3 id="line-pointers-itemiddata">Line Pointers: ItemIdData</h3>
+
+<p>Each line pointer is a 4-byte packed structure defined in <code class="language-plaintext highlighter-rouge">src/include/storage/itemid.h</code>:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">typedef</span> <span class="k">struct</span> <span class="n">ItemIdData</span>
+<span class="p">{</span>
+    <span class="kt">unsigned</span>    <span class="n">lp_off</span><span class="o">:</span><span class="mi">15</span><span class="p">,</span>      <span class="cm">/* byte offset to tuple from start of page */</span>
+                <span class="nl">lp_flags:</span><span class="mi">2</span><span class="p">,</span>     <span class="cm">/* state of this line pointer */</span>
+                <span class="nl">lp_len:</span><span class="mi">15</span><span class="p">;</span>      <span class="cm">/* byte length of referenced tuple */</span>
+<span class="p">}</span> <span class="n">ItemIdData</span><span class="p">;</span>
+</code></pre></div></div>
+
+<p><strong>Line pointer states (<code class="language-plaintext highlighter-rouge">lp_flags</code>):</strong></p>
+
+<table>
+  <thead>
+    <tr>
+      <th>Value</th>
+      <th>Name</th>
+      <th>Meaning</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>0</td>
+      <td><code class="language-plaintext highlighter-rouge">LP_UNUSED</code></td>
+      <td>Available for reuse. <code class="language-plaintext highlighter-rouge">lp_len</code> = 0.</td>
+    </tr>
+    <tr>
+      <td>1</td>
+      <td><code class="language-plaintext highlighter-rouge">LP_NORMAL</code></td>
+      <td>Points to a live tuple. <code class="language-plaintext highlighter-rouge">lp_len</code> &gt; 0.</td>
+    </tr>
+    <tr>
+      <td>2</td>
+      <td><code class="language-plaintext highlighter-rouge">LP_REDIRECT</code></td>
+      <td>HOT redirect; <code class="language-plaintext highlighter-rouge">lp_off</code> holds the offset number (not byte offset) of the target. <code class="language-plaintext highlighter-rouge">lp_len</code> = 0.</td>
+    </tr>
+    <tr>
+      <td>3</td>
+      <td><code class="language-plaintext highlighter-rouge">LP_DEAD</code></td>
+      <td>Dead, pending cleanup by VACUUM. May or may not still have storage.</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>The 15-bit <code class="language-plaintext highlighter-rouge">lp_off</code> and <code class="language-plaintext highlighter-rouge">lp_len</code> fields limit the maximum page size to 32 KB.</p>
+
+<h3 id="tuple-identification-itempointerdata-tid">Tuple Identification: ItemPointerData (TID)</h3>
+
+<p>An <code class="language-plaintext highlighter-rouge">ItemPointerData</code> (commonly called a TID or CTID) is 6 bytes and uniquely identifies a tuple within a table:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">typedef</span> <span class="k">struct</span> <span class="n">ItemPointerData</span>
+<span class="p">{</span>
+    <span class="n">BlockIdData</span> <span class="n">ip_blkid</span><span class="p">;</span>       <span class="cm">/* 4 bytes: physical block number */</span>
+    <span class="n">OffsetNumber</span> <span class="n">ip_posid</span><span class="p">;</span>      <span class="cm">/* 2 bytes: line pointer index (1-based) */</span>
+<span class="p">}</span> <span class="n">ItemPointerData</span><span class="p">;</span>
+</code></pre></div></div>
+
+<p>Index entries store TIDs to point back to heap tuples. HOT chains use <code class="language-plaintext highlighter-rouge">LP_REDIRECT</code> line pointers so that the index TID remains stable even as the tuple is updated within the same page.</p>
+
+<h3 id="heap-tuple-header-heaptupleheaderdata">Heap Tuple Header: HeapTupleHeaderData</h3>
+
+<p>Every heap tuple begins with a 23-byte header, defined in <code class="language-plaintext highlighter-rouge">src/include/access/htup_details.h</code>:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">struct</span> <span class="n">HeapTupleHeaderData</span>
+<span class="p">{</span>
+    <span class="k">union</span>
+    <span class="p">{</span>
+        <span class="n">HeapTupleFields</span> <span class="n">t_heap</span><span class="p">;</span>     <span class="cm">/* xmin, xmax, cid/xvac for on-disk tuples */</span>
+        <span class="n">DatumTupleFields</span> <span class="n">t_datum</span><span class="p">;</span>   <span class="cm">/* length, typmod, typeid for in-memory datums */</span>
+    <span class="p">}</span> <span class="n">t_choice</span><span class="p">;</span>
+
+    <span class="n">ItemPointerData</span> <span class="n">t_ctid</span><span class="p">;</span>         <span class="cm">/* TID of this tuple, or of its newer version */</span>
+
+    <span class="n">uint16</span>      <span class="n">t_infomask2</span><span class="p">;</span>        <span class="cm">/* attribute count + flags (HOT updated, etc.) */</span>
+    <span class="n">uint16</span>      <span class="n">t_infomask</span><span class="p">;</span>         <span class="cm">/* visibility flags (XMIN_COMMITTED, etc.) */</span>
+    <span class="n">uint8</span>       <span class="n">t_hoff</span><span class="p">;</span>             <span class="cm">/* offset to user data (header + null bitmap + padding) */</span>
+
+    <span class="n">bits8</span>       <span class="n">t_bits</span><span class="p">[</span><span class="n">FLEXIBLE_ARRAY_MEMBER</span><span class="p">];</span> <span class="cm">/* null bitmap, if HEAP_HASNULL */</span>
+
+    <span class="cm">/* actual user data follows at offset t_hoff */</span>
+<span class="p">};</span>
+</code></pre></div></div>
+
+<p>The <code class="language-plaintext highlighter-rouge">HeapTupleFields</code> within <code class="language-plaintext highlighter-rouge">t_choice</code> carry the MVCC information:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">typedef</span> <span class="k">struct</span> <span class="n">HeapTupleFields</span>
+<span class="p">{</span>
+    <span class="n">TransactionId</span> <span class="n">t_xmin</span><span class="p">;</span>       <span class="cm">/* inserting transaction ID */</span>
+    <span class="n">TransactionId</span> <span class="n">t_xmax</span><span class="p">;</span>       <span class="cm">/* deleting or locking transaction ID */</span>
+    <span class="k">union</span>
+    <span class="p">{</span>
+        <span class="n">CommandId</span>     <span class="n">t_cid</span><span class="p">;</span>    <span class="cm">/* inserting/deleting command ID */</span>
+        <span class="n">TransactionId</span> <span class="n">t_xvac</span><span class="p">;</span>  <span class="cm">/* XID for old-style VACUUM FULL */</span>
+    <span class="p">}</span> <span class="n">t_field3</span><span class="p">;</span>
+<span class="p">}</span> <span class="n">HeapTupleFields</span><span class="p">;</span>
+</code></pre></div></div>
+
+<h3 id="putting-it-all-together">Putting It All Together</h3>
+
+<pre><code class="language-mermaid">graph LR
+    subgraph "8 KB Page"
+        PH["PageHeaderData&lt;br/&gt;24 bytes"]
+        LP1["LP 1"]
+        LP2["LP 2"]
+        LP3["LP 3"]
+        FREE["... free space ..."]
+        T3["Tuple 3"]
+        T2["Tuple 2"]
+        T1["Tuple 1"]
+    end
+
+    LP1 -.-&gt;|"lp_off, lp_len"| T1
+    LP2 -.-&gt;|"lp_off, lp_len"| T2
+    LP3 -.-&gt;|"lp_off, lp_len"| T3
+
+    subgraph "Heap Tuple (T1)"
+        HTH["HeapTupleHeaderData&lt;br/&gt;23 bytes + null bitmap"]
+        UD["User Data Columns"]
+    end
+
+    T1 --- HTH
+    HTH --- UD
+</code></pre>
+
+<h3 id="page-operations">Page Operations</h3>
+
+<p><strong>PageInit</strong>: Zeros the page and sets <code class="language-plaintext highlighter-rouge">pd_lower = SizeOfPageHeaderData</code>, <code class="language-plaintext highlighter-rouge">pd_upper = pd_special = pageSize - specialSize</code>, and packs <code class="language-plaintext highlighter-rouge">pd_pagesize_version</code>.</p>
+
+<p><strong>PageAddItemExtended</strong>: Adds a tuple to the page by:</p>
+<ol>
+  <li>Finding a free line pointer (reusing <code class="language-plaintext highlighter-rouge">LP_UNUSED</code> slots if <code class="language-plaintext highlighter-rouge">PD_HAS_FREE_LINES</code> is set, or allocating a new one by advancing <code class="language-plaintext highlighter-rouge">pd_lower</code>).</li>
+  <li>Copying the tuple data at <code class="language-plaintext highlighter-rouge">pd_upper - MAXALIGN(size)</code> and decrementing <code class="language-plaintext highlighter-rouge">pd_upper</code>.</li>
+  <li>Setting the line pointer’s <code class="language-plaintext highlighter-rouge">lp_off</code>, <code class="language-plaintext highlighter-rouge">lp_len</code>, and <code class="language-plaintext highlighter-rouge">lp_flags = LP_NORMAL</code>.</li>
+</ol>
+
+<p><strong>PageRepairFragmentation</strong>: Compacts tuple data by moving all tuples toward the end of the page, closing any gaps left by deleted tuples, and updating line pointers accordingly. Free space becomes contiguous between <code class="language-plaintext highlighter-rouge">pd_lower</code> and <code class="language-plaintext highlighter-rouge">pd_upper</code>.</p>
+
+<h3 id="page-checksums">Page Checksums</h3>
+
+<p>When data checksums are enabled (<code class="language-plaintext highlighter-rouge">initdb --data-checksums</code>), every page gets a checksum computed just before it is written to disk. The algorithm is an FNV-1a variant optimized for the 8 KB block size. The checksum is stored in <code class="language-plaintext highlighter-rouge">pd_checksum</code> and verified on every read. A checksum of zero is a valid value – there is intentionally no “checksum not set” sentinel, to avoid relying on page contents to decide whether to verify.</p>
+
+<h2 id="connections">Connections</h2>
+
+<ul>
+  <li><strong>Buffer Manager</strong> (next section): Pages enter and leave shared memory through the buffer manager. The <code class="language-plaintext highlighter-rouge">pd_lsn</code> field enforces the WAL-before-data rule.</li>
+  <li><strong>VACUUM</strong>: Uses line pointer states (<code class="language-plaintext highlighter-rouge">LP_DEAD</code>, <code class="language-plaintext highlighter-rouge">LP_REDIRECT</code>, <code class="language-plaintext highlighter-rouge">LP_UNUSED</code>) to track tuple lifecycle. <code class="language-plaintext highlighter-rouge">pd_prune_xid</code> hints when pruning might be useful.</li>
+  <li><strong>HOT Updates</strong>: When an UPDATE changes only non-indexed columns and the new tuple fits on the same page, the old line pointer becomes <code class="language-plaintext highlighter-rouge">LP_REDIRECT</code> pointing to the new line pointer. This avoids creating a new index entry.</li>
+  <li><strong>Index Access Methods</strong>: B-tree, GiST, GIN, etc. all use the same <code class="language-plaintext highlighter-rouge">PageHeaderData</code> and line pointer array. Their per-page metadata lives in the special space region (<code class="language-plaintext highlighter-rouge">pd_special</code> to end of page).</li>
+  <li><strong>TOAST</strong>: Oversized attributes are replaced with a TOAST pointer in the tuple. The out-of-line data lives in a separate TOAST relation that uses the same page format.</li>
+</ul>
+
+
+      <hr>
+
+      <!-- Prev / Next / Up navigation -->
+      
+      
+      
+
+      <div class="clearfix" style="margin-top: 2rem;">
+        
+          
+          
+
+          
+            
+            <a class="btn btn-primary float-left" href="/postgresql/01-storage/freespace-map.html" title="Free Space Map">&larr; Previous</a>
+          
+
+          
+            
+            <a class="btn btn-primary float-right" href="/postgresql/01-storage/smgr-and-forks.html" title="smgr and Forks">Next &rarr;</a>
+          
+        
+      </div>
+
+      
+      <div style="text-align: center; margin-top: 1rem;">
+        <a href="/postgresql-internals/">&uarr; Back to Table of Contents</a>
+      </div>
+      
+
+    </div>
+  </div>
+</div>
+
+
+  <!-- Footer -->
+
+<hr>
+
+<footer>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <ul class="list-inline text-center">
+          
+          <li class="list-inline-item">
+            <a href="mailto:amitava.dev@proton.me" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="far fa-envelope fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          
+          
+          <li class="list-inline-item">
+            <a href="https://www.linkedin.com/in/amitavaag" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-linkedin fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          <li class="list-inline-item">
+            <a href="https://github.com/ikouchiha47" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-github fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+        </ul>
+
+        <p class="copyright text-muted">
+          Build with: 
+          <a 
+            href="https://github.com/StartBootstrap/startbootstrap-clean-blog-jekyll"
+            class="text-gray"
+            target="_blank">startbootstrap-clean-blog-jekyll</a></p>
+      </div>
+    </div>
+  </div>
+</footer>
+
+
+  <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="/assets/vendor/blog/js/scripts.js"></script>
+
+<script src="/assets/scripts.js"></script>
+
+
+
+
+
+  <script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+
+    document.querySelectorAll('pre > code.language-mermaid').forEach((codeBlock) => {
+      codeBlock.parentElement.outerHTML = `<pre class="mermaid">${codeBlock.textContent}</pre>`;
+    });
+
+
+    mermaid.initialize({ startOnLoad: true, theme: 'forest' });
+</script>
+
+
+  
+
+</body>
+
+</html>
