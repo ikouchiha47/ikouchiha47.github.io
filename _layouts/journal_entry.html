@@ -75,7 +75,7 @@ layout: default
 
           {% if next_index < entries.size %}
             {% assign next_page = entries[next_index] %}
-            <a class="btn btn-primary float-right">{{ next_page.title }} &rarr;</a>
+            <a class="btn btn-primary float-right" href="{{ next_page.url | relative_url }}">{{ next_page.title }} &rarr;</a>
           {% endif %}
         {% endif %}
       </div>

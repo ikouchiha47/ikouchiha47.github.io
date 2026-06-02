@@ -5,7 +5,7 @@ subtitle: "c8i.32xlarge + autocannon pipelining — server at 1% CPU, client at 
 group: millionrps
 group_title: "chasing 1 million rps"
 group_url: "/millionrps/"
-entry_date: 2026-06-02
+entry_date: 2026-06-03
 status: done
 tags: [c8i, aws, RPS, RFS, IRQ, autocannon, pipelining, kernel]
 summary: "Upgrade server to c8i.32xlarge (128 vCPU). Switch to autocannon with --pipelining 100. Apply RPS and RFS. Capture live metrics during benchmark."
@@ -147,6 +147,7 @@ Stopping irqbalance and pinning NIC IRQs to dedicated cores is the next experime
 
 ## results
 
+<div class="bench-table-wrap">
 <table class="bench-table">
   <thead><tr><th>Run</th><th>Config</th><th>Avg RPS</th><th>Peak RPS</th><th>P50 latency</th><th>Server CPU avg</th></tr></thead>
   <tbody>
@@ -155,6 +156,7 @@ Stopping irqbalance and pinning NIC IRQs to dedicated cores is the next experime
     <tr><td class="highlight">3</td><td class="highlight">RPS + RFS</td><td class="highlight">634,823</td><td class="highlight">1,210,367</td><td class="highlight">147ms</td><td class="highlight">1.14% usr</td></tr>
   </tbody>
 </table>
+</div>
 
 Actual autocannon output (run 3, RPS + RFS):
 
@@ -221,5 +223,5 @@ RX: 67.1 MB/s   TX: 42.8 MB/s   (12.5 Gbps NIC = 1562 MB/s capacity)
 
 <div class="journal-callout next">
   <strong>Next</strong>
-  Stop irqbalance. Pin NIC IRQs to dedicated cores. Upgrade client to c8i.32xlarge. Use --connections 5000. Waiting for AWS quota increase to 320 vCPU.
+  Upgrade client to c6i.8xlarge (32 cores). Discover the <code>--workers</code> flag. Run connection ramp 1000→5000. Prove the client ceiling — <a href="../04-workers-ramp-client-ceiling/">entry 04</a>.
 </div>

@@ -12,7 +12,7 @@ permalink: /millionrps/
 
 _yes, this is clickbait. kind of._
 
-## entourage
+## what "1 million RPS" actually means
 
 "1 million RPS" is not a single number. It depends entirely on what the server is doing per request.
 

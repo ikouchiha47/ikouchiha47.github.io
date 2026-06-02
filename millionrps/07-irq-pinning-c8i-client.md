@@ -56,7 +56,7 @@ Pin all 16 NIC IRQs on the server to cores 112-127 (upper 16 cores).
 # = 0xffff000000000000000000000000 (128-bit, comma-separated 32-bit groups)
 
 for irq in $(grep enp95s0 /proc/interrupts | awk -F: '{print $1}' | tr -d ' '); do
-  echo 0000ffff,00000000,00000000,00000000 | sudo tee /proc/irq/$irq/smp_affinity
+  echo ffff0000,00000000,00000000,00000000 | sudo tee /proc/irq/$irq/smp_affinity
 done
 ```
 

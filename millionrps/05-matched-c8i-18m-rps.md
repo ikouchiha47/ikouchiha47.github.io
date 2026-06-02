@@ -5,7 +5,7 @@ subtitle: "c8i.32xlarge × 2, 120 autocannon workers — server at 26% on simple
 group: millionrps
 group_title: "chasing 1 million rps"
 group_url: "/millionrps/"
-entry_date: 2026-06-02
+entry_date: 2026-06-05
 status: done
 tags: [c8i, autocannon, workers, compute, simple, client-ceiling, Little's-Law]
 summary: "Upgrade both server and client to c8i.32xlarge (128 vCPU, 50 Gbps). Run autocannon with 120 workers. Hit 18M RPS on /simple and 1.7M on /compute. Discover the client is the ceiling for /simple, server is the ceiling for /compute."
@@ -46,6 +46,7 @@ autocannon \
 
 ## /simple results
 
+<div class="bench-table-wrap">
 <table class="bench-table">
   <thead>
     <tr><th>connections</th><th>in-flight</th><th>RPS</th><th>p50 ms</th><th>p99 ms</th><th>throughput MB/s</th></tr>
@@ -56,6 +57,7 @@ autocannon \
     <tr><td>5000</td><td>500,000</td><td>6,659,743</td><td>69</td><td>211</td><td>825</td></tr>
   </tbody>
 </table>
+</div>
 
 Live metrics during 1000c point:
 
@@ -92,6 +94,7 @@ At 5000c, 500k requests are simultaneously queued across 128 workers. Each worke
 ./autocannon_bench.sh SERVER_INTERNAL_IP 100 30 120 compute
 ```
 
+<div class="bench-table-wrap">
 <table class="bench-table">
   <thead>
     <tr><th>connections</th><th>in-flight</th><th>RPS</th><th>p50 ms</th><th>p99 ms</th><th>throughput MB/s</th></tr>
@@ -102,6 +105,7 @@ At 5000c, 500k requests are simultaneously queued across 128 workers. Each worke
     <tr class="highlight"><td>5000</td><td>500,000</td><td>1,744,862</td><td>6</td><td>1000</td><td>914</td></tr>
   </tbody>
 </table>
+</div>
 
 Live metrics during 2000c point:
 

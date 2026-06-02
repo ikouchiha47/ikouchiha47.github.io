@@ -5,7 +5,7 @@ subtitle: "c6i.8xlarge client, 30 workers, 1000→5000 connections — server at
 group: millionrps
 group_title: "chasing 1 million rps"
 group_url: "/millionrps/"
-entry_date: 2026-06-02
+entry_date: 2026-06-04
 status: done
 tags: [autocannon, workers, pipelining, c8i, c6i, ramp, client-ceiling]
 summary: "Discovered --workers flag in autocannon. Upgraded client to c6i.8xlarge. Ran connection ramp 1000→2000→5000. Hit 2.3M RPS at p50 38ms. Proved server has 98% CPU headroom — client is the ceiling at 67% avg CPU across 32 cores."
@@ -48,7 +48,46 @@ The 4.9M number was a measurement artifact. The 2.3M with p50 38ms is the real s
 | Server | c8i.32xlarge | 128 | 256 GB | 50 Gbps | enp95s0 |
 | Client | c6i.8xlarge | 32 | 64 GB | 25 Gbps | ens5 |
 
-Server: fiber v3, prefork, 128 workers. RPS + RFS applied at boot. irqbalance stopped and disabled.
+Server: fiber v3, prefork, 128 workers.
+
+**Server prep — applied once at boot via `server_setup.sh`:**
+
+```bash
+# stop irqbalance — it continuously reassigns NIC IRQs and will undo any manual affinity
+sudo systemctl stop irqbalance
+sudo systemctl disable irqbalance
+
+# RPS/RFS — distribute softirq processing across all 128 cores
+NIC=$(ip route show default | awk '/default/{print $5}')  # enp95s0 on c8i
+
+for f in /sys/class/net/$NIC/queues/rx-*/rps_cpus; do
+    echo "ffffffff,ffffffff,ffffffff,ffffffff" | sudo tee $f > /dev/null
+done
+
+echo 32768 | sudo tee /proc/sys/net/core/rps_sock_flow_entries > /dev/null
+
+for f in /sys/class/net/$NIC/queues/rx-*/rps_flow_cnt; do
+    echo 2048 | sudo tee $f > /dev/null
+done
+```
+
+**Build and start the server:**
+
+```bash
+export PATH=$PATH:/usr/local/go/bin
+cd /opt/millionrps/src/http
+go build -o fiber_server fiber_server.go
+nohup ./fiber_server > /tmp/fiber.log 2>&1 &
+```
+
+**Run benchmark from client (`autocannon_bench.sh`):**
+
+```bash
+# ./autocannon_bench.sh <server-ip> [pipelining] [duration_sec] [workers] [route]
+./autocannon_bench.sh SERVER_INTERNAL_IP 100 30 30 simple
+```
+
+The script runs three connection points (1000 → 2000 → 5000) in sequence. Workers default to `$(nproc) - 2` — on c6i.8xlarge that's 30.
 
 Workers auto-detected on client: `nproc - 2 = 30`.
 
@@ -56,6 +95,7 @@ Workers auto-detected on client: `nproc - 2 = 30`.
 
 Connection ramp — 30 workers, pipelining 100, 30s per point, `/simple` endpoint:
 
+<div class="bench-table-wrap">
 <table class="bench-table">
   <thead>
     <tr><th>connections</th><th>in-flight</th><th>workers</th><th>RPS</th><th>p50 ms</th><th>p99 ms</th><th>throughput MB/s</th></tr>
@@ -66,9 +106,11 @@ Connection ramp — 30 workers, pipelining 100, 30s per point, `/simple` endpoin
     <tr><td>5000</td><td>500,000</td><td>30</td><td>2,229,002</td><td>240</td><td>527</td><td>276</td></tr>
   </tbody>
 </table>
+</div>
 
 Wide ramp to confirm ceiling (20s per point):
 
+<div class="bench-table-wrap">
 <table class="bench-table">
   <thead>
     <tr><th>connections</th><th>RPS</th><th>p50 ms</th><th>p99 ms</th></tr>
@@ -82,6 +124,7 @@ Wide ramp to confirm ceiling (20s per point):
     <tr><td>10000</td><td>2,490,096</td><td>485</td><td>1532</td></tr>
   </tbody>
 </table>
+</div>
 
 RPS is flat across a 100× range of connections — 2.3–2.5M regardless of whether the client opens 100 or 10,000 connections. The server scales fine; the client has hit its own ceiling.
 
@@ -165,5 +208,5 @@ Testing 60 workers confirmed this: more workers on the same 32 cores caused cont
 
 <div class="journal-callout next">
   <strong>Next</strong>
-  Upgrade client to c8i.32xlarge (128 cores). Run 120 workers matching the reference benchmark. Apply IRQ pinning on the server: stop irqbalance, pin 16 NIC IRQs to cores 112–127, run fiber workers on cores 0–111. AWS quota: 300 vCPU approved (128 + 128 = 256, within limit).
+  Upgrade both machines to c8i.32xlarge (128 cores each). Run 120 workers. Hit 18M RPS on /simple, 1.7M on /compute. Server saturates for the first time — <a href="../05-matched-c8i-18m-rps/">entry 05</a>.
 </div>

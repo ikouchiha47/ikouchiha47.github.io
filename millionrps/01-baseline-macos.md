@@ -51,6 +51,7 @@ All numbers from `run8.txt`:
 wrk -t4 -c100 -d90s --latency --script script_rw.lua http://localhost:8083
 ```
 
+<div class="bench-table-wrap">
 <table class="bench-table">
   <thead><tr><th>Server</th><th>RPS</th><th>P50</th><th>P75</th><th>P90</th><th>P99</th></tr></thead>
   <tbody>
@@ -60,6 +61,7 @@ wrk -t4 -c100 -d90s --latency --script script_rw.lua http://localhost:8083
     <tr><td class="highlight">fiber + prefork (10 workers)</td><td class="highlight">201,777</td><td class="highlight">490µs</td><td>567µs</td><td>617µs</td><td class="highlight">683µs</td></tr>
   </tbody>
 </table>
+</div>
 
 Actual wrk output for fiber+prefork:
 
@@ -92,6 +94,7 @@ Thread Stats   Avg      Stdev     Max   +/- Stdev
 Requests/sec:  33897.44
 ```
 
+<div class="bench-table-wrap">
 <table class="bench-table">
   <thead><tr><th>Route</th><th>RPS</th><th>P50</th><th>P99</th><th>P99/P50 ratio</th></tr></thead>
   <tbody>
@@ -99,6 +102,7 @@ Requests/sec:  33897.44
     <tr><td>/compute (sort + aggregate 100 items)</td><td>33,897</td><td>2.88ms</td><td>4.68ms</td><td class="highlight">1.6×</td></tr>
   </tbody>
 </table>
+</div>
 
 `/compute` is 5× slower in RPS but has a **tighter latency distribution** — P99 is only 1.6× P50 vs 3.2× for `/read`. CPU-bound work is predictable: every request does the same sort + aggregation. Near-zero work like `/read` exposes GC pauses and goroutine scheduler jitter that push P99 disproportionately high.
 

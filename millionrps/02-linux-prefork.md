@@ -85,6 +85,7 @@ worker3  18.8%
 ...all 8 workers 6-19% CPU
 ```
 
+<div class="bench-table-wrap">
 <table class="bench-table">
   <thead><tr><th>Platform</th><th>Active workers</th><th>P50</th><th>P99</th><th>Avg RPS</th></tr></thead>
   <tbody>
@@ -92,6 +93,7 @@ worker3  18.8%
     <tr><td class="highlight">Linux (prefork)</td><td class="highlight">8 of 8</td><td class="highlight">0.24ms</td><td class="highlight">1.4ms</td><td>~8.4k</td></tr>
   </tbody>
 </table>
+</div>
 
 Same payload (48KB avg), different latency. The macOS 22ms P99 was 10 goroutines serialized through one process. Linux has genuine parallelism.
 

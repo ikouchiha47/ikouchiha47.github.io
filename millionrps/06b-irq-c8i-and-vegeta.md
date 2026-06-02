@@ -5,7 +5,7 @@ subtitle: "18M RPS stays flat with tuning. 580k vegeta ceiling. The tool is alwa
 group: millionrps
 group_title: "chasing 1 million rps"
 group_url: "/millionrps/"
-entry_date: 2026-06-02
+entry_date: 2026-06-07
 status: done
 tags: [c8i, IRQ, vegeta, pipelining, packet-rate, client-ceiling]
 summary: "Ran the IRQ experiment on matched c8i hardware. Then switched to vegeta (no pipelining) to generate realistic packet rates. Both hit client ceiling regardless of tuning."
@@ -59,6 +59,7 @@ done
 
 ### c8i /simple results — all three steps
 
+<div class="bench-table-wrap">
 <table class="bench-table">
   <thead>
     <tr><th>config</th><th>1000c RPS</th><th>p50</th><th>2000c RPS</th><th>p50</th><th>5000c RPS</th><th>p50</th></tr>
@@ -69,11 +70,13 @@ done
     <tr><td>IRQ + RPS/RFS</td><td>18,097,698</td><td>4ms</td><td>17,437,150</td><td>9ms</td><td>6,294,493</td><td>76ms</td></tr>
   </tbody>
 </table>
+</div>
 
 Flat. Server still at 26% CPU across all three configurations. No tuning moves the needle when the server is idle.
 
 ### c8i /compute results
 
+<div class="bench-table-wrap">
 <table class="bench-table">
   <thead>
     <tr><th>config</th><th>cores</th><th>1000c RPS</th><th>p99 ms</th><th>5000c RPS</th><th>p99 ms</th></tr>
@@ -85,6 +88,7 @@ Flat. Server still at 26% CPU across all three configurations. No tuning moves t
     <tr><td>IRQ+RPS/RFS (taskset 0-123)</td><td>124</td><td>1,625,600</td><td>259</td><td>1,715,439</td><td>1102</td></tr>
   </tbody>
 </table>
+</div>
 
 The taskset penalty is directly proportional to cores lost:
 ```
@@ -126,6 +130,7 @@ cat run_*.jsonl | vegeta report
 
 ### vegeta results — /simple, 8 parallel processes
 
+<div class="bench-table-wrap">
 <table class="bench-table">
   <thead>
     <tr><th>target RPS</th><th>actual RPS</th><th>p50 ms</th><th>p95 ms</th><th>p99 ms</th><th>success</th></tr>
@@ -140,6 +145,7 @@ cat run_*.jsonl | vegeta report
     <tr><td>3,000,000</td><td>558,839</td><td>26.4</td><td>110</td><td>160</td><td>100%</td></tr>
   </tbody>
 </table>
+</div>
 
 Client hits ~580k actual RPS and plateaus. Server at 5% CPU. No errors, 100% success rate throughout.
 

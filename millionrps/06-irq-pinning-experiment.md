@@ -5,7 +5,7 @@ subtitle: "three-step experiment on c6i.2xlarge — baseline, IRQ only, IRQ + RP
 group: millionrps
 group_title: "chasing 1 million rps"
 group_url: "/millionrps/"
-entry_date: 2026-06-02
+entry_date: 2026-06-06
 status: done
 tags: [IRQ, irqbalance, taskset, RPS, RFS, c6i, pipelining, packet-rate, haproxy]
 summary: "Full IRQ pinning experiment on c6i.2xlarge (8 vCPU) as server. Three steps: baseline, IRQ pinning only, IRQ + RPS/RFS. Run on /simple and /compute. Read the HAProxy blog. Understand why packet rate — not RPS — is what makes IRQ pinning matter."
@@ -77,6 +77,7 @@ cat /proc/sys/net/core/rps_sock_flow_entries
 ./autocannon_bench.sh SERVER_INTERNAL_IP 100 30 30 simple
 ```
 
+<div class="bench-table-wrap">
 <table class="bench-table">
   <thead><tr><th>connections</th><th>RPS</th><th>p50 ms</th><th>p99 ms</th><th>throughput MB/s</th></tr></thead>
   <tbody>
@@ -85,6 +86,7 @@ cat /proc/sys/net/core/rps_sock_flow_entries
     <tr><td>5000</td><td>2,318,061</td><td>231</td><td>505</td><td>287</td></tr>
   </tbody>
 </table>
+</div>
 
 ```
 SERVER: AVG usr: 62%   sys: 14%   idle: 11%   — all 8 cores hot
@@ -118,6 +120,7 @@ nohup taskset -c 0-5 ./fiber_server > /tmp/fiber.log 2>&1 &
 ./autocannon_bench.sh SERVER_INTERNAL_IP 100 30 30 simple
 ```
 
+<div class="bench-table-wrap">
 <table class="bench-table">
   <thead><tr><th>connections</th><th>RPS</th><th>p50 ms</th><th>p99 ms</th><th>throughput MB/s</th></tr></thead>
   <tbody>
@@ -126,6 +129,7 @@ nohup taskset -c 0-5 ./fiber_server > /tmp/fiber.log 2>&1 &
     <tr><td>5000</td><td>2,300,485</td><td>232</td><td>525</td><td>285</td></tr>
   </tbody>
 </table>
+</div>
 
 ```
 CPU0-5 (fiber cores):   usr 72-85%  sys 6-16%   — doing real work, no interrupts
@@ -159,6 +163,7 @@ cat /proc/sys/net/core/rps_sock_flow_entries
 # 32768
 ```
 
+<div class="bench-table-wrap">
 <table class="bench-table">
   <thead><tr><th>connections</th><th>RPS</th><th>p50 ms</th><th>p99 ms</th><th>throughput MB/s</th></tr></thead>
   <tbody>
@@ -167,9 +172,11 @@ cat /proc/sys/net/core/rps_sock_flow_entries
     <tr><td>5000</td><td>2,304,654</td><td>231</td><td>537</td><td>285</td></tr>
   </tbody>
 </table>
+</div>
 
 ## full comparison
 
+<div class="bench-table-wrap">
 <table class="bench-table">
   <thead>
     <tr><th></th><th>baseline</th><th>IRQ only</th><th>IRQ + RPS/RFS</th></tr>
@@ -181,6 +188,7 @@ cat /proc/sys/net/core/rps_sock_flow_entries
     <tr><td>5000c RPS</td><td>2,318,061</td><td>2,300,485</td><td>2,304,654 (~flat)</td></tr>
   </tbody>
 </table>
+</div>
 
 ~3% improvement. Within noise for most practical purposes.
 
@@ -192,6 +200,7 @@ cat /proc/sys/net/core/rps_sock_flow_entries
 ./autocannon_bench.sh SERVER_INTERNAL_IP 100 30 30 compute
 ```
 
+<div class="bench-table-wrap">
 <table class="bench-table">
   <thead><tr><th>config</th><th>1000c RPS</th><th>p99 ms</th></tr></thead>
   <tbody>
@@ -199,6 +208,7 @@ cat /proc/sys/net/core/rps_sock_flow_entries
     <tr><td>IRQ + RPS/RFS (6 cores)</td><td>69,849</td><td>6852</td></tr>
   </tbody>
 </table>
+</div>
 
 Near-identical RPS. But p99 got **worse** with tuning (+26%). Why: restricting fiber to 6 cores with `taskset` lost 2 compute cores. For CPU-bound work, fewer cores = fewer parallel goroutines = higher queueing latency at the tail.
 
