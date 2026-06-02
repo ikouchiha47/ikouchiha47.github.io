@@ -1,0 +1,81 @@
+---
+layout: default
+---
+
+{% if page.background %}
+<header class="masthead" style="background-image: url('{{ page.background | prepend: site.baseurl | replace: '//', '/' }}')">
+{% elsif page.background_color %}
+<header class="masthead" style="background: {{ page.background_color }}">
+{% else %}
+<header class="masthead">
+{% endif %}
+  <div class="overlay"></div>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <div class="post-heading">
+          <h1>{{ page.title }}</h1>
+          {% if page.subtitle %}
+          <h2 class="subheading">{{ page.subtitle }}</h2>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="container space-grotesk">
+  <div class="row">
+    <div class="col-lg-8 col-md-10 mx-auto">
+
+      {{ content }}
+
+      <hr>
+
+      <!-- Journal Timeline -->
+      {% assign entries = site.pages | where: "group", page.group | where_exp: "p", "p.is_index != true" | sort: "entry_date" %}
+
+      <div class="journal-timeline">
+        {% for entry in entries %}
+        <div class="journal-entry">
+          <div class="journal-entry-marker">
+            <span class="journal-entry-dot {% if entry.status == 'pending' %}pending{% elsif entry.status == 'wip' %}wip{% else %}done{% endif %}"></span>
+            <div class="journal-entry-line"></div>
+          </div>
+          <div class="journal-entry-content">
+            <div class="journal-entry-meta">
+              <span class="journal-entry-date">{{ entry.entry_date | date: "%B %d, %Y" }}</span>
+              {% if entry.status %}
+              <span class="journal-entry-status {{ entry.status }}">{{ entry.status | upcase }}</span>
+              {% endif %}
+              {% if entry.tags %}
+              <span class="journal-entry-tags">
+                {% for tag in entry.tags %}
+                <span class="journal-tag">{{ tag }}</span>
+                {% endfor %}
+              </span>
+              {% endif %}
+            </div>
+            <h3 class="journal-entry-title">
+              {% if entry.status == 'pending' %}
+                {{ entry.title }}
+              {% else %}
+                <a href="{{ entry.url | relative_url }}">{{ entry.title }}</a>
+              {% endif %}
+            </h3>
+            {% if entry.summary %}
+            <p class="journal-entry-summary">{{ entry.summary }}</p>
+            {% endif %}
+            {% if entry.result %}
+            <div class="journal-entry-result">
+              <span class="result-label">Result:</span> {{ entry.result }}
+            </div>
+            {% endif %}
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+
+    </div>
+  </div>
+</div>
