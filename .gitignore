@@ -8,3 +8,5 @@ tmp/
 bin/
 _cache/**
 !_cache/.keep
+
+*.gz
