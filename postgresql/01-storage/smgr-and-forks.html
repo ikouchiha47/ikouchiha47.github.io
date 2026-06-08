@@ -1,0 +1,463 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+  <title>
+    smgr and Forks - iko&#39;s logs
+    
+  </title>
+
+  <meta name="description" content="">
+  <meta property="og:description" content="">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="smgr and Forks">
+  <meta property="og:url" content="https://ikouchiha47.github.io/postgresql/01-storage/smgr-and-forks.html">
+
+  
+
+  <link href='https://fonts.googleapis.com/css?family=Lora:400,700,400italic,700italic' rel='stylesheet' type='text/css'>
+  <link href='https://fonts.googleapis.com/css?family=Open+Sans:300italic,400italic,600italic,700italic,800italic,400,300,600,700,800' rel='stylesheet' type='text/css'>
+
+  <!-- <script src="https://use.fontawesome.com/releases/v5.15.3/js/all.js" crossorigin="anonymous"></script> -->
+  <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.15.4/css/all.css" integrity="sha384-DyZ88mC6Up2uqS4h/KRgHuoeGwBcD4Ng9SiP4dIRy0EXTlnuz47vAwmeGwVChigm" crossorigin="anonymous"/>
+
+  <link rel="stylesheet" href="/assets/main.css">
+  <link rel="canonical" href="https://ikouchiha47.github.io/postgresql/01-storage/smgr-and-forks.html">
+  <link rel="alternate" type="application/rss+xml" title="iko&#39;s logs" href="/feed.xml">
+
+  <meta name="google-site-verification" content="lWkg6gIxJgzEKX_5XnhcxCtPE9QknaimFWWos_dTvPM" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fira+Sans:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Inconsolata:wght@200..900&family=Jersey+25&family=Kanit:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Merriweather+Sans:ital,wght@0,300..800;1,300..800&family=Nanum+Gothic+Coding&family=Space+Grotesk:wght@300..700&family=Titillium+Web:ital,wght@0,200;0,300;0,400;0,600;0,700;0,900;1,200;1,300;1,400;1,600;1,700&display=swap" rel="stylesheet">
+
+</head>
+
+
+<body>
+
+  <!-- Navigation -->
+<nav class="navbar navbar-expand-lg navbar-light fixed-top" id="mainNav">
+  <div class="container">
+    <a class="navbar-brand" href="/">iko&#39;s logs</a>
+    <button class="navbar-toggler navbar-toggler-right" type="button" data-toggle="collapse" data-target="#navbarResponsive" aria-controls="navbarResponsive" aria-expanded="false" aria-label="Toggle navigation">
+      Menu
+      <i class="fa fa-bars"></i>
+    </button>
+    <div class="collapse navbar-collapse" id="navbarResponsive">
+      <ul class="navbar-nav ml-auto">
+        <li class="nav-item">
+          <a class="nav-link" href="/">Home</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/about">About</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/posts">Posts</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/contact">Contact</a>
+        </li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+
+  <!-- Page Header -->
+
+<header class="masthead">
+
+  <div class="overlay"></div>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <div class="post-heading">
+          <h1>smgr and Forks</h1>
+          
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="container space-grotesk">
+  <div class="row">
+    <div class="col-lg-8 col-md-10 mx-auto">
+
+      <!-- Breadcrumb -->
+      <nav aria-label="breadcrumb" style="margin-bottom: 1.5rem;">
+        <ol class="breadcrumb" style="background: transparent; padding: 0;">
+          
+            <li class="breadcrumb-item"><a href="/postgresql-internals/">PostgreSQL Internals Deep Dive</a></li>
+          
+          
+            
+              <li class="breadcrumb-item"><a href="/postgresql/01-storage/">Storage Engine</a></li>
+            
+          
+          <li class="breadcrumb-item active" aria-current="page">smgr and Forks</li>
+        </ol>
+      </nav>
+
+      <h1 id="storage-manager-and-relation-forks">Storage Manager and Relation Forks</h1>
+
+<p>The storage manager (smgr) is PostgreSQL’s abstraction layer between the buffer manager and the operating system’s file system. It provides a uniform interface for reading and writing blocks of any relation fork, while the magnetic disk (md) layer underneath handles the physical details of segment files.</p>
+
+<h2 id="overview">Overview</h2>
+
+<p>Every relation in PostgreSQL consists of up to four <strong>forks</strong> – separate physical files that store different kinds of data. The <code class="language-plaintext highlighter-rouge">ForkNumber</code> enum identifies each:</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>Fork</th>
+      <th>Number</th>
+      <th>Suffix</th>
+      <th>Purpose</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">MAIN_FORKNUM</code></td>
+      <td>0</td>
+      <td>(none)</td>
+      <td>Heap tuples or index entries</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">FSM_FORKNUM</code></td>
+      <td>1</td>
+      <td><code class="language-plaintext highlighter-rouge">_fsm</code></td>
+      <td>Free space map</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">VISIBILITYMAP_FORKNUM</code></td>
+      <td>2</td>
+      <td><code class="language-plaintext highlighter-rouge">_vm</code></td>
+      <td>Visibility map</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">INIT_FORKNUM</code></td>
+      <td>3</td>
+      <td><code class="language-plaintext highlighter-rouge">_init</code></td>
+      <td>Init fork for unlogged relations</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>On disk, a relation with OID 16384 in tablespace <code class="language-plaintext highlighter-rouge">pg_default</code> appears as files like:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>$PGDATA/base/&lt;dboid&gt;/16384        # main fork
+$PGDATA/base/&lt;dboid&gt;/16384_fsm    # free space map fork
+$PGDATA/base/&lt;dboid&gt;/16384_vm     # visibility map fork
+</code></pre></div></div>
+
+<p>When a fork exceeds 1 GB, it is split into segments: <code class="language-plaintext highlighter-rouge">16384</code>, <code class="language-plaintext highlighter-rouge">16384.1</code>, <code class="language-plaintext highlighter-rouge">16384.2</code>, and so on.</p>
+
+<h2 id="key-source-files">Key Source Files</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>File</th>
+      <th>Purpose</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/storage/smgr.h</code></td>
+      <td><code class="language-plaintext highlighter-rouge">SMgrRelationData</code> struct, smgr public API</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/storage/smgr/smgr.c</code></td>
+      <td>SMgrRelation hash table, dispatch to md.c</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/storage/md.h</code></td>
+      <td>Magnetic disk API declarations</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/storage/smgr/md.c</code></td>
+      <td>Segment file management, <code class="language-plaintext highlighter-rouge">mdreadv()</code>, <code class="language-plaintext highlighter-rouge">mdwritev()</code>, <code class="language-plaintext highlighter-rouge">mdextend()</code></td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/common/relpath.h</code></td>
+      <td><code class="language-plaintext highlighter-rouge">ForkNumber</code> enum, <code class="language-plaintext highlighter-rouge">RelFileNumber</code> type, file naming</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/common/relpath.c</code></td>
+      <td><code class="language-plaintext highlighter-rouge">forkNames[]</code> array, path construction helpers</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/storage/smgr/bulk_write.c</code></td>
+      <td>Bulk write interface for efficient relation creation</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/storage/smgr/README</code></td>
+      <td>Design notes on the storage manager</td>
+    </tr>
+  </tbody>
+</table>
+
+<h2 id="how-it-works">How It Works</h2>
+
+<h3 id="smgrrelationdata">SMgrRelationData</h3>
+
+<p>The central data structure is <code class="language-plaintext highlighter-rouge">SMgrRelationData</code>, a cached file handle stored in a process-local hash table keyed by <code class="language-plaintext highlighter-rouge">RelFileLocatorBackend</code>:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">typedef</span> <span class="k">struct</span> <span class="n">SMgrRelationData</span>
+<span class="p">{</span>
+    <span class="n">RelFileLocatorBackend</span> <span class="n">smgr_rlocator</span><span class="p">;</span>    <span class="cm">/* (spcOid, dbOid, relNumber, backend) */</span>
+
+    <span class="n">BlockNumber</span> <span class="n">smgr_targblock</span><span class="p">;</span>              <span class="cm">/* current insertion target block */</span>
+    <span class="n">BlockNumber</span> <span class="n">smgr_cached_nblocks</span><span class="p">[</span><span class="n">MAX_FORKNUM</span> <span class="o">+</span> <span class="mi">1</span><span class="p">];</span> <span class="cm">/* cached fork sizes */</span>
+
+    <span class="kt">int</span>         <span class="n">smgr_which</span><span class="p">;</span>                  <span class="cm">/* storage manager selector (always 0 = md) */</span>
+
+    <span class="cm">/* md.c per-fork state */</span>
+    <span class="kt">int</span>              <span class="n">md_num_open_segs</span><span class="p">[</span><span class="n">MAX_FORKNUM</span> <span class="o">+</span> <span class="mi">1</span><span class="p">];</span>
+    <span class="k">struct</span> <span class="n">_MdfdVec</span> <span class="o">*</span><span class="n">md_seg_fds</span><span class="p">[</span><span class="n">MAX_FORKNUM</span> <span class="o">+</span> <span class="mi">1</span><span class="p">];</span>
+
+    <span class="cm">/* pinning support */</span>
+    <span class="kt">int</span>         <span class="n">pincount</span><span class="p">;</span>
+    <span class="n">dlist_node</span>  <span class="n">node</span><span class="p">;</span>                        <span class="cm">/* list link when unpinned */</span>
+<span class="p">}</span> <span class="n">SMgrRelationData</span><span class="p">;</span>
+</code></pre></div></div>
+
+<p>Key points:</p>
+<ul>
+  <li><code class="language-plaintext highlighter-rouge">smgropen()</code> creates or finds the <code class="language-plaintext highlighter-rouge">SMgrRelationData</code> in the hash table. It does not open any files; file descriptors are opened lazily on first I/O.</li>
+  <li><code class="language-plaintext highlighter-rouge">smgrpin()</code> / <code class="language-plaintext highlighter-rouge">smgrunpin()</code> prevent the entry from being destroyed while the relcache holds a pointer to it.</li>
+  <li><code class="language-plaintext highlighter-rouge">smgrdestroy()</code> drops the hash table entry and closes any open file descriptors.</li>
+  <li>Unpinned entries are destroyed at end of transaction by <code class="language-plaintext highlighter-rouge">AtEOXact_SMgr()</code>.</li>
+</ul>
+
+<h3 id="the-smgr-api">The smgr API</h3>
+
+<p>The buffer manager and access methods call smgr through a clean interface:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="cm">/* Read nblocks starting at blocknum into buffers[] */</span>
+<span class="kt">void</span> <span class="nf">smgrreadv</span><span class="p">(</span><span class="n">SMgrRelation</span> <span class="n">reln</span><span class="p">,</span> <span class="n">ForkNumber</span> <span class="n">forknum</span><span class="p">,</span>
+               <span class="n">BlockNumber</span> <span class="n">blocknum</span><span class="p">,</span> <span class="kt">void</span> <span class="o">**</span><span class="n">buffers</span><span class="p">,</span> <span class="n">BlockNumber</span> <span class="n">nblocks</span><span class="p">);</span>
+
+<span class="cm">/* Write nblocks starting at blocknum from buffers[] */</span>
+<span class="kt">void</span> <span class="nf">smgrwritev</span><span class="p">(</span><span class="n">SMgrRelation</span> <span class="n">reln</span><span class="p">,</span> <span class="n">ForkNumber</span> <span class="n">forknum</span><span class="p">,</span>
+                <span class="n">BlockNumber</span> <span class="n">blocknum</span><span class="p">,</span> <span class="k">const</span> <span class="kt">void</span> <span class="o">**</span><span class="n">buffers</span><span class="p">,</span>
+                <span class="n">BlockNumber</span> <span class="n">nblocks</span><span class="p">,</span> <span class="n">bool</span> <span class="n">skipFsync</span><span class="p">);</span>
+
+<span class="cm">/* Async read: hand off to AIO subsystem */</span>
+<span class="kt">void</span> <span class="nf">smgrstartreadv</span><span class="p">(</span><span class="n">PgAioHandle</span> <span class="o">*</span><span class="n">ioh</span><span class="p">,</span> <span class="n">SMgrRelation</span> <span class="n">reln</span><span class="p">,</span> <span class="n">ForkNumber</span> <span class="n">forknum</span><span class="p">,</span>
+                    <span class="n">BlockNumber</span> <span class="n">blocknum</span><span class="p">,</span> <span class="kt">void</span> <span class="o">**</span><span class="n">buffers</span><span class="p">,</span> <span class="n">BlockNumber</span> <span class="n">nblocks</span><span class="p">);</span>
+
+<span class="cm">/* Extend the fork by one block */</span>
+<span class="kt">void</span> <span class="nf">smgrextend</span><span class="p">(</span><span class="n">SMgrRelation</span> <span class="n">reln</span><span class="p">,</span> <span class="n">ForkNumber</span> <span class="n">forknum</span><span class="p">,</span>
+                <span class="n">BlockNumber</span> <span class="n">blocknum</span><span class="p">,</span> <span class="k">const</span> <span class="kt">void</span> <span class="o">*</span><span class="n">buffer</span><span class="p">,</span> <span class="n">bool</span> <span class="n">skipFsync</span><span class="p">);</span>
+
+<span class="cm">/* Get current size of a fork in blocks */</span>
+<span class="n">BlockNumber</span> <span class="nf">smgrnblocks</span><span class="p">(</span><span class="n">SMgrRelation</span> <span class="n">reln</span><span class="p">,</span> <span class="n">ForkNumber</span> <span class="n">forknum</span><span class="p">);</span>
+
+<span class="cm">/* Truncate a fork to nblocks */</span>
+<span class="kt">void</span> <span class="nf">smgrtruncate</span><span class="p">(</span><span class="n">SMgrRelation</span> <span class="n">reln</span><span class="p">,</span> <span class="n">ForkNumber</span> <span class="o">*</span><span class="n">forknum</span><span class="p">,</span> <span class="kt">int</span> <span class="n">nforks</span><span class="p">,</span>
+                  <span class="n">BlockNumber</span> <span class="o">*</span><span class="n">old_nblocks</span><span class="p">,</span> <span class="n">BlockNumber</span> <span class="o">*</span><span class="n">nblocks</span><span class="p">);</span>
+</code></pre></div></div>
+
+<p>All functions dispatch to <code class="language-plaintext highlighter-rouge">md.c</code> through function pointers (historically the smgr supported multiple backends; today only md remains, but the dispatch layer persists).</p>
+
+<h3 id="magnetic-disk-layer-mdc">Magnetic Disk Layer (md.c)</h3>
+
+<p>The md layer translates block-level operations into <code class="language-plaintext highlighter-rouge">pread()</code>/<code class="language-plaintext highlighter-rouge">pwrite()</code> calls on segment files:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>block_number -&gt; segment = block_number / RELSEG_SIZE
+                offset  = (block_number % RELSEG_SIZE) * BLCKSZ
+</code></pre></div></div>
+
+<p>where <code class="language-plaintext highlighter-rouge">RELSEG_SIZE</code> = 131072 blocks = 1 GB (with default 8 KB BLCKSZ).</p>
+
+<p>Each open segment is tracked in an <code class="language-plaintext highlighter-rouge">MdfdVec</code>:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">typedef</span> <span class="k">struct</span> <span class="n">_MdfdVec</span>
+<span class="p">{</span>
+    <span class="n">File</span>    <span class="n">mdfd_vfd</span><span class="p">;</span>       <span class="cm">/* virtual file descriptor (fd.c handle) */</span>
+    <span class="n">BlockNumber</span> <span class="n">mdfd_segno</span><span class="p">;</span> <span class="cm">/* segment number (0, 1, 2, ...) */</span>
+<span class="p">}</span> <span class="n">MdfdVec</span><span class="p">;</span>
+</code></pre></div></div>
+
+<p>The <code class="language-plaintext highlighter-rouge">md_seg_fds</code> array in <code class="language-plaintext highlighter-rouge">SMgrRelationData</code> is a per-fork dynamic array of <code class="language-plaintext highlighter-rouge">MdfdVec</code> entries. Segments are opened lazily: when a read requests block 200000, md opens segment 1 (blocks 131072-262143) if it is not already open.</p>
+
+<h3 id="vectorized-io">Vectorized I/O</h3>
+
+<p>Modern PostgreSQL supports vectorized reads and writes (<code class="language-plaintext highlighter-rouge">smgrreadv</code> / <code class="language-plaintext highlighter-rouge">smgrwritev</code>) that can read multiple consecutive blocks in a single system call. The <code class="language-plaintext highlighter-rouge">smgrmaxcombine()</code> function returns how many blocks can be combined starting from a given block number (limited by segment boundaries and <code class="language-plaintext highlighter-rouge">io_combine_limit</code>).</p>
+
+<h3 id="relation-file-locator">Relation File Locator</h3>
+
+<p>A <code class="language-plaintext highlighter-rouge">RelFileLocator</code> fully identifies where a relation’s data lives:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">typedef</span> <span class="k">struct</span> <span class="n">RelFileLocator</span>
+<span class="p">{</span>
+    <span class="n">Oid</span> <span class="n">spcOid</span><span class="p">;</span>          <span class="cm">/* tablespace OID (0 = pg_default) */</span>
+    <span class="n">Oid</span> <span class="n">dbOid</span><span class="p">;</span>           <span class="cm">/* database OID (0 = shared catalog) */</span>
+    <span class="n">RelFileNumber</span> <span class="n">relNumber</span><span class="p">;</span> <span class="cm">/* file number (usually same as OID, but changes on REINDEX/TRUNCATE) */</span>
+<span class="p">}</span> <span class="n">RelFileLocator</span><span class="p">;</span>
+</code></pre></div></div>
+
+<p>Note that <code class="language-plaintext highlighter-rouge">relNumber</code> is distinct from the relation OID. Operations like <code class="language-plaintext highlighter-rouge">TRUNCATE</code> and <code class="language-plaintext highlighter-rouge">REINDEX</code> assign a new <code class="language-plaintext highlighter-rouge">relNumber</code> to create a fresh set of files, while the relation OID remains stable.</p>
+
+<h3 id="fork-lifecycle">Fork Lifecycle</h3>
+
+<pre><code class="language-mermaid">sequenceDiagram
+    participant C as CREATE TABLE
+    participant S as smgr
+    participant M as md.c
+    participant D as Disk
+
+    C-&gt;&gt;S: smgrcreate(reln, MAIN_FORKNUM)
+    S-&gt;&gt;M: mdcreate() - create empty main fork file
+    M-&gt;&gt;D: open("base/dboid/relfilenum", O_CREAT)
+
+    Note over C,D: FSM and VM forks are created lazily&lt;br/&gt;on first INSERT/VACUUM
+
+    C-&gt;&gt;S: smgrextend(reln, MAIN_FORKNUM, 0, page)
+    S-&gt;&gt;M: mdextend() - write first 8KB page
+    M-&gt;&gt;D: pwrite(fd, page, BLCKSZ, 0)
+</code></pre>
+
+<p>The FSM fork is created the first time <code class="language-plaintext highlighter-rouge">RecordAndGetPageWithFreeSpace()</code> is called (typically during the first INSERT after the first page fills up). The VM fork is created by the first VACUUM that sets visibility bits.</p>
+
+<h3 id="init-fork">Init Fork</h3>
+
+<p>Unlogged relations have an additional <code class="language-plaintext highlighter-rouge">INIT_FORKNUM</code> fork. This is an empty copy of the main fork that is used to reset the relation to an empty state after a crash (since unlogged relation data is not WAL-logged and cannot be recovered). On clean startup after a crash, the INIT fork replaces the main fork.</p>
+
+<h2 id="connections">Connections</h2>
+
+<ul>
+  <li><strong>Buffer Manager</strong>: Calls <code class="language-plaintext highlighter-rouge">smgrread()</code> on cache miss and <code class="language-plaintext highlighter-rouge">smgrwrite()</code> to flush dirty buffers. The buffer tag contains exactly the fields needed to construct a <code class="language-plaintext highlighter-rouge">BufferTag</code> that smgr can resolve.</li>
+  <li><strong>Free Space Map</strong>: Stored as <code class="language-plaintext highlighter-rouge">FSM_FORKNUM</code>, read and written through the same smgr interface.</li>
+  <li><strong>Visibility Map</strong>: Stored as <code class="language-plaintext highlighter-rouge">VISIBILITYMAP_FORKNUM</code>.</li>
+  <li><strong>WAL</strong>: <code class="language-plaintext highlighter-rouge">smgrwrite()</code> is called with <code class="language-plaintext highlighter-rouge">skipFsync=true</code> during normal operation because fsync is deferred to checkpoint time. <code class="language-plaintext highlighter-rouge">smgrimmedsync()</code> forces an immediate fsync (used during relation creation).</li>
+  <li><strong>Async I/O</strong>: <code class="language-plaintext highlighter-rouge">smgrstartreadv()</code> hands off a read to the AIO subsystem instead of blocking. The md layer’s <code class="language-plaintext highlighter-rouge">mdstartreadv()</code> sets the file descriptor and offset on the <code class="language-plaintext highlighter-rouge">PgAioHandle</code>.</li>
+  <li><strong>TOAST</strong>: TOAST relations are separate relations with their own <code class="language-plaintext highlighter-rouge">RelFileLocator</code> and their own set of forks.</li>
+</ul>
+
+
+      <hr>
+
+      <!-- Prev / Next / Up navigation -->
+      
+      
+      
+
+      <div class="clearfix" style="margin-top: 2rem;">
+        
+          
+          
+
+          
+            
+            <a class="btn btn-primary float-left" href="/postgresql/01-storage/page-layout.html" title="Page Layout">&larr; Previous</a>
+          
+
+          
+            
+            <a class="btn btn-primary float-right" href="/postgresql/01-storage/visibility-map.html" title="Visibility Map">Next &rarr;</a>
+          
+        
+      </div>
+
+      
+      <div style="text-align: center; margin-top: 1rem;">
+        <a href="/postgresql-internals/">&uarr; Back to Table of Contents</a>
+      </div>
+      
+
+    </div>
+  </div>
+</div>
+
+
+  <!-- Footer -->
+
+<hr>
+
+<footer>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <ul class="list-inline text-center">
+          
+          <li class="list-inline-item">
+            <a href="mailto:amitava.dev@proton.me" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="far fa-envelope fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          
+          
+          <li class="list-inline-item">
+            <a href="https://www.linkedin.com/in/amitavaag" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-linkedin fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          <li class="list-inline-item">
+            <a href="https://github.com/ikouchiha47" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-github fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+        </ul>
+
+        <p class="copyright text-muted">
+          Build with: 
+          <a 
+            href="https://github.com/StartBootstrap/startbootstrap-clean-blog-jekyll"
+            class="text-gray"
+            target="_blank">startbootstrap-clean-blog-jekyll</a></p>
+      </div>
+    </div>
+  </div>
+</footer>
+
+
+  <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="/assets/vendor/blog/js/scripts.js"></script>
+
+<script src="/assets/scripts.js"></script>
+
+
+
+
+
+  <script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+
+    document.querySelectorAll('pre > code.language-mermaid').forEach((codeBlock) => {
+      codeBlock.parentElement.outerHTML = `<pre class="mermaid">${codeBlock.textContent}</pre>`;
+    });
+
+
+    mermaid.initialize({ startOnLoad: true, theme: 'forest' });
+</script>
+
+
+  
+
+</body>
+
+</html>

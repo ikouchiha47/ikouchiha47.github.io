@@ -1,0 +1,394 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+  <title>
+    Architecture - iko&#39;s logs
+    
+  </title>
+
+  <meta name="description" content="">
+  <meta property="og:description" content="">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Architecture">
+  <meta property="og:url" content="https://ikouchiha47.github.io/postgresql/00-architecture/">
+
+  
+
+  <link href='https://fonts.googleapis.com/css?family=Lora:400,700,400italic,700italic' rel='stylesheet' type='text/css'>
+  <link href='https://fonts.googleapis.com/css?family=Open+Sans:300italic,400italic,600italic,700italic,800italic,400,300,600,700,800' rel='stylesheet' type='text/css'>
+
+  <!-- <script src="https://use.fontawesome.com/releases/v5.15.3/js/all.js" crossorigin="anonymous"></script> -->
+  <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.15.4/css/all.css" integrity="sha384-DyZ88mC6Up2uqS4h/KRgHuoeGwBcD4Ng9SiP4dIRy0EXTlnuz47vAwmeGwVChigm" crossorigin="anonymous"/>
+
+  <link rel="stylesheet" href="/assets/main.css">
+  <link rel="canonical" href="https://ikouchiha47.github.io/postgresql/00-architecture/">
+  <link rel="alternate" type="application/rss+xml" title="iko&#39;s logs" href="/feed.xml">
+
+  <meta name="google-site-verification" content="lWkg6gIxJgzEKX_5XnhcxCtPE9QknaimFWWos_dTvPM" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fira+Sans:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Inconsolata:wght@200..900&family=Jersey+25&family=Kanit:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Merriweather+Sans:ital,wght@0,300..800;1,300..800&family=Nanum+Gothic+Coding&family=Space+Grotesk:wght@300..700&family=Titillium+Web:ital,wght@0,200;0,300;0,400;0,600;0,700;0,900;1,200;1,300;1,400;1,600;1,700&display=swap" rel="stylesheet">
+
+</head>
+
+
+<body>
+
+  <!-- Navigation -->
+<nav class="navbar navbar-expand-lg navbar-light fixed-top" id="mainNav">
+  <div class="container">
+    <a class="navbar-brand" href="/">iko&#39;s logs</a>
+    <button class="navbar-toggler navbar-toggler-right" type="button" data-toggle="collapse" data-target="#navbarResponsive" aria-controls="navbarResponsive" aria-expanded="false" aria-label="Toggle navigation">
+      Menu
+      <i class="fa fa-bars"></i>
+    </button>
+    <div class="collapse navbar-collapse" id="navbarResponsive">
+      <ul class="navbar-nav ml-auto">
+        <li class="nav-item">
+          <a class="nav-link" href="/">Home</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/about">About</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/posts">Posts</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/contact">Contact</a>
+        </li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+
+  <!-- Page Header -->
+
+<header class="masthead">
+
+  <div class="overlay"></div>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <div class="post-heading">
+          <h1>Architecture</h1>
+          
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="container space-grotesk">
+  <div class="row">
+    <div class="col-lg-8 col-md-10 mx-auto">
+
+      <!-- Breadcrumb -->
+      <nav aria-label="breadcrumb" style="margin-bottom: 1.5rem;">
+        <ol class="breadcrumb" style="background: transparent; padding: 0;">
+          
+            <li class="breadcrumb-item"><a href="/postgresql-internals/">PostgreSQL Internals Deep Dive</a></li>
+          
+          
+          <li class="breadcrumb-item active" aria-current="page">Architecture</li>
+        </ol>
+      </nav>
+
+      <h1 id="chapter-0-architecture">Chapter 0: Architecture</h1>
+
+<blockquote>
+  <p><em>PostgreSQL is a multi-process, shared-memory relational database where every client connection gets its own Unix process, and all coordination happens through a carefully partitioned region of shared memory.</em></p>
+</blockquote>
+
+<h2 id="why-start-here">Why Start Here</h2>
+
+<p>Before tracing a single SQL statement through its lifecycle, you need a mental model of
+the machine that runs it. PostgreSQL’s architecture is shaped by a decision made in the
+early 1990s: use OS processes, not threads, for concurrency. Every design choice that
+follows — how memory is organized, how locks are managed, how crash recovery works —
+flows from that single constraint.</p>
+
+<p>This chapter builds that mental model in three layers. First, the <strong>process model</strong>:
+which processes exist, who spawns them, and how they communicate. Second, the <strong>memory
+layout</strong>: what lives in shared memory versus process-local memory, and how PostgreSQL’s
+memory context system prevents leaks without a garbage collector. Third, the <strong>query
+lifecycle</strong>: the complete path a SQL string travels from the network socket to the result
+rows sent back to the client.</p>
+
+<h2 id="chapter-map">Chapter Map</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>Topic</th>
+      <th>File</th>
+      <th>What You Will Learn</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><a href="process-model">Process Model</a></td>
+      <td><code class="language-plaintext highlighter-rouge">process-model.md</code></td>
+      <td>Postmaster, backend processes, auxiliary processes, background workers</td>
+    </tr>
+    <tr>
+      <td><a href="memory-layout">Memory Layout</a></td>
+      <td><code class="language-plaintext highlighter-rouge">memory-layout.md</code></td>
+      <td>Shared memory segments, local memory contexts, the <code class="language-plaintext highlighter-rouge">palloc</code>/<code class="language-plaintext highlighter-rouge">pfree</code> system</td>
+    </tr>
+    <tr>
+      <td><a href="query-lifecycle">Query Lifecycle</a></td>
+      <td><code class="language-plaintext highlighter-rouge">query-lifecycle.md</code></td>
+      <td>Parse, analyze, rewrite, plan, execute — the full pipeline</td>
+    </tr>
+  </tbody>
+</table>
+
+<h2 id="birds-eye-view">Bird’s-Eye View</h2>
+
+<pre><code class="language-mermaid">graph TB
+    Client["Client (libpq)"]
+    PM["Postmaster&lt;br/&gt;PID 1 of cluster"]
+    BE1["Backend 1"]
+    BE2["Backend 2"]
+    BEn["Backend N"]
+    SHM["Shared Memory&lt;br/&gt;(shared_buffers, WAL buffers,&lt;br/&gt;lock tables, proc array)"]
+    AUX["Auxiliary Processes&lt;br/&gt;(bgwriter, checkpointer,&lt;br/&gt;walwriter, autovacuum)"]
+    DISK["Data Directory&lt;br/&gt;(base/, pg_wal/, pg_xact/)"]
+
+    Client -- "1. connect (TCP/Unix)" --&gt; PM
+    PM -- "2. fork()" --&gt; BE1
+    PM -- "fork()" --&gt; BE2
+    PM -- "fork()" --&gt; BEn
+    PM -- "fork()" --&gt; AUX
+
+    BE1 &lt;--&gt; SHM
+    BE2 &lt;--&gt; SHM
+    BEn &lt;--&gt; SHM
+    AUX &lt;--&gt; SHM
+    SHM &lt;--&gt; DISK
+</code></pre>
+
+<h2 id="key-source-entry-points">Key Source Entry Points</h2>
+
+<p>These are the files you will encounter most often when reading PostgreSQL source code.
+Every topic page in this chapter references specific lines within them.</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>File</th>
+      <th>Role</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/postmaster/postmaster.c</code></td>
+      <td>Main loop of the postmaster; accepts connections and forks backends</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/tcop/postgres.c</code></td>
+      <td>The “traffic cop” — main loop of every backend process</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/utils/mmgr/mcxt.c</code></td>
+      <td>Memory context infrastructure (<code class="language-plaintext highlighter-rouge">palloc</code>, <code class="language-plaintext highlighter-rouge">pfree</code>, context tree)</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/nodes/memnodes.h</code></td>
+      <td><code class="language-plaintext highlighter-rouge">MemoryContextData</code> struct definition</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/libpq/libpq-be.h</code></td>
+      <td><code class="language-plaintext highlighter-rouge">Port</code> struct — per-connection state</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/storage/proc.h</code></td>
+      <td><code class="language-plaintext highlighter-rouge">PGPROC</code> struct — per-backend shared memory slot</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/storage/shmem.h</code></td>
+      <td>Shared memory allocator API</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/parser/parser.c</code></td>
+      <td>Entry point for the raw SQL parser</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/parser/analyze.c</code></td>
+      <td>Semantic analysis (parse analysis)</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/optimizer/plan/planner.c</code></td>
+      <td>Query planner / optimizer entry point</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/executor/execMain.c</code></td>
+      <td>Executor entry point</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/tcop/pquery.c</code></td>
+      <td>Portal-level query execution</td>
+    </tr>
+  </tbody>
+</table>
+
+<h2 id="how-the-pieces-fit-together">How the Pieces Fit Together</h2>
+
+<ol>
+  <li>
+    <p>The <strong>postmaster</strong> listens on a TCP port. When a client connects, it <code class="language-plaintext highlighter-rouge">fork()</code>s a new
+<strong>backend process</strong>. That backend inherits the postmaster’s address space, including
+pointers into <strong>shared memory</strong>.</p>
+  </li>
+  <li>
+    <p>The backend reads SQL from the client socket into a <strong>MessageContext</strong> (local memory),
+parses it, analyzes it, rewrites it, plans it, and executes it. Each phase allocates
+in short-lived memory contexts that are reset between queries.</p>
+  </li>
+  <li>
+    <p>During execution, the backend reads and writes <strong>shared buffers</strong> (the buffer pool in
+shared memory), acquires <strong>locks</strong> (also in shared memory), and writes <strong>WAL records</strong>
+to the WAL buffer. Auxiliary processes like the <strong>bgwriter</strong> and <strong>checkpointer</strong>
+flush dirty buffers to disk asynchronously.</p>
+  </li>
+  <li>
+    <p>When the client disconnects, the backend process exits. The postmaster detects this
+via <code class="language-plaintext highlighter-rouge">waitpid()</code> and reclaims the child’s <code class="language-plaintext highlighter-rouge">PMChild</code> slot.</p>
+  </li>
+</ol>
+
+<h2 id="connections-to-other-chapters">Connections to Other Chapters</h2>
+
+<ul>
+  <li><strong>Chapter 1 (Shared Buffers)</strong> — builds on the shared memory layout described here</li>
+  <li><strong>Chapter 2 (WAL)</strong> — the WAL buffer and walwriter process introduced here are
+explored in depth</li>
+  <li><strong>Chapter 3 (Transactions)</strong> — the <code class="language-plaintext highlighter-rouge">PGPROC</code> array and <code class="language-plaintext highlighter-rouge">xid</code>/<code class="language-plaintext highlighter-rouge">xmin</code> fields shown
+here are the foundation of MVCC visibility</li>
+  <li><strong>Chapter 4 (Query Planning)</strong> — the planner stage in the query lifecycle is expanded
+into a full chapter</li>
+</ul>
+
+
+      <hr>
+
+      <!-- Prev / Next / Up navigation -->
+      
+      
+      
+
+      <div class="clearfix" style="margin-top: 2rem;">
+        
+          
+          
+
+          
+
+          
+            
+            <a class="btn btn-primary float-right" href="/postgresql/00-architecture/memory-layout.html" title="Memory Layout">Next &rarr;</a>
+          
+        
+      </div>
+
+      
+      <div style="text-align: center; margin-top: 1rem;">
+        <a href="/postgresql-internals/">&uarr; Back to Table of Contents</a>
+      </div>
+      
+
+    </div>
+  </div>
+</div>
+
+
+  <!-- Footer -->
+
+<hr>
+
+<footer>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <ul class="list-inline text-center">
+          
+          <li class="list-inline-item">
+            <a href="mailto:amitava.dev@proton.me" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="far fa-envelope fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          
+          
+          <li class="list-inline-item">
+            <a href="https://www.linkedin.com/in/amitavaag" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-linkedin fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          <li class="list-inline-item">
+            <a href="https://github.com/ikouchiha47" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-github fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+        </ul>
+
+        <p class="copyright text-muted">
+          Build with: 
+          <a 
+            href="https://github.com/StartBootstrap/startbootstrap-clean-blog-jekyll"
+            class="text-gray"
+            target="_blank">startbootstrap-clean-blog-jekyll</a></p>
+      </div>
+    </div>
+  </div>
+</footer>
+
+
+  <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="/assets/vendor/blog/js/scripts.js"></script>
+
+<script src="/assets/scripts.js"></script>
+
+
+
+
+
+  <script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+
+    document.querySelectorAll('pre > code.language-mermaid').forEach((codeBlock) => {
+      codeBlock.parentElement.outerHTML = `<pre class="mermaid">${codeBlock.textContent}</pre>`;
+    });
+
+
+    mermaid.initialize({ startOnLoad: true, theme: 'forest' });
+</script>
+
+
+  
+
+</body>
+
+</html>

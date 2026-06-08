@@ -1,0 +1,371 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+  <title>
+    Three things that don&#39;t move /read past the NIC - iko&#39;s logs
+    
+  </title>
+
+  <meta name="description" content="">
+  <meta property="og:description" content="">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Three things that don&#39;t move /read past the NIC">
+  <meta property="og:url" content="https://ikouchiha47.github.io/millionrps/11-threads-gomaxprocs-pipelining.html">
+
+  
+
+  <link href='https://fonts.googleapis.com/css?family=Lora:400,700,400italic,700italic' rel='stylesheet' type='text/css'>
+  <link href='https://fonts.googleapis.com/css?family=Open+Sans:300italic,400italic,600italic,700italic,800italic,400,300,600,700,800' rel='stylesheet' type='text/css'>
+
+  <!-- <script src="https://use.fontawesome.com/releases/v5.15.3/js/all.js" crossorigin="anonymous"></script> -->
+  <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.15.4/css/all.css" integrity="sha384-DyZ88mC6Up2uqS4h/KRgHuoeGwBcD4Ng9SiP4dIRy0EXTlnuz47vAwmeGwVChigm" crossorigin="anonymous"/>
+
+  <link rel="stylesheet" href="/assets/main.css">
+  <link rel="canonical" href="https://ikouchiha47.github.io/millionrps/11-threads-gomaxprocs-pipelining.html">
+  <link rel="alternate" type="application/rss+xml" title="iko&#39;s logs" href="/feed.xml">
+
+  <meta name="google-site-verification" content="lWkg6gIxJgzEKX_5XnhcxCtPE9QknaimFWWos_dTvPM" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fira+Sans:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Inconsolata:wght@200..900&family=Jersey+25&family=Kanit:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Merriweather+Sans:ital,wght@0,300..800;1,300..800&family=Nanum+Gothic+Coding&family=Space+Grotesk:wght@300..700&family=Titillium+Web:ital,wght@0,200;0,300;0,400;0,600;0,700;0,900;1,200;1,300;1,400;1,600;1,700&display=swap" rel="stylesheet">
+
+</head>
+
+
+<body>
+
+  <!-- Navigation -->
+<nav class="navbar navbar-expand-lg navbar-light fixed-top" id="mainNav">
+  <div class="container">
+    <a class="navbar-brand" href="/">iko&#39;s logs</a>
+    <button class="navbar-toggler navbar-toggler-right" type="button" data-toggle="collapse" data-target="#navbarResponsive" aria-controls="navbarResponsive" aria-expanded="false" aria-label="Toggle navigation">
+      Menu
+      <i class="fa fa-bars"></i>
+    </button>
+    <div class="collapse navbar-collapse" id="navbarResponsive">
+      <ul class="navbar-nav ml-auto">
+        <li class="nav-item">
+          <a class="nav-link" href="/">Home</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/about">About</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/posts">Posts</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/contact">Contact</a>
+        </li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+
+  
+<header class="masthead">
+
+  <div class="overlay"></div>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <div class="post-heading">
+          <h1>Three things that don't move /read past the NIC</h1>
+          
+          <h2 class="subheading">Thread count is flat across 50× load. 32 workers tie 128. Pipelining does nothing. The NIC is the wall.</h2>
+          
+          <span class="meta">
+            June 11, 2026
+            
+            &mdash; <span class="journal-entry-status done">DONE</span>
+            
+          </span>
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="container space-grotesk">
+  <div class="row">
+    <div class="col-lg-8 col-md-10 mx-auto">
+
+      <!-- Breadcrumb -->
+      <nav aria-label="breadcrumb" style="margin-bottom: 1.5rem;">
+        <ol class="breadcrumb" style="background: transparent; padding: 0;">
+          <li class="breadcrumb-item"><a href="/millionrps/">Chasing 1 Million RPS</a></li>
+          <li class="breadcrumb-item active" aria-current="page">Three things that don't move /read past the NIC</li>
+        </ol>
+      </nav>
+
+      
+      <div style="margin-bottom: 1.5rem;">
+        
+        <span class="journal-tag">threads</span>
+        
+        <span class="journal-tag">netpoller</span>
+        
+        <span class="journal-tag">GOMAXPROCS</span>
+        
+        <span class="journal-tag">pipelining</span>
+        
+        <span class="journal-tag">NIC</span>
+        
+        <span class="journal-tag">bandwidth</span>
+        
+        <span class="journal-tag">c8i</span>
+        
+        <span class="journal-tag">c6in</span>
+        
+      </div>
+      
+
+      <h2 id="the-setup-for-all-three">the setup for all three</h2>
+
+<p><code class="language-plaintext highlighter-rouge">/read</code> returns a pre-serialized 4.5KB product. On c8i.32xlarge (128 cores, 50 Gbps) it peaks at 1.32M RPS. Check the bandwidth: <code class="language-plaintext highlighter-rouge">1.32M × 4.5KB = 5.94 GB/s</code>. The NIC ceiling is <code class="language-plaintext highlighter-rouge">50 Gbps = 6.25 GB/s</code>. We are at <strong>95% of line rate</strong> at the peak operating point.</p>
+
+<p>That number reframes everything. If the NIC is the wall, then anything that doesn’t add bandwidth can’t add RPS. Three plausible-sounding levers, measured against that wall.</p>
+
+<h2 id="1-thread-count-is-independent-of-connection-load">1. thread count is independent of connection load</h2>
+
+<p>Measured per-worker OS thread count (<code class="language-plaintext highlighter-rouge">nlwp</code>) during live benchmarks at increasing connection counts, c6in.8xlarge, 32 prefork workers:</p>
+
+<div class="language-bash highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="c"># during each benchmark point, on the server:</span>
+ps <span class="nt">-eo</span> nlwp,comm | <span class="nb">awk</span> <span class="s1">'/fiber_server/{sum+=$1;n++} END{printf "avg %.1f threads/worker\n",sum/n}'</span>
+</code></pre></div></div>
+
+<div class="bench-table-wrap">
+<table class="bench-table">
+  <thead>
+    <tr><th>connections</th><th>conn/worker</th><th>workers</th><th>threads/worker (avg)</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>100</td><td>~3</td><td>32</td><td>10.1</td></tr>
+    <tr><td>500</td><td>~16</td><td>32</td><td>10.1</td></tr>
+    <tr><td>1,000</td><td>~31</td><td>32</td><td>10.1</td></tr>
+    <tr><td>5,000</td><td>~156</td><td>32</td><td>10.1</td></tr>
+  </tbody>
+</table>
+</div>
+
+<p>3 connections per worker or 156 — the thread count does not move. A 50× change in load, flat at 10.1.</p>
+
+<p>Connections are goroutines, not threads. A goroutine waiting on network I/O is parked in the netpoller (epoll) and consumes zero threads — the runtime hands its OS thread back to run other work. One <code class="language-plaintext highlighter-rouge">epoll_wait</code> watches all 156 fds at once. A thread is only consumed by a goroutine actually executing or stuck in a blocking syscall right now.</p>
+
+<p>With <code class="language-plaintext highlighter-rouge">--pipelining 1</code>, each connection is idle almost the whole time — one request, wait for the round trip, repeat. Little’s Law on a worker at 5000c:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>~686k RPS / 32 workers           = 21,400 RPS/worker
+service time per request         ≈ 34µs  (85% CPU × 32 cores / 800k RPS)
+in-flight, actually on a thread  = 21,400 × 34µs = 0.73 requests
+</code></pre></div></div>
+
+<p>Less than one request per worker is on a thread at any instant. The other ~155 connections sit in epoll for free. Open ≠ active. That is why 3 and 156 connections give the identical thread count — the parked majority costs nothing.</p>
+
+<p>The 10 threads break down as ~1 running the handler, plus sysmon, GC workers, finalizer, and a few M’s lingering from bursts. Not connection-driven, not a tuning surface.</p>
+
+<h2 id="2-32-workers-tie-128-workers">2. 32 workers tie 128 workers</h2>
+
+<p><a href="../10-gomaxprocs-prefork/">Entry 10</a> established that fiber’s worker count equals <code class="language-plaintext highlighter-rouge">GOMAXPROCS</code>. So <code class="language-plaintext highlighter-rouge">GOMAXPROCS=32</code> on the 128-core c8i spawns 32 workers; the default spawns 128. Same hardware, same <code class="language-plaintext highlighter-rouge">/read</code>, 1000 connections:</p>
+
+<div class="bench-table-wrap">
+<table class="bench-table">
+  <thead>
+    <tr><th>config</th><th>workers</th><th>threads/worker</th><th>RPS (1000c)</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>GOMAXPROCS=128</td><td>128</td><td>~15</td><td>1,322,291</td></tr>
+    <tr><td>GOMAXPROCS=32</td><td>32</td><td>~11</td><td>1,322,240</td></tr>
+  </tbody>
+</table>
+</div>
+
+<p>Identical. 51 RPS apart on 1.32M — noise. 96 fewer workers, same throughput, because <code class="language-plaintext highlighter-rouge">/read</code> is NIC-bound. 32 workers already push 6.1 GB/s; the NIC has nothing left for the other 96 to do. They are idle capacity.</p>
+
+<p>This also kills the “thread count tracks GOMAXPROCS” idea from a hasty earlier read. Both configs run children at <code class="language-plaintext highlighter-rouge">GOMAXPROCS(1)</code> (fiber forces it — <a href="../10-gomaxprocs-prefork/">entry 10</a>). The ~15 vs ~11 difference is sampling noise on syscall-blocked M’s, not a GOMAXPROCS effect. The c6in value (~10) lands in the same band. Per-worker threads are the GOMAXPROCS=1 runtime floor on all three.</p>
+
+<h2 id="3-pipelining-does-nothing-for-read-everything-for-simple">3. pipelining does nothing for /read, everything for /simple</h2>
+
+<p><code class="language-plaintext highlighter-rouge">--pipelining N</code> sends N requests per connection without waiting between them, amortizing per-request packet and syscall overhead. c8i, 128 workers, 1000 connections:</p>
+
+<p><strong>/read (4.5KB):</strong></p>
+
+<div class="bench-table-wrap">
+<table class="bench-table">
+  <thead>
+    <tr><th>pipelining</th><th>RPS</th><th>throughput</th><th>NIC %</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>1</td><td>1,322,291</td><td>6.13 GB/s</td><td>98%</td></tr>
+    <tr><td>10</td><td>1,349,120</td><td>6.25 GB/s</td><td>100%</td></tr>
+    <tr><td>20</td><td>1,339,289</td><td>6.21 GB/s</td><td>99%</td></tr>
+    <tr><td>50</td><td>1,340,654</td><td>6.21 GB/s</td><td>99%</td></tr>
+  </tbody>
+</table>
+</div>
+
+<p>Flat. +2% from pipelining 1 to 50, noise. Pipelining reduces per-request packet overhead — but the wall here is bytes, not packets. At pipelining=1 the NIC is already at 98% of line rate. There is no bandwidth to amortize into. You cannot pipeline past the physical bit rate of the wire.</p>
+
+<p><strong>/simple (16B):</strong></p>
+
+<div class="bench-table-wrap">
+<table class="bench-table">
+  <thead>
+    <tr><th>pipelining</th><th>RPS</th><th>throughput</th><th>NIC %</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>1</td><td>4,401,493</td><td>0.55 GB/s</td><td>9%</td></tr>
+    <tr><td>10</td><td>14,898,653</td><td>1.85 GB/s</td><td>30%</td></tr>
+    <tr><td>20</td><td>16,133,324</td><td>2.00 GB/s</td><td>32%</td></tr>
+    <tr><td>50</td><td>16,947,473</td><td>2.10 GB/s</td><td>34%</td></tr>
+  </tbody>
+</table>
+</div>
+
+<p>3.8×. Same machine, same pipelining sweep, opposite result. <code class="language-plaintext highlighter-rouge">/simple</code> is 16 bytes — at 17M RPS the NIC is still only 34% used. Bandwidth is irrelevant; the ceiling is packet rate and syscall count. At pipelining=1 every request is its own packet and its own <code class="language-plaintext highlighter-rouge">read</code>/<code class="language-plaintext highlighter-rouge">write</code> pair. At pipelining=50, fifty 16-byte requests arrive in one TCP segment and the responses batch out together — the per-request syscall cost is amortized ~50×. RPS climbs until CPU or the client becomes the wall around 17M.</p>
+
+<h2 id="the-rule">the rule</h2>
+
+<p>Pipelining helps when you are packet-bound. It does nothing when you are bandwidth-bound. The crossover is payload size:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>/read   : 4.5KB × 1.32M RPS = 5.94 GB/s ≈ NIC ceiling  → bandwidth-bound → pipelining flat
+/simple : 16B   × 17M  RPS  = 2.1 GB/s  = 34% of NIC    → packet-bound    → pipelining 3.8×
+</code></pre></div></div>
+
+<div class="journal-callout finding">
+  <strong>Finding</strong>
+  /read on c8i.32xlarge is NIC-bandwidth-bound at 1.32M RPS (98% of 50 Gbps). Three independent levers confirm it: thread count is flat across 50× load (epoll multiplexes idle connections), 32 workers match 128 (no bandwidth left for extra workers), and pipelining 1→50 is flat (no bytes left to amortize). The same pipelining sweep on the 16-byte /simple endpoint goes 4.4M → 17M — proof that pipelining works, just not against a bandwidth wall.
+</div>
+
+<div class="journal-callout warning">
+  <strong>Why the early "18M RPS" numbers mean nothing for a real API</strong>
+  Entries 01-06 hit millions of RPS on /simple with pipelining=100. That is a 16-byte payload, packet-bound, with 50× syscall amortization. A real 4.5KB API response is bandwidth-bound and tops out at ~1.3M on this exact hardware no matter what you do with pipelining, workers, or GOMAXPROCS. The headline number is a function of payload size, not server capability.
+</div>
+
+<div class="journal-callout next">
+  <strong>What this closes</strong>
+  For a 4.5KB response, the 50 Gbps NIC is the ceiling and we are at 98% of it. To go higher you change the bytes on the wire (smaller payload, compression, HTTP/2 header compression) or add NICs (100 Gbps c6in.16xlarge, or multiple instances behind a load balancer). Tuning the server — threads, workers, GOMAXPROCS, pipelining, IRQ pinning — is finished. The wall is physics now, not software.
+</div>
+
+
+      <hr>
+
+      <!-- Prev / Next -->
+      
+      
+      
+
+      <div class="clearfix" style="margin-top: 2rem;">
+        
+          
+          
+
+          
+            
+            <a class="btn btn-primary float-left" href="/millionrps/10-gomaxprocs-prefork.html">&larr; GOMAXPROCS sets fiber's worker count, not the thread count</a>
+          
+
+          
+            
+            <a class="btn btn-primary float-right" href="/millionrps/12-gzip-bandwidth-wall.html">gzip moved the wall, and exposed a lie &rarr;</a>
+          
+        
+      </div>
+
+      <div style="text-align: center; margin-top: 1rem;">
+        <a href="/millionrps/">&uarr; Back to Journal</a>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+
+  <!-- Footer -->
+
+<hr>
+
+<footer>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <ul class="list-inline text-center">
+          
+          <li class="list-inline-item">
+            <a href="mailto:amitava.dev@proton.me" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="far fa-envelope fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          
+          
+          <li class="list-inline-item">
+            <a href="https://www.linkedin.com/in/amitavaag" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-linkedin fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          <li class="list-inline-item">
+            <a href="https://github.com/ikouchiha47" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-github fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+        </ul>
+
+        <p class="copyright text-muted">
+          Build with: 
+          <a 
+            href="https://github.com/StartBootstrap/startbootstrap-clean-blog-jekyll"
+            class="text-gray"
+            target="_blank">startbootstrap-clean-blog-jekyll</a></p>
+      </div>
+    </div>
+  </div>
+</footer>
+
+
+  <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="/assets/vendor/blog/js/scripts.js"></script>
+
+<script src="/assets/scripts.js"></script>
+
+
+
+
+
+  <script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+
+    document.querySelectorAll('pre > code.language-mermaid').forEach((codeBlock) => {
+      codeBlock.parentElement.outerHTML = `<pre class="mermaid">${codeBlock.textContent}</pre>`;
+    });
+
+
+    mermaid.initialize({ startOnLoad: true, theme: 'forest' });
+</script>
+
+
+  
+
+</body>
+
+</html>

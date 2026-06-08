@@ -1,0 +1,587 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+  <title>
+    Executor - iko&#39;s logs
+    
+  </title>
+
+  <meta name="description" content="">
+  <meta property="og:description" content="">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Executor">
+  <meta property="og:url" content="https://ikouchiha47.github.io/postgresql/08-executor/">
+
+  
+
+  <link href='https://fonts.googleapis.com/css?family=Lora:400,700,400italic,700italic' rel='stylesheet' type='text/css'>
+  <link href='https://fonts.googleapis.com/css?family=Open+Sans:300italic,400italic,600italic,700italic,800italic,400,300,600,700,800' rel='stylesheet' type='text/css'>
+
+  <!-- <script src="https://use.fontawesome.com/releases/v5.15.3/js/all.js" crossorigin="anonymous"></script> -->
+  <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.15.4/css/all.css" integrity="sha384-DyZ88mC6Up2uqS4h/KRgHuoeGwBcD4Ng9SiP4dIRy0EXTlnuz47vAwmeGwVChigm" crossorigin="anonymous"/>
+
+  <link rel="stylesheet" href="/assets/main.css">
+  <link rel="canonical" href="https://ikouchiha47.github.io/postgresql/08-executor/">
+  <link rel="alternate" type="application/rss+xml" title="iko&#39;s logs" href="/feed.xml">
+
+  <meta name="google-site-verification" content="lWkg6gIxJgzEKX_5XnhcxCtPE9QknaimFWWos_dTvPM" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fira+Sans:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Inconsolata:wght@200..900&family=Jersey+25&family=Kanit:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Merriweather+Sans:ital,wght@0,300..800;1,300..800&family=Nanum+Gothic+Coding&family=Space+Grotesk:wght@300..700&family=Titillium+Web:ital,wght@0,200;0,300;0,400;0,600;0,700;0,900;1,200;1,300;1,400;1,600;1,700&display=swap" rel="stylesheet">
+
+</head>
+
+
+<body>
+
+  <!-- Navigation -->
+<nav class="navbar navbar-expand-lg navbar-light fixed-top" id="mainNav">
+  <div class="container">
+    <a class="navbar-brand" href="/">iko&#39;s logs</a>
+    <button class="navbar-toggler navbar-toggler-right" type="button" data-toggle="collapse" data-target="#navbarResponsive" aria-controls="navbarResponsive" aria-expanded="false" aria-label="Toggle navigation">
+      Menu
+      <i class="fa fa-bars"></i>
+    </button>
+    <div class="collapse navbar-collapse" id="navbarResponsive">
+      <ul class="navbar-nav ml-auto">
+        <li class="nav-item">
+          <a class="nav-link" href="/">Home</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/about">About</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/posts">Posts</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/contact">Contact</a>
+        </li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+
+  <!-- Page Header -->
+
+<header class="masthead">
+
+  <div class="overlay"></div>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <div class="post-heading">
+          <h1>Executor</h1>
+          
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="container space-grotesk">
+  <div class="row">
+    <div class="col-lg-8 col-md-10 mx-auto">
+
+      <!-- Breadcrumb -->
+      <nav aria-label="breadcrumb" style="margin-bottom: 1.5rem;">
+        <ol class="breadcrumb" style="background: transparent; padding: 0;">
+          
+            <li class="breadcrumb-item"><a href="/postgresql-internals/">PostgreSQL Internals Deep Dive</a></li>
+          
+          
+          <li class="breadcrumb-item active" aria-current="page">Executor</li>
+        </ol>
+      </nav>
+
+      <h1 id="chapter-8-query-executor">Chapter 8: Query Executor</h1>
+
+<h2 id="summary">Summary</h2>
+
+<p>The query executor is the runtime engine of PostgreSQL. It receives a plan tree
+from the optimizer and produces result tuples by recursively pulling data through
+a pipeline of interconnected plan nodes. Every SQL statement – whether a simple
+<code class="language-plaintext highlighter-rouge">SELECT</code>, an <code class="language-plaintext highlighter-rouge">INSERT ... SELECT</code>, or a complex analytical query with window
+functions – ultimately runs through the same executor framework.</p>
+
+<hr />
+
+<h2 id="overview">Overview</h2>
+
+<p>After the planner builds an optimal <code class="language-plaintext highlighter-rouge">PlannedStmt</code>, the executor takes over.
+Execution proceeds in four phases, each exposed through a hook-able interface:</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>Phase</th>
+      <th>Entry Point</th>
+      <th>Purpose</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><strong>Start</strong></td>
+      <td><code class="language-plaintext highlighter-rouge">ExecutorStart()</code></td>
+      <td>Build the <code class="language-plaintext highlighter-rouge">PlanState</code> tree, open relations, allocate memory</td>
+    </tr>
+    <tr>
+      <td><strong>Run</strong></td>
+      <td><code class="language-plaintext highlighter-rouge">ExecutorRun()</code></td>
+      <td>Pull tuples through the plan tree via <code class="language-plaintext highlighter-rouge">ExecutePlan()</code></td>
+    </tr>
+    <tr>
+      <td><strong>Finish</strong></td>
+      <td><code class="language-plaintext highlighter-rouge">ExecutorFinish()</code></td>
+      <td>Fire AFTER triggers, run post-processing</td>
+    </tr>
+    <tr>
+      <td><strong>End</strong></td>
+      <td><code class="language-plaintext highlighter-rouge">ExecutorEnd()</code></td>
+      <td>Close relations, free resources</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>The heart of the executor is the <strong>Volcano iterator model</strong>: every plan node
+exposes an <code class="language-plaintext highlighter-rouge">ExecProcNode</code> function pointer that, when called, returns the next
+tuple (or NULL to signal completion). The root node calls its children, which
+call their children, forming a demand-driven data pipeline.</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>                  ExecutorRun
+                      |
+                 ExecutePlan
+                      |
+               ExecProcNode (root)
+                /           \
+         ExecProcNode     ExecProcNode
+          (scan)           (join)
+                           /     \
+                    ExecProcNode  ExecProcNode
+                     (scan)        (sort)
+</code></pre></div></div>
+
+<h3 id="key-concepts">Key Concepts</h3>
+
+<p><strong>Plan vs. PlanState.</strong> The planner produces immutable <code class="language-plaintext highlighter-rouge">Plan</code> nodes. During
+<code class="language-plaintext highlighter-rouge">ExecutorStart</code>, <code class="language-plaintext highlighter-rouge">ExecInitNode()</code> walks the plan tree and creates a parallel
+tree of mutable <code class="language-plaintext highlighter-rouge">PlanState</code> nodes that carry runtime state – open scan
+descriptors, hash tables, sort states, expression evaluation machinery.</p>
+
+<p><strong>TupleTableSlots.</strong> Tuples flow between nodes as <code class="language-plaintext highlighter-rouge">TupleTableSlot</code> references.
+Slots are a uniform abstraction over heap tuples, minimal tuples, and virtual
+tuples (column arrays). This avoids copying data unnecessarily.</p>
+
+<p><strong>Expression evaluation.</strong> Qual filters, projection lists, and computed columns
+are compiled into flat <code class="language-plaintext highlighter-rouge">ExprEvalStep</code> arrays during initialization and executed
+via a fast interpreted dispatch loop (or JIT-compiled native code).</p>
+
+<p><strong>Memory management.</strong> Each node typically has a per-tuple <code class="language-plaintext highlighter-rouge">ExprContext</code> whose
+memory is reset between tuples, plus query-lifespan memory for hash tables and
+sort state. This two-tier approach keeps memory usage predictable.</p>
+
+<hr />
+
+<h2 id="key-source-files">Key Source Files</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>File</th>
+      <th>Purpose</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/executor/execMain.c</code></td>
+      <td>Top-level executor interface: <code class="language-plaintext highlighter-rouge">ExecutorStart/Run/Finish/End</code></td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/executor/execProcnode.c</code></td>
+      <td><code class="language-plaintext highlighter-rouge">ExecInitNode()</code> / <code class="language-plaintext highlighter-rouge">ExecProcNode()</code> / <code class="language-plaintext highlighter-rouge">ExecEndNode()</code> dispatch</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/executor/execScan.c</code></td>
+      <td>Generic scan loop shared by all scan nodes</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/executor/execExpr.c</code></td>
+      <td>Expression “compilation” into <code class="language-plaintext highlighter-rouge">ExprEvalStep</code> arrays</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/executor/execExprInterp.c</code></td>
+      <td>Interpreted expression evaluation (switch/computed-goto)</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/executor/execTuples.c</code></td>
+      <td><code class="language-plaintext highlighter-rouge">TupleTableSlot</code> management</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/executor/execUtils.c</code></td>
+      <td><code class="language-plaintext highlighter-rouge">EState</code> and <code class="language-plaintext highlighter-rouge">ExprContext</code> setup utilities</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/executor/execParallel.c</code></td>
+      <td>Parallel query infrastructure</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/nodes/execnodes.h</code></td>
+      <td>All <code class="language-plaintext highlighter-rouge">PlanState</code> struct definitions</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/nodes/plannodes.h</code></td>
+      <td>All <code class="language-plaintext highlighter-rouge">Plan</code> struct definitions</td>
+    </tr>
+  </tbody>
+</table>
+
+<hr />
+
+<h2 id="key-data-structures">Key Data Structures</h2>
+
+<h3 id="estate-executor-state">EState (Executor State)</h3>
+
+<p>The global execution state for a query, shared across all plan nodes:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">typedef</span> <span class="k">struct</span> <span class="n">EState</span> <span class="p">{</span>
+    <span class="n">NodeTag</span>         <span class="n">type</span><span class="p">;</span>
+    <span class="n">ScanDirection</span>   <span class="n">es_direction</span><span class="p">;</span>       <span class="cm">/* forward or backward scan */</span>
+    <span class="n">Snapshot</span>        <span class="n">es_snapshot</span><span class="p">;</span>         <span class="cm">/* visibility snapshot */</span>
+    <span class="n">Snapshot</span>        <span class="n">es_crosscheck_snapshot</span><span class="p">;</span>
+    <span class="n">List</span>           <span class="o">*</span><span class="n">es_range_table</span><span class="p">;</span>     <span class="cm">/* RT entries */</span>
+    <span class="n">Index</span>           <span class="n">es_range_table_size</span><span class="p">;</span>
+    <span class="n">Relation</span>       <span class="o">*</span><span class="n">es_relations</span><span class="p">;</span>       <span class="cm">/* opened relations array */</span>
+    <span class="p">...</span>
+    <span class="n">PlannedStmt</span>    <span class="o">*</span><span class="n">es_plannedstmt</span><span class="p">;</span>     <span class="cm">/* the plan being executed */</span>
+    <span class="n">ParamListInfo</span>   <span class="n">es_param_list_info</span><span class="p">;</span> <span class="cm">/* external parameters */</span>
+    <span class="n">ParamExecData</span>  <span class="o">*</span><span class="n">es_param_exec_vals</span><span class="p">;</span> <span class="cm">/* internal parameters */</span>
+    <span class="n">MemoryContext</span>   <span class="n">es_query_cxt</span><span class="p">;</span>       <span class="cm">/* query-lifespan memory */</span>
+    <span class="n">List</span>           <span class="o">*</span><span class="n">es_tupleTable</span><span class="p">;</span>      <span class="cm">/* TupleTableSlots */</span>
+    <span class="p">...</span>
+<span class="p">}</span> <span class="n">EState</span><span class="p">;</span>
+</code></pre></div></div>
+
+<h3 id="planstate-base-for-all-node-states">PlanState (base for all node states)</h3>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">typedef</span> <span class="k">struct</span> <span class="n">PlanState</span> <span class="p">{</span>
+    <span class="n">NodeTag</span>         <span class="n">type</span><span class="p">;</span>
+    <span class="n">Plan</span>           <span class="o">*</span><span class="n">plan</span><span class="p">;</span>               <span class="cm">/* associated Plan node */</span>
+    <span class="n">EState</span>         <span class="o">*</span><span class="n">state</span><span class="p">;</span>              <span class="cm">/* link to per-query EState */</span>
+    <span class="n">ExecProcNodeMtd</span> <span class="n">ExecProcNode</span><span class="p">;</span>       <span class="cm">/* function to get next tuple */</span>
+    <span class="n">ExecProcNodeMtd</span> <span class="n">ExecProcNodeReal</span><span class="p">;</span>   <span class="cm">/* actual impl (ExecProcNode may wrap) */</span>
+    <span class="n">Instrumentation</span> <span class="o">*</span><span class="n">instrument</span><span class="p">;</span>        <span class="cm">/* optional EXPLAIN ANALYZE stats */</span>
+    <span class="n">ExprState</span>      <span class="o">*</span><span class="n">qual</span><span class="p">;</span>               <span class="cm">/* qual condition */</span>
+    <span class="k">struct</span> <span class="n">PlanState</span> <span class="o">*</span><span class="n">lefttree</span><span class="p">;</span>         <span class="cm">/* outer (left) input */</span>
+    <span class="k">struct</span> <span class="n">PlanState</span> <span class="o">*</span><span class="n">righttree</span><span class="p">;</span>        <span class="cm">/* inner (right) input */</span>
+    <span class="n">TupleTableSlot</span> <span class="o">*</span><span class="n">ps_ResultTupleSlot</span><span class="p">;</span> <span class="cm">/* result slot */</span>
+    <span class="n">ExprContext</span>    <span class="o">*</span><span class="n">ps_ExprContext</span><span class="p">;</span>      <span class="cm">/* expression eval context */</span>
+    <span class="p">...</span>
+<span class="p">}</span> <span class="n">PlanState</span><span class="p">;</span>
+</code></pre></div></div>
+
+<hr />
+
+<h2 id="how-it-works-end-to-end">How It Works: End-to-End</h2>
+
+<h3 id="1-executorstart--building-the-runtime-tree">1. ExecutorStart – Building the Runtime Tree</h3>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>ExecutorStart(queryDesc, eflags)
+  --&gt; InitPlan(queryDesc, eflags)
+        --&gt; ExecInitNode(plannedstmt-&gt;planTree, estate, eflags)
+              --&gt; switch (nodeTag(node))
+                    T_SeqScan  --&gt; ExecInitSeqScan()
+                    T_HashJoin --&gt; ExecInitHashJoin()
+                    T_Sort     --&gt; ExecInitSort()
+                    ...
+              --&gt; recursively init children
+              --&gt; set result-&gt;ExecProcNode = ExecXxx
+</code></pre></div></div>
+
+<p><code class="language-plaintext highlighter-rouge">ExecInitNode()</code> is a large switch statement in <code class="language-plaintext highlighter-rouge">execProcnode.c</code> that dispatches
+to the appropriate <code class="language-plaintext highlighter-rouge">ExecInitXxx()</code> function for each of the ~40 node types. Each
+init function:</p>
+
+<ol>
+  <li>Allocates its <code class="language-plaintext highlighter-rouge">XxxState</code> struct</li>
+  <li>Opens relations / indexes as needed</li>
+  <li>Initializes expressions via <code class="language-plaintext highlighter-rouge">ExecInitExpr()</code></li>
+  <li>Recursively calls <code class="language-plaintext highlighter-rouge">ExecInitNode()</code> on child plans</li>
+  <li>Sets the <code class="language-plaintext highlighter-rouge">ExecProcNode</code> function pointer</li>
+</ol>
+
+<h3 id="2-executorrun--the-tuple-pipeline">2. ExecutorRun – The Tuple Pipeline</h3>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>ExecutorRun(queryDesc, direction, count, execute_once)
+  --&gt; ExecutePlan(...)
+        loop:
+          slot = ExecProcNode(planstate)     /* pull one tuple */
+          if TupIsNull(slot) break
+          dest-&gt;receiveSlot(slot, dest)      /* send to client */
+          count--
+</code></pre></div></div>
+
+<p>The first call to <code class="language-plaintext highlighter-rouge">ExecProcNode()</code> goes through <code class="language-plaintext highlighter-rouge">ExecProcNodeFirst()</code>, which
+sets up instrumentation if needed, then replaces itself with the real function
+pointer for subsequent calls. This avoids a branch on every tuple.</p>
+
+<h3 id="3-executorfinish-and-executorend">3. ExecutorFinish and ExecutorEnd</h3>
+
+<p><code class="language-plaintext highlighter-rouge">ExecutorFinish()</code> fires deferred triggers and calls <code class="language-plaintext highlighter-rouge">ExecPostprocessPlan()</code>.
+<code class="language-plaintext highlighter-rouge">ExecutorEnd()</code> calls <code class="language-plaintext highlighter-rouge">ExecEndNode()</code> recursively, which closes scan descriptors,
+destroys hash tables, and frees sort state.</p>
+
+<hr />
+
+<h2 id="executor-node-taxonomy">Executor Node Taxonomy</h2>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>Plan Nodes (~40 types)
+ |
+ +-- Control Nodes
+ |     Result, ProjectSet, ModifyTable, Append, MergeAppend,
+ |     RecursiveUnion, BitmapAnd, BitmapOr
+ |
+ +-- Scan Nodes
+ |     SeqScan, IndexScan, IndexOnlyScan, BitmapIndexScan,
+ |     BitmapHeapScan, TidScan, TidRangeScan, SubqueryScan,
+ |     FunctionScan, ValuesScan, TableFuncScan, CteScan,
+ |     NamedTuplestoreScan, WorkTableScan, ForeignScan, CustomScan
+ |
+ +-- Join Nodes
+ |     NestLoop, MergeJoin, HashJoin
+ |
+ +-- Materialization Nodes
+ |     Material, Sort, IncrementalSort, Memoize, Group, Agg,
+ |     WindowAgg, Unique, Gather, GatherMerge, SetOp, LockRows,
+ |     Limit, Hash
+ |
+ +-- DML Nodes
+       ModifyTable (INSERT/UPDATE/DELETE/MERGE)
+</code></pre></div></div>
+
+<hr />
+
+<h2 id="diagram-executor-lifecycle">Diagram: Executor Lifecycle</h2>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>  Client sends query
+        |
+        v
+  Parse --&gt; Analyze --&gt; Rewrite --&gt; Plan
+                                     |
+                                     v
+                              PlannedStmt
+                                     |
+        +----------------------------+
+        |                            |
+        v                            v
+  ExecutorStart()              QueryDesc created
+        |                      (plan + snapshot +
+        v                       dest receiver)
+  ExecInitNode()
+  (build PlanState tree)
+        |
+        v
+  ExecutorRun()
+        |
+        v
+  ExecutePlan() loop  &lt;--------+
+        |                      |
+        v                      |
+  ExecProcNode(root)           |
+        |                      |
+   tuple returned?  --yes--&gt;  send to client
+        |                      |
+        no                     |
+        |                      |
+        v                      |
+  ExecutorFinish()             |
+  (after triggers)             |
+        |
+        v
+  ExecutorEnd()
+  (cleanup)
+</code></pre></div></div>
+
+<hr />
+
+<h2 id="connections">Connections</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>Topic</th>
+      <th>Link</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>How plans are produced</td>
+      <td><a href="../07-query-optimizer/">Query Optimizer</a></td>
+    </tr>
+    <tr>
+      <td>Volcano iterator model details</td>
+      <td><a href="volcano-model">Volcano Model</a></td>
+    </tr>
+    <tr>
+      <td>Scan node internals</td>
+      <td><a href="scan-nodes">Scan Nodes</a></td>
+    </tr>
+    <tr>
+      <td>Join algorithms</td>
+      <td><a href="join-nodes">Join Nodes</a></td>
+    </tr>
+    <tr>
+      <td>Aggregation and window functions</td>
+      <td><a href="aggregation">Aggregation</a></td>
+    </tr>
+    <tr>
+      <td>Sorting and materialization</td>
+      <td><a href="sort-and-materialize">Sort and Materialize</a></td>
+    </tr>
+    <tr>
+      <td>Parallel query execution</td>
+      <td><a href="parallel-query">Parallel Query</a></td>
+    </tr>
+    <tr>
+      <td>Expression compilation and JIT</td>
+      <td><a href="expression-eval">Expression Evaluation</a></td>
+    </tr>
+    <tr>
+      <td>Buffer and storage layer</td>
+      <td><a href="../01-storage/">Storage Engine</a></td>
+    </tr>
+    <tr>
+      <td>Transaction visibility (snapshots)</td>
+      <td><a href="../03-transactions/">Transactions</a></td>
+    </tr>
+    <tr>
+      <td>Memory allocation contexts</td>
+      <td><a href="../10-memory/">Memory Management</a></td>
+    </tr>
+  </tbody>
+</table>
+
+
+      <hr>
+
+      <!-- Prev / Next / Up navigation -->
+      
+      
+      
+
+      <div class="clearfix" style="margin-top: 2rem;">
+        
+          
+          
+
+          
+            
+            <a class="btn btn-primary float-left" href="/postgresql/07-query-optimizer/preprocessing.html" title="Preprocessing">&larr; Previous</a>
+          
+
+          
+            
+            <a class="btn btn-primary float-right" href="/postgresql/08-executor/aggregation.html" title="Aggregation">Next &rarr;</a>
+          
+        
+      </div>
+
+      
+      <div style="text-align: center; margin-top: 1rem;">
+        <a href="/postgresql-internals/">&uarr; Back to Table of Contents</a>
+      </div>
+      
+
+    </div>
+  </div>
+</div>
+
+
+  <!-- Footer -->
+
+<hr>
+
+<footer>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <ul class="list-inline text-center">
+          
+          <li class="list-inline-item">
+            <a href="mailto:amitava.dev@proton.me" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="far fa-envelope fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          
+          
+          <li class="list-inline-item">
+            <a href="https://www.linkedin.com/in/amitavaag" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-linkedin fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          <li class="list-inline-item">
+            <a href="https://github.com/ikouchiha47" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-github fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+        </ul>
+
+        <p class="copyright text-muted">
+          Build with: 
+          <a 
+            href="https://github.com/StartBootstrap/startbootstrap-clean-blog-jekyll"
+            class="text-gray"
+            target="_blank">startbootstrap-clean-blog-jekyll</a></p>
+      </div>
+    </div>
+  </div>
+</footer>
+
+
+  <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="/assets/vendor/blog/js/scripts.js"></script>
+
+<script src="/assets/scripts.js"></script>
+
+
+
+
+
+  <script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+
+    document.querySelectorAll('pre > code.language-mermaid').forEach((codeBlock) => {
+      codeBlock.parentElement.outerHTML = `<pre class="mermaid">${codeBlock.textContent}</pre>`;
+    });
+
+
+    mermaid.initialize({ startOnLoad: true, theme: 'forest' });
+</script>
+
+
+  
+
+</body>
+
+</html>

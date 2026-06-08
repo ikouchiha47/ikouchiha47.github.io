@@ -1,0 +1,712 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+  <title>
+    Sort and Materialize - iko&#39;s logs
+    
+  </title>
+
+  <meta name="description" content="">
+  <meta property="og:description" content="">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Sort and Materialize">
+  <meta property="og:url" content="https://ikouchiha47.github.io/postgresql/08-executor/sort-and-materialize.html">
+
+  
+
+  <link href='https://fonts.googleapis.com/css?family=Lora:400,700,400italic,700italic' rel='stylesheet' type='text/css'>
+  <link href='https://fonts.googleapis.com/css?family=Open+Sans:300italic,400italic,600italic,700italic,800italic,400,300,600,700,800' rel='stylesheet' type='text/css'>
+
+  <!-- <script src="https://use.fontawesome.com/releases/v5.15.3/js/all.js" crossorigin="anonymous"></script> -->
+  <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.15.4/css/all.css" integrity="sha384-DyZ88mC6Up2uqS4h/KRgHuoeGwBcD4Ng9SiP4dIRy0EXTlnuz47vAwmeGwVChigm" crossorigin="anonymous"/>
+
+  <link rel="stylesheet" href="/assets/main.css">
+  <link rel="canonical" href="https://ikouchiha47.github.io/postgresql/08-executor/sort-and-materialize.html">
+  <link rel="alternate" type="application/rss+xml" title="iko&#39;s logs" href="/feed.xml">
+
+  <meta name="google-site-verification" content="lWkg6gIxJgzEKX_5XnhcxCtPE9QknaimFWWos_dTvPM" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fira+Sans:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Inconsolata:wght@200..900&family=Jersey+25&family=Kanit:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Merriweather+Sans:ital,wght@0,300..800;1,300..800&family=Nanum+Gothic+Coding&family=Space+Grotesk:wght@300..700&family=Titillium+Web:ital,wght@0,200;0,300;0,400;0,600;0,700;0,900;1,200;1,300;1,400;1,600;1,700&display=swap" rel="stylesheet">
+
+</head>
+
+
+<body>
+
+  <!-- Navigation -->
+<nav class="navbar navbar-expand-lg navbar-light fixed-top" id="mainNav">
+  <div class="container">
+    <a class="navbar-brand" href="/">iko&#39;s logs</a>
+    <button class="navbar-toggler navbar-toggler-right" type="button" data-toggle="collapse" data-target="#navbarResponsive" aria-controls="navbarResponsive" aria-expanded="false" aria-label="Toggle navigation">
+      Menu
+      <i class="fa fa-bars"></i>
+    </button>
+    <div class="collapse navbar-collapse" id="navbarResponsive">
+      <ul class="navbar-nav ml-auto">
+        <li class="nav-item">
+          <a class="nav-link" href="/">Home</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/about">About</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/posts">Posts</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/contact">Contact</a>
+        </li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+
+  <!-- Page Header -->
+
+<header class="masthead">
+
+  <div class="overlay"></div>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <div class="post-heading">
+          <h1>Sort and Materialize</h1>
+          
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="container space-grotesk">
+  <div class="row">
+    <div class="col-lg-8 col-md-10 mx-auto">
+
+      <!-- Breadcrumb -->
+      <nav aria-label="breadcrumb" style="margin-bottom: 1.5rem;">
+        <ol class="breadcrumb" style="background: transparent; padding: 0;">
+          
+            <li class="breadcrumb-item"><a href="/postgresql-internals/">PostgreSQL Internals Deep Dive</a></li>
+          
+          
+            
+              <li class="breadcrumb-item"><a href="/postgresql/08-executor/">Executor</a></li>
+            
+          
+          <li class="breadcrumb-item active" aria-current="page">Sort and Materialize</li>
+        </ol>
+      </nav>
+
+      <h1 id="sort-and-materialize">Sort and Materialize</h1>
+
+<h2 id="summary">Summary</h2>
+
+<p>Sorting and materialization are the key pipeline-breaking operations in the
+executor. The <strong>Sort</strong> node uses the <code class="language-plaintext highlighter-rouge">tuplesort</code> infrastructure to perform
+in-memory quicksort for small datasets and external balanced k-way merge sort
+for large ones, with I/O managed by the <code class="language-plaintext highlighter-rouge">logtape</code> module. The <strong>Material</strong> node
+buffers all input tuples for repeated access. <strong>IncrementalSort</strong> exploits
+partially pre-sorted input. <strong>Memoize</strong> caches results of parameterized scans
+using an LRU hash table, avoiding redundant rescans when the same parameter
+values recur.</p>
+
+<hr />
+
+<h2 id="overview">Overview</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>Node</th>
+      <th>Purpose</th>
+      <th>Blocking?</th>
+      <th>Memory Behavior</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><strong>Sort</strong></td>
+      <td>Sort all input tuples by specified keys</td>
+      <td>Yes</td>
+      <td>In-memory up to <code class="language-plaintext highlighter-rouge">work_mem</code>, then external sort</td>
+    </tr>
+    <tr>
+      <td><strong>IncrementalSort</strong></td>
+      <td>Sort when leading keys are already ordered</td>
+      <td>Partially</td>
+      <td>Sorts groups of presorted rows</td>
+    </tr>
+    <tr>
+      <td><strong>Material</strong></td>
+      <td>Buffer all input for repeated reads</td>
+      <td>Yes</td>
+      <td>Spills to tuplestore on disk if needed</td>
+    </tr>
+    <tr>
+      <td><strong>Memoize</strong></td>
+      <td>Cache parameterized subplan results (LRU)</td>
+      <td>No (per lookup)</td>
+      <td>Bounded by <code class="language-plaintext highlighter-rouge">work_mem</code>, LRU eviction</td>
+    </tr>
+  </tbody>
+</table>
+
+<hr />
+
+<h2 id="key-source-files">Key Source Files</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>File</th>
+      <th>Purpose</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/executor/nodeSort.c</code></td>
+      <td>Sort executor node</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/executor/nodeIncrementalSort.c</code></td>
+      <td>Incremental sort node</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/executor/nodeMaterial.c</code></td>
+      <td>Materialize node</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/executor/nodeMemoize.c</code></td>
+      <td>Memoize (result caching) node</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/utils/sort/tuplesort.c</code></td>
+      <td>Core sorting engine</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/utils/sort/tuplesortvariants.c</code></td>
+      <td>Sort specializations (heap, datum, etc.)</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/utils/sort/logtape.c</code></td>
+      <td>Logical tape I/O for external sort</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/utils/sort/tuplestore.c</code></td>
+      <td>General-purpose tuple buffer</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/utils/tuplesort.h</code></td>
+      <td><code class="language-plaintext highlighter-rouge">Tuplesortstate</code> and public API</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/utils/tuplestore.h</code></td>
+      <td><code class="language-plaintext highlighter-rouge">Tuplestorestate</code> and public API</td>
+    </tr>
+  </tbody>
+</table>
+
+<hr />
+
+<h2 id="how-it-works">How It Works</h2>
+
+<h3 id="sort-node">Sort Node</h3>
+
+<p>The Sort node operates in two phases:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>Phase 1 (on first ExecProcNode call):
+  Read ALL tuples from outer plan
+  Pass each to tuplesort_puttupleslot()
+  Call tuplesort_performsort()
+
+Phase 2 (on subsequent calls):
+  Call tuplesort_gettupleslot() to return sorted tuples one at a time
+</code></pre></div></div>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">static</span> <span class="n">TupleTableSlot</span> <span class="o">*</span>
+<span class="nf">ExecSort</span><span class="p">(</span><span class="n">PlanState</span> <span class="o">*</span><span class="n">pstate</span><span class="p">)</span>
+<span class="p">{</span>
+    <span class="n">SortState</span> <span class="o">*</span><span class="n">node</span> <span class="o">=</span> <span class="n">castNode</span><span class="p">(</span><span class="n">SortState</span><span class="p">,</span> <span class="n">pstate</span><span class="p">);</span>
+
+    <span class="k">if</span> <span class="p">(</span><span class="o">!</span><span class="n">node</span><span class="o">-&gt;</span><span class="n">sort_Done</span><span class="p">)</span>
+    <span class="p">{</span>
+        <span class="cm">/* Phase 1: consume all input */</span>
+        <span class="n">tuplesortstate</span> <span class="o">=</span> <span class="n">tuplesort_begin_heap</span><span class="p">(...,</span> <span class="n">work_mem</span><span class="p">,</span> <span class="p">...);</span>
+
+        <span class="k">for</span> <span class="p">(;;)</span>
+        <span class="p">{</span>
+            <span class="n">slot</span> <span class="o">=</span> <span class="n">ExecProcNode</span><span class="p">(</span><span class="n">outerPlanState</span><span class="p">(</span><span class="n">node</span><span class="p">));</span>
+            <span class="k">if</span> <span class="p">(</span><span class="n">TupIsNull</span><span class="p">(</span><span class="n">slot</span><span class="p">))</span>
+                <span class="k">break</span><span class="p">;</span>
+            <span class="n">tuplesort_puttupleslot</span><span class="p">(</span><span class="n">tuplesortstate</span><span class="p">,</span> <span class="n">slot</span><span class="p">);</span>
+        <span class="p">}</span>
+
+        <span class="n">tuplesort_performsort</span><span class="p">(</span><span class="n">tuplesortstate</span><span class="p">);</span>
+        <span class="n">node</span><span class="o">-&gt;</span><span class="n">sort_Done</span> <span class="o">=</span> <span class="nb">true</span><span class="p">;</span>
+    <span class="p">}</span>
+
+    <span class="cm">/* Phase 2: return next sorted tuple */</span>
+    <span class="k">if</span> <span class="p">(</span><span class="n">tuplesort_gettupleslot</span><span class="p">(</span><span class="n">tuplesortstate</span><span class="p">,</span> <span class="n">forward</span><span class="p">,</span> <span class="nb">false</span><span class="p">,</span> <span class="n">slot</span><span class="p">,</span> <span class="nb">NULL</span><span class="p">))</span>
+        <span class="k">return</span> <span class="n">slot</span><span class="p">;</span>
+    <span class="k">return</span> <span class="nb">NULL</span><span class="p">;</span>
+<span class="p">}</span>
+</code></pre></div></div>
+
+<p><strong>Datum sort optimization.</strong> When the sort result has a single column,
+PostgreSQL uses a Datum-only sort path which avoids tuple overhead and is
+significantly faster for pass-by-value types.</p>
+
+<h3 id="tuplesort-the-sorting-engine">tuplesort: The Sorting Engine</h3>
+
+<p><code class="language-plaintext highlighter-rouge">tuplesort.c</code> implements a sophisticated sorting engine that adapts to data
+size:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>                   Input tuples
+                       |
+              fits in work_mem?
+              /               \
+           yes                 no
+            |                   |
+    in-memory quicksort    external sort
+    (or radix sort for     (multiple phases)
+     pass-by-value types)
+            |                   |
+    single sorted array    sorted runs on "tapes"
+            |                   |
+            +--------+----------+
+                     |
+              tuplesort_gettupleslot()
+              returns tuples in order
+</code></pre></div></div>
+
+<h4 id="in-memory-sort">In-Memory Sort</h4>
+
+<p>When all tuples fit within <code class="language-plaintext highlighter-rouge">work_mem</code>:</p>
+
+<ol>
+  <li>Tuples accumulate in a growable array (<code class="language-plaintext highlighter-rouge">memtuples</code>)</li>
+  <li>On <code class="language-plaintext highlighter-rouge">performsort</code>, quicksort (or radix sort) is applied</li>
+  <li>Tuples are returned by scanning the sorted array</li>
+</ol>
+
+<p>PostgreSQL uses a comparison-based <code class="language-plaintext highlighter-rouge">qsort_ssup</code> (with SortSupport for
+type-specific optimizations like abbreviated keys) or a radix sort for
+integer/float types.</p>
+
+<p><strong>Abbreviated keys.</strong> The SortSupport mechanism can compute a fixed-size
+“abbreviated” representation of the first sort key that fits in a Datum. This
+allows most comparisons to be resolved without touching the full tuple,
+dramatically improving cache locality:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">typedef</span> <span class="k">struct</span> <span class="n">SortSupportData</span> <span class="p">{</span>
+    <span class="n">Oid</span>             <span class="n">ssup_ctype</span><span class="p">;</span>
+    <span class="n">bool</span>            <span class="n">ssup_nulls_first</span><span class="p">;</span>
+    <span class="cm">/* Abbreviated key support */</span>
+    <span class="n">Datum</span>         <span class="p">(</span><span class="o">*</span><span class="n">abbrev_converter</span><span class="p">)(</span><span class="n">Datum</span> <span class="n">original</span><span class="p">,</span> <span class="n">SortSupport</span> <span class="n">ssup</span><span class="p">);</span>
+    <span class="kt">int</span>           <span class="p">(</span><span class="o">*</span><span class="n">abbrev_comparator</span><span class="p">)(</span><span class="n">Datum</span> <span class="n">a</span><span class="p">,</span> <span class="n">Datum</span> <span class="n">b</span><span class="p">,</span> <span class="n">SortSupport</span> <span class="n">ssup</span><span class="p">);</span>
+    <span class="n">bool</span>          <span class="p">(</span><span class="o">*</span><span class="n">abbrev_abort</span><span class="p">)(</span><span class="kt">int</span> <span class="n">memtupcount</span><span class="p">,</span> <span class="n">SortSupport</span> <span class="n">ssup</span><span class="p">);</span>
+    <span class="cm">/* Full key comparator */</span>
+    <span class="kt">int</span>           <span class="p">(</span><span class="o">*</span><span class="n">comparator</span><span class="p">)(</span><span class="n">Datum</span> <span class="n">a</span><span class="p">,</span> <span class="n">Datum</span> <span class="n">b</span><span class="p">,</span> <span class="n">SortSupport</span> <span class="n">ssup</span><span class="p">);</span>
+    <span class="p">...</span>
+<span class="p">}</span> <span class="n">SortSupportData</span><span class="p">;</span>
+</code></pre></div></div>
+
+<h4 id="external-sort">External Sort</h4>
+
+<p>When tuples exceed <code class="language-plaintext highlighter-rouge">work_mem</code>:</p>
+
+<ol>
+  <li><strong>Run generation.</strong> Fill memory with tuples, quicksort them, write the
+sorted run to a logical tape. Repeat until all input is consumed.</li>
+  <li><strong>Merge.</strong> Perform a balanced k-way merge of all runs.</li>
+</ol>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>Run generation:
+  Fill memory --&gt; sort --&gt; write to tape 0
+  Fill memory --&gt; sort --&gt; write to tape 1
+  Fill memory --&gt; sort --&gt; write to tape 2
+  ...
+
+k-way merge:
+  Tape 0: [1, 5, 9, ...]
+  Tape 1: [2, 4, 8, ...]     --&gt; merge heap --&gt; output tape
+  Tape 2: [3, 6, 7, ...]
+
+  If runs &gt; tapes: multi-pass merge
+  Pass 1: merge runs into fewer, longer runs
+  Pass 2: merge again until single output
+</code></pre></div></div>
+
+<p>The number of tapes is determined by <code class="language-plaintext highlighter-rouge">work_mem / TAPE_BUFFER_OVERHEAD</code>, ensuring
+each tape has enough read-ahead buffer to maintain sequential I/O. Since
+PostgreSQL 15, a balanced merge is used instead of the older polyphase merge.</p>
+
+<h3 id="logtape-logical-tape-io">logtape: Logical Tape I/O</h3>
+
+<p>The <code class="language-plaintext highlighter-rouge">logtape</code> module provides an abstraction of multiple sequential-access
+“tapes” backed by a single temporary file. It handles:</p>
+
+<ul>
+  <li><strong>Block recycling.</strong> As soon as a block is read from a tape, its disk space
+can be reused by another tape, minimizing temp file size.</li>
+  <li><strong>Read-ahead buffering.</strong> Each tape pre-reads <code class="language-plaintext highlighter-rouge">work_mem / num_tapes</code> bytes
+to maintain sequential access patterns.</li>
+  <li><strong>Freeze.</strong> A tape can be “frozen” to allow random access (needed when the
+caller requests sorted output with mark/restore capability).</li>
+</ul>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="cm">/* Logical tape abstraction */</span>
+<span class="k">typedef</span> <span class="k">struct</span> <span class="n">LogicalTapeSet</span> <span class="p">{</span>
+    <span class="n">BufFile</span>    <span class="o">*</span><span class="n">pfile</span><span class="p">;</span>          <span class="cm">/* underlying temp file */</span>
+    <span class="kt">int</span>         <span class="n">nBlocksWritten</span><span class="p">;</span>
+    <span class="cm">/* Free block tracking */</span>
+    <span class="kt">long</span>       <span class="o">*</span><span class="n">freeBlocks</span><span class="p">;</span>
+    <span class="kt">int</span>         <span class="n">nFreeBlocks</span><span class="p">;</span>
+    <span class="p">...</span>
+<span class="p">}</span> <span class="n">LogicalTapeSet</span><span class="p">;</span>
+
+<span class="k">typedef</span> <span class="k">struct</span> <span class="n">LogicalTape</span> <span class="p">{</span>
+    <span class="n">LogicalTapeSet</span> <span class="o">*</span><span class="n">tapeSet</span><span class="p">;</span>
+    <span class="n">bool</span>            <span class="n">writing</span><span class="p">;</span>    <span class="cm">/* currently writing or reading? */</span>
+    <span class="n">bool</span>            <span class="n">frozen</span><span class="p">;</span>     <span class="cm">/* frozen for random access? */</span>
+    <span class="kt">long</span>            <span class="n">firstBlockNumber</span><span class="p">;</span>
+    <span class="cm">/* Read buffer */</span>
+    <span class="kt">char</span>           <span class="o">*</span><span class="n">buffer</span><span class="p">;</span>
+    <span class="kt">int</span>             <span class="n">buffer_size</span><span class="p">;</span>
+    <span class="kt">int</span>             <span class="n">pos</span><span class="p">;</span>        <span class="cm">/* position in buffer */</span>
+    <span class="kt">int</span>             <span class="n">nbytes</span><span class="p">;</span>     <span class="cm">/* valid bytes in buffer */</span>
+    <span class="p">...</span>
+<span class="p">}</span> <span class="n">LogicalTape</span><span class="p">;</span>
+</code></pre></div></div>
+
+<h3 id="incrementalsort">IncrementalSort</h3>
+
+<p>When input is already sorted by a prefix of the required sort keys,
+IncrementalSort avoids sorting the entire dataset. It groups consecutive tuples
+that share the same presorted key prefix and sorts only within each group:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>Required sort: (a, b, c)
+Input sorted by: (a)
+
+Group 1 (a=1): sort by (b, c)  --&gt; emit sorted group
+Group 2 (a=2): sort by (b, c)  --&gt; emit sorted group
+Group 3 (a=3): sort by (b, c)  --&gt; emit sorted group
+</code></pre></div></div>
+
+<p>This is particularly effective with LIMIT queries, where only the first few
+groups may need to be sorted before enough result tuples are produced.</p>
+
+<h3 id="material-node">Material Node</h3>
+
+<p>Buffers all input tuples in a <code class="language-plaintext highlighter-rouge">Tuplestorestate</code> for repeated access:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">static</span> <span class="n">TupleTableSlot</span> <span class="o">*</span>
+<span class="nf">ExecMaterial</span><span class="p">(</span><span class="n">PlanState</span> <span class="o">*</span><span class="n">pstate</span><span class="p">)</span>
+<span class="p">{</span>
+    <span class="n">MaterialState</span> <span class="o">*</span><span class="n">node</span> <span class="o">=</span> <span class="n">castNode</span><span class="p">(</span><span class="n">MaterialState</span><span class="p">,</span> <span class="n">pstate</span><span class="p">);</span>
+
+    <span class="k">if</span> <span class="p">(</span><span class="o">!</span><span class="n">node</span><span class="o">-&gt;</span><span class="n">eof_underlying</span><span class="p">)</span>
+    <span class="p">{</span>
+        <span class="cm">/* Still reading from child */</span>
+        <span class="n">slot</span> <span class="o">=</span> <span class="n">ExecProcNode</span><span class="p">(</span><span class="n">outerPlanState</span><span class="p">(</span><span class="n">node</span><span class="p">));</span>
+        <span class="k">if</span> <span class="p">(</span><span class="o">!</span><span class="n">TupIsNull</span><span class="p">(</span><span class="n">slot</span><span class="p">))</span>
+        <span class="p">{</span>
+            <span class="n">tuplestore_puttupleslot</span><span class="p">(</span><span class="n">node</span><span class="o">-&gt;</span><span class="n">tuplestorestate</span><span class="p">,</span> <span class="n">slot</span><span class="p">);</span>
+            <span class="k">return</span> <span class="n">slot</span><span class="p">;</span>
+        <span class="p">}</span>
+        <span class="n">node</span><span class="o">-&gt;</span><span class="n">eof_underlying</span> <span class="o">=</span> <span class="nb">true</span><span class="p">;</span>
+    <span class="p">}</span>
+
+    <span class="cm">/* Reading from materialized store */</span>
+    <span class="k">if</span> <span class="p">(</span><span class="n">tuplestore_gettupleslot</span><span class="p">(</span><span class="n">node</span><span class="o">-&gt;</span><span class="n">tuplestorestate</span><span class="p">,</span> <span class="n">forward</span><span class="p">,</span> <span class="nb">false</span><span class="p">,</span> <span class="n">slot</span><span class="p">))</span>
+        <span class="k">return</span> <span class="n">slot</span><span class="p">;</span>
+    <span class="k">return</span> <span class="nb">NULL</span><span class="p">;</span>
+<span class="p">}</span>
+</code></pre></div></div>
+
+<p>The <code class="language-plaintext highlighter-rouge">tuplestore</code> starts in memory and transparently spills to a temp file when
+it exceeds <code class="language-plaintext highlighter-rouge">work_mem</code>. It supports multiple read pointers for concurrent
+access (used by window functions and CTEs).</p>
+
+<h3 id="memoize-node">Memoize Node</h3>
+
+<p>Caches results of parameterized subplans using a hash table with LRU eviction:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>ExecMemoize:
+  |
+  +-- hash(current_parameters)
+  |
+  +-- cache lookup
+  |     |
+  |     +-- HIT: return cached tuples one at a time
+  |     |
+  |     +-- MISS:
+  |           +-- evict LRU entry if cache full
+  |           +-- execute subplan, cache results
+  |           +-- return first tuple
+  |
+  +-- on rescan: try cache again with new parameters
+</code></pre></div></div>
+
+<p>The cache uses a doubly-linked list for LRU tracking. Accessed entries are moved
+to the tail; eviction removes from the head. The <code class="language-plaintext highlighter-rouge">singlerow</code> optimization
+marks cache entries as complete after one tuple, enabling early exit for
+unique joins.</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>State machine:
+  MEMO_CACHE_LOOKUP          -- try cache
+  MEMO_CACHE_FETCH_NEXT_TUPLE -- return next cached tuple
+  MEMO_FILLING_CACHE         -- populating from subplan
+  MEMO_CACHE_BYPASS_MODE     -- entry too large, pass through
+  MEMO_END                   -- done
+</code></pre></div></div>
+
+<hr />
+
+<h2 id="key-data-structures">Key Data Structures</h2>
+
+<h3 id="tuplesortstate">Tuplesortstate</h3>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">typedef</span> <span class="k">struct</span> <span class="n">Tuplesortstate</span> <span class="p">{</span>
+    <span class="n">TupSortStatus</span>   <span class="n">status</span><span class="p">;</span>             <span class="cm">/* INITIAL, BOUNDED, BUILDRUNS, ... */</span>
+    <span class="n">bool</span>            <span class="n">bounded</span><span class="p">;</span>            <span class="cm">/* using top-N heapsort? */</span>
+    <span class="n">int64</span>           <span class="n">bound</span><span class="p">;</span>              <span class="cm">/* N for top-N */</span>
+    <span class="n">int64</span>           <span class="n">availMem</span><span class="p">;</span>           <span class="cm">/* remaining memory budget */</span>
+    <span class="n">int64</span>           <span class="n">allowedMem</span><span class="p">;</span>         <span class="cm">/* total work_mem */</span>
+
+    <span class="cm">/* In-memory sort */</span>
+    <span class="n">SortTuple</span>      <span class="o">*</span><span class="n">memtuples</span><span class="p">;</span>          <span class="cm">/* array of tuples */</span>
+    <span class="kt">int</span>             <span class="n">memtupcount</span><span class="p">;</span>
+    <span class="kt">int</span>             <span class="n">memtupsize</span><span class="p">;</span>         <span class="cm">/* allocated array length */</span>
+
+    <span class="cm">/* External sort */</span>
+    <span class="n">LogicalTapeSet</span> <span class="o">*</span><span class="n">tapeset</span><span class="p">;</span>
+    <span class="kt">int</span>             <span class="n">maxTapes</span><span class="p">;</span>
+    <span class="kt">int</span>             <span class="n">nRuns</span><span class="p">;</span>              <span class="cm">/* number of sorted runs */</span>
+    <span class="n">SortTuple</span>      <span class="o">*</span><span class="n">mergetuples</span><span class="p">;</span>        <span class="cm">/* merge heap */</span>
+    <span class="p">...</span>
+<span class="p">}</span> <span class="n">Tuplesortstate</span><span class="p">;</span>
+</code></pre></div></div>
+
+<h3 id="sortstate">SortState</h3>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">typedef</span> <span class="k">struct</span> <span class="n">SortState</span> <span class="p">{</span>
+    <span class="n">ScanState</span>       <span class="n">ss</span><span class="p">;</span>
+    <span class="n">bool</span>            <span class="n">sort_Done</span><span class="p">;</span>          <span class="cm">/* sort complete? */</span>
+    <span class="n">bool</span>            <span class="n">bounded</span><span class="p">;</span>            <span class="cm">/* using top-N? */</span>
+    <span class="n">int64</span>           <span class="n">bound</span><span class="p">;</span>              <span class="cm">/* LIMIT value */</span>
+    <span class="kt">void</span>           <span class="o">*</span><span class="n">tuplesortstate</span><span class="p">;</span>     <span class="cm">/* opaque Tuplesortstate */</span>
+    <span class="p">...</span>
+<span class="p">}</span> <span class="n">SortState</span><span class="p">;</span>
+</code></pre></div></div>
+
+<hr />
+
+<h2 id="diagram-tuplesort-state-machine">Diagram: tuplesort State Machine</h2>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>                   INITIAL
+                     |
+          +----------+----------+
+          |                     |
+    fits in memory?        exceeds work_mem
+          |                     |
+    SORTEDINMEM            BUILDRUNS
+    (qsort/radix)              |
+          |              write sorted runs
+          |              to logical tapes
+          |                     |
+          |               MERGING
+          |              (k-way merge)
+          |                     |
+          +----------+----------+
+                     |
+              SORTEDONTAPE or
+              SORTEDINMEM
+                     |
+            tuplesort_gettupleslot()
+</code></pre></div></div>
+
+<h3 id="top-n-heapsort">Top-N Heapsort</h3>
+
+<p>When a Sort node sits below a Limit node, it uses a <strong>bounded heap</strong> to keep
+only the top N tuples in memory. This avoids sorting the entire input:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>ExecSetTupleBound(n, sortNode)
+  --&gt; tuplesort enters BOUNDED mode
+  --&gt; maintains a max-heap of size N
+  --&gt; each new tuple: if smaller than heap max, replace and sift down
+  --&gt; after all input: extract heap in sorted order
+</code></pre></div></div>
+
+<p>This reduces memory from O(input) to O(N) and time from O(N log N) to
+O(input * log N).</p>
+
+<hr />
+
+<h2 id="connections">Connections</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>Topic</th>
+      <th>Link</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Executor overview</td>
+      <td><a href="index">Query Executor</a></td>
+    </tr>
+    <tr>
+      <td>Volcano model and pipeline breakers</td>
+      <td><a href="volcano-model">Volcano Model</a></td>
+    </tr>
+    <tr>
+      <td>Merge join requiring sorted input</td>
+      <td><a href="join-nodes">Join Nodes</a></td>
+    </tr>
+    <tr>
+      <td>Sorted aggregation</td>
+      <td><a href="aggregation">Aggregation</a></td>
+    </tr>
+    <tr>
+      <td>Parallel sort via Gather Merge</td>
+      <td><a href="parallel-query">Parallel Query</a></td>
+    </tr>
+    <tr>
+      <td>work_mem and memory accounting</td>
+      <td><a href="../10-memory/">Memory Management</a></td>
+    </tr>
+    <tr>
+      <td>Temp file I/O</td>
+      <td><a href="../01-storage/">Storage Engine</a></td>
+    </tr>
+  </tbody>
+</table>
+
+
+      <hr>
+
+      <!-- Prev / Next / Up navigation -->
+      
+      
+      
+
+      <div class="clearfix" style="margin-top: 2rem;">
+        
+          
+          
+
+          
+            
+            <a class="btn btn-primary float-left" href="/postgresql/08-executor/scan-nodes.html" title="Scan Nodes">&larr; Previous</a>
+          
+
+          
+            
+            <a class="btn btn-primary float-right" href="/postgresql/08-executor/volcano-model.html" title="Volcano Iterator Model">Next &rarr;</a>
+          
+        
+      </div>
+
+      
+      <div style="text-align: center; margin-top: 1rem;">
+        <a href="/postgresql-internals/">&uarr; Back to Table of Contents</a>
+      </div>
+      
+
+    </div>
+  </div>
+</div>
+
+
+  <!-- Footer -->
+
+<hr>
+
+<footer>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <ul class="list-inline text-center">
+          
+          <li class="list-inline-item">
+            <a href="mailto:amitava.dev@proton.me" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="far fa-envelope fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          
+          
+          <li class="list-inline-item">
+            <a href="https://www.linkedin.com/in/amitavaag" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-linkedin fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          <li class="list-inline-item">
+            <a href="https://github.com/ikouchiha47" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-github fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+        </ul>
+
+        <p class="copyright text-muted">
+          Build with: 
+          <a 
+            href="https://github.com/StartBootstrap/startbootstrap-clean-blog-jekyll"
+            class="text-gray"
+            target="_blank">startbootstrap-clean-blog-jekyll</a></p>
+      </div>
+    </div>
+  </div>
+</footer>
+
+
+  <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="/assets/vendor/blog/js/scripts.js"></script>
+
+<script src="/assets/scripts.js"></script>
+
+
+
+
+
+  <script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+
+    document.querySelectorAll('pre > code.language-mermaid').forEach((codeBlock) => {
+      codeBlock.parentElement.outerHTML = `<pre class="mermaid">${codeBlock.textContent}</pre>`;
+    });
+
+
+    mermaid.initialize({ startOnLoad: true, theme: 'forest' });
+</script>
+
+
+  
+
+</body>
+
+</html>

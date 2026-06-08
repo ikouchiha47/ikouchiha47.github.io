@@ -1,0 +1,645 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+  <title>
+    SIMD, CRC, and Hardware Acceleration - iko&#39;s logs
+    
+  </title>
+
+  <meta name="description" content="">
+  <meta property="og:description" content="">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="SIMD, CRC, and Hardware Acceleration">
+  <meta property="og:url" content="https://ikouchiha47.github.io/postgresql/14-platform/simd-and-crc.html">
+
+  
+
+  <link href='https://fonts.googleapis.com/css?family=Lora:400,700,400italic,700italic' rel='stylesheet' type='text/css'>
+  <link href='https://fonts.googleapis.com/css?family=Open+Sans:300italic,400italic,600italic,700italic,800italic,400,300,600,700,800' rel='stylesheet' type='text/css'>
+
+  <!-- <script src="https://use.fontawesome.com/releases/v5.15.3/js/all.js" crossorigin="anonymous"></script> -->
+  <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.15.4/css/all.css" integrity="sha384-DyZ88mC6Up2uqS4h/KRgHuoeGwBcD4Ng9SiP4dIRy0EXTlnuz47vAwmeGwVChigm" crossorigin="anonymous"/>
+
+  <link rel="stylesheet" href="/assets/main.css">
+  <link rel="canonical" href="https://ikouchiha47.github.io/postgresql/14-platform/simd-and-crc.html">
+  <link rel="alternate" type="application/rss+xml" title="iko&#39;s logs" href="/feed.xml">
+
+  <meta name="google-site-verification" content="lWkg6gIxJgzEKX_5XnhcxCtPE9QknaimFWWos_dTvPM" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fira+Sans:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Inconsolata:wght@200..900&family=Jersey+25&family=Kanit:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Merriweather+Sans:ital,wght@0,300..800;1,300..800&family=Nanum+Gothic+Coding&family=Space+Grotesk:wght@300..700&family=Titillium+Web:ital,wght@0,200;0,300;0,400;0,600;0,700;0,900;1,200;1,300;1,400;1,600;1,700&display=swap" rel="stylesheet">
+
+</head>
+
+
+<body>
+
+  <!-- Navigation -->
+<nav class="navbar navbar-expand-lg navbar-light fixed-top" id="mainNav">
+  <div class="container">
+    <a class="navbar-brand" href="/">iko&#39;s logs</a>
+    <button class="navbar-toggler navbar-toggler-right" type="button" data-toggle="collapse" data-target="#navbarResponsive" aria-controls="navbarResponsive" aria-expanded="false" aria-label="Toggle navigation">
+      Menu
+      <i class="fa fa-bars"></i>
+    </button>
+    <div class="collapse navbar-collapse" id="navbarResponsive">
+      <ul class="navbar-nav ml-auto">
+        <li class="nav-item">
+          <a class="nav-link" href="/">Home</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/about">About</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/posts">Posts</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/contact">Contact</a>
+        </li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+
+  <!-- Page Header -->
+
+<header class="masthead">
+
+  <div class="overlay"></div>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <div class="post-heading">
+          <h1>SIMD, CRC, and Hardware Acceleration</h1>
+          
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="container space-grotesk">
+  <div class="row">
+    <div class="col-lg-8 col-md-10 mx-auto">
+
+      <!-- Breadcrumb -->
+      <nav aria-label="breadcrumb" style="margin-bottom: 1.5rem;">
+        <ol class="breadcrumb" style="background: transparent; padding: 0;">
+          
+            <li class="breadcrumb-item"><a href="/postgresql-internals/">PostgreSQL Internals Deep Dive</a></li>
+          
+          
+            
+              <li class="breadcrumb-item"><a href="/postgresql/14-platform/">Platform Layer</a></li>
+            
+          
+          <li class="breadcrumb-item active" aria-current="page">SIMD, CRC, and Hardware Acceleration</li>
+        </ol>
+      </nav>
+
+      <h1 id="simd-crc-32c-and-hardware-acceleration">SIMD, CRC-32C, and Hardware Acceleration</h1>
+
+<h2 id="summary">Summary</h2>
+
+<p>PostgreSQL exploits hardware-specific instructions for three performance-critical
+operations: CRC-32C checksums (protecting WAL records and data pages), SIMD
+vector comparisons (accelerating text searches and visibility checks), and
+population count (used in bitmap operations). On multi-socket systems, the NUMA
+abstraction layer ensures shared buffers are queried and placed on the correct
+memory node. Each of these facilities uses a compile-time or runtime dispatch
+mechanism to select the fastest available implementation, falling back to
+portable C code when hardware acceleration is unavailable.</p>
+
+<h2 id="overview">Overview</h2>
+
+<p>The common thread across these facilities is <strong>dispatch to the best available
+hardware path</strong>:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>                       Compile time                Runtime
+                    +---------------+          +-------------+
+    CRC-32C:        USE_SSE42_CRC32C  -or-&gt;    function pointer
+                    USE_ARMV8_CRC32C           selects SSE4.2 vs
+                                               AVX-512 vs SB8
+
+    SIMD:           USE_SSE2 / USE_NEON  -or-&gt; USE_NO_SIMD
+                                               (uint64 emulation)
+
+    POPCNT:         __builtin_popcount   -or-&gt; lookup table
+                    POPCNT instruction         pg_number_of_ones[]
+
+    NUMA:           USE_LIBNUMA          -or-&gt; stub returning -1
+</code></pre></div></div>
+
+<h2 id="key-source-files">Key Source Files</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>File</th>
+      <th>Role</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/port/pg_crc32c.h</code></td>
+      <td>CRC-32C API macros and dispatch logic</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/port/pg_crc32c_sse42.c</code></td>
+      <td>SSE4.2 hardware CRC implementation</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/port/pg_crc32c_sse42_choose.c</code></td>
+      <td>Runtime chooser: AVX-512 vs SSE4.2 vs SB8</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/port/pg_crc32c_armv8.c</code></td>
+      <td>ARMv8 CRC extension implementation</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/port/pg_crc32c_sb8.c</code></td>
+      <td>Slicing-by-8 software fallback</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/port/simd.h</code></td>
+      <td>SIMD vector types and operations</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/port/pg_bitutils.h</code></td>
+      <td>Popcount, CLZ, CTZ, bit manipulation</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/port/pg_bitutils.c</code></td>
+      <td>Lookup tables for non-builtin platforms</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/port/pg_popcount_x86.c</code></td>
+      <td>x86 AVX-512 VPOPCNT accelerated popcount</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/port/pg_popcount_aarch64.c</code></td>
+      <td>ARM NEON accelerated popcount</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/port/pg_numa.h</code></td>
+      <td>NUMA query API</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/port/pg_numa.c</code></td>
+      <td>libnuma wrapper and stub implementation</td>
+    </tr>
+  </tbody>
+</table>
+
+<h2 id="how-it-works">How It Works</h2>
+
+<h3 id="crc-32c-the-checksum-hot-path">CRC-32C: The Checksum Hot Path</h3>
+
+<p>Every WAL record and every data page (when <code class="language-plaintext highlighter-rouge">data_checksums</code> is enabled) is
+protected by a CRC-32C checksum. The speed of this computation directly affects
+write throughput and recovery time.</p>
+
+<p>PostgreSQL defines four macros as the public interface:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="n">INIT_CRC32C</span><span class="p">(</span><span class="n">crc</span><span class="p">)</span>          <span class="cm">/* crc = 0xFFFFFFFF */</span>
+<span class="n">COMP_CRC32C</span><span class="p">(</span><span class="n">crc</span><span class="p">,</span> <span class="n">data</span><span class="p">,</span> <span class="n">len</span><span class="p">)</span>  <span class="cm">/* accumulate bytes */</span>
+<span class="n">FIN_CRC32C</span><span class="p">(</span><span class="n">crc</span><span class="p">)</span>           <span class="cm">/* crc ^= 0xFFFFFFFF */</span>
+<span class="n">EQ_CRC32C</span><span class="p">(</span><span class="n">c1</span><span class="p">,</span> <span class="n">c2</span><span class="p">)</span>         <span class="cm">/* equality check */</span>
+</code></pre></div></div>
+
+<p>The <code class="language-plaintext highlighter-rouge">COMP_CRC32C</code> macro is where dispatch happens. The implementation hierarchy:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>+----------------------------------------------+
+|           COMP_CRC32C(crc, data, len)        |
++----------------------------------------------+
+           |                    |
+  Compile-time known     Runtime dispatch
+  USE_SSE42_CRC32C       via function pointer
+           |                    |
+           v                    v
+  pg_comp_crc32c_dispatch()   pg_comp_crc32c --&gt;  [one of:]
+           |                                       |
+  +--------+--------+              +---------------+---------------+
+  |                 |              |               |               |
+  Small constant    Large          AVX-512         SSE 4.2         SB8
+  len &lt; 32:         input:        (if CPUID       (if CPUID       (software
+  inline            call via       confirms)       confirms)       fallback)
+  _mm_crc32_u64     fn pointer
+  _mm_crc32_u32
+  _mm_crc32_u8
+</code></pre></div></div>
+
+<p><strong>The inline fast path</strong> is a compile-time optimization for small, constant-size
+inputs. When GCC or Clang can prove that <code class="language-plaintext highlighter-rouge">len</code> is a compile-time constant less
+than 32, the computation is inlined directly using SSE4.2 intrinsics, avoiding a
+function-call overhead:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="cm">/* From pg_crc32c.h -- the dispatch function */</span>
+<span class="n">pg_attribute_target</span><span class="p">(</span><span class="s">"sse4.2"</span><span class="p">)</span>
+<span class="k">static</span> <span class="kr">inline</span> <span class="n">pg_crc32c</span>
+<span class="nf">pg_comp_crc32c_dispatch</span><span class="p">(</span><span class="n">pg_crc32c</span> <span class="n">crc</span><span class="p">,</span> <span class="k">const</span> <span class="kt">void</span> <span class="o">*</span><span class="n">data</span><span class="p">,</span> <span class="kt">size_t</span> <span class="n">len</span><span class="p">)</span>
+<span class="p">{</span>
+    <span class="k">if</span> <span class="p">(</span><span class="n">__builtin_constant_p</span><span class="p">(</span><span class="n">len</span><span class="p">)</span> <span class="o">&amp;&amp;</span> <span class="n">len</span> <span class="o">&lt;</span> <span class="mi">32</span><span class="p">)</span>
+    <span class="p">{</span>
+        <span class="k">const</span> <span class="kt">unsigned</span> <span class="kt">char</span> <span class="o">*</span><span class="n">p</span> <span class="o">=</span> <span class="n">data</span><span class="p">;</span>
+        <span class="k">for</span> <span class="p">(;</span> <span class="n">len</span> <span class="o">&gt;=</span> <span class="mi">8</span><span class="p">;</span> <span class="n">p</span> <span class="o">+=</span> <span class="mi">8</span><span class="p">,</span> <span class="n">len</span> <span class="o">-=</span> <span class="mi">8</span><span class="p">)</span>
+            <span class="n">crc</span> <span class="o">=</span> <span class="n">_mm_crc32_u64</span><span class="p">(</span><span class="n">crc</span><span class="p">,</span> <span class="o">*</span><span class="p">(</span><span class="k">const</span> <span class="n">uint64</span> <span class="o">*</span><span class="p">)</span> <span class="n">p</span><span class="p">);</span>
+        <span class="k">for</span> <span class="p">(;</span> <span class="n">len</span> <span class="o">&gt;=</span> <span class="mi">4</span><span class="p">;</span> <span class="n">p</span> <span class="o">+=</span> <span class="mi">4</span><span class="p">,</span> <span class="n">len</span> <span class="o">-=</span> <span class="mi">4</span><span class="p">)</span>
+            <span class="n">crc</span> <span class="o">=</span> <span class="n">_mm_crc32_u32</span><span class="p">(</span><span class="n">crc</span><span class="p">,</span> <span class="o">*</span><span class="p">(</span><span class="k">const</span> <span class="n">uint32</span> <span class="o">*</span><span class="p">)</span> <span class="n">p</span><span class="p">);</span>
+        <span class="k">for</span> <span class="p">(;</span> <span class="n">len</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">;</span> <span class="o">--</span><span class="n">len</span><span class="p">)</span>
+            <span class="n">crc</span> <span class="o">=</span> <span class="n">_mm_crc32_u8</span><span class="p">(</span><span class="n">crc</span><span class="p">,</span> <span class="o">*</span><span class="n">p</span><span class="o">++</span><span class="p">);</span>
+        <span class="k">return</span> <span class="n">crc</span><span class="p">;</span>
+    <span class="p">}</span>
+    <span class="k">else</span>
+        <span class="k">return</span> <span class="n">pg_comp_crc32c</span><span class="p">(</span><span class="n">crc</span><span class="p">,</span> <span class="n">data</span><span class="p">,</span> <span class="n">len</span><span class="p">);</span>
+<span class="p">}</span>
+</code></pre></div></div>
+
+<p><strong>The runtime chooser</strong> (<code class="language-plaintext highlighter-rouge">pg_crc32c_sse42_choose.c</code>) runs once at startup. It
+uses CPUID to check for AVX-512 support (specifically the <code class="language-plaintext highlighter-rouge">vpclmulqdq</code>
+instruction for parallel CRC) and sets the <code class="language-plaintext highlighter-rouge">pg_comp_crc32c</code> function pointer
+accordingly.</p>
+
+<p><strong>The software fallback</strong> (slicing-by-8) processes 8 bytes per loop iteration
+using eight 256-entry lookup tables. This is the fastest portable
+implementation, roughly 10x slower than hardware CRC on modern CPUs.</p>
+
+<h3 id="armv8-crc-extension">ARMv8 CRC Extension</h3>
+
+<p>On AArch64, the CRC32C instruction is part of the optional CRC extension
+(mandatory in ARMv8.1+). The dispatch mechanism mirrors x86:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="cm">/* Compile-time: known to have CRC extension */</span>
+<span class="cp">#define USE_ARMV8_CRC32C
+</span>
+<span class="cm">/* Or: runtime check via reading auxiliary vector */</span>
+<span class="cp">#define USE_ARMV8_CRC32C_WITH_RUNTIME_CHECK
+</span></code></pre></div></div>
+
+<p>The runtime check reads <code class="language-plaintext highlighter-rouge">/proc/self/auxv</code> on Linux or uses
+<code class="language-plaintext highlighter-rouge">sysctlbyname("hw.optional.armv8_crc32", ...)</code> on macOS to detect the
+extension at process startup.</p>
+
+<h3 id="simd-vector-operations">SIMD Vector Operations</h3>
+
+<p>The <code class="language-plaintext highlighter-rouge">simd.h</code> header provides a platform-independent vector API for bulk
+byte/word comparisons. The primary use cases are:</p>
+
+<ul>
+  <li><strong>String scanning:</strong> Finding null terminators, newlines, or delimiter bytes
+in large buffers (used by COPY, text input functions).</li>
+  <li><strong>Visibility map checks:</strong> Testing whether groups of heap pages are
+all-visible or all-frozen.</li>
+</ul>
+
+<p>The type definitions adapt to the available instruction set:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="cp">#if defined(USE_SSE2)
+</span>    <span class="k">typedef</span> <span class="n">__m128i</span> <span class="n">Vector8</span><span class="p">;</span>     <span class="cm">/* 16 bytes, 16 x uint8 */</span>
+    <span class="k">typedef</span> <span class="n">__m128i</span> <span class="n">Vector32</span><span class="p">;</span>    <span class="cm">/* 16 bytes, 4 x uint32 */</span>
+<span class="cp">#elif defined(USE_NEON)
+</span>    <span class="k">typedef</span> <span class="n">uint8x16_t</span> <span class="n">Vector8</span><span class="p">;</span>  <span class="cm">/* 16 bytes, ARM NEON */</span>
+    <span class="k">typedef</span> <span class="n">uint32x4_t</span> <span class="n">Vector32</span><span class="p">;</span>
+<span class="cp">#else
+</span>    <span class="cp">#define USE_NO_SIMD
+</span>    <span class="k">typedef</span> <span class="n">uint64</span> <span class="n">Vector8</span><span class="p">;</span>      <span class="cm">/* 8 bytes, bitwise emulation */</span>
+<span class="cp">#endif
+</span></code></pre></div></div>
+
+<p>Key operations and their hardware mapping:</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>Function</th>
+      <th>SSE2</th>
+      <th>NEON</th>
+      <th>No-SIMD</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">vector8_broadcast(c)</code></td>
+      <td><code class="language-plaintext highlighter-rouge">_mm_set1_epi8(c)</code></td>
+      <td><code class="language-plaintext highlighter-rouge">vdupq_n_u8(c)</code></td>
+      <td>SWAR bit trick</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">vector8_has(v, c)</code></td>
+      <td><code class="language-plaintext highlighter-rouge">PCMPEQB</code> + <code class="language-plaintext highlighter-rouge">PMOVMSKB</code></td>
+      <td><code class="language-plaintext highlighter-rouge">VCEQ</code> + reduce</td>
+      <td>byte loop</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">vector8_has_zero(v)</code></td>
+      <td><code class="language-plaintext highlighter-rouge">PCMPEQB</code> zero + mask</td>
+      <td><code class="language-plaintext highlighter-rouge">VMIN</code> + extract</td>
+      <td>SWAR null check</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">vector8_has_le(v, c)</code></td>
+      <td><code class="language-plaintext highlighter-rouge">PMINUB</code> + compare</td>
+      <td><code class="language-plaintext highlighter-rouge">VCLE</code> + reduce</td>
+      <td>byte loop</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">vector8_highbit_mask(v)</code></td>
+      <td><code class="language-plaintext highlighter-rouge">PMOVMSKB</code></td>
+      <td>shift + narrow + extract</td>
+      <td>not available</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>The <strong>SWAR (SIMD Within A Register)</strong> fallback for <code class="language-plaintext highlighter-rouge">USE_NO_SIMD</code> packs 8 bytes
+into a <code class="language-plaintext highlighter-rouge">uint64</code> and uses the classic null-byte detection trick:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>To detect a zero byte in word w:
+  ((w - 0x0101010101010101) &amp; ~w &amp; 0x8080808080808080) != 0
+</code></pre></div></div>
+
+<h3 id="population-count-popcnt">Population Count (POPCNT)</h3>
+
+<p>Bitmap operations (visibility map, free-space map, relcache invalidation masks)
+need to count set bits. PostgreSQL provides:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="cm">/* Fast path: compiler builtin (often maps to POPCNT instruction) */</span>
+<span class="n">pg_popcount32</span><span class="p">(</span><span class="n">uint32</span> <span class="n">word</span><span class="p">)</span>  <span class="cm">/* __builtin_popcount */</span>
+<span class="n">pg_popcount64</span><span class="p">(</span><span class="n">uint64</span> <span class="n">word</span><span class="p">)</span>  <span class="cm">/* __builtin_popcountll */</span>
+
+<span class="cm">/* Bulk: count bits in a byte array */</span>
+<span class="n">pg_popcount</span><span class="p">(</span><span class="k">const</span> <span class="kt">char</span> <span class="o">*</span><span class="n">buf</span><span class="p">,</span> <span class="kt">int</span> <span class="n">bytes</span><span class="p">)</span>
+</code></pre></div></div>
+
+<p>On x86-64 with AVX-512 VPOPCNT, the bulk <code class="language-plaintext highlighter-rouge">pg_popcount()</code> processes 64 bytes
+per iteration using <code class="language-plaintext highlighter-rouge">_mm512_popcnt_epi64</code>, delivering roughly 16x the
+throughput of scalar POPCNT. On AArch64, the NEON path uses <code class="language-plaintext highlighter-rouge">VCNT</code> (count bits
+per byte lane) with horizontal adds.</p>
+
+<p>When no hardware popcount is available, a 256-entry lookup table
+(<code class="language-plaintext highlighter-rouge">pg_number_of_ones[]</code>) provides the fallback.</p>
+
+<h3 id="numa-awareness">NUMA Awareness</h3>
+
+<p>On multi-socket servers, memory access latency depends on which NUMA node owns
+the physical memory. PostgreSQL’s NUMA layer (introduced in v18) provides
+primitives for querying page placement:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="cm">/* Initialize libnuma; returns -1 if unavailable */</span>
+<span class="kt">int</span> <span class="nf">pg_numa_init</span><span class="p">(</span><span class="kt">void</span><span class="p">);</span>
+
+<span class="cm">/* Query which NUMA node each page resides on */</span>
+<span class="kt">int</span> <span class="nf">pg_numa_query_pages</span><span class="p">(</span><span class="kt">int</span> <span class="n">pid</span><span class="p">,</span> <span class="kt">unsigned</span> <span class="kt">long</span> <span class="n">count</span><span class="p">,</span>
+                        <span class="kt">void</span> <span class="o">**</span><span class="n">pages</span><span class="p">,</span> <span class="kt">int</span> <span class="o">*</span><span class="n">status</span><span class="p">);</span>
+
+<span class="cm">/* Get the highest NUMA node ID */</span>
+<span class="kt">int</span> <span class="nf">pg_numa_get_max_node</span><span class="p">(</span><span class="kt">void</span><span class="p">);</span>
+</code></pre></div></div>
+
+<p>The implementation wraps Linux’s <code class="language-plaintext highlighter-rouge">move_pages(2)</code> syscall (via
+<code class="language-plaintext highlighter-rouge">numa_move_pages()</code> from libnuma), chunking queries into groups of 1024 pages
+(or 16 on 32-bit systems, to work around a kernel bug in <code class="language-plaintext highlighter-rouge">do_pages_stat()</code>).</p>
+
+<p>Before querying a page’s NUMA node, it must be faulted into physical memory:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">static</span> <span class="kr">inline</span> <span class="kt">void</span>
+<span class="nf">pg_numa_touch_mem_if_required</span><span class="p">(</span><span class="kt">void</span> <span class="o">*</span><span class="n">ptr</span><span class="p">)</span>
+<span class="p">{</span>
+    <span class="k">volatile</span> <span class="n">uint64</span> <span class="n">touch</span> <span class="n">pg_attribute_unused</span><span class="p">();</span>
+    <span class="n">touch</span> <span class="o">=</span> <span class="o">*</span><span class="p">(</span><span class="k">volatile</span> <span class="n">uint64</span> <span class="o">*</span><span class="p">)</span> <span class="n">ptr</span><span class="p">;</span>
+<span class="p">}</span>
+</code></pre></div></div>
+
+<p>This volatile read forces the kernel to allocate a physical page, after which
+<code class="language-plaintext highlighter-rouge">move_pages(2)</code> can report its NUMA node accurately.</p>
+
+<p>On non-Linux platforms (or when libnuma is not available), all three functions
+are stubs: <code class="language-plaintext highlighter-rouge">pg_numa_init()</code> returns -1, and the query functions are no-ops.</p>
+
+<h2 id="key-data-structures">Key Data Structures</h2>
+
+<h3 id="crc-32c-dispatch">CRC-32C Dispatch</h3>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>pg_comp_crc32c  (function pointer, set once at startup)
+       |
+       +---&gt; pg_comp_crc32c_avx512()     (if AVX-512 + VPCLMULQDQ)
+       +---&gt; pg_comp_crc32c_sse42()      (if SSE 4.2)
+       +---&gt; pg_comp_crc32c_armv8()      (if ARMv8 CRC extension)
+       +---&gt; pg_comp_crc32c_loongarch()  (if LoongArch CRCC)
+       +---&gt; pg_comp_crc32c_sb8()        (software fallback)
+</code></pre></div></div>
+
+<h3 id="simd-type-map">SIMD Type Map</h3>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>          USE_SSE2                  USE_NEON               USE_NO_SIMD
+  +-------------------+    +-------------------+    +------------------+
+  | Vector8 = __m128i |    | Vector8 =         |    | Vector8 = uint64 |
+  | (16 x uint8)      |    |   uint8x16_t      |    | (8 x uint8 SWAR) |
+  |                   |    | (16 x uint8)      |    |                  |
+  | Vector32 = __m128i|    | Vector32 =        |    | Vector32: N/A    |
+  | (4 x uint32)      |    |   uint32x4_t      |    | (not implemented)|
+  +-------------------+    +-------------------+    +------------------+
+</code></pre></div></div>
+
+<h3 id="numa-query-flow">NUMA Query Flow</h3>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>  pg_numa_init()
+       |
+       v
+  numa_available()  ----[fail]----&gt; return -1 (NUMA disabled)
+       |
+     [ok]
+       v
+  pg_numa_query_pages(pid, count, pages[], status[])
+       |
+       +---&gt; loop in chunks of NUMA_QUERY_CHUNK_SIZE (1024 or 16)
+       |       |
+       |       +---&gt; CHECK_FOR_INTERRUPTS()
+       |       +---&gt; numa_move_pages(pid, chunk, &amp;pages[i], NULL, &amp;status[i], 0)
+       |       |       (queries placement, does NOT migrate)
+       |       +---&gt; on error: return immediately
+       |
+       v
+  status[] now contains NUMA node ID for each page
+</code></pre></div></div>
+
+<h2 id="performance-characteristics">Performance Characteristics</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>Operation</th>
+      <th>Hardware path</th>
+      <th>Software fallback</th>
+      <th>Ratio</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>CRC-32C of 8 KB page</td>
+      <td>~30 ns (SSE4.2)</td>
+      <td>~1200 ns (SB8)</td>
+      <td>~40x</td>
+    </tr>
+    <tr>
+      <td>CRC-32C of 8 KB page</td>
+      <td>~15 ns (AVX-512)</td>
+      <td>~1200 ns (SB8)</td>
+      <td>~80x</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">vector8_has()</code> on 16 bytes</td>
+      <td>2 instructions</td>
+      <td>16-byte loop</td>
+      <td>~8x</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">pg_popcount()</code> on 8 KB</td>
+      <td>~50 ns (AVX-512 VPOPCNT)</td>
+      <td>~800 ns (table)</td>
+      <td>~16x</td>
+    </tr>
+    <tr>
+      <td>NUMA query, 1024 pages</td>
+      <td>~50 us (move_pages)</td>
+      <td>N/A (returns 0)</td>
+      <td>–</td>
+    </tr>
+  </tbody>
+</table>
+
+<h2 id="connections">Connections</h2>
+
+<ul>
+  <li><strong>Chapter 5 (WAL):</strong> Every <code class="language-plaintext highlighter-rouge">XLogRecord</code> header includes a CRC-32C computed over the entire record. The choice between SSE4.2 and software CRC directly impacts WAL write throughput and crash-recovery speed.</li>
+  <li><strong>Chapter 4 (Buffer Manager):</strong> When <code class="language-plaintext highlighter-rouge">data_checksums</code> is enabled, each 8 KB page carries a CRC that is verified on every read from disk. NUMA-aware buffer allocation ensures shared_buffers pages are local to the accessing CPU’s memory node.</li>
+  <li><strong>Chapter 9 (Query Execution):</strong> SIMD vector operations accelerate sequential scan filters, COPY parsing, and text comparison functions in the executor.</li>
+  <li><strong>Chapter 14 (this chapter), Atomics:</strong> The CRC dispatch function pointer is itself set using atomic-safe initialization patterns to handle concurrent first-use scenarios.</li>
+</ul>
+
+
+      <hr>
+
+      <!-- Prev / Next / Up navigation -->
+      
+      
+      
+
+      <div class="clearfix" style="margin-top: 2rem;">
+        
+          
+          
+
+          
+            
+            <a class="btn btn-primary float-left" href="/postgresql/14-platform/portability.html" title="Portability and OS Abstraction">&larr; Previous</a>
+          
+
+          
+            
+            <a class="btn btn-primary float-right" href="/postgresql/15-extensions/" title="Extensions">Next &rarr;</a>
+          
+        
+      </div>
+
+      
+      <div style="text-align: center; margin-top: 1rem;">
+        <a href="/postgresql-internals/">&uarr; Back to Table of Contents</a>
+      </div>
+      
+
+    </div>
+  </div>
+</div>
+
+
+  <!-- Footer -->
+
+<hr>
+
+<footer>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <ul class="list-inline text-center">
+          
+          <li class="list-inline-item">
+            <a href="mailto:amitava.dev@proton.me" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="far fa-envelope fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          
+          
+          <li class="list-inline-item">
+            <a href="https://www.linkedin.com/in/amitavaag" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-linkedin fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          <li class="list-inline-item">
+            <a href="https://github.com/ikouchiha47" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-github fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+        </ul>
+
+        <p class="copyright text-muted">
+          Build with: 
+          <a 
+            href="https://github.com/StartBootstrap/startbootstrap-clean-blog-jekyll"
+            class="text-gray"
+            target="_blank">startbootstrap-clean-blog-jekyll</a></p>
+      </div>
+    </div>
+  </div>
+</footer>
+
+
+  <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="/assets/vendor/blog/js/scripts.js"></script>
+
+<script src="/assets/scripts.js"></script>
+
+
+
+
+
+  <script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+
+    document.querySelectorAll('pre > code.language-mermaid').forEach((codeBlock) => {
+      codeBlock.parentElement.outerHTML = `<pre class="mermaid">${codeBlock.textContent}</pre>`;
+    });
+
+
+    mermaid.initialize({ startOnLoad: true, theme: 'forest' });
+</script>
+
+
+  
+
+</body>
+
+</html>

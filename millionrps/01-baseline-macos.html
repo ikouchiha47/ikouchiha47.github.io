@@ -1,0 +1,371 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+  <title>
+    baseline: mac mini, localhost, three servers - iko&#39;s logs
+    
+  </title>
+
+  <meta name="description" content="">
+  <meta property="og:description" content="">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="baseline: mac mini, localhost, three servers">
+  <meta property="og:url" content="https://ikouchiha47.github.io/millionrps/01-baseline-macos.html">
+
+  
+
+  <link href='https://fonts.googleapis.com/css?family=Lora:400,700,400italic,700italic' rel='stylesheet' type='text/css'>
+  <link href='https://fonts.googleapis.com/css?family=Open+Sans:300italic,400italic,600italic,700italic,800italic,400,300,600,700,800' rel='stylesheet' type='text/css'>
+
+  <!-- <script src="https://use.fontawesome.com/releases/v5.15.3/js/all.js" crossorigin="anonymous"></script> -->
+  <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.15.4/css/all.css" integrity="sha384-DyZ88mC6Up2uqS4h/KRgHuoeGwBcD4Ng9SiP4dIRy0EXTlnuz47vAwmeGwVChigm" crossorigin="anonymous"/>
+
+  <link rel="stylesheet" href="/assets/main.css">
+  <link rel="canonical" href="https://ikouchiha47.github.io/millionrps/01-baseline-macos.html">
+  <link rel="alternate" type="application/rss+xml" title="iko&#39;s logs" href="/feed.xml">
+
+  <meta name="google-site-verification" content="lWkg6gIxJgzEKX_5XnhcxCtPE9QknaimFWWos_dTvPM" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fira+Sans:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Inconsolata:wght@200..900&family=Jersey+25&family=Kanit:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Merriweather+Sans:ital,wght@0,300..800;1,300..800&family=Nanum+Gothic+Coding&family=Space+Grotesk:wght@300..700&family=Titillium+Web:ital,wght@0,200;0,300;0,400;0,600;0,700;0,900;1,200;1,300;1,400;1,600;1,700&display=swap" rel="stylesheet">
+
+</head>
+
+
+<body>
+
+  <!-- Navigation -->
+<nav class="navbar navbar-expand-lg navbar-light fixed-top" id="mainNav">
+  <div class="container">
+    <a class="navbar-brand" href="/">iko&#39;s logs</a>
+    <button class="navbar-toggler navbar-toggler-right" type="button" data-toggle="collapse" data-target="#navbarResponsive" aria-controls="navbarResponsive" aria-expanded="false" aria-label="Toggle navigation">
+      Menu
+      <i class="fa fa-bars"></i>
+    </button>
+    <div class="collapse navbar-collapse" id="navbarResponsive">
+      <ul class="navbar-nav ml-auto">
+        <li class="nav-item">
+          <a class="nav-link" href="/">Home</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/about">About</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/posts">Posts</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/contact">Contact</a>
+        </li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+
+  
+<header class="masthead">
+
+  <div class="overlay"></div>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <div class="post-heading">
+          <h1>baseline: mac mini, localhost, three servers</h1>
+          
+          <h2 class="subheading">net/http vs fasthttp vs fiber — what does Go give you out of the box?</h2>
+          
+          <span class="meta">
+            May 15, 2026
+            
+            &mdash; <span class="journal-entry-status done">DONE</span>
+            
+          </span>
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="container space-grotesk">
+  <div class="row">
+    <div class="col-lg-8 col-md-10 mx-auto">
+
+      <!-- Breadcrumb -->
+      <nav aria-label="breadcrumb" style="margin-bottom: 1.5rem;">
+        <ol class="breadcrumb" style="background: transparent; padding: 0;">
+          <li class="breadcrumb-item"><a href="/millionrps/">Chasing 1 Million RPS</a></li>
+          <li class="breadcrumb-item active" aria-current="page">baseline: mac mini, localhost, three servers</li>
+        </ol>
+      </nav>
+
+      
+      <div style="margin-bottom: 1.5rem;">
+        
+        <span class="journal-tag">go</span>
+        
+        <span class="journal-tag">fiber</span>
+        
+        <span class="journal-tag">fasthttp</span>
+        
+        <span class="journal-tag">net/http</span>
+        
+        <span class="journal-tag">macos</span>
+        
+        <span class="journal-tag">localhost</span>
+        
+        <span class="journal-tag">wrk</span>
+        
+      </div>
+      
+
+      <h2 id="machine">machine</h2>
+
+<p>Mac mini M2, 10 cores (8P + 2E), 16GB RAM, macOS. Benchmark and server on the same machine via loopback.</p>
+
+<h2 id="what-we-built">what we built</h2>
+
+<p>Three servers serving the same routes. All responses come from an in-memory pool generated at startup — no database, no disk, no allocations on the hot path.</p>
+
+<p><strong>Routes:</strong></p>
+<ul>
+  <li><code class="language-plaintext highlighter-rouge">/read</code> — returns one random pre-serialized <code class="language-plaintext highlighter-rouge">Product</code> JSON from a pool of 500. ~4KB.</li>
+  <li><code class="language-plaintext highlighter-rouge">/list</code> — returns a pre-serialized batch of 20-30 products. ~100KB.</li>
+  <li><code class="language-plaintext highlighter-rouge">/compute</code> — takes 100 random products, sorts by price, computes avg/stddev/histogram/top brands, returns aggregated JSON. CPU-bound per request.</li>
+  <li><code class="language-plaintext highlighter-rouge">/simple</code> — returns <code class="language-plaintext highlighter-rouge">{"message":"hi"}</code> from a package-level <code class="language-plaintext highlighter-rouge">[]byte</code>. Zero allocation.</li>
+</ul>
+
+<p><strong>Product struct</strong> is realistic: UUID, name, brand, category, price, rating, review count, a 5-paragraph description, 5-15 tags, 7 attributes, 3-8 image URLs. One product serializes to ~3-5KB.</p>
+
+<h2 id="benchmark-command">benchmark command</h2>
+
+<div class="language-bash highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="c"># wrk with a Lua script mixing /read and /list</span>
+wrk <span class="nt">-t4</span> <span class="nt">-c100</span> <span class="nt">-d90s</span> <span class="nt">--latency</span> <span class="nt">--script</span> script_rw.lua http://localhost:8083
+
+<span class="c"># script_rw.lua — 100% /read (used for server comparison)</span>
+wrk.method <span class="o">=</span> <span class="s2">"GET"</span>
+request <span class="o">=</span> <span class="k">function</span><span class="o">()</span>
+  <span class="k">return </span>wrk.format<span class="o">(</span>nil, <span class="s2">"/read"</span><span class="o">)</span>
+end
+</code></pre></div></div>
+
+<p><code class="language-plaintext highlighter-rouge">-t4</code> = 4 threads, <code class="language-plaintext highlighter-rouge">-c100</code> = 100 connections, <code class="language-plaintext highlighter-rouge">-d90s</code> = 90 second duration.</p>
+
+<h2 id="server-comparison-on-read">server comparison on <code class="language-plaintext highlighter-rouge">/read</code></h2>
+
+<p>All numbers from <code class="language-plaintext highlighter-rouge">run8.txt</code>:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>wrk -t4 -c100 -d90s --latency --script script_rw.lua http://localhost:8083
+</code></pre></div></div>
+
+<div class="bench-table-wrap">
+<table class="bench-table">
+  <thead><tr><th>Server</th><th>RPS</th><th>P50</th><th>P75</th><th>P90</th><th>P99</th></tr></thead>
+  <tbody>
+    <tr><td>net/http</td><td>93k</td><td>1.02ms</td><td>—</td><td>—</td><td>1.64ms</td></tr>
+    <tr><td>fasthttp</td><td>174k</td><td>0.38ms</td><td>—</td><td>—</td><td>1.37ms</td></tr>
+    <tr><td>fiber (no prefork)</td><td>175k</td><td>0.40ms</td><td>—</td><td>—</td><td>1.28ms</td></tr>
+    <tr><td class="highlight">fiber + prefork (10 workers)</td><td class="highlight">201,777</td><td class="highlight">490µs</td><td>567µs</td><td>617µs</td><td class="highlight">683µs</td></tr>
+  </tbody>
+</table>
+</div>
+
+<p>Actual wrk output for fiber+prefork:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>Thread Stats   Avg      Stdev     Max   +/- Stdev
+  Latency   493.28us  113.56us   8.46ms   72.51%
+  Req/Sec    50.70k     2.36k   53.99k    94.53%
+
+18180192 requests in 1.50m, 78.39GB read
+Requests/sec: 201777.96
+Transfer/sec:      0.87GB
+</code></pre></div></div>
+
+<p>prefork’s P99 (683µs) is lower than single-process fiber’s P99 (1.28ms) despite a slightly higher P50. Load distributed across 10 workers reduces tail spikes from GC pauses.</p>
+
+<h2 id="compute-vs-read"><code class="language-plaintext highlighter-rouge">/compute</code> vs <code class="language-plaintext highlighter-rouge">/read</code></h2>
+
+<div class="language-bash highlighter-rouge"><div class="highlight"><pre class="highlight"><code>wrk <span class="nt">-t4</span> <span class="nt">-c100</span> <span class="nt">-d90s</span> <span class="nt">--latency</span> <span class="nt">--script</span> script_compute.lua http://localhost:8083
+</code></pre></div></div>
+
+<p>Actual wrk output (<code class="language-plaintext highlighter-rouge">run10.txt</code>):</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>Thread Stats   Avg      Stdev     Max   +/- Stdev
+  Latency     2.95ms  785.40us   8.25ms   63.39%
+  Req/Sec     8.52k   183.60     9.56k    71.34%
+
+3054303 requests in 1.50m, 1.49GB read
+Requests/sec:  33897.44
+</code></pre></div></div>
+
+<div class="bench-table-wrap">
+<table class="bench-table">
+  <thead><tr><th>Route</th><th>RPS</th><th>P50</th><th>P99</th><th>P99/P50 ratio</th></tr></thead>
+  <tbody>
+    <tr><td>/read (pool lookup)</td><td>175k</td><td>0.40ms</td><td>1.28ms</td><td class="bottleneck">3.2×</td></tr>
+    <tr><td>/compute (sort + aggregate 100 items)</td><td>33,897</td><td>2.88ms</td><td>4.68ms</td><td class="highlight">1.6×</td></tr>
+  </tbody>
+</table>
+</div>
+
+<p><code class="language-plaintext highlighter-rouge">/compute</code> is 5× slower in RPS but has a <strong>tighter latency distribution</strong> — P99 is only 1.6× P50 vs 3.2× for <code class="language-plaintext highlighter-rouge">/read</code>. CPU-bound work is predictable: every request does the same sort + aggregation. Near-zero work like <code class="language-plaintext highlighter-rouge">/read</code> exposes GC pauses and goroutine scheduler jitter that push P99 disproportionately high.</p>
+
+<h2 id="the-payload-problem">the payload problem</h2>
+
+<p>When we added <code class="language-plaintext highlighter-rouge">/list</code> (50-100 products, ~350KB per response) to the benchmark mix:</p>
+
+<div class="language-bash highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="c"># 60% /read, 40% /list</span>
+vegeta attack <span class="nt">-rate</span><span class="o">=</span>100000 <span class="nt">-duration</span><span class="o">=</span>30s <span class="nt">-targets</span><span class="o">=</span>targets.txt | vegeta report
+</code></pre></div></div>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code># vegeta result at 100k target RPS
+Requests/sec:  2,529
+Mean response: 48,266 bytes
+Throughput:    ~350 MB/s
+</code></pre></div></div>
+
+<p>2,529 actual RPS against a 100k target. Not a server problem — the average 48KB response × 2,529 = ~350 MB/s through the loopback. Reducing <code class="language-plaintext highlighter-rouge">/list</code> to 20-30 products (~48KB avg weighted):</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code># after reducing list batch size
+Requests/sec: 8,601
+Mean response: 48,266 bytes  
+P50: 3.6ms  P99: 20.3ms
+</code></pre></div></div>
+
+<p>3.4× more RPS from a config change with no server code changes.</p>
+
+<div class="journal-callout finding">
+  <strong>Finding</strong>
+  Payload size dominates throughput benchmarks. The server isn't the variable — bandwidth is. At 48KB avg response, the loopback saturates around 8-13k RPS depending on client capacity. Measuring server throughput with large payloads measures network, not compute.
+</div>
+
+<h2 id="prefork-on-macos-is-broken">prefork on macOS is broken</h2>
+
+<p>htop during the vegeta benchmark showed all 10 child workers at <strong>0.0% CPU</strong>. Only the parent process was active (14.1% CPU). <code class="language-plaintext highlighter-rouge">SO_REUSEPORT</code> on macOS does not distribute TCP connections across prefork workers — all connections go to the parent process, which uses Go’s goroutine scheduler to spread across all 10 cores. The children are decorative.</p>
+
+<p>This means the 201k RPS number above is a <strong>single Go process</strong> result, not 10 workers. Linux tests this correctly.</p>
+
+<div class="journal-callout warning">
+  <strong>macOS caveat</strong>
+  <code>SO_REUSEPORT</code> on macOS was designed for UDP multicast (BSD origin), not TCP load balancing. Any prefork benchmark on macOS is a single-process benchmark in disguise. Confirmed via htop showing 0% CPU on all 10 child processes during load.
+</div>
+
+
+      <hr>
+
+      <!-- Prev / Next -->
+      
+      
+      
+
+      <div class="clearfix" style="margin-top: 2rem;">
+        
+          
+          
+
+          
+
+          
+            
+            <a class="btn btn-primary float-right" href="/millionrps/02-linux-prefork.html">linux confirms it: SO_REUSEPORT actually works &rarr;</a>
+          
+        
+      </div>
+
+      <div style="text-align: center; margin-top: 1rem;">
+        <a href="/millionrps/">&uarr; Back to Journal</a>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+
+  <!-- Footer -->
+
+<hr>
+
+<footer>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <ul class="list-inline text-center">
+          
+          <li class="list-inline-item">
+            <a href="mailto:amitava.dev@proton.me" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="far fa-envelope fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          
+          
+          <li class="list-inline-item">
+            <a href="https://www.linkedin.com/in/amitavaag" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-linkedin fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          <li class="list-inline-item">
+            <a href="https://github.com/ikouchiha47" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-github fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+        </ul>
+
+        <p class="copyright text-muted">
+          Build with: 
+          <a 
+            href="https://github.com/StartBootstrap/startbootstrap-clean-blog-jekyll"
+            class="text-gray"
+            target="_blank">startbootstrap-clean-blog-jekyll</a></p>
+      </div>
+    </div>
+  </div>
+</footer>
+
+
+  <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="/assets/vendor/blog/js/scripts.js"></script>
+
+<script src="/assets/scripts.js"></script>
+
+
+
+
+
+  <script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+
+    document.querySelectorAll('pre > code.language-mermaid').forEach((codeBlock) => {
+      codeBlock.parentElement.outerHTML = `<pre class="mermaid">${codeBlock.textContent}</pre>`;
+    });
+
+
+    mermaid.initialize({ startOnLoad: true, theme: 'forest' });
+</script>
+
+
+  
+
+</body>
+
+</html>

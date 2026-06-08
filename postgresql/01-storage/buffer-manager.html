@@ -1,0 +1,530 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+  <title>
+    Buffer Manager - iko&#39;s logs
+    
+  </title>
+
+  <meta name="description" content="">
+  <meta property="og:description" content="">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Buffer Manager">
+  <meta property="og:url" content="https://ikouchiha47.github.io/postgresql/01-storage/buffer-manager.html">
+
+  
+
+  <link href='https://fonts.googleapis.com/css?family=Lora:400,700,400italic,700italic' rel='stylesheet' type='text/css'>
+  <link href='https://fonts.googleapis.com/css?family=Open+Sans:300italic,400italic,600italic,700italic,800italic,400,300,600,700,800' rel='stylesheet' type='text/css'>
+
+  <!-- <script src="https://use.fontawesome.com/releases/v5.15.3/js/all.js" crossorigin="anonymous"></script> -->
+  <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.15.4/css/all.css" integrity="sha384-DyZ88mC6Up2uqS4h/KRgHuoeGwBcD4Ng9SiP4dIRy0EXTlnuz47vAwmeGwVChigm" crossorigin="anonymous"/>
+
+  <link rel="stylesheet" href="/assets/main.css">
+  <link rel="canonical" href="https://ikouchiha47.github.io/postgresql/01-storage/buffer-manager.html">
+  <link rel="alternate" type="application/rss+xml" title="iko&#39;s logs" href="/feed.xml">
+
+  <meta name="google-site-verification" content="lWkg6gIxJgzEKX_5XnhcxCtPE9QknaimFWWos_dTvPM" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fira+Sans:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Inconsolata:wght@200..900&family=Jersey+25&family=Kanit:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Merriweather+Sans:ital,wght@0,300..800;1,300..800&family=Nanum+Gothic+Coding&family=Space+Grotesk:wght@300..700&family=Titillium+Web:ital,wght@0,200;0,300;0,400;0,600;0,700;0,900;1,200;1,300;1,400;1,600;1,700&display=swap" rel="stylesheet">
+
+</head>
+
+
+<body>
+
+  <!-- Navigation -->
+<nav class="navbar navbar-expand-lg navbar-light fixed-top" id="mainNav">
+  <div class="container">
+    <a class="navbar-brand" href="/">iko&#39;s logs</a>
+    <button class="navbar-toggler navbar-toggler-right" type="button" data-toggle="collapse" data-target="#navbarResponsive" aria-controls="navbarResponsive" aria-expanded="false" aria-label="Toggle navigation">
+      Menu
+      <i class="fa fa-bars"></i>
+    </button>
+    <div class="collapse navbar-collapse" id="navbarResponsive">
+      <ul class="navbar-nav ml-auto">
+        <li class="nav-item">
+          <a class="nav-link" href="/">Home</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/about">About</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/posts">Posts</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/contact">Contact</a>
+        </li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+
+  <!-- Page Header -->
+
+<header class="masthead">
+
+  <div class="overlay"></div>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <div class="post-heading">
+          <h1>Buffer Manager</h1>
+          
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="container space-grotesk">
+  <div class="row">
+    <div class="col-lg-8 col-md-10 mx-auto">
+
+      <!-- Breadcrumb -->
+      <nav aria-label="breadcrumb" style="margin-bottom: 1.5rem;">
+        <ol class="breadcrumb" style="background: transparent; padding: 0;">
+          
+            <li class="breadcrumb-item"><a href="/postgresql-internals/">PostgreSQL Internals Deep Dive</a></li>
+          
+          
+            
+              <li class="breadcrumb-item"><a href="/postgresql/01-storage/">Storage Engine</a></li>
+            
+          
+          <li class="breadcrumb-item active" aria-current="page">Buffer Manager</li>
+        </ol>
+      </nav>
+
+      <h1 id="buffer-manager">Buffer Manager</h1>
+
+<p>The buffer manager is PostgreSQL’s page cache, sitting between access methods and the storage manager. It maintains a pool of shared-memory buffers (sized by <code class="language-plaintext highlighter-rouge">shared_buffers</code>) and uses a clock-sweep algorithm for eviction. Every page read or written by a backend flows through this layer.</p>
+
+<h2 id="overview">Overview</h2>
+
+<p>The buffer pool is a fixed-size array of 8 KB slots in shared memory. Each slot has a corresponding <code class="language-plaintext highlighter-rouge">BufferDesc</code> descriptor that tracks the page identity, reference count, usage count, dirty status, and I/O state – all packed into a single 64-bit atomic variable for lock-free fast-path operations.</p>
+
+<p>Backends interact with the buffer pool through <code class="language-plaintext highlighter-rouge">ReadBuffer()</code> (which returns a pinned buffer) and <code class="language-plaintext highlighter-rouge">ReleaseBuffer()</code> (which unpins it). The clock-sweep algorithm approximates LRU replacement by scanning circularly through buffers, decrementing usage counts until it finds a victim with usage count zero and reference count zero.</p>
+
+<p>For bulk operations (sequential scans, VACUUM, bulk writes), PostgreSQL uses <strong>ring buffers</strong> – small, fixed-size buffer pools that prevent large scans from evicting the entire shared buffer cache.</p>
+
+<h2 id="key-source-files">Key Source Files</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>File</th>
+      <th>Purpose</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/storage/bufmgr.h</code></td>
+      <td>Public buffer manager API: <code class="language-plaintext highlighter-rouge">ReadBuffer()</code>, <code class="language-plaintext highlighter-rouge">ReleaseBuffer()</code>, <code class="language-plaintext highlighter-rouge">MarkBufferDirty()</code></td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/storage/buf_internals.h</code></td>
+      <td><code class="language-plaintext highlighter-rouge">BufferDesc</code>, <code class="language-plaintext highlighter-rouge">BufferTag</code>, state bit definitions, internal functions</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/storage/buffer/bufmgr.c</code></td>
+      <td>Core buffer manager: <code class="language-plaintext highlighter-rouge">ReadBuffer_common()</code>, <code class="language-plaintext highlighter-rouge">BufferAlloc()</code>, <code class="language-plaintext highlighter-rouge">FlushBuffer()</code></td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/storage/buffer/freelist.c</code></td>
+      <td>Clock-sweep eviction (<code class="language-plaintext highlighter-rouge">StrategyGetBuffer()</code>), ring buffer strategies</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/storage/buffer/buf_table.c</code></td>
+      <td>Shared hash table mapping <code class="language-plaintext highlighter-rouge">BufferTag</code> to buffer ID</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/storage/buffer/buf_init.c</code></td>
+      <td>Shared memory initialization for buffer descriptors</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/storage/buffer/localbuf.c</code></td>
+      <td>Local (unshared) buffers for temporary tables</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/storage/buffer/README</code></td>
+      <td>Detailed explanation of locking rules and access protocols</td>
+    </tr>
+  </tbody>
+</table>
+
+<h2 id="how-it-works">How It Works</h2>
+
+<h3 id="buffer-identification-buffertag">Buffer Identification: BufferTag</h3>
+
+<p>Every buffer slot is identified by a <code class="language-plaintext highlighter-rouge">BufferTag</code> that uniquely names the on-disk block:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">typedef</span> <span class="k">struct</span> <span class="n">buftag</span>
+<span class="p">{</span>
+    <span class="n">Oid</span>           <span class="n">spcOid</span><span class="p">;</span>       <span class="cm">/* tablespace OID */</span>
+    <span class="n">Oid</span>           <span class="n">dbOid</span><span class="p">;</span>        <span class="cm">/* database OID */</span>
+    <span class="n">RelFileNumber</span> <span class="n">relNumber</span><span class="p">;</span>    <span class="cm">/* relation file number */</span>
+    <span class="n">ForkNumber</span>    <span class="n">forkNum</span><span class="p">;</span>      <span class="cm">/* fork: MAIN_FORKNUM, FSM_FORKNUM, etc. */</span>
+    <span class="n">BlockNumber</span>   <span class="n">blockNum</span><span class="p">;</span>     <span class="cm">/* block number within the fork */</span>
+<span class="p">}</span> <span class="n">BufferTag</span><span class="p">;</span>
+</code></pre></div></div>
+
+<p>The shared buffer hash table (<code class="language-plaintext highlighter-rouge">buf_table.c</code>) maps <code class="language-plaintext highlighter-rouge">BufferTag</code> to a buffer ID. The hash table is partitioned into <code class="language-plaintext highlighter-rouge">NUM_BUFFER_PARTITIONS</code> (default 128) partitions, each protected by its own LWLock, to reduce contention.</p>
+
+<h3 id="buffer-descriptor-bufferdesc">Buffer Descriptor: BufferDesc</h3>
+
+<p>Each of the <code class="language-plaintext highlighter-rouge">NBuffers</code> slots has a <code class="language-plaintext highlighter-rouge">BufferDesc</code>, kept under 64 bytes to fit a single cache line:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">typedef</span> <span class="k">struct</span> <span class="n">BufferDesc</span>
+<span class="p">{</span>
+    <span class="n">BufferTag</span>          <span class="n">tag</span><span class="p">;</span>                   <span class="cm">/* which page is stored here */</span>
+    <span class="kt">int</span>                <span class="n">buf_id</span><span class="p">;</span>                <span class="cm">/* index in BufferDescriptors (0-based) */</span>
+    <span class="n">pg_atomic_uint64</span>   <span class="n">state</span><span class="p">;</span>                 <span class="cm">/* atomic: refcount + usagecount + flags + locks */</span>
+    <span class="kt">int</span>                <span class="n">wait_backend_pgprocno</span><span class="p">;</span> <span class="cm">/* backend waiting for sole pin */</span>
+    <span class="n">PgAioWaitRef</span>       <span class="n">io_wref</span><span class="p">;</span>               <span class="cm">/* set while async I/O is in progress */</span>
+    <span class="n">proclist_head</span>      <span class="n">lock_waiters</span><span class="p">;</span>          <span class="cm">/* list of PGPROCs waiting for content lock */</span>
+<span class="p">}</span> <span class="n">BufferDesc</span><span class="p">;</span>
+</code></pre></div></div>
+
+<p>The 64-bit <code class="language-plaintext highlighter-rouge">state</code> field packs multiple sub-fields to allow lock-free atomic operations:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code> Bits  0-17  (18 bits): reference count (pin count)
+ Bits 18-21  ( 4 bits): usage count (0..BM_MAX_USAGE_COUNT=5)
+ Bits 22-33  (12 bits): flag bits (BM_DIRTY, BM_VALID, BM_TAG_VALID, BM_IO_IN_PROGRESS, etc.)
+ Bits 34-53  (20 bits): shared lock + share-exclusive lock + exclusive lock
+</code></pre></div></div>
+
+<p>Key flag bits:</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>Flag</th>
+      <th>Bit</th>
+      <th>Meaning</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">BM_DIRTY</code></td>
+      <td>1</td>
+      <td>Page has been modified since last write</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">BM_VALID</code></td>
+      <td>2</td>
+      <td>Buffer contains a valid page</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">BM_TAG_VALID</code></td>
+      <td>3</td>
+      <td>Tag is assigned (buffer is in the hash table)</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">BM_IO_IN_PROGRESS</code></td>
+      <td>4</td>
+      <td>Read or write I/O is currently happening</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">BM_CHECKPOINT_NEEDED</code></td>
+      <td>8</td>
+      <td>Must be written during current checkpoint</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">BM_PERMANENT</code></td>
+      <td>9</td>
+      <td>Relation is permanent (not unlogged)</td>
+    </tr>
+  </tbody>
+</table>
+
+<h3 id="readbuffer-flow">ReadBuffer Flow</h3>
+
+<pre><code class="language-mermaid">flowchart TD
+    A["ReadBuffer(relation, blocknum)"] --&gt; B{Block in hash table?}
+    B --&gt;|Yes| C[Pin existing buffer&lt;br/&gt;increment refcount]
+    C --&gt; D{BM_VALID set?}
+    D --&gt;|Yes| E[Return Buffer handle]
+    D --&gt;|No, IO_IN_PROGRESS| F[Wait for I/O to complete]
+    F --&gt; E
+
+    B --&gt;|No| G["StrategyGetBuffer()&lt;br/&gt;clock-sweep for victim"]
+    G --&gt; H{Victim dirty?}
+    H --&gt;|Yes| I["FlushBuffer()&lt;br/&gt;write old page to disk"]
+    I --&gt; J[Remove old tag from hash table]
+    H --&gt;|No| J
+    J --&gt; K[Insert new tag into hash table]
+    K --&gt; L["smgrread()&lt;br/&gt;read page from disk"]
+    L --&gt; M[Set BM_VALID, set usage_count=1]
+    M --&gt; E
+</code></pre>
+
+<h3 id="clock-sweep-eviction">Clock-Sweep Eviction</h3>
+
+<p>The clock-sweep algorithm in <code class="language-plaintext highlighter-rouge">StrategyGetBuffer()</code> (<code class="language-plaintext highlighter-rouge">freelist.c</code>) works as follows:</p>
+
+<ol>
+  <li>A global <code class="language-plaintext highlighter-rouge">nextVictimBuffer</code> pointer rotates through the buffer array.</li>
+  <li>For each buffer examined:
+    <ul>
+      <li>If <code class="language-plaintext highlighter-rouge">refcount &gt; 0</code>: skip (buffer is pinned).</li>
+      <li>If <code class="language-plaintext highlighter-rouge">usage_count &gt; 0</code>: decrement usage count, skip.</li>
+      <li>If <code class="language-plaintext highlighter-rouge">refcount == 0 &amp;&amp; usage_count == 0</code>: this is the victim.</li>
+    </ul>
+  </li>
+  <li>The maximum usage count is <code class="language-plaintext highlighter-rouge">BM_MAX_USAGE_COUNT = 5</code>, so a recently-used buffer survives at most 6 complete passes of the clock hand.</li>
+</ol>
+
+<p>This approximates LRU with O(1) amortized cost per eviction. The tradeoff is that with a large <code class="language-plaintext highlighter-rouge">shared_buffers</code>, a full scan of the clock hand can be expensive – but this is rare because most buffers have low usage counts.</p>
+
+<pre><code class="language-mermaid">graph LR
+    subgraph "Clock-Sweep (circular scan)"
+        direction LR
+        B0["buf 0&lt;br/&gt;usage=3"]
+        B1["buf 1&lt;br/&gt;usage=0&lt;br/&gt;pinned"]
+        B2["buf 2&lt;br/&gt;usage=1"]
+        B3["buf 3&lt;br/&gt;usage=0&lt;br/&gt;FREE"]
+        B4["buf 4&lt;br/&gt;usage=5"]
+        B5["buf 5&lt;br/&gt;usage=2"]
+    end
+
+    HAND["nextVictimBuffer"] -.-&gt;|"scan"| B2
+    B2 -.-&gt;|"decrement to 0"| B3
+    B3 -.-&gt;|"VICTIM"| EVICT["Evict &amp; reuse"]
+</code></pre>
+
+<h3 id="ring-buffers-bufferaccessstrategy">Ring Buffers (BufferAccessStrategy)</h3>
+
+<p>Large sequential operations can push the entire working set out of the buffer cache. To prevent this, PostgreSQL uses <strong>ring buffers</strong> – a private, fixed-size ring of buffer slots that the operation cycles through:</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>Strategy</th>
+      <th>Ring Size</th>
+      <th>Used By</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">BAS_BULKREAD</code></td>
+      <td>256 KB (32 buffers)</td>
+      <td>Sequential scans of large tables</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">BAS_BULKWRITE</code></td>
+      <td>16 MB (2048 buffers)</td>
+      <td>COPY, CREATE TABLE AS, bulk inserts</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">BAS_VACUUM</code></td>
+      <td>256 KB (32 buffers)</td>
+      <td>VACUUM</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>When a ring buffer strategy is active, <code class="language-plaintext highlighter-rouge">StrategyGetBuffer()</code> first tries to reuse a buffer from the ring. If the buffer is still pinned by someone else, it falls back to the global clock-sweep. The <code class="language-plaintext highlighter-rouge">StrategyRejectBuffer()</code> function ensures that a buffer evicted by the ring is not a heavily-used buffer (usage count &gt; 1), in which case the eviction is rejected and the next ring slot is tried.</p>
+
+<h3 id="buffer-content-locks">Buffer Content Locks</h3>
+
+<p>Access to the data within a buffer is controlled by content locks, implemented directly in the <code class="language-plaintext highlighter-rouge">BufferDesc.state</code> field (not as separate LWLocks):</p>
+
+<ul>
+  <li><strong>Shared lock</strong>: Multiple readers can hold shared locks concurrently. Acquired for reading page contents, scanning tuples.</li>
+  <li><strong>Exclusive lock</strong>: Only one writer. Required for inserting tuples, modifying line pointers, updating hint bits that need WAL logging.</li>
+</ul>
+
+<p>Content locks are separate from and orthogonal to buffer pins. A pin prevents the buffer from being evicted; a content lock controls concurrent access to the page data. The rule is: pin first, then lock.</p>
+
+<h3 id="buffer-pins-and-the-wal-protocol">Buffer Pins and the WAL Protocol</h3>
+
+<p>A pinned buffer cannot be evicted, but it can be written to disk by the background writer or checkpointer. Before flushing a dirty buffer, the system checks <code class="language-plaintext highlighter-rouge">pd_lsn</code> on the page and ensures WAL has been flushed at least that far. This enforces the fundamental WAL rule: <em>log before data</em>.</p>
+
+<p>The sequence for modifying a page:</p>
+<ol>
+  <li><code class="language-plaintext highlighter-rouge">ReadBuffer()</code> – pin the buffer.</li>
+  <li><code class="language-plaintext highlighter-rouge">LockBuffer(buf, BUFFER_LOCK_EXCLUSIVE)</code> – exclusive content lock.</li>
+  <li><code class="language-plaintext highlighter-rouge">START_CRIT_SECTION()</code> – no errors allowed from here.</li>
+  <li>Modify the page data.</li>
+  <li><code class="language-plaintext highlighter-rouge">MarkBufferDirty()</code> – set <code class="language-plaintext highlighter-rouge">BM_DIRTY</code>.</li>
+  <li><code class="language-plaintext highlighter-rouge">XLogInsert()</code> – write WAL record; this sets <code class="language-plaintext highlighter-rouge">pd_lsn</code> on the page.</li>
+  <li><code class="language-plaintext highlighter-rouge">END_CRIT_SECTION()</code>.</li>
+  <li><code class="language-plaintext highlighter-rouge">UnlockBuffer()</code> and eventually <code class="language-plaintext highlighter-rouge">ReleaseBuffer()</code>.</li>
+</ol>
+
+<h3 id="local-buffers">Local Buffers</h3>
+
+<p>Temporary tables (created with <code class="language-plaintext highlighter-rouge">CREATE TEMP TABLE</code>) use <strong>local buffers</strong> that are private to the backend process. These bypass all shared-memory locking and are not WAL-logged. Local buffers are managed in <code class="language-plaintext highlighter-rouge">localbuf.c</code> and use a simpler allocation strategy since there is no concurrency.</p>
+
+<h2 id="key-data-structures-summary">Key Data Structures Summary</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>Struct</th>
+      <th>Header</th>
+      <th>Key Fields</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">BufferTag</code></td>
+      <td><code class="language-plaintext highlighter-rouge">buf_internals.h</code></td>
+      <td><code class="language-plaintext highlighter-rouge">spcOid</code>, <code class="language-plaintext highlighter-rouge">dbOid</code>, <code class="language-plaintext highlighter-rouge">relNumber</code>, <code class="language-plaintext highlighter-rouge">forkNum</code>, <code class="language-plaintext highlighter-rouge">blockNum</code></td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">BufferDesc</code></td>
+      <td><code class="language-plaintext highlighter-rouge">buf_internals.h</code></td>
+      <td><code class="language-plaintext highlighter-rouge">tag</code>, <code class="language-plaintext highlighter-rouge">buf_id</code>, <code class="language-plaintext highlighter-rouge">state</code> (atomic: refcount + usagecount + flags + locks)</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">BufferDescPadded</code></td>
+      <td><code class="language-plaintext highlighter-rouge">buf_internals.h</code></td>
+      <td>Union padded to 64 bytes for cache-line alignment</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">WritebackContext</code></td>
+      <td><code class="language-plaintext highlighter-rouge">buf_internals.h</code></td>
+      <td>Coalesces pending OS writeback requests</td>
+    </tr>
+  </tbody>
+</table>
+
+<h2 id="connections">Connections</h2>
+
+<ul>
+  <li><strong>Page Layout</strong>: The buffer manager delivers raw 8 KB pages. It enforces <code class="language-plaintext highlighter-rouge">pd_lsn</code> for WAL ordering but is otherwise page-format-agnostic.</li>
+  <li><strong>Storage Manager (smgr)</strong>: On cache miss, the buffer manager calls <code class="language-plaintext highlighter-rouge">smgrread()</code> / <code class="language-plaintext highlighter-rouge">smgrstartreadv()</code>. On eviction of dirty buffers, it calls <code class="language-plaintext highlighter-rouge">smgrwrite()</code>.</li>
+  <li><strong>WAL</strong>: <code class="language-plaintext highlighter-rouge">MarkBufferDirty()</code> + <code class="language-plaintext highlighter-rouge">XLogInsert()</code> cooperate to ensure crash safety. The background writer and checkpointer flush dirty buffers in LSN order.</li>
+  <li><strong>Async I/O</strong>: The new AIO framework provides <code class="language-plaintext highlighter-rouge">StartReadBuffers()</code> for batched, asynchronous page reads, used by the read stream layer.</li>
+  <li><strong>Checkpointer</strong>: Periodically scans for buffers with <code class="language-plaintext highlighter-rouge">BM_CHECKPOINT_NEEDED</code> set and flushes them, advancing the redo point.</li>
+</ul>
+
+
+      <hr>
+
+      <!-- Prev / Next / Up navigation -->
+      
+      
+      
+
+      <div class="clearfix" style="margin-top: 2rem;">
+        
+          
+          
+
+          
+            
+            <a class="btn btn-primary float-left" href="/postgresql/01-storage/aio.html" title="Async I/O">&larr; Previous</a>
+          
+
+          
+            
+            <a class="btn btn-primary float-right" href="/postgresql/01-storage/freespace-map.html" title="Free Space Map">Next &rarr;</a>
+          
+        
+      </div>
+
+      
+      <div style="text-align: center; margin-top: 1rem;">
+        <a href="/postgresql-internals/">&uarr; Back to Table of Contents</a>
+      </div>
+      
+
+    </div>
+  </div>
+</div>
+
+
+  <!-- Footer -->
+
+<hr>
+
+<footer>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <ul class="list-inline text-center">
+          
+          <li class="list-inline-item">
+            <a href="mailto:amitava.dev@proton.me" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="far fa-envelope fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          
+          
+          <li class="list-inline-item">
+            <a href="https://www.linkedin.com/in/amitavaag" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-linkedin fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          <li class="list-inline-item">
+            <a href="https://github.com/ikouchiha47" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-github fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+        </ul>
+
+        <p class="copyright text-muted">
+          Build with: 
+          <a 
+            href="https://github.com/StartBootstrap/startbootstrap-clean-blog-jekyll"
+            class="text-gray"
+            target="_blank">startbootstrap-clean-blog-jekyll</a></p>
+      </div>
+    </div>
+  </div>
+</footer>
+
+
+  <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="/assets/vendor/blog/js/scripts.js"></script>
+
+<script src="/assets/scripts.js"></script>
+
+
+
+
+
+  <script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+
+    document.querySelectorAll('pre > code.language-mermaid').forEach((codeBlock) => {
+      codeBlock.parentElement.outerHTML = `<pre class="mermaid">${codeBlock.textContent}</pre>`;
+    });
+
+
+    mermaid.initialize({ startOnLoad: true, theme: 'forest' });
+</script>
+
+
+  
+
+</body>
+
+</html>

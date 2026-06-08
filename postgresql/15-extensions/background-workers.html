@@ -1,0 +1,589 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+  <title>
+    Background Workers - iko&#39;s logs
+    
+  </title>
+
+  <meta name="description" content="">
+  <meta property="og:description" content="">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Background Workers">
+  <meta property="og:url" content="https://ikouchiha47.github.io/postgresql/15-extensions/background-workers.html">
+
+  
+
+  <link href='https://fonts.googleapis.com/css?family=Lora:400,700,400italic,700italic' rel='stylesheet' type='text/css'>
+  <link href='https://fonts.googleapis.com/css?family=Open+Sans:300italic,400italic,600italic,700italic,800italic,400,300,600,700,800' rel='stylesheet' type='text/css'>
+
+  <!-- <script src="https://use.fontawesome.com/releases/v5.15.3/js/all.js" crossorigin="anonymous"></script> -->
+  <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.15.4/css/all.css" integrity="sha384-DyZ88mC6Up2uqS4h/KRgHuoeGwBcD4Ng9SiP4dIRy0EXTlnuz47vAwmeGwVChigm" crossorigin="anonymous"/>
+
+  <link rel="stylesheet" href="/assets/main.css">
+  <link rel="canonical" href="https://ikouchiha47.github.io/postgresql/15-extensions/background-workers.html">
+  <link rel="alternate" type="application/rss+xml" title="iko&#39;s logs" href="/feed.xml">
+
+  <meta name="google-site-verification" content="lWkg6gIxJgzEKX_5XnhcxCtPE9QknaimFWWos_dTvPM" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fira+Sans:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Inconsolata:wght@200..900&family=Jersey+25&family=Kanit:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Merriweather+Sans:ital,wght@0,300..800;1,300..800&family=Nanum+Gothic+Coding&family=Space+Grotesk:wght@300..700&family=Titillium+Web:ital,wght@0,200;0,300;0,400;0,600;0,700;0,900;1,200;1,300;1,400;1,600;1,700&display=swap" rel="stylesheet">
+
+</head>
+
+
+<body>
+
+  <!-- Navigation -->
+<nav class="navbar navbar-expand-lg navbar-light fixed-top" id="mainNav">
+  <div class="container">
+    <a class="navbar-brand" href="/">iko&#39;s logs</a>
+    <button class="navbar-toggler navbar-toggler-right" type="button" data-toggle="collapse" data-target="#navbarResponsive" aria-controls="navbarResponsive" aria-expanded="false" aria-label="Toggle navigation">
+      Menu
+      <i class="fa fa-bars"></i>
+    </button>
+    <div class="collapse navbar-collapse" id="navbarResponsive">
+      <ul class="navbar-nav ml-auto">
+        <li class="nav-item">
+          <a class="nav-link" href="/">Home</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/about">About</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/posts">Posts</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/contact">Contact</a>
+        </li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+
+  <!-- Page Header -->
+
+<header class="masthead">
+
+  <div class="overlay"></div>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <div class="post-heading">
+          <h1>Background Workers</h1>
+          
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="container space-grotesk">
+  <div class="row">
+    <div class="col-lg-8 col-md-10 mx-auto">
+
+      <!-- Breadcrumb -->
+      <nav aria-label="breadcrumb" style="margin-bottom: 1.5rem;">
+        <ol class="breadcrumb" style="background: transparent; padding: 0;">
+          
+            <li class="breadcrumb-item"><a href="/postgresql-internals/">PostgreSQL Internals Deep Dive</a></li>
+          
+          
+            
+              <li class="breadcrumb-item"><a href="/postgresql/15-extensions/">Extensions</a></li>
+            
+          
+          <li class="breadcrumb-item active" aria-current="page">Background Workers</li>
+        </ol>
+      </nav>
+
+      <h1 id="background-workers-extension-managed-server-processes">Background Workers: Extension-Managed Server Processes</h1>
+
+<blockquote>
+  <p><em>A background worker is a PostgreSQL process forked by the postmaster that runs arbitrary extension-supplied code. Unlike a regular backend, it does not serve a client connection – but it can connect to databases, run transactions, and coordinate with other processes through shared memory.</em></p>
+</blockquote>
+
+<h2 id="overview">Overview</h2>
+
+<p>The background worker API lets extensions run long-lived or short-lived processes within the PostgreSQL server. Workers are forked from the postmaster just like regular backends, inherit the shared memory mapping, and can optionally establish database connections to run SQL. The API provides a complete lifecycle: registration, startup notification, status monitoring, and termination.</p>
+
+<p>Background workers power some of PostgreSQL’s own subsystems (logical replication launcher, autovacuum launcher) and are essential for extensions like TimescaleDB (background schedulers), pg_cron (periodic job execution), and Citus (distributed query execution workers).</p>
+
+<p>There are two registration paths. <strong>Static registration</strong> happens during <code class="language-plaintext highlighter-rouge">_PG_init</code> when <code class="language-plaintext highlighter-rouge">shared_preload_libraries</code> are loaded, before any backends start. <strong>Dynamic registration</strong> happens at runtime from a regular backend using <code class="language-plaintext highlighter-rouge">RegisterDynamicBackgroundWorker</code>. Static workers survive postmaster restarts; dynamic workers are tied to the session that created them (though the worker process itself runs independently).</p>
+
+<h2 id="key-source-files">Key Source Files</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>File</th>
+      <th>Purpose</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/postmaster/bgworker.h</code></td>
+      <td><code class="language-plaintext highlighter-rouge">BackgroundWorker</code> struct, registration APIs, status queries</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/postmaster/bgworker.c</code></td>
+      <td>Worker slot management, fork/signal handling</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/postmaster/postmaster.c</code></td>
+      <td>Postmaster loop that starts/restarts workers</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/utils/init/miscinit.c</code></td>
+      <td><code class="language-plaintext highlighter-rouge">BackgroundWorkerInitializeConnection</code></td>
+    </tr>
+  </tbody>
+</table>
+
+<pre><code class="language-mermaid">stateDiagram-v2
+    [*] --&gt; Registered: RegisterBackgroundWorker() or\nRegisterDynamicBackgroundWorker()
+    Registered --&gt; Started: Postmaster forks
+    Started --&gt; Running: bgw_main() begins
+    Running --&gt; Running: Process work\n(can connect to DB, run SQL)
+    Running --&gt; Stopped: proc_exit() or crash
+    Stopped --&gt; Started: BGW_RESTART_TIME elapsed\n(auto-restart)
+    Stopped --&gt; [*]: BGW_NEVER_RESTART
+</code></pre>
+
+<h2 id="how-it-works">How It Works</h2>
+
+<h3 id="registration">Registration</h3>
+
+<p>A background worker is described by the <code class="language-plaintext highlighter-rouge">BackgroundWorker</code> struct:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">typedef</span> <span class="k">struct</span> <span class="n">BackgroundWorker</span>
+<span class="p">{</span>
+    <span class="kt">char</span>        <span class="n">bgw_name</span><span class="p">[</span><span class="n">BGW_MAXLEN</span><span class="p">];</span>           <span class="cm">/* human-readable name */</span>
+    <span class="kt">char</span>        <span class="n">bgw_type</span><span class="p">[</span><span class="n">BGW_MAXLEN</span><span class="p">];</span>           <span class="cm">/* worker type for ps display */</span>
+    <span class="kt">int</span>         <span class="n">bgw_flags</span><span class="p">;</span>                       <span class="cm">/* BGWORKER_SHMEM_ACCESS, etc. */</span>
+    <span class="n">BgWorkerStartTime</span> <span class="n">bgw_start_time</span><span class="p">;</span>           <span class="cm">/* when to start */</span>
+    <span class="kt">int</span>         <span class="n">bgw_restart_time</span><span class="p">;</span>                <span class="cm">/* seconds, or BGW_NEVER_RESTART */</span>
+    <span class="kt">char</span>        <span class="n">bgw_library_name</span><span class="p">[</span><span class="n">MAXPGPATH</span><span class="p">];</span>    <span class="cm">/* shared library name */</span>
+    <span class="kt">char</span>        <span class="n">bgw_function_name</span><span class="p">[</span><span class="n">BGW_MAXLEN</span><span class="p">];</span>  <span class="cm">/* entry point function */</span>
+    <span class="n">Datum</span>       <span class="n">bgw_main_arg</span><span class="p">;</span>                   <span class="cm">/* argument to main function */</span>
+    <span class="kt">char</span>        <span class="n">bgw_extra</span><span class="p">[</span><span class="n">BGW_EXTRALEN</span><span class="p">];</span>        <span class="cm">/* extra data (128 bytes) */</span>
+    <span class="n">pid_t</span>       <span class="n">bgw_notify_pid</span><span class="p">;</span>                 <span class="cm">/* send SIGUSR1 on state change */</span>
+<span class="p">}</span> <span class="n">BackgroundWorker</span><span class="p">;</span>
+</code></pre></div></div>
+
+<h4 id="flags">Flags</h4>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>BGWORKER_SHMEM_ACCESS               (0x0001)  Required. Access shared memory.
+BGWORKER_BACKEND_DATABASE_CONNECTION (0x0002)  Can establish a DB connection.
+                                               Requires SHMEM_ACCESS.
+BGWORKER_INTERRUPTIBLE               (0x0004)  Exit if database involved in
+                                               CREATE/ALTER/DROP DATABASE.
+BGWORKER_CLASS_PARALLEL              (0x0010)  Internal: parallel query workers.
+</code></pre></div></div>
+
+<h4 id="start-time">Start Time</h4>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">typedef</span> <span class="k">enum</span> <span class="p">{</span>
+    <span class="n">BgWorkerStart_PostmasterStart</span><span class="p">,</span>    <span class="cm">/* start as soon as postmaster starts */</span>
+    <span class="n">BgWorkerStart_ConsistentState</span><span class="p">,</span>    <span class="cm">/* start when recovery reaches consistent state */</span>
+    <span class="n">BgWorkerStart_RecoveryFinished</span><span class="p">,</span>   <span class="cm">/* start after recovery completes */</span>
+<span class="p">}</span> <span class="n">BgWorkerStartTime</span><span class="p">;</span>
+</code></pre></div></div>
+
+<h3 id="lifecycle">Lifecycle</h3>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>Extension _PG_init()
+     |
+     | RegisterBackgroundWorker(&amp;worker)
+     v
++------------------+
+| Postmaster       |
+| (worker slots)   |     Stores worker in shared memory slot
++------------------+
+     |
+     | fork() when bgw_start_time condition is met
+     v
++------------------+
+| Worker Process   |
+|                  |     1. Shared memory is already mapped (inherited from postmaster)
+|  bgw_main()     |     2. Calls BackgroundWorkerInitializeConnection() if needed
+|                  |     3. Runs extension logic (transactions, queries, etc.)
+|                  |     4. Exits with code 0 (no restart) or 1 (restart after interval)
++------------------+
+     |
+     | exit(0) or exit(1) or SIGTERM
+     v
++------------------+
+| Postmaster       |
+|                  |     If exit code != 0 and bgw_restart_time != BGW_NEVER_RESTART:
+|                  |       wait bgw_restart_time seconds, then fork() again
+|                  |     If exit code == 0 or BGW_NEVER_RESTART:
+|                  |       unregister worker, free slot
++------------------+
+</code></pre></div></div>
+
+<h3 id="static-vs-dynamic-registration">Static vs Dynamic Registration</h3>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>STATIC REGISTRATION                    DYNAMIC REGISTRATION
+(during shared_preload_libraries)      (from a running backend)
+
+_PG_init() {                           some_backend_function() {
+  BackgroundWorker worker;               BackgroundWorker worker;
+  /* fill in worker... */                BackgroundWorkerHandle *handle;
+  RegisterBackgroundWorker(&amp;worker);     /* fill in worker... */
+}                                        RegisterDynamicBackgroundWorker(
+                                           &amp;worker, &amp;handle);
+                                         WaitForBackgroundWorkerStartup(
+                                           handle, &amp;pid);
+                                       }
+
+- Registered before backends exist     - Registered at runtime
+- Survives postmaster restart          - Lost on postmaster restart
+- No handle returned                   - Returns handle for monitoring
+- Cannot wait for startup              - Can wait for startup/shutdown
+</code></pre></div></div>
+
+<h3 id="worker-entry-point">Worker Entry Point</h3>
+
+<p>The postmaster resolves <code class="language-plaintext highlighter-rouge">bgw_library_name</code> and <code class="language-plaintext highlighter-rouge">bgw_function_name</code> via <code class="language-plaintext highlighter-rouge">dlopen</code>/<code class="language-plaintext highlighter-rouge">dlsym</code> and calls the function with <code class="language-plaintext highlighter-rouge">bgw_main_arg</code>:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="cm">/* Entry point signature */</span>
+<span class="k">typedef</span> <span class="nf">void</span> <span class="p">(</span><span class="o">*</span><span class="n">bgworker_main_type</span><span class="p">)(</span><span class="n">Datum</span> <span class="n">main_arg</span><span class="p">);</span>
+
+<span class="cm">/* Example worker main function */</span>
+<span class="kt">void</span>
+<span class="nf">my_worker_main</span><span class="p">(</span><span class="n">Datum</span> <span class="n">main_arg</span><span class="p">)</span>
+<span class="p">{</span>
+    <span class="cm">/* Set up signal handlers */</span>
+    <span class="n">pqsignal</span><span class="p">(</span><span class="n">SIGTERM</span><span class="p">,</span> <span class="n">die</span><span class="p">);</span>
+    <span class="n">BackgroundWorkerUnblockSignals</span><span class="p">();</span>
+
+    <span class="cm">/* Connect to a database (optional) */</span>
+    <span class="n">BackgroundWorkerInitializeConnection</span><span class="p">(</span><span class="s">"mydb"</span><span class="p">,</span> <span class="nb">NULL</span><span class="p">,</span> <span class="mi">0</span><span class="p">);</span>
+
+    <span class="cm">/* Main loop */</span>
+    <span class="k">while</span> <span class="p">(</span><span class="o">!</span><span class="n">got_sigterm</span><span class="p">)</span>
+    <span class="p">{</span>
+        <span class="kt">int</span> <span class="n">rc</span> <span class="o">=</span> <span class="n">WaitLatch</span><span class="p">(</span><span class="n">MyLatch</span><span class="p">,</span>
+                          <span class="n">WL_LATCH_SET</span> <span class="o">|</span> <span class="n">WL_TIMEOUT</span> <span class="o">|</span> <span class="n">WL_EXIT_ON_PM_DEATH</span><span class="p">,</span>
+                          <span class="mi">1000L</span><span class="p">,</span>  <span class="cm">/* 1 second timeout */</span>
+                          <span class="n">PG_WAIT_EXTENSION</span><span class="p">);</span>
+
+        <span class="n">ResetLatch</span><span class="p">(</span><span class="n">MyLatch</span><span class="p">);</span>
+
+        <span class="k">if</span> <span class="p">(</span><span class="n">rc</span> <span class="o">&amp;</span> <span class="n">WL_LATCH_SET</span><span class="p">)</span>
+            <span class="n">CHECK_FOR_INTERRUPTS</span><span class="p">();</span>
+
+        <span class="cm">/* Do work: run queries, process data, etc. */</span>
+        <span class="n">StartTransactionCommand</span><span class="p">();</span>
+        <span class="n">SPI_connect</span><span class="p">();</span>
+        <span class="n">SPI_execute</span><span class="p">(</span><span class="s">"SELECT process_pending_jobs()"</span><span class="p">,</span> <span class="nb">false</span><span class="p">,</span> <span class="mi">0</span><span class="p">);</span>
+        <span class="n">SPI_finish</span><span class="p">();</span>
+        <span class="n">CommitTransactionCommand</span><span class="p">();</span>
+    <span class="p">}</span>
+
+    <span class="n">proc_exit</span><span class="p">(</span><span class="mi">0</span><span class="p">);</span>  <span class="cm">/* Exit code 0 = don't restart */</span>
+<span class="p">}</span>
+</code></pre></div></div>
+
+<h3 id="monitoring-worker-status">Monitoring Worker Status</h3>
+
+<p>Dynamic workers return a <code class="language-plaintext highlighter-rouge">BackgroundWorkerHandle</code> that the launching backend can use to check status:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">typedef</span> <span class="k">enum</span> <span class="n">BgwHandleStatus</span>
+<span class="p">{</span>
+    <span class="n">BGWH_STARTED</span><span class="p">,</span>           <span class="cm">/* worker is running */</span>
+    <span class="n">BGWH_NOT_YET_STARTED</span><span class="p">,</span>   <span class="cm">/* worker hasn't started yet */</span>
+    <span class="n">BGWH_STOPPED</span><span class="p">,</span>           <span class="cm">/* worker has exited */</span>
+    <span class="n">BGWH_POSTMASTER_DIED</span><span class="p">,</span>   <span class="cm">/* postmaster died; status unclear */</span>
+<span class="p">}</span> <span class="n">BgwHandleStatus</span><span class="p">;</span>
+
+<span class="cm">/* Non-blocking status check */</span>
+<span class="n">BgwHandleStatus</span> <span class="nf">GetBackgroundWorkerPid</span><span class="p">(</span><span class="n">handle</span><span class="p">,</span> <span class="o">&amp;</span><span class="n">pid</span><span class="p">);</span>
+
+<span class="cm">/* Blocking waits */</span>
+<span class="n">BgwHandleStatus</span> <span class="nf">WaitForBackgroundWorkerStartup</span><span class="p">(</span><span class="n">handle</span><span class="p">,</span> <span class="o">&amp;</span><span class="n">pid</span><span class="p">);</span>
+<span class="n">BgwHandleStatus</span> <span class="nf">WaitForBackgroundWorkerShutdown</span><span class="p">(</span><span class="n">handle</span><span class="p">);</span>
+
+<span class="cm">/* Termination */</span>
+<span class="kt">void</span> <span class="nf">TerminateBackgroundWorker</span><span class="p">(</span><span class="n">handle</span><span class="p">);</span>  <span class="cm">/* sends SIGTERM */</span>
+</code></pre></div></div>
+
+<h3 id="connection-initialization">Connection Initialization</h3>
+
+<p>Workers that need database access call one of:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="cm">/* Connect by name */</span>
+<span class="n">BackgroundWorkerInitializeConnection</span><span class="p">(</span>
+    <span class="k">const</span> <span class="kt">char</span> <span class="o">*</span><span class="n">dbname</span><span class="p">,</span>     <span class="cm">/* database name, or NULL for no database */</span>
+    <span class="k">const</span> <span class="kt">char</span> <span class="o">*</span><span class="n">username</span><span class="p">,</span>   <span class="cm">/* role name, or NULL for bootstrap superuser */</span>
+    <span class="n">uint32</span> <span class="n">flags</span>            <span class="cm">/* BGWORKER_BYPASS_ALLOWCONN, etc. */</span>
+<span class="p">);</span>
+
+<span class="cm">/* Connect by OID */</span>
+<span class="n">BackgroundWorkerInitializeConnectionByOid</span><span class="p">(</span>
+    <span class="n">Oid</span> <span class="n">dboid</span><span class="p">,</span>
+    <span class="n">Oid</span> <span class="n">useroid</span><span class="p">,</span>
+    <span class="n">uint32</span> <span class="n">flags</span>
+<span class="p">);</span>
+</code></pre></div></div>
+
+<p>After this call, the worker can use SPI (Server Programming Interface) to run SQL queries, or directly call executor functions.</p>
+
+<h2 id="key-data-structures">Key Data Structures</h2>
+
+<h3 id="backgroundworker">BackgroundWorker</h3>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>BackgroundWorker
+ +-- bgw_name[96]         : display name (visible in pg_stat_activity)
+ +-- bgw_type[96]         : type string (for ps output and grouping)
+ +-- bgw_flags            : capability bitmask (SHMEM_ACCESS, DB_CONNECTION)
+ +-- bgw_start_time       : PostmasterStart | ConsistentState | RecoveryFinished
+ +-- bgw_restart_time     : seconds to wait before restart, or BGW_NEVER_RESTART
+ +-- bgw_library_name     : shared library containing entry point
+ +-- bgw_function_name    : name of entry point function
+ +-- bgw_main_arg         : Datum argument passed to entry point
+ +-- bgw_extra[128]       : opaque extra data (extension-defined use)
+ +-- bgw_notify_pid       : PID to send SIGUSR1 on state changes
+</code></pre></div></div>
+
+<h3 id="worker-slot-management">Worker Slot Management</h3>
+
+<p>The postmaster maintains an array of worker slots in shared memory. The maximum number of background workers is controlled by <code class="language-plaintext highlighter-rouge">max_worker_processes</code> (default: 8). Each slot tracks:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>Worker Slot (in shared memory)
+ +-- in_use              : bool
+ +-- terminate           : bool (SIGTERM requested)
+ +-- pid                 : pid_t (0 if not running)
+ +-- generation          : uint64 (monotonic, prevents stale handle use)
+ +-- bgw                 : BackgroundWorker (copy of registration data)
+</code></pre></div></div>
+
+<p>The <code class="language-plaintext highlighter-rouge">generation</code> counter prevents a race where a handle refers to a slot that has been reused by a different worker.</p>
+
+<h2 id="practical-patterns">Practical Patterns</h2>
+
+<h3 id="pattern-1-periodic-background-task">Pattern 1: Periodic Background Task</h3>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="kt">void</span> <span class="nf">_PG_init</span><span class="p">(</span><span class="kt">void</span><span class="p">)</span>
+<span class="p">{</span>
+    <span class="n">BackgroundWorker</span> <span class="n">worker</span><span class="p">;</span>
+
+    <span class="k">if</span> <span class="p">(</span><span class="o">!</span><span class="n">process_shared_preload_libraries_in_progress</span><span class="p">)</span>
+        <span class="k">return</span><span class="p">;</span>
+
+    <span class="n">memset</span><span class="p">(</span><span class="o">&amp;</span><span class="n">worker</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="k">sizeof</span><span class="p">(</span><span class="n">worker</span><span class="p">));</span>
+    <span class="n">snprintf</span><span class="p">(</span><span class="n">worker</span><span class="p">.</span><span class="n">bgw_name</span><span class="p">,</span> <span class="n">BGW_MAXLEN</span><span class="p">,</span> <span class="s">"my periodic worker"</span><span class="p">);</span>
+    <span class="n">snprintf</span><span class="p">(</span><span class="n">worker</span><span class="p">.</span><span class="n">bgw_type</span><span class="p">,</span> <span class="n">BGW_MAXLEN</span><span class="p">,</span> <span class="s">"my_extension"</span><span class="p">);</span>
+    <span class="n">worker</span><span class="p">.</span><span class="n">bgw_flags</span> <span class="o">=</span> <span class="n">BGWORKER_SHMEM_ACCESS</span> <span class="o">|</span>
+                        <span class="n">BGWORKER_BACKEND_DATABASE_CONNECTION</span><span class="p">;</span>
+    <span class="n">worker</span><span class="p">.</span><span class="n">bgw_start_time</span> <span class="o">=</span> <span class="n">BgWorkerStart_RecoveryFinished</span><span class="p">;</span>
+    <span class="n">worker</span><span class="p">.</span><span class="n">bgw_restart_time</span> <span class="o">=</span> <span class="n">BGW_DEFAULT_RESTART_INTERVAL</span><span class="p">;</span>  <span class="cm">/* 60 seconds */</span>
+    <span class="n">snprintf</span><span class="p">(</span><span class="n">worker</span><span class="p">.</span><span class="n">bgw_library_name</span><span class="p">,</span> <span class="n">MAXPGPATH</span><span class="p">,</span> <span class="s">"my_extension"</span><span class="p">);</span>
+    <span class="n">snprintf</span><span class="p">(</span><span class="n">worker</span><span class="p">.</span><span class="n">bgw_function_name</span><span class="p">,</span> <span class="n">BGW_MAXLEN</span><span class="p">,</span> <span class="s">"my_worker_main"</span><span class="p">);</span>
+    <span class="n">worker</span><span class="p">.</span><span class="n">bgw_main_arg</span> <span class="o">=</span> <span class="p">(</span><span class="n">Datum</span><span class="p">)</span> <span class="mi">0</span><span class="p">;</span>
+    <span class="n">worker</span><span class="p">.</span><span class="n">bgw_notify_pid</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span>
+
+    <span class="n">RegisterBackgroundWorker</span><span class="p">(</span><span class="o">&amp;</span><span class="n">worker</span><span class="p">);</span>
+<span class="p">}</span>
+</code></pre></div></div>
+
+<h3 id="pattern-2-on-demand-parallel-workers">Pattern 2: On-Demand Parallel Workers</h3>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="kt">void</span> <span class="nf">launch_helper_worker</span><span class="p">(</span><span class="kt">int</span> <span class="n">task_id</span><span class="p">)</span>
+<span class="p">{</span>
+    <span class="n">BackgroundWorker</span> <span class="n">worker</span><span class="p">;</span>
+    <span class="n">BackgroundWorkerHandle</span> <span class="o">*</span><span class="n">handle</span><span class="p">;</span>
+    <span class="n">pid_t</span> <span class="n">pid</span><span class="p">;</span>
+
+    <span class="n">memset</span><span class="p">(</span><span class="o">&amp;</span><span class="n">worker</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="k">sizeof</span><span class="p">(</span><span class="n">worker</span><span class="p">));</span>
+    <span class="n">snprintf</span><span class="p">(</span><span class="n">worker</span><span class="p">.</span><span class="n">bgw_name</span><span class="p">,</span> <span class="n">BGW_MAXLEN</span><span class="p">,</span> <span class="s">"helper worker %d"</span><span class="p">,</span> <span class="n">task_id</span><span class="p">);</span>
+    <span class="n">worker</span><span class="p">.</span><span class="n">bgw_flags</span> <span class="o">=</span> <span class="n">BGWORKER_SHMEM_ACCESS</span> <span class="o">|</span>
+                        <span class="n">BGWORKER_BACKEND_DATABASE_CONNECTION</span><span class="p">;</span>
+    <span class="n">worker</span><span class="p">.</span><span class="n">bgw_start_time</span> <span class="o">=</span> <span class="n">BgWorkerStart_RecoveryFinished</span><span class="p">;</span>
+    <span class="n">worker</span><span class="p">.</span><span class="n">bgw_restart_time</span> <span class="o">=</span> <span class="n">BGW_NEVER_RESTART</span><span class="p">;</span>
+    <span class="n">snprintf</span><span class="p">(</span><span class="n">worker</span><span class="p">.</span><span class="n">bgw_library_name</span><span class="p">,</span> <span class="n">MAXPGPATH</span><span class="p">,</span> <span class="s">"my_extension"</span><span class="p">);</span>
+    <span class="n">snprintf</span><span class="p">(</span><span class="n">worker</span><span class="p">.</span><span class="n">bgw_function_name</span><span class="p">,</span> <span class="n">BGW_MAXLEN</span><span class="p">,</span> <span class="s">"helper_main"</span><span class="p">);</span>
+    <span class="n">worker</span><span class="p">.</span><span class="n">bgw_main_arg</span> <span class="o">=</span> <span class="n">Int32GetDatum</span><span class="p">(</span><span class="n">task_id</span><span class="p">);</span>
+    <span class="n">worker</span><span class="p">.</span><span class="n">bgw_notify_pid</span> <span class="o">=</span> <span class="n">MyProcPid</span><span class="p">;</span>
+
+    <span class="k">if</span> <span class="p">(</span><span class="o">!</span><span class="n">RegisterDynamicBackgroundWorker</span><span class="p">(</span><span class="o">&amp;</span><span class="n">worker</span><span class="p">,</span> <span class="o">&amp;</span><span class="n">handle</span><span class="p">))</span>
+        <span class="n">ereport</span><span class="p">(</span><span class="n">ERROR</span><span class="p">,</span> <span class="n">errmsg</span><span class="p">(</span><span class="s">"could not register background worker"</span><span class="p">));</span>
+
+    <span class="k">if</span> <span class="p">(</span><span class="n">WaitForBackgroundWorkerStartup</span><span class="p">(</span><span class="n">handle</span><span class="p">,</span> <span class="o">&amp;</span><span class="n">pid</span><span class="p">)</span> <span class="o">!=</span> <span class="n">BGWH_STARTED</span><span class="p">)</span>
+        <span class="n">ereport</span><span class="p">(</span><span class="n">ERROR</span><span class="p">,</span> <span class="n">errmsg</span><span class="p">(</span><span class="s">"could not start background worker"</span><span class="p">));</span>
+
+    <span class="cm">/* Worker is now running with PID = pid */</span>
+<span class="p">}</span>
+</code></pre></div></div>
+
+<h3 id="restart-behavior">Restart Behavior</h3>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>Exit code 0  +  any restart_time        --&gt; Worker removed, slot freed
+Exit code 1  +  BGW_NEVER_RESTART       --&gt; Worker removed, slot freed
+Exit code 1  +  restart_time = 60       --&gt; Postmaster waits 60s, forks again
+SIGTERM      +  restart_time = 60       --&gt; Postmaster waits 60s, forks again
+SIGTERM      +  BGW_NEVER_RESTART       --&gt; Worker removed, slot freed
+Postmaster   +  crash restart           --&gt; Static workers re-registered
+  crash                                     Dynamic workers lost
+</code></pre></div></div>
+
+<h2 id="connections-to-other-chapters">Connections to Other Chapters</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>Chapter</th>
+      <th>Connection</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><a href="../00-architecture/">Chapter 0: Architecture</a></td>
+      <td>Background workers are postmaster-forked processes following the same model as regular backends, autovacuum workers, and WAL sender processes</td>
+    </tr>
+    <tr>
+      <td><a href="../11-ipc/">Chapter 11: IPC</a></td>
+      <td>Workers coordinate with backends through shared memory, latches, and the SIGUSR1 signaling mechanism</td>
+    </tr>
+    <tr>
+      <td><a href="../10-memory/">Chapter 10: Memory</a></td>
+      <td>Workers inherit the shared memory mapping from the postmaster; <code class="language-plaintext highlighter-rouge">shmem_request_hook</code> lets extensions reserve additional shared memory</td>
+    </tr>
+    <tr>
+      <td><a href="../03-transactions/">Chapter 3: Transactions</a></td>
+      <td>Workers with database connections can start transactions and use SPI, following the same transaction lifecycle as regular backends</td>
+    </tr>
+    <tr>
+      <td><a href="../04-wal/">Chapter 4: WAL</a></td>
+      <td>Workers that modify data generate WAL records; <code class="language-plaintext highlighter-rouge">BgWorkerStart_ConsistentState</code> ensures workers don’t start until recovery reaches a consistent point</td>
+    </tr>
+  </tbody>
+</table>
+
+
+      <hr>
+
+      <!-- Prev / Next / Up navigation -->
+      
+      
+      
+
+      <div class="clearfix" style="margin-top: 2rem;">
+        
+          
+          
+
+          
+            
+            <a class="btn btn-primary float-left" href="/postgresql/15-extensions/" title="Extensions">&larr; Previous</a>
+          
+
+          
+            
+            <a class="btn btn-primary float-right" href="/postgresql/15-extensions/custom-access-methods.html" title="Custom Access Methods">Next &rarr;</a>
+          
+        
+      </div>
+
+      
+      <div style="text-align: center; margin-top: 1rem;">
+        <a href="/postgresql-internals/">&uarr; Back to Table of Contents</a>
+      </div>
+      
+
+    </div>
+  </div>
+</div>
+
+
+  <!-- Footer -->
+
+<hr>
+
+<footer>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <ul class="list-inline text-center">
+          
+          <li class="list-inline-item">
+            <a href="mailto:amitava.dev@proton.me" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="far fa-envelope fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          
+          
+          <li class="list-inline-item">
+            <a href="https://www.linkedin.com/in/amitavaag" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-linkedin fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          <li class="list-inline-item">
+            <a href="https://github.com/ikouchiha47" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-github fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+        </ul>
+
+        <p class="copyright text-muted">
+          Build with: 
+          <a 
+            href="https://github.com/StartBootstrap/startbootstrap-clean-blog-jekyll"
+            class="text-gray"
+            target="_blank">startbootstrap-clean-blog-jekyll</a></p>
+      </div>
+    </div>
+  </div>
+</footer>
+
+
+  <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="/assets/vendor/blog/js/scripts.js"></script>
+
+<script src="/assets/scripts.js"></script>
+
+
+
+
+
+  <script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+
+    document.querySelectorAll('pre > code.language-mermaid').forEach((codeBlock) => {
+      codeBlock.parentElement.outerHTML = `<pre class="mermaid">${codeBlock.textContent}</pre>`;
+    });
+
+
+    mermaid.initialize({ startOnLoad: true, theme: 'forest' });
+</script>
+
+
+  
+
+</body>
+
+</html>

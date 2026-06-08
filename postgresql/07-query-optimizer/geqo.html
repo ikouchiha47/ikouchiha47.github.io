@@ -1,0 +1,669 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+  <title>
+    GEQO - iko&#39;s logs
+    
+  </title>
+
+  <meta name="description" content="">
+  <meta property="og:description" content="">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="GEQO">
+  <meta property="og:url" content="https://ikouchiha47.github.io/postgresql/07-query-optimizer/geqo.html">
+
+  
+
+  <link href='https://fonts.googleapis.com/css?family=Lora:400,700,400italic,700italic' rel='stylesheet' type='text/css'>
+  <link href='https://fonts.googleapis.com/css?family=Open+Sans:300italic,400italic,600italic,700italic,800italic,400,300,600,700,800' rel='stylesheet' type='text/css'>
+
+  <!-- <script src="https://use.fontawesome.com/releases/v5.15.3/js/all.js" crossorigin="anonymous"></script> -->
+  <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.15.4/css/all.css" integrity="sha384-DyZ88mC6Up2uqS4h/KRgHuoeGwBcD4Ng9SiP4dIRy0EXTlnuz47vAwmeGwVChigm" crossorigin="anonymous"/>
+
+  <link rel="stylesheet" href="/assets/main.css">
+  <link rel="canonical" href="https://ikouchiha47.github.io/postgresql/07-query-optimizer/geqo.html">
+  <link rel="alternate" type="application/rss+xml" title="iko&#39;s logs" href="/feed.xml">
+
+  <meta name="google-site-verification" content="lWkg6gIxJgzEKX_5XnhcxCtPE9QknaimFWWos_dTvPM" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fira+Sans:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Inconsolata:wght@200..900&family=Jersey+25&family=Kanit:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Merriweather+Sans:ital,wght@0,300..800;1,300..800&family=Nanum+Gothic+Coding&family=Space+Grotesk:wght@300..700&family=Titillium+Web:ital,wght@0,200;0,300;0,400;0,600;0,700;0,900;1,200;1,300;1,400;1,600;1,700&display=swap" rel="stylesheet">
+
+</head>
+
+
+<body>
+
+  <!-- Navigation -->
+<nav class="navbar navbar-expand-lg navbar-light fixed-top" id="mainNav">
+  <div class="container">
+    <a class="navbar-brand" href="/">iko&#39;s logs</a>
+    <button class="navbar-toggler navbar-toggler-right" type="button" data-toggle="collapse" data-target="#navbarResponsive" aria-controls="navbarResponsive" aria-expanded="false" aria-label="Toggle navigation">
+      Menu
+      <i class="fa fa-bars"></i>
+    </button>
+    <div class="collapse navbar-collapse" id="navbarResponsive">
+      <ul class="navbar-nav ml-auto">
+        <li class="nav-item">
+          <a class="nav-link" href="/">Home</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/about">About</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/posts">Posts</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/contact">Contact</a>
+        </li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+
+  <!-- Page Header -->
+
+<header class="masthead">
+
+  <div class="overlay"></div>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <div class="post-heading">
+          <h1>GEQO</h1>
+          
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="container space-grotesk">
+  <div class="row">
+    <div class="col-lg-8 col-md-10 mx-auto">
+
+      <!-- Breadcrumb -->
+      <nav aria-label="breadcrumb" style="margin-bottom: 1.5rem;">
+        <ol class="breadcrumb" style="background: transparent; padding: 0;">
+          
+            <li class="breadcrumb-item"><a href="/postgresql-internals/">PostgreSQL Internals Deep Dive</a></li>
+          
+          
+            
+              <li class="breadcrumb-item"><a href="/postgresql/07-query-optimizer/">Query Optimizer</a></li>
+            
+          
+          <li class="breadcrumb-item active" aria-current="page">GEQO</li>
+        </ol>
+      </nav>
+
+      <h1 id="genetic-query-optimizer-geqo">Genetic Query Optimizer (GEQO)</h1>
+
+<p>When a query involves many tables (default threshold: 12), the dynamic programming join search becomes impractical – the number of possible join orders grows super-exponentially. PostgreSQL switches to a <strong>Genetic Algorithm (GA)</strong> that explores the search space stochastically, trading optimality guarantees for bounded planning time. This is the Genetic Query Optimizer, or GEQO.</p>
+
+<hr />
+
+<h2 id="summary">Summary</h2>
+
+<p>GEQO models the join-ordering problem as a variant of the Traveling Salesman Problem. Each candidate solution (a “chromosome”) encodes a permutation of the query’s tables, which is decoded into a join tree. A population of chromosomes evolves over multiple generations through selection, crossover, and mutation. The fitness of each chromosome is the cost of the resulting plan. After a configurable number of generations, the best chromosome found is returned.</p>
+
+<p>Critically, GEQO only decides the <strong>join order</strong>. For each proposed join pair, it still calls the standard <code class="language-plaintext highlighter-rouge">add_paths_to_joinrel()</code> machinery to enumerate all join methods (nested loop, merge, hash) and uses the normal cost model. GEQO is a heuristic wrapper around the exhaustive path-generation code.</p>
+
+<hr />
+
+<h2 id="key-source-files">Key Source Files</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>File</th>
+      <th>Purpose</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/optimizer/geqo/geqo_main.c</code></td>
+      <td><code class="language-plaintext highlighter-rouge">geqo()</code> – top-level entry point, GA loop</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/optimizer/geqo/geqo_eval.c</code></td>
+      <td><code class="language-plaintext highlighter-rouge">geqo_eval()</code> – decode chromosome into join tree, compute cost</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/optimizer/geqo/geqo_pool.c</code></td>
+      <td>Population management (initialization, replacement)</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/optimizer/geqo/geqo_selection.c</code></td>
+      <td>Parent selection (linear bias)</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/optimizer/geqo/geqo_recombination.c</code></td>
+      <td>Common crossover infrastructure</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/optimizer/geqo/geqo_erx.c</code></td>
+      <td>Edge Recombination Crossover (ERX) – the default</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/optimizer/geqo/geqo_ox1.c</code></td>
+      <td>Order Crossover variant 1</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/optimizer/geqo/geqo_ox2.c</code></td>
+      <td>Order Crossover variant 2</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/optimizer/geqo/geqo_pmx.c</code></td>
+      <td>Partially Mapped Crossover</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/optimizer/geqo/geqo_cx.c</code></td>
+      <td>Cycle Crossover</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/optimizer/geqo/geqo_px.c</code></td>
+      <td>Position Crossover</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/optimizer/geqo/geqo_mutation.c</code></td>
+      <td>Mutation operator (swap two genes)</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/optimizer/geqo/geqo_random.c</code></td>
+      <td>Deterministic pseudo-random number generator</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/optimizer/geqo/geqo_copy.c</code></td>
+      <td>Chromosome copy routines</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/optimizer/geqo/geqo_misc.c</code></td>
+      <td>Debugging/printing utilities</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/optimizer/geqo.h</code></td>
+      <td>GEQO data types and configuration</td>
+    </tr>
+  </tbody>
+</table>
+
+<hr />
+
+<h2 id="how-it-works">How It Works</h2>
+
+<h3 id="when-geqo-activates">When GEQO Activates</h3>
+
+<p>The decision is made in <code class="language-plaintext highlighter-rouge">make_rel_from_joinlist()</code> in <code class="language-plaintext highlighter-rouge">allpaths.c</code>:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">if</span> <span class="p">(</span><span class="n">enable_geqo</span> <span class="o">&amp;&amp;</span> <span class="n">list_length</span><span class="p">(</span><span class="n">joinlist</span><span class="p">)</span> <span class="o">&gt;=</span> <span class="n">geqo_threshold</span><span class="p">)</span>
+    <span class="k">return</span> <span class="nf">geqo</span><span class="p">(</span><span class="n">root</span><span class="p">,</span> <span class="n">list_length</span><span class="p">(</span><span class="n">joinlist</span><span class="p">),</span> <span class="n">initial_rels</span><span class="p">);</span>
+<span class="k">else</span>
+    <span class="k">return</span> <span class="nf">standard_join_search</span><span class="p">(</span><span class="n">root</span><span class="p">,</span> <span class="n">levels_needed</span><span class="p">,</span> <span class="n">initial_rels</span><span class="p">);</span>
+</code></pre></div></div>
+
+<p>Default <code class="language-plaintext highlighter-rouge">geqo_threshold</code> is 12 tables. Below this, exhaustive DP search is used. Above it, the factorial growth of join orders makes DP impractical.</p>
+
+<h3 id="the-genetic-algorithm-loop">The Genetic Algorithm Loop</h3>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>geqo(root, number_of_rels, initial_rels):
+
+  1. Determine pool_size and number_of_generations from GUC params
+  2. Initialize population: pool_size random chromosomes
+     Each chromosome = random permutation of [1..number_of_rels]
+
+  3. Evaluate each chromosome:
+     For each chromosome in pool:
+       cost = geqo_eval(chromosome)
+       chromosome.fitness = cost
+
+  4. Sort pool by fitness (lowest cost first)
+
+  5. Evolution loop:
+     For generation = 1 to number_of_generations:
+       a. Select two parents (momma, daddy) via linear bias
+       b. Create offspring via crossover (ERX by default)
+       c. Evaluate offspring: cost = geqo_eval(offspring)
+       d. If offspring is better than worst in pool:
+            Replace worst chromosome with offspring
+            Re-sort pool
+
+  6. Return the best chromosome's RelOptInfo
+</code></pre></div></div>
+
+<h3 id="chromosome-encoding">Chromosome Encoding</h3>
+
+<p>A chromosome is an array of integers representing a permutation of the relation indices:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">typedef</span> <span class="k">struct</span> <span class="n">Chromosome</span>
+<span class="p">{</span>
+    <span class="n">Gene</span>   <span class="o">*</span><span class="n">string</span><span class="p">;</span>     <span class="cm">/* array of Gene (= int) values */</span>
+    <span class="n">Cost</span>    <span class="n">worth</span><span class="p">;</span>      <span class="cm">/* fitness = total plan cost */</span>
+<span class="p">}</span> <span class="n">Chromosome</span><span class="p">;</span>
+</code></pre></div></div>
+
+<p>For a 5-table query, a chromosome might be <code class="language-plaintext highlighter-rouge">[3, 1, 4, 2, 5]</code>, meaning: start with relation 3, then join relation 1, then join relation 4, etc.</p>
+
+<h3 id="decoding-gimme_tree-in-geqo_evalc">Decoding: gimme_tree() in geqo_eval.c</h3>
+
+<p>The chromosome is decoded into an actual join tree by <code class="language-plaintext highlighter-rouge">gimme_tree()</code>:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>gimme_tree(chromosome, num_rels):
+  clumps = empty list
+
+  For each gene in chromosome:
+    new_clump = the base RelOptInfo for this gene
+
+    Repeatedly try to merge new_clump with existing clumps:
+      For each existing clump C:
+        If new_clump and C share a join clause:
+          joined = make_join_rel(new_clump, C)
+          Replace C with joined, continue merging
+
+    If no merge possible:
+      Add new_clump to clumps list
+
+  If clumps has more than one entry:
+    Force clauseless joins to combine them
+
+  Return the final single clump's RelOptInfo
+</code></pre></div></div>
+
+<p>The “clump” approach is important: it prefers joining relations that have join clauses between them, avoiding Cartesian products when possible. The chromosome order only determines tie-breaking when multiple join partners are available.</p>
+
+<p>Each <code class="language-plaintext highlighter-rouge">make_join_rel()</code> call inside <code class="language-plaintext highlighter-rouge">gimme_tree()</code> invokes the full <code class="language-plaintext highlighter-rouge">add_paths_to_joinrel()</code> machinery, generating all possible join methods and keeping only Pareto-optimal paths. This means GEQO does not sacrifice join-method quality – only join-order optimality.</p>
+
+<h3 id="crossover-operators">Crossover Operators</h3>
+
+<p>The default crossover is <strong>Edge Recombination Crossover (ERX)</strong>, which preserves adjacency relationships from both parents. This is appropriate because the TSP-like nature of the problem means that which relations are adjacent in the join order matters more than their absolute positions.</p>
+
+<p>Available crossover operators (selected at compile time via <code class="language-plaintext highlighter-rouge">#define</code> in <code class="language-plaintext highlighter-rouge">geqo.h</code>):</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>Operator</th>
+      <th>Description</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>ERX</td>
+      <td>Edge Recombination – preserves adjacency edges from both parents</td>
+    </tr>
+    <tr>
+      <td>PMX</td>
+      <td>Partially Mapped – preserves absolute position of some genes</td>
+    </tr>
+    <tr>
+      <td>CX</td>
+      <td>Cycle Crossover – preserves position via cycles</td>
+    </tr>
+    <tr>
+      <td>PX</td>
+      <td>Position Crossover – direct position inheritance</td>
+    </tr>
+    <tr>
+      <td>OX1</td>
+      <td>Order Crossover 1 – preserves relative order</td>
+    </tr>
+    <tr>
+      <td>OX2</td>
+      <td>Order Crossover 2 – variant of OX1</td>
+    </tr>
+  </tbody>
+</table>
+
+<h3 id="selection">Selection</h3>
+
+<p>Parent selection uses <strong>linear bias</strong>: chromosomes are ranked by fitness, and the probability of being selected as a parent is linearly proportional to rank. The bias is controlled by <code class="language-plaintext highlighter-rouge">geqo_selection_bias</code> (default 2.0, range 1.5–2.0). Higher bias favors fitter individuals more strongly.</p>
+
+<h3 id="mutation">Mutation</h3>
+
+<p>When <code class="language-plaintext highlighter-rouge">CX</code> crossover is enabled, a mutation operator is also applied: it randomly swaps two genes in the chromosome. With the default ERX crossover, mutation is not used because ERX already introduces sufficient diversity.</p>
+
+<hr />
+
+<h2 id="configuration-parameters">Configuration Parameters</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>GUC</th>
+      <th>Default</th>
+      <th>Description</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">geqo</code></td>
+      <td>on</td>
+      <td>Enable/disable GEQO</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">geqo_threshold</code></td>
+      <td>12</td>
+      <td>Minimum FROM items to trigger GEQO</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">geqo_effort</code></td>
+      <td>5</td>
+      <td>Controls pool size and generations (1–10)</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">geqo_pool_size</code></td>
+      <td>0</td>
+      <td>Pool size (0 = auto from effort and num_rels)</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">geqo_generations</code></td>
+      <td>0</td>
+      <td>Number of generations (0 = auto from pool_size)</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">geqo_selection_bias</code></td>
+      <td>2.0</td>
+      <td>Selection pressure (1.5–2.0)</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">geqo_seed</code></td>
+      <td>0.0</td>
+      <td>Random seed for reproducibility (0.0 = use PID)</td>
+    </tr>
+  </tbody>
+</table>
+
+<h3 id="auto-sizing">Auto-Sizing</h3>
+
+<p>When <code class="language-plaintext highlighter-rouge">geqo_pool_size = 0</code> (default), pool size is computed as:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="n">pool_size</span> <span class="o">=</span> <span class="mi">2</span> <span class="o">*</span> <span class="nf">pow</span><span class="p">(</span><span class="mi">2</span><span class="p">.</span><span class="mi">0</span><span class="p">,</span> <span class="n">rint</span><span class="p">(</span><span class="n">log</span><span class="p">(</span><span class="n">number_of_rels</span><span class="p">)</span> <span class="o">/</span> <span class="n">log</span><span class="p">(</span><span class="mi">2</span><span class="p">.</span><span class="mi">0</span><span class="p">)));</span>
+<span class="cm">/* Clamped to range [128, 1024] for geqo_effort = 5 */</span>
+</code></pre></div></div>
+
+<p>When <code class="language-plaintext highlighter-rouge">geqo_generations = 0</code> (default):</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="n">generations</span> <span class="o">=</span> <span class="n">pool_size</span><span class="p">;</span>  <span class="cm">/* one generation per pool member */</span>
+</code></pre></div></div>
+
+<p>Higher <code class="language-plaintext highlighter-rouge">geqo_effort</code> values increase both pool size and generations, spending more planning time to explore more of the search space.</p>
+
+<hr />
+
+<h2 id="memory-management">Memory Management</h2>
+
+<p>GEQO creates a temporary memory context for each chromosome evaluation:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="cm">/* From geqo_eval.c */</span>
+<span class="n">mycontext</span> <span class="o">=</span> <span class="n">AllocSetContextCreate</span><span class="p">(</span><span class="n">CurrentMemoryContext</span><span class="p">,</span>
+                                   <span class="s">"GEQO"</span><span class="p">,</span>
+                                   <span class="n">ALLOCSET_DEFAULT_SIZES</span><span class="p">);</span>
+<span class="n">oldcxt</span> <span class="o">=</span> <span class="n">MemoryContextSwitchTo</span><span class="p">(</span><span class="n">mycontext</span><span class="p">);</span>
+
+<span class="cm">/* Build join tree for this chromosome */</span>
+<span class="n">joinrel</span> <span class="o">=</span> <span class="n">gimme_tree</span><span class="p">(</span><span class="n">root</span><span class="p">,</span> <span class="n">tour</span><span class="p">,</span> <span class="n">num_gene</span><span class="p">);</span>
+
+<span class="cm">/* Copy the surviving path out of the temp context */</span>
+<span class="n">MemoryContextSwitchTo</span><span class="p">(</span><span class="n">oldcxt</span><span class="p">);</span>
+<span class="n">MemoryContextDelete</span><span class="p">(</span><span class="n">mycontext</span><span class="p">);</span>
+</code></pre></div></div>
+
+<p>This ensures that the many intermediate RelOptInfos and Paths created during evaluation of rejected chromosomes are freed promptly, rather than accumulating for the entire planning phase.</p>
+
+<hr />
+
+<h2 id="diagram-geqo-evolution">Diagram: GEQO Evolution</h2>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>Generation 0 (random initialization):
+
+  Chromosome 1: [3,1,4,2,5]  cost=1500
+  Chromosome 2: [1,2,3,4,5]  cost=1200  &lt;-- current best
+  Chromosome 3: [5,4,3,2,1]  cost=1800
+  Chromosome 4: [2,5,1,3,4]  cost=1350
+  ...
+
+Generation 1:
+  Select parents: #2 (best) and #4 (good)
+  Crossover (ERX): offspring [1,2,5,3,4]
+  Evaluate: cost=1100  &lt;-- new best!
+  Replace worst (#3) with offspring
+
+Generation 2:
+  Select parents: offspring and #2
+  Crossover: [1,5,2,3,4]
+  Evaluate: cost=1250
+  Replace worst remaining
+  ...
+
+Final:
+  Best chromosome: [1,2,5,3,4]  cost=1100
+  Decode to join tree:
+    ((rel1 JOIN rel2) JOIN rel5) JOIN (rel3 JOIN rel4)
+</code></pre></div></div>
+
+<hr />
+
+<h2 id="geqo-vs-standard-search-trade-offs">GEQO vs. Standard Search: Trade-offs</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>Aspect</th>
+      <th>Standard DP</th>
+      <th>GEQO</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Optimality</td>
+      <td>Guaranteed optimal for the cost model</td>
+      <td>Heuristic – may miss the true optimum</td>
+    </tr>
+    <tr>
+      <td>Planning time</td>
+      <td>O(2^N) for N tables</td>
+      <td>O(pool_size * generations * join_cost)</td>
+    </tr>
+    <tr>
+      <td>Reproducibility</td>
+      <td>Deterministic</td>
+      <td>Deterministic if <code class="language-plaintext highlighter-rouge">geqo_seed</code> is fixed</td>
+    </tr>
+    <tr>
+      <td>Small queries</td>
+      <td>Fast and optimal</td>
+      <td>Not used (below threshold)</td>
+    </tr>
+    <tr>
+      <td>Large queries</td>
+      <td>Impractical (12+ tables)</td>
+      <td>Practical for hundreds of tables</td>
+    </tr>
+    <tr>
+      <td>Join methods</td>
+      <td>All considered</td>
+      <td>All considered (only join ORDER is heuristic)</td>
+    </tr>
+  </tbody>
+</table>
+
+<hr />
+
+<h2 id="practical-considerations">Practical Considerations</h2>
+
+<ol>
+  <li>
+    <p><strong>Raise geqo_threshold</strong> if planning time is acceptable. For data warehouse queries with 15–20 tables, DP often finishes in reasonable time and finds better plans than GEQO.</p>
+  </li>
+  <li>
+    <p><strong>Fix geqo_seed</strong> for reproducibility. By default, GEQO uses a seed derived from the PID, so the same query can produce different plans across connections. Set <code class="language-plaintext highlighter-rouge">geqo_seed</code> to a nonzero constant to get deterministic behavior.</p>
+  </li>
+  <li>
+    <p><strong>GEQO and explicit JOINs.</strong> If parts of the join tree are constrained by explicit JOIN syntax (not flattened due to <code class="language-plaintext highlighter-rouge">join_collapse_limit</code>), those sub-trees are planned with DP before GEQO sees them. Only the top-level FROM list enters the GA.</p>
+  </li>
+  <li>
+    <p><strong>Plugin hook.</strong> <code class="language-plaintext highlighter-rouge">join_search_hook</code> allows extensions to replace both <code class="language-plaintext highlighter-rouge">standard_join_search()</code> and <code class="language-plaintext highlighter-rouge">geqo()</code> with custom join-order algorithms.</p>
+  </li>
+</ol>
+
+<hr />
+
+<h2 id="connections">Connections</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>Subsystem</th>
+      <th>Relationship</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><a href="join-ordering">Join Ordering</a></td>
+      <td>GEQO is the alternative to standard_join_search() for the same problem</td>
+    </tr>
+    <tr>
+      <td><a href="path-generation">Path Generation</a></td>
+      <td>GEQO calls add_paths_to_joinrel() for every join it considers</td>
+    </tr>
+    <tr>
+      <td><a href="cost-model">Cost Model</a></td>
+      <td>Chromosome fitness is the total_cost of the resulting plan</td>
+    </tr>
+    <tr>
+      <td><a href="preprocessing">Preprocessing</a></td>
+      <td>join_collapse_limit determines how many tables enter GEQO</td>
+    </tr>
+    <tr>
+      <td><a href="../10-memory/">Memory Management</a></td>
+      <td>GEQO uses temporary memory contexts to avoid leaking intermediate paths</td>
+    </tr>
+  </tbody>
+</table>
+
+
+      <hr>
+
+      <!-- Prev / Next / Up navigation -->
+      
+      
+      
+
+      <div class="clearfix" style="margin-top: 2rem;">
+        
+          
+          
+
+          
+            
+            <a class="btn btn-primary float-left" href="/postgresql/07-query-optimizer/cost-model.html" title="Cost Model">&larr; Previous</a>
+          
+
+          
+            
+            <a class="btn btn-primary float-right" href="/postgresql/07-query-optimizer/join-ordering.html" title="Join Ordering">Next &rarr;</a>
+          
+        
+      </div>
+
+      
+      <div style="text-align: center; margin-top: 1rem;">
+        <a href="/postgresql-internals/">&uarr; Back to Table of Contents</a>
+      </div>
+      
+
+    </div>
+  </div>
+</div>
+
+
+  <!-- Footer -->
+
+<hr>
+
+<footer>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <ul class="list-inline text-center">
+          
+          <li class="list-inline-item">
+            <a href="mailto:amitava.dev@proton.me" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="far fa-envelope fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          
+          
+          <li class="list-inline-item">
+            <a href="https://www.linkedin.com/in/amitavaag" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-linkedin fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          <li class="list-inline-item">
+            <a href="https://github.com/ikouchiha47" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-github fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+        </ul>
+
+        <p class="copyright text-muted">
+          Build with: 
+          <a 
+            href="https://github.com/StartBootstrap/startbootstrap-clean-blog-jekyll"
+            class="text-gray"
+            target="_blank">startbootstrap-clean-blog-jekyll</a></p>
+      </div>
+    </div>
+  </div>
+</footer>
+
+
+  <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="/assets/vendor/blog/js/scripts.js"></script>
+
+<script src="/assets/scripts.js"></script>
+
+
+
+
+
+  <script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+
+    document.querySelectorAll('pre > code.language-mermaid').forEach((codeBlock) => {
+      codeBlock.parentElement.outerHTML = `<pre class="mermaid">${codeBlock.textContent}</pre>`;
+    });
+
+
+    mermaid.initialize({ startOnLoad: true, theme: 'forest' });
+</script>
+
+
+  
+
+</body>
+
+</html>

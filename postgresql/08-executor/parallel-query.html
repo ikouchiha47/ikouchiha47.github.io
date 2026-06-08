@@ -1,0 +1,711 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+  <title>
+    Parallel Query - iko&#39;s logs
+    
+  </title>
+
+  <meta name="description" content="">
+  <meta property="og:description" content="">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Parallel Query">
+  <meta property="og:url" content="https://ikouchiha47.github.io/postgresql/08-executor/parallel-query.html">
+
+  
+
+  <link href='https://fonts.googleapis.com/css?family=Lora:400,700,400italic,700italic' rel='stylesheet' type='text/css'>
+  <link href='https://fonts.googleapis.com/css?family=Open+Sans:300italic,400italic,600italic,700italic,800italic,400,300,600,700,800' rel='stylesheet' type='text/css'>
+
+  <!-- <script src="https://use.fontawesome.com/releases/v5.15.3/js/all.js" crossorigin="anonymous"></script> -->
+  <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.15.4/css/all.css" integrity="sha384-DyZ88mC6Up2uqS4h/KRgHuoeGwBcD4Ng9SiP4dIRy0EXTlnuz47vAwmeGwVChigm" crossorigin="anonymous"/>
+
+  <link rel="stylesheet" href="/assets/main.css">
+  <link rel="canonical" href="https://ikouchiha47.github.io/postgresql/08-executor/parallel-query.html">
+  <link rel="alternate" type="application/rss+xml" title="iko&#39;s logs" href="/feed.xml">
+
+  <meta name="google-site-verification" content="lWkg6gIxJgzEKX_5XnhcxCtPE9QknaimFWWos_dTvPM" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fira+Sans:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Inconsolata:wght@200..900&family=Jersey+25&family=Kanit:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Merriweather+Sans:ital,wght@0,300..800;1,300..800&family=Nanum+Gothic+Coding&family=Space+Grotesk:wght@300..700&family=Titillium+Web:ital,wght@0,200;0,300;0,400;0,600;0,700;0,900;1,200;1,300;1,400;1,600;1,700&display=swap" rel="stylesheet">
+
+</head>
+
+
+<body>
+
+  <!-- Navigation -->
+<nav class="navbar navbar-expand-lg navbar-light fixed-top" id="mainNav">
+  <div class="container">
+    <a class="navbar-brand" href="/">iko&#39;s logs</a>
+    <button class="navbar-toggler navbar-toggler-right" type="button" data-toggle="collapse" data-target="#navbarResponsive" aria-controls="navbarResponsive" aria-expanded="false" aria-label="Toggle navigation">
+      Menu
+      <i class="fa fa-bars"></i>
+    </button>
+    <div class="collapse navbar-collapse" id="navbarResponsive">
+      <ul class="navbar-nav ml-auto">
+        <li class="nav-item">
+          <a class="nav-link" href="/">Home</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/about">About</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/posts">Posts</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/contact">Contact</a>
+        </li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+
+  <!-- Page Header -->
+
+<header class="masthead">
+
+  <div class="overlay"></div>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <div class="post-heading">
+          <h1>Parallel Query</h1>
+          
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="container space-grotesk">
+  <div class="row">
+    <div class="col-lg-8 col-md-10 mx-auto">
+
+      <!-- Breadcrumb -->
+      <nav aria-label="breadcrumb" style="margin-bottom: 1.5rem;">
+        <ol class="breadcrumb" style="background: transparent; padding: 0;">
+          
+            <li class="breadcrumb-item"><a href="/postgresql-internals/">PostgreSQL Internals Deep Dive</a></li>
+          
+          
+            
+              <li class="breadcrumb-item"><a href="/postgresql/08-executor/">Executor</a></li>
+            
+          
+          <li class="breadcrumb-item active" aria-current="page">Parallel Query</li>
+        </ol>
+      </nav>
+
+      <h1 id="parallel-query-execution">Parallel Query Execution</h1>
+
+<h2 id="summary">Summary</h2>
+
+<p>PostgreSQL’s parallel query framework allows a single query to harness multiple
+CPU cores by launching background worker processes that execute portions of the
+plan tree concurrently. The leader process sets up a <strong>dynamic shared memory</strong>
+(DSM) segment containing the serialized plan, parameters, and communication
+channels. Workers attach to this shared memory, reconstruct the plan state, and
+send result tuples back through <strong>shared memory message queues</strong> (<code class="language-plaintext highlighter-rouge">shm_mq</code>).
+The <strong>Gather</strong> and <strong>Gather Merge</strong> nodes in the leader’s plan tree collect
+these tuples and feed them into the rest of the plan.</p>
+
+<hr />
+
+<h2 id="overview">Overview</h2>
+
+<h3 id="architecture">Architecture</h3>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>+------------------+     +------------------+     +------------------+
+|    Leader        |     |    Worker 0      |     |    Worker 1      |
+|                  |     |                  |     |                  |
+|  Gather          |     |  [plan subtree]  |     |  [plan subtree]  |
+|    ^   ^   ^     |     |       |          |     |       |          |
+|    |   |   |     |     |       v          |     |       v          |
+|  shm_mq channels |&lt;----|  shm_mq_send()  |&lt;----|  shm_mq_send()  |
+|    |   |   |     |     |                  |     |                  |
+|    v   v   v     |     +------------------+     +------------------+
+|  merge results   |              |                        |
+|       |          |              +--------- DSM ----------+
+|  upper plan      |              (shared plan, params,
+|  nodes           |               tuple queues, state)
++------------------+
+</code></pre></div></div>
+
+<pre><code class="language-mermaid">graph TB
+    subgraph DSM["DSM Segment (Shared Memory)"]
+        Plan["Serialized Plan + Params"]
+        MQ0["shm_mq\n(Worker 0)"]
+        MQ1["shm_mq\n(Worker 1)"]
+        State["Per-Node Shared State"]
+    end
+
+    subgraph Leader["Leader Process"]
+        Gather["Gather Node"]
+        Upper["Upper Plan Nodes"]
+        Gather --&gt; Upper
+    end
+
+    subgraph W0["Parallel Worker 0"]
+        PS0["Plan Subtree Copy"]
+    end
+
+    subgraph W1["Parallel Worker 1"]
+        PS1["Plan Subtree Copy"]
+    end
+
+    Plan -. "deserialize" .-&gt; PS0
+    Plan -. "deserialize" .-&gt; PS1
+    PS0 -- "tuples via shm_mq_send()" --&gt; MQ0
+    PS1 -- "tuples via shm_mq_send()" --&gt; MQ1
+    MQ0 -- "shm_mq_receive()" --&gt; Gather
+    MQ1 -- "shm_mq_receive()" --&gt; Gather
+    Leader -. "also executes\nplan locally" .-&gt; Gather
+</code></pre>
+
+<p>Each parallel-capable scan or join node implements four extra methods:</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>Method</th>
+      <th>Purpose</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">ExecXxxEstimate()</code></td>
+      <td>Calculate DSM space needed for shared state</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">ExecXxxInitializeDSM()</code></td>
+      <td>Initialize shared state in DSM (leader)</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">ExecXxxReInitializeDSM()</code></td>
+      <td>Reset shared state for rescan</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">ExecXxxInitializeWorker()</code></td>
+      <td>Attach to shared state (worker)</td>
+    </tr>
+  </tbody>
+</table>
+
+<hr />
+
+<h2 id="key-source-files">Key Source Files</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>File</th>
+      <th>Purpose</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/executor/execParallel.c</code></td>
+      <td>Parallel executor setup, DSM layout, worker entry</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/executor/nodeGather.c</code></td>
+      <td>Gather node: collect tuples from workers</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/executor/nodeGatherMerge.c</code></td>
+      <td>Gather Merge: collect pre-sorted tuples</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/access/transam/parallel.c</code></td>
+      <td>ParallelContext: worker lifecycle, DSM management</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/storage/ipc/shm_mq.c</code></td>
+      <td>Shared memory message queue</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/executor/tqueue.c</code></td>
+      <td>Tuple queue: serialize/deserialize tuples over shm_mq</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/executor/execParallel.h</code></td>
+      <td><code class="language-plaintext highlighter-rouge">ParallelExecutorInfo</code> struct</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/storage/shm_mq.h</code></td>
+      <td><code class="language-plaintext highlighter-rouge">shm_mq</code> handle types</td>
+    </tr>
+  </tbody>
+</table>
+
+<hr />
+
+<h2 id="how-it-works">How It Works</h2>
+
+<h3 id="1-setup-phase-leader">1. Setup Phase (Leader)</h3>
+
+<p>When <code class="language-plaintext highlighter-rouge">ExecutorStart</code> encounters a plan containing <code class="language-plaintext highlighter-rouge">Gather</code> or <code class="language-plaintext highlighter-rouge">Gather Merge</code>,
+it calls <code class="language-plaintext highlighter-rouge">ExecInitParallelPlan()</code> which:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>ExecInitParallelPlan(planstate, estate, gather_node)
+  |
+  +-- Calculate DSM size:
+  |     PARALLEL_KEY_EXECUTOR_FIXED   -- eflags, tuple bound, jit flags
+  |     PARALLEL_KEY_PLANNEDSTMT      -- serialized plan tree
+  |     PARALLEL_KEY_PARAMLISTINFO    -- serialized parameters
+  |     PARALLEL_KEY_BUFFER_USAGE     -- per-worker buffer stats
+  |     PARALLEL_KEY_TUPLE_QUEUE      -- shm_mq for each worker
+  |     PARALLEL_KEY_INSTRUMENTATION  -- per-node instrumentation slots
+  |     PARALLEL_KEY_DSA              -- dynamic shared area handle
+  |     + per-node estimated sizes (from ExecXxxEstimate)
+  |
+  +-- Allocate DSM segment
+  |
+  +-- Serialize plan and parameters into DSM
+  |
+  +-- Create shm_mq for each worker (PARALLEL_TUPLE_QUEUE_SIZE = 64KB)
+  |
+  +-- Walk plan tree, call ExecXxxInitializeDSM() for parallel-aware nodes
+</code></pre></div></div>
+
+<p>The DSM segment is organized with <strong>magic number keys</strong> so that workers can
+locate each component:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="cp">#define PARALLEL_KEY_EXECUTOR_FIXED     UINT64CONST(0xE000000000000001)
+#define PARALLEL_KEY_PLANNEDSTMT        UINT64CONST(0xE000000000000002)
+#define PARALLEL_KEY_PARAMLISTINFO      UINT64CONST(0xE000000000000003)
+#define PARALLEL_KEY_BUFFER_USAGE       UINT64CONST(0xE000000000000004)
+#define PARALLEL_KEY_TUPLE_QUEUE        UINT64CONST(0xE000000000000005)
+#define PARALLEL_KEY_INSTRUMENTATION    UINT64CONST(0xE000000000000006)
+#define PARALLEL_KEY_DSA                UINT64CONST(0xE000000000000007)
+</span></code></pre></div></div>
+
+<h3 id="2-worker-launch">2. Worker Launch</h3>
+
+<p>Workers are launched via <code class="language-plaintext highlighter-rouge">LaunchParallelWorkers()</code>. Each worker:</p>
+
+<ol>
+  <li>Attaches to the DSM segment</li>
+  <li>Deserializes the plan tree from <code class="language-plaintext highlighter-rouge">PARALLEL_KEY_PLANNEDSTMT</code></li>
+  <li>Restores the snapshot, transaction state, and GUC settings</li>
+  <li>Calls <code class="language-plaintext highlighter-rouge">ExecInitNode()</code> to build its own <code class="language-plaintext highlighter-rouge">PlanState</code> tree</li>
+  <li>For parallel-aware nodes, calls <code class="language-plaintext highlighter-rouge">ExecXxxInitializeWorker()</code> to attach to
+shared state (e.g., a <code class="language-plaintext highlighter-rouge">ParallelBlockTableScanDesc</code> for SeqScan)</li>
+  <li>Executes the plan subtree below the Gather point</li>
+  <li>Sends result tuples through <code class="language-plaintext highlighter-rouge">shm_mq_send()</code></li>
+</ol>
+
+<h3 id="3-tuple-queues-shm_mq">3. Tuple Queues (shm_mq)</h3>
+
+<p>Each worker has a dedicated <code class="language-plaintext highlighter-rouge">shm_mq</code> (shared memory message queue) for sending
+tuples back to the leader. The queue is a ring buffer in shared memory:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">typedef</span> <span class="k">struct</span> <span class="n">shm_mq</span> <span class="p">{</span>
+    <span class="n">slock_t</span>     <span class="n">mq_mutex</span><span class="p">;</span>
+    <span class="n">PGPROC</span>     <span class="o">*</span><span class="n">mq_receiver</span><span class="p">;</span>
+    <span class="n">PGPROC</span>     <span class="o">*</span><span class="n">mq_sender</span><span class="p">;</span>
+    <span class="n">uint64</span>      <span class="n">mq_bytes_read</span><span class="p">;</span>      <span class="cm">/* consumer position */</span>
+    <span class="n">uint64</span>      <span class="n">mq_bytes_written</span><span class="p">;</span>   <span class="cm">/* producer position */</span>
+    <span class="n">Size</span>        <span class="n">mq_ring_size</span><span class="p">;</span>       <span class="cm">/* ring buffer capacity */</span>
+    <span class="n">bool</span>        <span class="n">mq_detached</span><span class="p">;</span>
+    <span class="n">uint8</span>       <span class="n">mq_ring_offset</span><span class="p">;</span>     <span class="cm">/* offset to ring buffer start */</span>
+    <span class="kt">char</span>        <span class="n">mq_ring</span><span class="p">[</span><span class="n">FLEXIBLE_ARRAY_MEMBER</span><span class="p">];</span>
+<span class="p">}</span> <span class="n">shm_mq</span><span class="p">;</span>
+</code></pre></div></div>
+
+<p>Flow control: When the ring buffer is full, the sender blocks (sets latch and
+sleeps). When the buffer is empty, the receiver blocks. The <code class="language-plaintext highlighter-rouge">PGPROC</code> pointers
+allow direct latch-based wakeups without polling.</p>
+
+<p>Tuples are serialized using the <code class="language-plaintext highlighter-rouge">tqueue</code> module. For tuples containing only
+fixed-size, pass-by-value columns, no serialization is needed – the
+<code class="language-plaintext highlighter-rouge">MinimalTuple</code> is copied directly. For tuples with pass-by-reference or
+record-type columns, the <code class="language-plaintext highlighter-rouge">tqueue</code> handles proper serialization and
+reconstruction.</p>
+
+<h3 id="4-gather-node">4. Gather Node</h3>
+
+<p>The Gather node pulls tuples from workers and optionally from its own local
+execution of the plan subtree:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">static</span> <span class="n">TupleTableSlot</span> <span class="o">*</span>
+<span class="nf">gather_getnext</span><span class="p">(</span><span class="n">GatherState</span> <span class="o">*</span><span class="n">gatherstate</span><span class="p">)</span>
+<span class="p">{</span>
+    <span class="cm">/* Try to get a tuple from any worker */</span>
+    <span class="k">while</span> <span class="p">(</span><span class="n">gatherstate</span><span class="o">-&gt;</span><span class="n">nreaders</span> <span class="o">&gt;</span> <span class="mi">0</span> <span class="o">||</span> <span class="n">gatherstate</span><span class="o">-&gt;</span><span class="n">need_to_scan_locally</span><span class="p">)</span>
+    <span class="p">{</span>
+        <span class="cm">/* Round-robin through workers */</span>
+        <span class="k">for</span> <span class="p">(</span><span class="kt">int</span> <span class="n">i</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span> <span class="n">i</span> <span class="o">&lt;</span> <span class="n">gatherstate</span><span class="o">-&gt;</span><span class="n">nreaders</span><span class="p">;</span> <span class="n">i</span><span class="o">++</span><span class="p">)</span>
+        <span class="p">{</span>
+            <span class="n">MinimalTuple</span> <span class="n">tup</span> <span class="o">=</span> <span class="n">TupleQueueReaderNext</span><span class="p">(</span>
+                <span class="n">gatherstate</span><span class="o">-&gt;</span><span class="n">reader</span><span class="p">[</span><span class="n">gatherstate</span><span class="o">-&gt;</span><span class="n">nextreader</span><span class="p">],</span> <span class="p">...);</span>
+
+            <span class="k">if</span> <span class="p">(</span><span class="n">tup</span> <span class="o">!=</span> <span class="nb">NULL</span><span class="p">)</span>
+                <span class="k">return</span> <span class="n">ExecStoreMinimalTuple</span><span class="p">(</span><span class="n">tup</span><span class="p">,</span> <span class="n">slot</span><span class="p">,</span> <span class="nb">false</span><span class="p">);</span>
+
+            <span class="cm">/* This reader is done -- remove it */</span>
+            <span class="p">...</span>
+        <span class="p">}</span>
+
+        <span class="cm">/* If no worker tuple, try local execution */</span>
+        <span class="k">if</span> <span class="p">(</span><span class="n">gatherstate</span><span class="o">-&gt;</span><span class="n">need_to_scan_locally</span><span class="p">)</span>
+        <span class="p">{</span>
+            <span class="n">slot</span> <span class="o">=</span> <span class="n">ExecProcNode</span><span class="p">(</span><span class="n">outerPlanState</span><span class="p">(</span><span class="n">gatherstate</span><span class="p">));</span>
+            <span class="k">if</span> <span class="p">(</span><span class="o">!</span><span class="n">TupIsNull</span><span class="p">(</span><span class="n">slot</span><span class="p">))</span>
+                <span class="k">return</span> <span class="n">slot</span><span class="p">;</span>
+            <span class="n">gatherstate</span><span class="o">-&gt;</span><span class="n">need_to_scan_locally</span> <span class="o">=</span> <span class="nb">false</span><span class="p">;</span>
+        <span class="p">}</span>
+    <span class="p">}</span>
+
+    <span class="k">return</span> <span class="nb">NULL</span><span class="p">;</span>    <span class="cm">/* all sources exhausted */</span>
+<span class="p">}</span>
+</code></pre></div></div>
+
+<p>The <code class="language-plaintext highlighter-rouge">parallel_leader_participation</code> GUC controls whether the leader also
+executes the plan locally. By default it does, which reduces idle time when
+workers are busy.</p>
+
+<h3 id="5-gather-merge-node">5. Gather Merge Node</h3>
+
+<p><code class="language-plaintext highlighter-rouge">Gather Merge</code> is used when each worker produces pre-sorted output (e.g.,
+parallel index scan). It performs a <strong>heap merge</strong> to maintain global sort order:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>Worker 0: [1, 4, 7, 10, ...]  (sorted)
+Worker 1: [2, 5, 8, 11, ...]  (sorted)
+Leader:   [3, 6, 9, 12, ...]  (sorted)
+
+Gather Merge (binary heap):
+  --&gt; 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, ...
+</code></pre></div></div>
+
+<h3 id="parallel-aware-node-types">Parallel-Aware Node Types</h3>
+
+<table>
+  <thead>
+    <tr>
+      <th>Node</th>
+      <th>Parallel Behavior</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><strong>SeqScan</strong></td>
+      <td>Workers claim block ranges via atomic counter in DSM</td>
+    </tr>
+    <tr>
+      <td><strong>IndexScan</strong></td>
+      <td>Workers claim index pages via <code class="language-plaintext highlighter-rouge">parallel_scan</code> descriptor</td>
+    </tr>
+    <tr>
+      <td><strong>IndexOnlyScan</strong></td>
+      <td>Same as IndexScan</td>
+    </tr>
+    <tr>
+      <td><strong>BitmapHeapScan</strong></td>
+      <td>Workers share TIDBitmap, claim pages to scan</td>
+    </tr>
+    <tr>
+      <td><strong>Hash Join</strong></td>
+      <td>Workers cooperatively build shared hash table (Parallel Hash)</td>
+    </tr>
+    <tr>
+      <td><strong>Hash (build)</strong></td>
+      <td>Shared hash table in DSA memory</td>
+    </tr>
+    <tr>
+      <td><strong>Append</strong></td>
+      <td>Workers claim child plans to execute</td>
+    </tr>
+    <tr>
+      <td><strong>Agg</strong></td>
+      <td>Partial aggregation per worker, finalize in leader</td>
+    </tr>
+    <tr>
+      <td><strong>Sort</strong></td>
+      <td>Each worker sorts independently, Gather Merge merges</td>
+    </tr>
+    <tr>
+      <td><strong>Memoize</strong></td>
+      <td>Per-worker caches (no sharing)</td>
+    </tr>
+  </tbody>
+</table>
+
+<h3 id="parallel-hash-join-in-detail">Parallel Hash Join in Detail</h3>
+
+<p>The most complex parallel-aware node. Workers synchronize through barriers
+to cooperatively build and probe a shared hash table:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>Phase                        Who             Action
+-----                        ---             ------
+PHJ_BUILD_ELECT              all             one worker elected
+PHJ_BUILD_ALLOCATE           elected         allocate shared hash buckets (dsa_allocate)
+PHJ_BUILD_HASH_INNER         all             each worker hashes its portion of inner
+PHJ_BUILD_HASH_OUTER         all             (multi-batch) partition outer tuples
+PHJ_BUILD_RUN                all             each worker probes with its outer tuples
+PHJ_BUILD_FREE               elected         free shared resources
+</code></pre></div></div>
+
+<p>The shared hash table uses <code class="language-plaintext highlighter-rouge">dsa_allocate()</code> (dynamic shared area) for memory
+allocation, allowing it to grow beyond the initial DSM segment size.</p>
+
+<hr />
+
+<h2 id="key-data-structures">Key Data Structures</h2>
+
+<h3 id="parallelexecutorinfo">ParallelExecutorInfo</h3>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">typedef</span> <span class="k">struct</span> <span class="n">ParallelExecutorInfo</span> <span class="p">{</span>
+    <span class="n">PlanState</span>      <span class="o">*</span><span class="n">planstate</span><span class="p">;</span>          <span class="cm">/* plan subtree for workers */</span>
+    <span class="n">ParallelContext</span> <span class="o">*</span><span class="n">pcxt</span><span class="p">;</span>              <span class="cm">/* parallel context */</span>
+    <span class="n">BufferUsage</span>    <span class="o">*</span><span class="n">buffer_usage</span><span class="p">;</span>       <span class="cm">/* per-worker buffer stats */</span>
+    <span class="n">WalUsage</span>       <span class="o">*</span><span class="n">wal_usage</span><span class="p">;</span>          <span class="cm">/* per-worker WAL stats */</span>
+    <span class="n">SharedExecutorInstrumentation</span> <span class="o">*</span><span class="n">instrumentation</span><span class="p">;</span>
+    <span class="n">shm_mq_handle</span> <span class="o">**</span><span class="n">tqueue</span><span class="p">;</span>            <span class="cm">/* tuple queue handles (one per worker) */</span>
+    <span class="n">dsa_area</span>       <span class="o">*</span><span class="n">area</span><span class="p">;</span>              <span class="cm">/* dynamic shared area */</span>
+    <span class="p">...</span>
+<span class="p">}</span> <span class="n">ParallelExecutorInfo</span><span class="p">;</span>
+</code></pre></div></div>
+
+<h3 id="fixedparallelexecutorstate-in-dsm">FixedParallelExecutorState (in DSM)</h3>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">typedef</span> <span class="k">struct</span> <span class="n">FixedParallelExecutorState</span> <span class="p">{</span>
+    <span class="n">int64</span>       <span class="n">tuples_needed</span><span class="p">;</span>          <span class="cm">/* tuple bound from Limit */</span>
+    <span class="n">dsa_pointer</span> <span class="n">param_exec</span><span class="p">;</span>             <span class="cm">/* serialized exec params */</span>
+    <span class="kt">int</span>         <span class="n">eflags</span><span class="p">;</span>                 <span class="cm">/* executor flags */</span>
+    <span class="kt">int</span>         <span class="n">jit_flags</span><span class="p">;</span>              <span class="cm">/* JIT compilation flags */</span>
+<span class="p">}</span> <span class="n">FixedParallelExecutorState</span><span class="p">;</span>
+</code></pre></div></div>
+
+<h3 id="gatherstate">GatherState</h3>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">typedef</span> <span class="k">struct</span> <span class="n">GatherState</span> <span class="p">{</span>
+    <span class="n">PlanState</span>       <span class="n">ps</span><span class="p">;</span>
+    <span class="n">bool</span>            <span class="n">initialized</span><span class="p">;</span>        <span class="cm">/* workers launched? */</span>
+    <span class="n">bool</span>            <span class="n">need_to_scan_locally</span><span class="p">;</span> <span class="cm">/* leader participates? */</span>
+    <span class="n">int64</span>           <span class="n">tuples_needed</span><span class="p">;</span>      <span class="cm">/* bound from Limit */</span>
+    <span class="kt">int</span>             <span class="n">nworkers_launched</span><span class="p">;</span>
+    <span class="kt">int</span>             <span class="n">nreaders</span><span class="p">;</span>           <span class="cm">/* active tuple queue readers */</span>
+    <span class="kt">int</span>             <span class="n">nextreader</span><span class="p">;</span>         <span class="cm">/* round-robin index */</span>
+    <span class="n">TupleQueueReader</span> <span class="o">**</span><span class="n">reader</span><span class="p">;</span>          <span class="cm">/* per-worker queue readers */</span>
+    <span class="p">...</span>
+<span class="p">}</span> <span class="n">GatherState</span><span class="p">;</span>
+</code></pre></div></div>
+
+<hr />
+
+<h2 id="diagram-dsm-segment-layout">Diagram: DSM Segment Layout</h2>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>+----------------------------------------------------------+
+| Dynamic Shared Memory (DSM) Segment                      |
+|                                                          |
+| +------------------+  +-----------------------------+    |
+| | Fixed State      |  | Serialized PlannedStmt      |    |
+| | (eflags, bound,  |  | (plan tree + rtable)        |    |
+| |  jit_flags)      |  +-----------------------------+    |
+| +------------------+                                     |
+|                                                          |
+| +------------------+  +-----------------------------+    |
+| | ParamListInfo    |  | Buffer/WAL Usage Arrays     |    |
+| | (serialized)     |  | (one slot per worker)       |    |
+| +------------------+  +-----------------------------+    |
+|                                                          |
+| +------------------------------------------------------+ |
+| | Tuple Queues (shm_mq, one per worker)                | |
+| |  [Worker 0 queue: 64KB ring buffer]                  | |
+| |  [Worker 1 queue: 64KB ring buffer]                  | |
+| |  [Worker 2 queue: 64KB ring buffer]                  | |
+| +------------------------------------------------------+ |
+|                                                          |
+| +------------------------------------------------------+ |
+| | Per-Node Shared State                                | |
+| |  SeqScan: ParallelBlockTableScanDesc (atomic counter)| |
+| |  Hash:    shared hash table metadata                 | |
+| |  ...                                                 | |
+| +------------------------------------------------------+ |
+|                                                          |
+| +------------------------------------------------------+ |
+| | Instrumentation (EXPLAIN ANALYZE)                    | |
+| | (per-node, per-worker counters)                      | |
+| +------------------------------------------------------+ |
++----------------------------------------------------------+
+</code></pre></div></div>
+
+<hr />
+
+<h2 id="connections">Connections</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>Topic</th>
+      <th>Link</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Executor overview</td>
+      <td><a href="index">Query Executor</a></td>
+    </tr>
+    <tr>
+      <td>Gather node in the Volcano model</td>
+      <td><a href="volcano-model">Volcano Model</a></td>
+    </tr>
+    <tr>
+      <td>Parallel scan coordination</td>
+      <td><a href="scan-nodes">Scan Nodes</a></td>
+    </tr>
+    <tr>
+      <td>Parallel hash join</td>
+      <td><a href="join-nodes">Join Nodes</a></td>
+    </tr>
+    <tr>
+      <td>Partial aggregation</td>
+      <td><a href="aggregation">Aggregation</a></td>
+    </tr>
+    <tr>
+      <td>Parallel sort with Gather Merge</td>
+      <td><a href="sort-and-materialize">Sort and Materialize</a></td>
+    </tr>
+    <tr>
+      <td>JIT in parallel workers</td>
+      <td><a href="expression-eval">Expression Evaluation</a></td>
+    </tr>
+    <tr>
+      <td>Shared memory IPC primitives</td>
+      <td><a href="../11-ipc/">IPC</a></td>
+    </tr>
+    <tr>
+      <td>Background worker framework</td>
+      <td><a href="../14-platform/">Platform</a></td>
+    </tr>
+  </tbody>
+</table>
+
+
+      <hr>
+
+      <!-- Prev / Next / Up navigation -->
+      
+      
+      
+
+      <div class="clearfix" style="margin-top: 2rem;">
+        
+          
+          
+
+          
+            
+            <a class="btn btn-primary float-left" href="/postgresql/08-executor/join-nodes.html" title="Join Nodes">&larr; Previous</a>
+          
+
+          
+            
+            <a class="btn btn-primary float-right" href="/postgresql/08-executor/scan-nodes.html" title="Scan Nodes">Next &rarr;</a>
+          
+        
+      </div>
+
+      
+      <div style="text-align: center; margin-top: 1rem;">
+        <a href="/postgresql-internals/">&uarr; Back to Table of Contents</a>
+      </div>
+      
+
+    </div>
+  </div>
+</div>
+
+
+  <!-- Footer -->
+
+<hr>
+
+<footer>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <ul class="list-inline text-center">
+          
+          <li class="list-inline-item">
+            <a href="mailto:amitava.dev@proton.me" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="far fa-envelope fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          
+          
+          <li class="list-inline-item">
+            <a href="https://www.linkedin.com/in/amitavaag" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-linkedin fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          <li class="list-inline-item">
+            <a href="https://github.com/ikouchiha47" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-github fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+        </ul>
+
+        <p class="copyright text-muted">
+          Build with: 
+          <a 
+            href="https://github.com/StartBootstrap/startbootstrap-clean-blog-jekyll"
+            class="text-gray"
+            target="_blank">startbootstrap-clean-blog-jekyll</a></p>
+      </div>
+    </div>
+  </div>
+</footer>
+
+
+  <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="/assets/vendor/blog/js/scripts.js"></script>
+
+<script src="/assets/scripts.js"></script>
+
+
+
+
+
+  <script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+
+    document.querySelectorAll('pre > code.language-mermaid').forEach((codeBlock) => {
+      codeBlock.parentElement.outerHTML = `<pre class="mermaid">${codeBlock.textContent}</pre>`;
+    });
+
+
+    mermaid.initialize({ startOnLoad: true, theme: 'forest' });
+</script>
+
+
+  
+
+</body>
+
+</html>

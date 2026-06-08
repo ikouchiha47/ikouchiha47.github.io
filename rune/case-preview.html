@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>WristTurn — Modular System Preview</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #0d0d12; overflow: hidden; font-family: 'SF Mono', monospace; }
+  #info { position: absolute; top: 16px; left: 16px; color: #7ab8f5; font-size: 12px; line-height: 2; pointer-events: none; }
+  #sub  { color: #333; font-size: 11px; }
+  #legend { position: absolute; bottom: 20px; left: 16px; font-size: 11px; line-height: 2.3; color: #666; }
+  .row { display: flex; align-items: center; gap: 9px; }
+  .sw  { width: 11px; height: 11px; border-radius: 3px; flex-shrink: 0; }
+  #dims { position: absolute; top: 16px; right: 16px; text-align: right; font-size: 11px; line-height: 2.1; color: #333; }
+  #dims b { color: #7ab8f5; font-weight: normal; }
+</style>
+</head>
+<body>
+<div id="info">WristTurn v1 — Modular System<br><span id="sub">drag · scroll · right-drag to pan</span></div>
+<div id="dims">
+  <b>Module hull</b>  32→26 × 22 × 46 mm  (trapezoid + dome top, flat bottom)<br>
+  <b>Stack</b>        Battery → BNO085 → XIAO  (bottom→top)<br>
+  <b>BNO085</b>       28.2 × 20.9 mm  (orange PCB)<br>
+  <b>XIAO</b>         22.6 × 17.9 mm  (blue PCB · USB-C at Z− end)<br>
+  <b>Battery</b>      602030P  31.5 × 19.1 × 6.4 mm<br>
+  <b>Side port</b>    8 pogo + 2 magnets  (Z+ face, 2×4 grid)<br>
+  <b>Bottom port</b>  4 pogo spring pins  (flat underside → band EMG)<br>
+  <b>Reset btn</b>    RST→GND tactile · ⌀5mm · X+ side wall<br>
+  <b>EMG band</b>     2× BioAmp · 6 pads (IN+/IN−/REF per channel)
+</div>
+<div id="legend">
+  <div class="row"><div class="sw" style="background:#1565c0"></div>XIAO nRF52840</div>
+  <div class="row"><div class="sw" style="background:#e65100"></div>BNO085 IMU</div>
+  <div class="row"><div class="sw" style="background:#2e7d32"></div>Battery 602030P 300mAh</div>
+  <div class="row"><div class="sw" style="background:#ffd700"></div>Pogo pins · EMG differential pads (IN+/IN−)</div>
+  <div class="row"><div class="sw" style="background:#bdbdbd"></div>Magnets · REF/BIAS electrode pads</div>
+  <div class="row"><div class="sw" style="background:#424242"></div>Reset button (RST→GND)</div>
+  <div class="row"><div class="sw" style="background:#1c1c1c"></div>EMG wristband (inline with module)</div>
+</div>
+
+<script type="importmap">
+{ "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+}}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls }      from 'three/addons/controls/OrbitControls.js';
+import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
+
+// ── Renderer ──────────────────────────────────────────────────────────────────
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(devicePixelRatio);
+renderer.setSize(innerWidth, innerHeight);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.4;
+document.body.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0d0d12);
+
+// ── Camera — slight front-above angle to see module + band ───────────────────
+const camera = new THREE.PerspectiveCamera(38, innerWidth / innerHeight, 0.1, 600);
+camera.position.set(75, 95, 110);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.06;
+controls.target.set(0, 22, 0);
+camera.lookAt(0, 22, 0);
+
+// ── Lights ────────────────────────────────────────────────────────────────────
+scene.add(new THREE.AmbientLight(0xffffff, 0.85));
+const key = new THREE.DirectionalLight(0xffffff, 2.8);
+key.position.set(60, 140, 80);
+key.castShadow = true;
+key.shadow.mapSize.set(2048, 2048);
+key.shadow.camera.left = key.shadow.camera.bottom = -120;
+key.shadow.camera.right = key.shadow.camera.top  =  120;
+key.shadow.camera.near = 1; key.shadow.camera.far = 500;
+scene.add(key);
+const fill = new THREE.DirectionalLight(0x6688ff, 0.5);
+fill.position.set(-80, 40, -70); scene.add(fill);
+const under = new THREE.DirectionalLight(0xffffff, 0.25);
+under.position.set(0, -80, 0); scene.add(under);
+const grid = new THREE.GridHelper(300, 44, 0x181824, 0x111118);
+grid.position.y = -38; scene.add(grid);
+
+// ── Dimensions (mm = scene units) ────────────────────────────────────────────
+const CASE_W = 32;   // X: width at bottom
+const TOP_W  = 26;   // X: width at top (trapezoid taper in X only)
+const CASE_H = 22;   // Y: height
+const CASE_L = 46;   // Z: length along wrist axis
+const DOME_H = 4.0;  // Y: dome crown lift integrated into top face
+
+// Board dimensions
+const BNO_W = 28.2, BNO_H = 1.6, BNO_L = 20.9;
+const XIAO_W = 22.6, XIAO_H = 3.5, XIAO_L = 17.9;
+const BAT_W = 31.5, BAT_H = 6.4, BAT_L = 19.1;
+const WALL = 2.5;
+
+// Wrist geometry
+const WRIST_R = 34;
+const MY = WRIST_R + CASE_H / 2;  // module centre world-Y = 45
+
+// Local Y offsets from module centre; world Y = MY + localY
+const LOC_FLOOR  = -CASE_H / 2 + WALL;                          // -8.5
+const LOC_BAT_Y  = LOC_FLOOR + BAT_H / 2;                       // -5.3
+const LOC_BNO_Y  = LOC_FLOOR + BAT_H + 1.0 + BNO_H / 2;        // -0.3
+const LOC_XIAO_Y = LOC_BNO_Y + BNO_H / 2 + 2.0 + XIAO_H / 2;  // 4.25
+
+// ── Materials ─────────────────────────────────────────────────────────────────
+const M = {
+  hull:  new THREE.MeshStandardMaterial({ color: 0x1e1f2c, roughness: 0.75, transparent: true, opacity: 0.52 }),
+  lug:   new THREE.MeshStandardMaterial({ color: 0x0e0e16, roughness: 0.95 }),
+  bno:   new THREE.MeshStandardMaterial({ color: 0xe65100, roughness: 0.30, metalness: 0.15 }),
+  xiao:  new THREE.MeshStandardMaterial({ color: 0x1565c0, roughness: 0.30, metalness: 0.10 }),
+  chip:  new THREE.MeshStandardMaterial({ color: 0x1a1a1a, roughness: 0.22, metalness: 0.60 }),
+  bat:   new THREE.MeshStandardMaterial({ color: 0x2e7d32, roughness: 0.50, metalness: 0.15 }),
+  batF:  new THREE.MeshStandardMaterial({ color: 0xa5d6a7, roughness: 0.40, metalness: 0.50 }),
+  pogo:  new THREE.MeshStandardMaterial({ color: 0xffd700, metalness: 0.96, roughness: 0.05 }),
+  mag:   new THREE.MeshStandardMaterial({ color: 0xbdbdbd, metalness: 0.97, roughness: 0.03 }),
+  usbc:  new THREE.MeshStandardMaterial({ color: 0x555555, metalness: 0.72, roughness: 0.20 }),
+  btn:   new THREE.MeshStandardMaterial({ color: 0x424242, roughness: 0.55 }),
+  btnCap:new THREE.MeshStandardMaterial({ color: 0x888888, roughness: 0.40 }),
+  pin:   new THREE.MeshStandardMaterial({ color: 0xffc107, metalness: 0.88, roughness: 0.12 }),
+  band:  new THREE.MeshStandardMaterial({ color: 0x1c1c1c, roughness: 0.92 }),
+  elec:  new THREE.MeshStandardMaterial({ color: 0xffd700, metalness: 0.85, roughness: 0.12 }),
+  eRef:  new THREE.MeshStandardMaterial({ color: 0xdddddd, metalness: 0.92, roughness: 0.08 }),
+  wire:  [0xf44336,0x37474f,0x2196f3,0xffeb3b,0x4caf50,0xff9800,0x00bcd4,0xf06292]
+          .map(c => new THREE.MeshStandardMaterial({ color: c, roughness: 0.70 })),
+};
+
+// ── Scene helpers ─────────────────────────────────────────────────────────────
+function add(geo, mat, px=0, py=0, pz=0, rx=0, ry=0, rz=0) {
+  const m = new THREE.Mesh(geo, mat);
+  m.position.set(px, py, pz);
+  m.rotation.set(rx, ry, rz);
+  m.castShadow = true; m.receiveShadow = true;
+  scene.add(m); return m;
+}
+const BOX = (w, h, l) => new THREE.BoxGeometry(w, h, l);
+const CYL = (r, h, s=12) => new THREE.CylinderGeometry(r, r, h, s);
+
+// ── Trapezoidal hull with integrated dome (FLAT case — no radial bending) ─────
+const hullGeo = new RoundedBoxGeometry(CASE_W, CASE_H, CASE_L, 32, 4);
+{
+  const pos = hullGeo.attributes.position;
+  const TAPER_X = 1 - TOP_W / CASE_W;  // 0.1875 — X tapers at top
+  for (let i = 0; i < pos.count; i++) {
+    let x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i);
+    const yN = (y + CASE_H / 2) / CASE_H;  // 0=bottom 1=top
+    x *= (1 - TAPER_X * yN);
+    if (yN > 0.68) {
+      const xN = x / (TOP_W / 2 * 1.05);
+      const crown = Math.max(0, 1 - xN * xN);
+      y += DOME_H * ((yN - 0.68) / 0.32) * crown;
+    }
+    pos.setXYZ(i, x, y, z);
+  }
+  pos.needsUpdate = true;
+  hullGeo.computeVertexNormals();
+}
+add(hullGeo, M.hull, 0, MY, 0);
+
+// ── Strap lugs (Z sides, at band level) ──────────────────────────────────────
+// Lugs extend downwards slightly to meet the wrist.
+add(BOX(CASE_W - 12, CASE_H - 2, 9), M.lug, 0, MY - 3, CASE_L / 2 + 4);
+add(BOX(CASE_W - 12, CASE_H - 2, 9), M.lug, 0, MY - 3, -CASE_L / 2 - 4);
+
+// ── Battery — flat, bottom layer ──────────────────────────────────────────────
+add(BOX(BAT_W, BAT_H, BAT_L), M.bat, 0, MY + LOC_BAT_Y, 0);
+add(BOX(3, 1.2, 7), M.batF, BAT_W / 2 + 1.2, MY + LOC_BAT_Y + BAT_H / 2 + 0.4, 0);
+
+// ── BNO085 IMU — middle board ─────────────────────────────────────────────────
+add(BOX(BNO_W, BNO_H, BNO_L), M.bno, 0, MY + LOC_BNO_Y, 0);
+add(BOX(5.5, 1.5, 5.5), M.chip, 2, MY + LOC_BNO_Y + BNO_H / 2 + 0.75, 1);
+[[11, 7.5], [-11, 7.5], [11, -7.5], [-11, -7.5]].forEach(([cx, cz]) => {
+  const pinH = BAT_H + 1.0 + BNO_H + 0.8;
+  add(CYL(0.9, pinH), M.pin, cx, MY + LOC_FLOOR + pinH / 2, cz);
+});
+
+// ── XIAO nRF52840 — top board ────────────────────────────────────────────────
+add(BOX(XIAO_W, XIAO_H, XIAO_L), M.xiao, 0, MY + LOC_XIAO_Y, 0);
+add(BOX(6, 1.2, 6), M.chip, 2, MY + LOC_XIAO_Y + XIAO_H / 2 + 0.6, -1);
+add(BOX(3.5, 3.2, 9), M.usbc, 0, MY + LOC_XIAO_Y, -(XIAO_L / 2 + 3));
+
+// ── Inter-board wires ────────────────────────────────────────────────────────
+const W_Y0  = MY + LOC_BNO_Y  + BNO_H  / 2;
+const W_Y1  = MY + LOC_XIAO_Y - XIAO_H / 2;
+const W_MID = (W_Y0 + W_Y1) / 2;
+const W_H   = W_Y1 - W_Y0;
+for (let i = 0; i < 8; i++) {
+  const wx = -10.5 + i * 3.0;
+  const wz = BNO_L / 2 - 2.5;
+  add(CYL(0.35, W_H, 6), M.wire[i], wx, W_MID, wz);
+}
+
+// ── Side expansion port (Z+ face) ────────────────────────────────────────────
+const PORT_Z = CASE_L / 2 + 1.5;
+[[-6, 3], [-2, 3], [2, 3], [6, 3],
+ [-6,-3], [-2,-3], [2,-3], [6,-3]].forEach(([px, dy]) =>
+  add(CYL(0.7, 3, 10), M.pogo, px, MY + dy, PORT_Z, Math.PI / 2, 0, 0)
+);
+add(CYL(2.0, 3, 16), M.mag, -12, MY, PORT_Z, Math.PI / 2, 0, 0);
+add(CYL(2.0, 3, 16), M.mag,  12, MY, PORT_Z, Math.PI / 2, 0, 0);
+
+// ── Reset button (X+ side wall) ──────────────────────────────────────────────
+add(CYL(2.5, 2.0, 20), M.btn,    CASE_W / 2 + 0.8, MY + 3, CASE_L / 4, 0, 0, Math.PI / 2);
+add(CYL(1.8, 0.5, 20), M.btnCap, CASE_W / 2 + 2.2, MY + 3, CASE_L / 4, 0, 0, Math.PI / 2);
+
+// ── Bottom pogo contacts (Z axis array to meet Y-Z band) ──────────────────────
+const BOT_Y = MY - CASE_H / 2 - 1.75;
+[-4.5, -1.5, 1.5, 4.5].forEach(pz =>
+  add(CYL(0.9, 3.5, 8), M.pogo, 0, BOT_Y, pz)
+);
+
+// ── Wristband (Y-Z plane wrapping around X) ──────────────────────────────────
+// Band connects to Z faces (short edges) and spans Z axis.
+const BAND_THICK = 4.5;
+const BAND_WID   = 22; // width of the band is now in X
+const N_SEG      = 56;
+// Gap to accommodate the module length (CASE_L = 46) and lugs.
+const GAP_HALF   = Math.asin((CASE_L / 2 + 1) / WRIST_R);
+const SEG_ARC    = (2 * Math.PI) / N_SEG;
+const SEG_LEN    = WRIST_R * SEG_ARC * 0.91; // length in Z
+const WRIST_CY   = 6; // Shift wrist up slightly to meet lugs
+
+for (let i = 0; i < N_SEG; i++) {
+  const theta    = (i / N_SEG) * 2 * Math.PI;
+  const fromTop  = theta <= Math.PI ? theta : 2 * Math.PI - theta;
+  if (fromTop < GAP_HALF * 1.04) continue;
+
+  const bz = WRIST_R * Math.sin(theta);
+  const by = WRIST_R * Math.cos(theta) + WRIST_CY;
+  // Box geometry: X width (22), Y thick (4.5), Z length (SEG_LEN)
+  const seg = new THREE.Mesh(BOX(BAND_WID, BAND_THICK, SEG_LEN), M.band);
+  seg.position.set(0, by, bz);
+  seg.rotation.x = theta; // rotate around X to wrap around cylinder
+  seg.castShadow = true;
+  scene.add(seg);
+}
+
+// Band pogo receptacles (on top of band arc)
+[-4.5, -1.5, 1.5, 4.5].forEach(pz =>
+  add(CYL(1.1, 2.5, 8), M.mag, 0, WRIST_R - 1.5 + WRIST_CY, pz)
+);
+
+// ── EMG electrode pads ────────────────────────────────────────────────────────
+// "electrodes go on the inside of the strap"
+// Band inner surface R = WRIST_R - BAND_THICK / 2
+// Pad Y thickness = 1.5. To be flush on the inside, center is at - 0.75.
+const ELEC_INNER_R = WRIST_R - (BAND_THICK / 2) - 0.75;
+
+// We need 9mm long tangentially (along Z), 6mm wide (along X).
+// Geometry: Box(X=6, Y=1.5, Z=9)
+[[147, 180, 213], [267, 300, 333]].forEach(angles => {
+  angles.forEach((deg, padIdx) => {
+    const a   = deg * Math.PI / 180;
+    const ez  = ELEC_INNER_R * Math.sin(a);
+    const ey  = ELEC_INNER_R * Math.cos(a) + WRIST_CY;
+    const mat = padIdx === 2 ? M.eRef : M.elec;
+    const pad = new THREE.Mesh(new THREE.BoxGeometry(6, 1.5, 9), mat);
+    pad.position.set(0, ey, ez);
+    pad.rotation.x = a; // rotate around X
+    pad.castShadow = true;
+    scene.add(pad);
+  });
+});
+
+// ── Animate ───────────────────────────────────────────────────────────────────
+(function animate() {
+  requestAnimationFrame(animate);
+  controls.update();
+  renderer.render(scene, camera);
+})();
+
+window.addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+</script>
+</body>
+</html>

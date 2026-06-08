@@ -1,0 +1,415 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+  <title>
+    Memory Management - iko&#39;s logs
+    
+  </title>
+
+  <meta name="description" content="">
+  <meta property="og:description" content="">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Memory Management">
+  <meta property="og:url" content="https://ikouchiha47.github.io/postgresql/10-memory/">
+
+  
+
+  <link href='https://fonts.googleapis.com/css?family=Lora:400,700,400italic,700italic' rel='stylesheet' type='text/css'>
+  <link href='https://fonts.googleapis.com/css?family=Open+Sans:300italic,400italic,600italic,700italic,800italic,400,300,600,700,800' rel='stylesheet' type='text/css'>
+
+  <!-- <script src="https://use.fontawesome.com/releases/v5.15.3/js/all.js" crossorigin="anonymous"></script> -->
+  <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.15.4/css/all.css" integrity="sha384-DyZ88mC6Up2uqS4h/KRgHuoeGwBcD4Ng9SiP4dIRy0EXTlnuz47vAwmeGwVChigm" crossorigin="anonymous"/>
+
+  <link rel="stylesheet" href="/assets/main.css">
+  <link rel="canonical" href="https://ikouchiha47.github.io/postgresql/10-memory/">
+  <link rel="alternate" type="application/rss+xml" title="iko&#39;s logs" href="/feed.xml">
+
+  <meta name="google-site-verification" content="lWkg6gIxJgzEKX_5XnhcxCtPE9QknaimFWWos_dTvPM" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fira+Sans:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Inconsolata:wght@200..900&family=Jersey+25&family=Kanit:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Merriweather+Sans:ital,wght@0,300..800;1,300..800&family=Nanum+Gothic+Coding&family=Space+Grotesk:wght@300..700&family=Titillium+Web:ital,wght@0,200;0,300;0,400;0,600;0,700;0,900;1,200;1,300;1,400;1,600;1,700&display=swap" rel="stylesheet">
+
+</head>
+
+
+<body>
+
+  <!-- Navigation -->
+<nav class="navbar navbar-expand-lg navbar-light fixed-top" id="mainNav">
+  <div class="container">
+    <a class="navbar-brand" href="/">iko&#39;s logs</a>
+    <button class="navbar-toggler navbar-toggler-right" type="button" data-toggle="collapse" data-target="#navbarResponsive" aria-controls="navbarResponsive" aria-expanded="false" aria-label="Toggle navigation">
+      Menu
+      <i class="fa fa-bars"></i>
+    </button>
+    <div class="collapse navbar-collapse" id="navbarResponsive">
+      <ul class="navbar-nav ml-auto">
+        <li class="nav-item">
+          <a class="nav-link" href="/">Home</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/about">About</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/posts">Posts</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/contact">Contact</a>
+        </li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+
+  <!-- Page Header -->
+
+<header class="masthead">
+
+  <div class="overlay"></div>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <div class="post-heading">
+          <h1>Memory Management</h1>
+          
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="container space-grotesk">
+  <div class="row">
+    <div class="col-lg-8 col-md-10 mx-auto">
+
+      <!-- Breadcrumb -->
+      <nav aria-label="breadcrumb" style="margin-bottom: 1.5rem;">
+        <ol class="breadcrumb" style="background: transparent; padding: 0;">
+          
+            <li class="breadcrumb-item"><a href="/postgresql-internals/">PostgreSQL Internals Deep Dive</a></li>
+          
+          
+          <li class="breadcrumb-item active" aria-current="page">Memory Management</li>
+        </ol>
+      </nav>
+
+      <h1 id="chapter-10-memory-management">Chapter 10: Memory Management</h1>
+
+<blockquote>
+  <p><em>PostgreSQL replaces malloc/free with a hierarchy of memory contexts that turn deallocation into a single reset call, making leak-free error recovery trivial in a language without garbage collection.</em></p>
+</blockquote>
+
+<h2 id="why-it-matters">Why It Matters</h2>
+
+<p>In a long-running database backend that processes thousands of queries, memory leaks are
+not just wasteful — they are fatal. A slow leak of a few kilobytes per query becomes
+gigabytes over a weekend. C provides no garbage collector, and manually pairing every
+<code class="language-plaintext highlighter-rouge">malloc</code> with a <code class="language-plaintext highlighter-rouge">free</code> across every possible error path is a losing battle.</p>
+
+<p>PostgreSQL solves this with <strong>memory contexts</strong>: arena-style allocators organized into a
+tree. Each context represents a lifetime — per-transaction, per-query, per-tuple. When
+the lifetime ends, one call to <code class="language-plaintext highlighter-rouge">MemoryContextReset()</code> frees everything at once, regardless
+of how many individual allocations were made. This design has three critical properties:</p>
+
+<ol>
+  <li><strong>Bulk deallocation is O(1) per block</strong>, not O(n) per allocation.</li>
+  <li><strong>Error recovery is automatic</strong>: aborting a transaction resets its context tree.</li>
+  <li><strong>No dangling pointers across lifetimes</strong>: child contexts die with their parents.</li>
+</ol>
+
+<p>Beyond process-local memory, PostgreSQL must also share memory between parallel workers.
+The <strong>Dynamic Shared Area (DSA)</strong> system provides a heap allocator on top of dynamically
+attached shared memory segments, enabling parallel hash joins, parallel sorts, and other
+cooperative operations.</p>
+
+<p>Finally, memory is only one of many resources that must be tracked per-query. Buffer pins,
+locks, file descriptors, and cache references all need guaranteed cleanup.
+<strong>Resource owners</strong> provide this guarantee using the same tree-of-lifetimes pattern that
+memory contexts use for memory.</p>
+
+<h2 id="chapter-map">Chapter Map</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>Topic</th>
+      <th>File</th>
+      <th>What You Will Learn</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Memory Contexts</td>
+      <td><a href="memory-contexts.md">memory-contexts.md</a></td>
+      <td>The context tree hierarchy, the four allocator implementations (AllocSet, Slab, Generation, Bump), the MemoryChunk header, and <code class="language-plaintext highlighter-rouge">palloc</code>/<code class="language-plaintext highlighter-rouge">pfree</code> internals</td>
+    </tr>
+    <tr>
+      <td>Dynamic Shared Areas</td>
+      <td><a href="dsa.md">dsa.md</a></td>
+      <td>How DSA builds a shared-memory heap on top of DSM segments, dsa_pointer encoding, size classes, superblocks, and span management for parallel query</td>
+    </tr>
+    <tr>
+      <td>Resource Owners</td>
+      <td><a href="resource-owners.md">resource-owners.md</a></td>
+      <td>How PostgreSQL tracks buffers, locks, files, and cache references per transaction and portal, the three-phase release protocol, and the relationship to memory contexts</td>
+    </tr>
+  </tbody>
+</table>
+
+<h2 id="the-big-picture">The Big Picture</h2>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>  TopMemoryContext
+  |
+  +-- PostmasterContext
+  +-- CacheMemoryContext
+  |     +-- per-relcache-entry contexts
+  +-- MessageContext
+  +-- TopTransactionContext          &lt;-- ResourceOwner: TopTransaction
+  |     +-- CurTransactionContext    &lt;-- ResourceOwner: CurTransaction
+  |           +-- PortalContext      &lt;-- ResourceOwner: Portal
+  |                 +-- ExecutorState
+  |                       +-- per-ExprContext (per-tuple)
+  +-- ErrorContext (pre-allocated, reserved for OOM recovery)
+
+  Shared Memory
+  +-- dsa_area (parallel query)
+  |     +-- segment 0 (control + first segment)
+  |     +-- segment 1 (dynamically attached)
+  |     +-- ...
+</code></pre></div></div>
+
+<p>The tree above shows the two parallel hierarchies. Memory contexts manage the <em>memory
+itself</em>; resource owners manage <em>everything else</em> that has a query or transaction
+lifetime. Both hierarchies mirror the nesting of transactions and portals, and both
+support the same “release parent releases children” invariant.</p>
+
+<h2 id="key-design-principles">Key Design Principles</h2>
+
+<p><strong>Context-per-lifetime.</strong> Rather than tracking individual allocations, group them by when
+they should die. Per-tuple memory resets every row. Per-query memory resets at query end.
+Per-transaction memory resets at commit or abort.</p>
+
+<p><strong>The current context idiom.</strong> The global <code class="language-plaintext highlighter-rouge">CurrentMemoryContext</code> lets <code class="language-plaintext highlighter-rouge">palloc()</code> work
+without an explicit context parameter. Code that creates temporary allocations should
+ensure <code class="language-plaintext highlighter-rouge">CurrentMemoryContext</code> points to a short-lived context. Pointing it at
+<code class="language-plaintext highlighter-rouge">TopMemoryContext</code> risks permanent leaks.</p>
+
+<p><strong>Pluggable allocators.</strong> The <code class="language-plaintext highlighter-rouge">MemoryContextMethods</code> virtual function table allows
+different allocation strategies (power-of-two freelists, fixed-size slabs, append-only
+generations, headerless bumps) behind the same <code class="language-plaintext highlighter-rouge">palloc</code>/<code class="language-plaintext highlighter-rouge">pfree</code> API.</p>
+
+<p><strong>Fail-safe cleanup.</strong> On <code class="language-plaintext highlighter-rouge">ERROR</code>, PostgreSQL unwinds through <code class="language-plaintext highlighter-rouge">MemoryContextReset</code> of
+the transaction context tree and <code class="language-plaintext highlighter-rouge">ResourceOwnerRelease</code> of the transaction resource
+owner tree. Between these two mechanisms, all transient state is reclaimed without
+requiring every code path to have explicit cleanup logic.</p>
+
+<h2 id="key-source-files">Key Source Files</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>File</th>
+      <th>Purpose</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/utils/palloc.h</code></td>
+      <td>Core allocation API: <code class="language-plaintext highlighter-rouge">palloc</code>, <code class="language-plaintext highlighter-rouge">pfree</code>, <code class="language-plaintext highlighter-rouge">MemoryContextSwitchTo</code></td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/nodes/memnodes.h</code></td>
+      <td><code class="language-plaintext highlighter-rouge">MemoryContextData</code>, <code class="language-plaintext highlighter-rouge">MemoryContextMethods</code> structs</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/utils/memutils.h</code></td>
+      <td>Context creation macros, well-known contexts, size limits</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/utils/memutils_internal.h</code></td>
+      <td><code class="language-plaintext highlighter-rouge">MemoryContextMethodID</code> enum, per-allocator function prototypes</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/utils/memutils_memorychunk.h</code></td>
+      <td><code class="language-plaintext highlighter-rouge">MemoryChunk</code> header: 8-byte layout encoding block offset, value, and method ID</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/utils/mmgr/mcxt.c</code></td>
+      <td>Dispatcher: <code class="language-plaintext highlighter-rouge">palloc</code> -&gt; method lookup via <code class="language-plaintext highlighter-rouge">mcxt_methods[]</code></td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/utils/mmgr/aset.c</code></td>
+      <td>AllocSet: general-purpose power-of-two freelist allocator</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/utils/mmgr/slab.c</code></td>
+      <td>Slab: fixed-size chunk allocator</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/utils/mmgr/generation.c</code></td>
+      <td>Generation: FIFO-lifetime allocator</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/utils/mmgr/bump.c</code></td>
+      <td>Bump: headerless append-only allocator</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/utils/mmgr/dsa.c</code></td>
+      <td>Dynamic Shared Areas: shared-memory heap</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/utils/dsa.h</code></td>
+      <td>DSA public API: <code class="language-plaintext highlighter-rouge">dsa_pointer</code>, <code class="language-plaintext highlighter-rouge">dsa_allocate</code>, <code class="language-plaintext highlighter-rouge">dsa_free</code></td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/utils/resowner/resowner.c</code></td>
+      <td>Resource owner implementation</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/utils/resowner.h</code></td>
+      <td>Resource owner API: phases, priorities, <code class="language-plaintext highlighter-rouge">ResourceOwnerDesc</code></td>
+    </tr>
+  </tbody>
+</table>
+
+<h2 id="connections-to-other-chapters">Connections to Other Chapters</h2>
+
+<ul>
+  <li><strong>Chapter 0 (Architecture):</strong> The process model dictates that each backend has its own
+context tree, while shared memory requires DSA for cross-process allocation.</li>
+  <li><strong>Chapter 3 (Transactions):</strong> Transaction commit and abort drive context resets and
+resource owner releases.</li>
+  <li><strong>Buffer Manager:</strong> Buffer pins are tracked by resource owners; buffer descriptors live
+in shared memory allocated at startup (not via DSA).</li>
+  <li><strong>Executor:</strong> <code class="language-plaintext highlighter-rouge">ExprContext</code> per-tuple memory contexts are the most frequently reset
+contexts in the system, directly affecting query throughput.</li>
+  <li><strong>Parallel Query:</strong> Parallel hash joins and sorts use DSA to share hash tables and
+tuple stores across workers.</li>
+</ul>
+
+
+      <hr>
+
+      <!-- Prev / Next / Up navigation -->
+      
+      
+      
+
+      <div class="clearfix" style="margin-top: 2rem;">
+        
+          
+          
+
+          
+            
+            <a class="btn btn-primary float-left" href="/postgresql/09-caches/type-cache.html" title="Type Cache">&larr; Previous</a>
+          
+
+          
+            
+            <a class="btn btn-primary float-right" href="/postgresql/10-memory/dsa.html" title="Dynamic Shared Areas">Next &rarr;</a>
+          
+        
+      </div>
+
+      
+      <div style="text-align: center; margin-top: 1rem;">
+        <a href="/postgresql-internals/">&uarr; Back to Table of Contents</a>
+      </div>
+      
+
+    </div>
+  </div>
+</div>
+
+
+  <!-- Footer -->
+
+<hr>
+
+<footer>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <ul class="list-inline text-center">
+          
+          <li class="list-inline-item">
+            <a href="mailto:amitava.dev@proton.me" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="far fa-envelope fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          
+          
+          <li class="list-inline-item">
+            <a href="https://www.linkedin.com/in/amitavaag" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-linkedin fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          <li class="list-inline-item">
+            <a href="https://github.com/ikouchiha47" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-github fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+        </ul>
+
+        <p class="copyright text-muted">
+          Build with: 
+          <a 
+            href="https://github.com/StartBootstrap/startbootstrap-clean-blog-jekyll"
+            class="text-gray"
+            target="_blank">startbootstrap-clean-blog-jekyll</a></p>
+      </div>
+    </div>
+  </div>
+</footer>
+
+
+  <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="/assets/vendor/blog/js/scripts.js"></script>
+
+<script src="/assets/scripts.js"></script>
+
+
+
+
+
+  <script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+
+    document.querySelectorAll('pre > code.language-mermaid').forEach((codeBlock) => {
+      codeBlock.parentElement.outerHTML = `<pre class="mermaid">${codeBlock.textContent}</pre>`;
+    });
+
+
+    mermaid.initialize({ startOnLoad: true, theme: 'forest' });
+</script>
+
+
+  
+
+</body>
+
+</html>

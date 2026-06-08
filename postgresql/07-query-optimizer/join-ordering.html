@@ -1,0 +1,639 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+  <title>
+    Join Ordering - iko&#39;s logs
+    
+  </title>
+
+  <meta name="description" content="">
+  <meta property="og:description" content="">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Join Ordering">
+  <meta property="og:url" content="https://ikouchiha47.github.io/postgresql/07-query-optimizer/join-ordering.html">
+
+  
+
+  <link href='https://fonts.googleapis.com/css?family=Lora:400,700,400italic,700italic' rel='stylesheet' type='text/css'>
+  <link href='https://fonts.googleapis.com/css?family=Open+Sans:300italic,400italic,600italic,700italic,800italic,400,300,600,700,800' rel='stylesheet' type='text/css'>
+
+  <!-- <script src="https://use.fontawesome.com/releases/v5.15.3/js/all.js" crossorigin="anonymous"></script> -->
+  <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.15.4/css/all.css" integrity="sha384-DyZ88mC6Up2uqS4h/KRgHuoeGwBcD4Ng9SiP4dIRy0EXTlnuz47vAwmeGwVChigm" crossorigin="anonymous"/>
+
+  <link rel="stylesheet" href="/assets/main.css">
+  <link rel="canonical" href="https://ikouchiha47.github.io/postgresql/07-query-optimizer/join-ordering.html">
+  <link rel="alternate" type="application/rss+xml" title="iko&#39;s logs" href="/feed.xml">
+
+  <meta name="google-site-verification" content="lWkg6gIxJgzEKX_5XnhcxCtPE9QknaimFWWos_dTvPM" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fira+Sans:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Inconsolata:wght@200..900&family=Jersey+25&family=Kanit:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Merriweather+Sans:ital,wght@0,300..800;1,300..800&family=Nanum+Gothic+Coding&family=Space+Grotesk:wght@300..700&family=Titillium+Web:ital,wght@0,200;0,300;0,400;0,600;0,700;0,900;1,200;1,300;1,400;1,600;1,700&display=swap" rel="stylesheet">
+
+</head>
+
+
+<body>
+
+  <!-- Navigation -->
+<nav class="navbar navbar-expand-lg navbar-light fixed-top" id="mainNav">
+  <div class="container">
+    <a class="navbar-brand" href="/">iko&#39;s logs</a>
+    <button class="navbar-toggler navbar-toggler-right" type="button" data-toggle="collapse" data-target="#navbarResponsive" aria-controls="navbarResponsive" aria-expanded="false" aria-label="Toggle navigation">
+      Menu
+      <i class="fa fa-bars"></i>
+    </button>
+    <div class="collapse navbar-collapse" id="navbarResponsive">
+      <ul class="navbar-nav ml-auto">
+        <li class="nav-item">
+          <a class="nav-link" href="/">Home</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/about">About</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/posts">Posts</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/contact">Contact</a>
+        </li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+
+  <!-- Page Header -->
+
+<header class="masthead">
+
+  <div class="overlay"></div>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <div class="post-heading">
+          <h1>Join Ordering</h1>
+          
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="container space-grotesk">
+  <div class="row">
+    <div class="col-lg-8 col-md-10 mx-auto">
+
+      <!-- Breadcrumb -->
+      <nav aria-label="breadcrumb" style="margin-bottom: 1.5rem;">
+        <ol class="breadcrumb" style="background: transparent; padding: 0;">
+          
+            <li class="breadcrumb-item"><a href="/postgresql-internals/">PostgreSQL Internals Deep Dive</a></li>
+          
+          
+            
+              <li class="breadcrumb-item"><a href="/postgresql/07-query-optimizer/">Query Optimizer</a></li>
+            
+          
+          <li class="breadcrumb-item active" aria-current="page">Join Ordering</li>
+        </ol>
+      </nav>
+
+      <h1 id="join-ordering">Join Ordering</h1>
+
+<p>Given N tables, there are exponentially many possible join orders and join methods. PostgreSQL uses <strong>dynamic programming</strong> to exhaustively search this space for small queries (up to <code class="language-plaintext highlighter-rouge">geqo_threshold</code> tables, default 12). The search is guided by equivalence classes, pathkeys, and the add_path() Pareto filter. This section covers the standard join search, equivalence classes, and pathkeys.</p>
+
+<hr />
+
+<h2 id="summary">Summary</h2>
+
+<p>The join-ordering problem: given N base relations with their Paths, find the cheapest way to combine them all into a single result. PostgreSQL’s standard planner uses a bottom-up dynamic programming algorithm:</p>
+
+<ul>
+  <li><strong>Level 1:</strong> All base relations (already have paths).</li>
+  <li><strong>Level 2:</strong> Consider all pairs that share a join clause. Generate join paths for each pair.</li>
+  <li><strong>Level 3:</strong> Combine level-2 results with base rels to form 3-way joins.</li>
+  <li>…</li>
+  <li><strong>Level N:</strong> The final join relation including all base rels.</li>
+</ul>
+
+<p>At each level, only Pareto-optimal paths survive (via <code class="language-plaintext highlighter-rouge">add_path()</code>), which keeps the search tractable.</p>
+
+<hr />
+
+<h2 id="key-source-files">Key Source Files</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>File</th>
+      <th>Purpose</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/optimizer/path/joinrels.c</code></td>
+      <td><code class="language-plaintext highlighter-rouge">standard_join_search()</code>, <code class="language-plaintext highlighter-rouge">join_search_one_level()</code>, <code class="language-plaintext highlighter-rouge">make_join_rel()</code></td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/optimizer/path/joinpath.c</code></td>
+      <td><code class="language-plaintext highlighter-rouge">add_paths_to_joinrel()</code> – generate NestLoop/MergeJoin/HashJoin paths</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/optimizer/path/allpaths.c</code></td>
+      <td><code class="language-plaintext highlighter-rouge">make_rel_from_joinlist()</code> – entry point for join planning</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/optimizer/path/equivclass.c</code></td>
+      <td>EquivalenceClass creation, merging, clause generation</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/optimizer/path/pathkeys.c</code></td>
+      <td>PathKey management, sort-order comparisons</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/optimizer/plan/initsplan.c</code></td>
+      <td><code class="language-plaintext highlighter-rouge">deconstruct_jointree()</code> – distribute quals, build ECs</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/optimizer/plan/analyzejoins.c</code></td>
+      <td>Join removal optimization</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/optimizer/util/relnode.c</code></td>
+      <td><code class="language-plaintext highlighter-rouge">build_join_rel()</code> – create/find join RelOptInfos</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/nodes/pathnodes.h</code></td>
+      <td>EquivalenceClass, EquivalenceMember, PathKey definitions</td>
+    </tr>
+  </tbody>
+</table>
+
+<hr />
+
+<h2 id="how-it-works">How It Works</h2>
+
+<h3 id="the-dynamic-programming-algorithm">The Dynamic Programming Algorithm</h3>
+
+<p><code class="language-plaintext highlighter-rouge">standard_join_search()</code> in <code class="language-plaintext highlighter-rouge">joinrels.c</code> implements the DP search:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="n">RelOptInfo</span> <span class="o">*</span>
+<span class="nf">standard_join_search</span><span class="p">(</span><span class="n">PlannerInfo</span> <span class="o">*</span><span class="n">root</span><span class="p">,</span> <span class="kt">int</span> <span class="n">levels_needed</span><span class="p">,</span> <span class="n">List</span> <span class="o">*</span><span class="n">initial_rels</span><span class="p">)</span>
+<span class="p">{</span>
+    <span class="cm">/* Level 1: initial_rels already have paths from set_base_rel_pathlists */</span>
+
+    <span class="k">for</span> <span class="p">(</span><span class="n">lev</span> <span class="o">=</span> <span class="mi">2</span><span class="p">;</span> <span class="n">lev</span> <span class="o">&lt;=</span> <span class="n">levels_needed</span><span class="p">;</span> <span class="n">lev</span><span class="o">++</span><span class="p">)</span>
+    <span class="p">{</span>
+        <span class="n">join_search_one_level</span><span class="p">(</span><span class="n">root</span><span class="p">,</span> <span class="n">lev</span><span class="p">);</span>
+
+        <span class="cm">/* For each newly created joinrel, apply set_cheapest() */</span>
+        <span class="n">foreach</span><span class="p">(</span><span class="n">lc</span><span class="p">,</span> <span class="n">root</span><span class="o">-&gt;</span><span class="n">join_rel_level</span><span class="p">[</span><span class="n">lev</span><span class="p">])</span>
+        <span class="p">{</span>
+            <span class="n">rel</span> <span class="o">=</span> <span class="p">(</span><span class="n">RelOptInfo</span> <span class="o">*</span><span class="p">)</span> <span class="n">lfirst</span><span class="p">(</span><span class="n">lc</span><span class="p">);</span>
+            <span class="n">generate_useful_gather_paths</span><span class="p">(</span><span class="n">root</span><span class="p">,</span> <span class="n">rel</span><span class="p">,</span> <span class="nb">false</span><span class="p">);</span>
+            <span class="n">set_cheapest</span><span class="p">(</span><span class="n">rel</span><span class="p">);</span>
+        <span class="p">}</span>
+    <span class="p">}</span>
+
+    <span class="cm">/* Return the single rel at the top level */</span>
+    <span class="k">return</span> <span class="p">(</span><span class="n">RelOptInfo</span> <span class="o">*</span><span class="p">)</span> <span class="n">linitial</span><span class="p">(</span><span class="n">root</span><span class="o">-&gt;</span><span class="n">join_rel_level</span><span class="p">[</span><span class="n">levels_needed</span><span class="p">]);</span>
+<span class="p">}</span>
+</code></pre></div></div>
+
+<h3 id="join_search_one_level">join_search_one_level()</h3>
+
+<p>For each level, this function considers three categories of join combinations:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>join_search_one_level(root, level):
+
+  1. Left-handed joins: join a (level-1) joinrel with a level-1 base rel
+     For each joinrel R of level (level-1):
+       make_rels_by_clause_joins(R, other_rels)
+         -- join R to each base rel that shares a join clause with R
+
+  2. Bushy joins: join a level-K joinrel with a level-(level-K) joinrel
+     For K = 2 to level/2:
+       For each joinrel R of level K:
+         For each joinrel S of level (level-K):
+           if R and S don't overlap and share a join clause:
+             make_join_rel(R, S)
+
+  3. Cartesian products (clauseless joins):
+     For any (level-1) joinrel with no clause-based partners at this level:
+       make_rels_by_clauseless_joins(R, other_rels)
+</code></pre></div></div>
+
+<p><strong>Key insight:</strong> The algorithm considers left-deep, right-deep, and bushy plan trees. A join between {A,B} and {C,D} is a bushy join. The dynamic programming property ensures that by the time we consider joining {A,B} to {C,D}, we have already found the optimal paths for both sub-joins.</p>
+
+<h3 id="join-legality">Join Legality</h3>
+
+<p>Not all join orders are legal. Outer joins constrain the order:</p>
+
+<div class="language-sql highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">SELECT</span> <span class="o">*</span> <span class="k">FROM</span> <span class="n">A</span> <span class="k">LEFT</span> <span class="k">JOIN</span> <span class="n">B</span> <span class="k">ON</span> <span class="p">(</span><span class="n">A</span><span class="p">.</span><span class="n">x</span> <span class="o">=</span> <span class="n">B</span><span class="p">.</span><span class="n">y</span><span class="p">)</span>
+                <span class="k">INNER</span> <span class="k">JOIN</span> <span class="k">C</span> <span class="k">ON</span> <span class="p">(</span><span class="n">B</span><span class="p">.</span><span class="n">z</span> <span class="o">=</span> <span class="k">C</span><span class="p">.</span><span class="n">w</span><span class="p">)</span>
+</code></pre></div></div>
+
+<p>Here, B must be joined to A before it can be joined to C (because the LEFT JOIN requires A on the left and B on the right). The function <code class="language-plaintext highlighter-rouge">join_is_legal()</code> in <code class="language-plaintext highlighter-rouge">joinrels.c</code> checks every proposed join against the list of <code class="language-plaintext highlighter-rouge">SpecialJoinInfo</code> nodes to enforce these constraints.</p>
+
+<p>The <code class="language-plaintext highlighter-rouge">SpecialJoinInfo</code> records:</p>
+<ul>
+  <li><code class="language-plaintext highlighter-rouge">min_lefthand</code> / <code class="language-plaintext highlighter-rouge">min_righthand</code> – minimum sets of rels that must be on each side.</li>
+  <li><code class="language-plaintext highlighter-rouge">jointype</code> – LEFT, RIGHT, FULL, SEMI, ANTI.</li>
+  <li>Whether the join can be commuted with other outer joins (identity 3 from the optimizer README).</li>
+</ul>
+
+<h3 id="make_join_rel">make_join_rel()</h3>
+
+<p>When a legal join pair is found:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>make_join_rel(root, rel1, rel2):
+  1. Check join_is_legal() -- verify outer-join constraints
+  2. Build or find the join RelOptInfo for {rel1.relids UNION rel2.relids}
+  3. Call add_paths_to_joinrel() with rel1 as outer, rel2 as inner
+  4. Call add_paths_to_joinrel() with rel2 as outer, rel1 as inner
+     (except for SEMI/ANTI where only one direction makes sense)
+</code></pre></div></div>
+
+<p>All generated paths for the same set of base rels end up in the same <code class="language-plaintext highlighter-rouge">RelOptInfo</code>, regardless of the join order used to produce them. This is a key property: <code class="language-plaintext highlighter-rouge">{A JOIN B} JOIN C</code> and <code class="language-plaintext highlighter-rouge">{A JOIN C} JOIN B</code> both contribute paths to the joinrel <code class="language-plaintext highlighter-rouge">{A,B,C}</code>, and <code class="language-plaintext highlighter-rouge">add_path()</code> keeps only the cheapest.</p>
+
+<hr />
+
+<h2 id="equivalence-classes">Equivalence Classes</h2>
+
+<p>Equivalence classes (ECs) are one of the most powerful optimizations in PostgreSQL. They represent sets of expressions known to be equal, enabling:</p>
+
+<ol>
+  <li><strong>Transitive closure of join predicates.</strong> If <code class="language-plaintext highlighter-rouge">a.x = b.y</code> and <code class="language-plaintext highlighter-rouge">b.y = c.z</code>, then <code class="language-plaintext highlighter-rouge">a.x = c.z</code> is available as a join clause even though the user never wrote it.</li>
+  <li><strong>Constant propagation.</strong> If <code class="language-plaintext highlighter-rouge">a.x = b.y</code> and <code class="language-plaintext highlighter-rouge">a.x = 42</code>, then <code class="language-plaintext highlighter-rouge">b.y = 42</code> can be pushed down as a restriction on <code class="language-plaintext highlighter-rouge">b</code>.</li>
+  <li><strong>Sort-order reasoning.</strong> If the output is sorted by <code class="language-plaintext highlighter-rouge">a.x</code> and <code class="language-plaintext highlighter-rouge">a.x = b.y</code>, then the output is also sorted by <code class="language-plaintext highlighter-rouge">b.y</code>.</li>
+</ol>
+
+<h3 id="ec-construction">EC Construction</h3>
+
+<p>During <code class="language-plaintext highlighter-rouge">deconstruct_jointree()</code> in <code class="language-plaintext highlighter-rouge">initsplan.c</code>, every mergejoinable equality clause (<code class="language-plaintext highlighter-rouge">A = B</code> where the operator belongs to a btree operator family) is processed:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>process_equivalence(root, restrictinfo):
+  left_expr = left side of the clause
+  right_expr = right side of the clause
+
+  Find existing ECs containing left_expr or right_expr.
+  If both are found in different ECs:
+    Merge the two ECs into one.
+  Else if one is found:
+    Add the other expression to that EC.
+  Else:
+    Create a new EC with both expressions.
+</code></pre></div></div>
+
+<p>After all quals are processed, the EC list is finalized. No further merging occurs.</p>
+
+<h3 id="ec-derived-clauses">EC-Derived Clauses</h3>
+
+<p>When building paths for a join between relations A and C, the optimizer calls <code class="language-plaintext highlighter-rouge">generate_join_implied_equalities()</code>. If an EC contains members from both A and C, a join clause is generated even if no explicit <code class="language-plaintext highlighter-rouge">A.col = C.col</code> existed in the original query.</p>
+
+<p>For restriction clauses, if an EC contains a constant, <code class="language-plaintext highlighter-rouge">generate_base_implied_equalities()</code> produces <code class="language-plaintext highlighter-rouge">var = const</code> clauses for each non-constant member that can be evaluated at the base-relation level.</p>
+
+<h3 id="join-domains">Join Domains</h3>
+
+<p>Outer joins complicate ECs because equivalences established inside an outer join’s ON clause are not valid everywhere. PostgreSQL handles this with <strong>join domains</strong>:</p>
+
+<ul>
+  <li>The top-level query forms a join domain.</li>
+  <li>Each outer join’s nullable side forms a new join domain.</li>
+  <li>Constants only match EC members from the same join domain, preventing incorrect cross-domain constant propagation.</li>
+</ul>
+
+<hr />
+
+<h2 id="pathkeys">PathKeys</h2>
+
+<p>PathKeys represent the sort ordering of a Path’s output. They are used to:</p>
+
+<ol>
+  <li>Avoid explicit sorts when an input is already sorted for a merge join.</li>
+  <li>Satisfy ORDER BY without a top-level sort.</li>
+  <li>Detect redundant sort keys.</li>
+</ol>
+
+<h3 id="structure">Structure</h3>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">typedef</span> <span class="k">struct</span> <span class="n">PathKey</span>
+<span class="p">{</span>
+    <span class="n">NodeTag</span>         <span class="n">type</span><span class="p">;</span>
+    <span class="n">EquivalenceClass</span> <span class="o">*</span><span class="n">pk_eclass</span><span class="p">;</span>    <span class="cm">/* the value being sorted on */</span>
+    <span class="n">Oid</span>             <span class="n">pk_opfamily</span><span class="p">;</span>    <span class="cm">/* btree opfamily for comparison */</span>
+    <span class="kt">int</span>             <span class="n">pk_strategy</span><span class="p">;</span>    <span class="cm">/* BTLessStrategyNumber or BTGreaterStrategyNumber */</span>
+    <span class="n">bool</span>            <span class="n">pk_nulls_first</span><span class="p">;</span> <span class="cm">/* NULLs sorting direction */</span>
+<span class="p">}</span> <span class="n">PathKey</span><span class="p">;</span>
+</code></pre></div></div>
+
+<p>A PathKey references an EquivalenceClass rather than a specific expression. This means that if <code class="language-plaintext highlighter-rouge">a.x = b.y</code> are in the same EC, a path sorted by <code class="language-plaintext highlighter-rouge">a.x</code> is also considered sorted by <code class="language-plaintext highlighter-rouge">b.y</code>. This is how merge joins can avoid sorts even when the join clause expressions differ from the index expressions.</p>
+
+<h3 id="pathkey-canonicalization">Pathkey Canonicalization</h3>
+
+<p>PathKey lists are canonicalized:</p>
+<ul>
+  <li>Redundant entries (same EC appearing twice) are removed.</li>
+  <li>If an EC contains a constant, its PathKey is dropped entirely (all rows have the same value, so sorting by it is a no-op).</li>
+</ul>
+
+<p>These simplifications let the optimizer discover that an index on <code class="language-plaintext highlighter-rouge">(x, y)</code> satisfies <code class="language-plaintext highlighter-rouge">ORDER BY x</code> even when there is a <code class="language-plaintext highlighter-rouge">WHERE y = 5</code> clause – the PathKey for <code class="language-plaintext highlighter-rouge">y</code> is dropped because it is constant.</p>
+
+<h3 id="sort-order-propagation-through-joins">Sort-Order Propagation Through Joins</h3>
+
+<table>
+  <thead>
+    <tr>
+      <th>Join Method</th>
+      <th>Output Ordering</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Nested Loop</td>
+      <td>Preserves outer path’s pathkeys</td>
+    </tr>
+    <tr>
+      <td>Merge Join</td>
+      <td>Sorted by the merge keys (via the ECs)</td>
+    </tr>
+    <tr>
+      <td>Hash Join</td>
+      <td>No guaranteed ordering (pathkeys = NIL)</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>This means merge join output can feed directly into a higher-level merge join or satisfy ORDER BY without an additional sort, while hash join output always requires an explicit sort if ordering is needed.</p>
+
+<hr />
+
+<h2 id="diagram-dynamic-programming-join-search">Diagram: Dynamic Programming Join Search</h2>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>Level 1 (base rels):  {A}  {B}  {C}  {D}
+                        │    │    │    │
+                        v    v    v    v
+                      paths paths paths paths
+
+Level 2 (pairs):     {A,B}      {B,C}      {C,D}
+  Join clauses:      A.x=B.y    B.y=C.z    C.z=D.w
+  Methods tried:     NL/MJ/HJ   NL/MJ/HJ   NL/MJ/HJ
+  add_path() keeps Pareto-optimal survivors
+
+  Also considered via EC: {A,C} (because A.x=B.y and B.y=C.z =&gt; A.x=C.z)
+
+Level 3 (triples):  {A,B,C}              {B,C,D}
+  Built from:       {A,B}+{C}            {B,C}+{D}
+                    {A,C}+{B}            {C,D}+{B}
+                    {A}+{B,C}            {B}+{C,D}
+
+Level 4 (final):   {A,B,C,D}
+  Built from:      {A,B,C}+{D}
+                   {A,B,D}+{C}    (if exists)
+                   {A,B}+{C,D}    (bushy)
+                   etc.
+</code></pre></div></div>
+
+<hr />
+
+<h2 id="join-removal">Join Removal</h2>
+
+<p><code class="language-plaintext highlighter-rouge">analyzejoins.c</code> implements an optimization that removes joins entirely when they are provably unnecessary:</p>
+
+<div class="language-sql highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">SELECT</span> <span class="n">a</span><span class="p">.</span><span class="o">*</span> <span class="k">FROM</span> <span class="n">a</span> <span class="k">LEFT</span> <span class="k">JOIN</span> <span class="n">b</span> <span class="k">ON</span> <span class="n">a</span><span class="p">.</span><span class="n">x</span> <span class="o">=</span> <span class="n">b</span><span class="p">.</span><span class="n">y</span><span class="p">;</span>
+<span class="c1">-- If b.y is UNIQUE and no columns from b are used in the output,</span>
+<span class="c1">-- the LEFT JOIN is guaranteed to produce at most one match per row of a.</span>
+<span class="c1">-- The join can be removed entirely.</span>
+</code></pre></div></div>
+
+<p>This is detected by <code class="language-plaintext highlighter-rouge">remove_useless_joins()</code> and works for:</p>
+<ul>
+  <li>LEFT JOINs where the inner side has a unique key matching the join condition and no inner columns are referenced in the output.</li>
+  <li>INNER JOINs under similar conditions (the inner side just validates existence without affecting cardinality).</li>
+</ul>
+
+<hr />
+
+<h2 id="key-data-structures">Key Data Structures</h2>
+
+<h3 id="equivalenceclass">EquivalenceClass</h3>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">typedef</span> <span class="k">struct</span> <span class="n">EquivalenceClass</span>
+<span class="p">{</span>
+    <span class="n">NodeTag</span>     <span class="n">type</span><span class="p">;</span>
+    <span class="n">List</span>       <span class="o">*</span><span class="n">ec_members</span><span class="p">;</span>    <span class="cm">/* list of EquivalenceMember */</span>
+    <span class="n">List</span>       <span class="o">*</span><span class="n">ec_sources</span><span class="p">;</span>    <span class="cm">/* RestrictInfos that created this EC */</span>
+    <span class="n">List</span>       <span class="o">*</span><span class="n">ec_derives</span><span class="p">;</span>    <span class="cm">/* RestrictInfos derived from this EC */</span>
+    <span class="n">Relids</span>      <span class="n">ec_relids</span><span class="p">;</span>     <span class="cm">/* union of all member relids */</span>
+    <span class="n">bool</span>        <span class="n">ec_has_const</span><span class="p">;</span>  <span class="cm">/* does the EC contain a pseudo-constant? */</span>
+    <span class="n">bool</span>        <span class="n">ec_has_volatile</span><span class="p">;</span> <span class="cm">/* contains volatile expression? */</span>
+    <span class="n">bool</span>        <span class="n">ec_broken</span><span class="p">;</span>     <span class="cm">/* failed to generate a needed derived clause? */</span>
+    <span class="n">bool</span>        <span class="n">ec_merged</span><span class="p">;</span>     <span class="cm">/* has this EC been merged into another? */</span>
+    <span class="n">Oid</span>         <span class="n">ec_collation</span><span class="p">;</span>  <span class="cm">/* collation for comparison */</span>
+    <span class="n">List</span>       <span class="o">*</span><span class="n">ec_opfamilies</span><span class="p">;</span> <span class="cm">/* btree opfamilies for equality */</span>
+    <span class="n">JoinDomain</span> <span class="o">*</span><span class="n">ec_max_security</span><span class="p">;</span> <span class="cm">/* highest security_level source */</span>
+    <span class="k">struct</span> <span class="n">EquivalenceClass</span> <span class="o">*</span><span class="n">ec_merged_into</span><span class="p">;</span> <span class="cm">/* if merged, points to survivor */</span>
+<span class="p">}</span> <span class="n">EquivalenceClass</span><span class="p">;</span>
+</code></pre></div></div>
+
+<h3 id="equivalencemember">EquivalenceMember</h3>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">typedef</span> <span class="k">struct</span> <span class="n">EquivalenceMember</span>
+<span class="p">{</span>
+    <span class="n">NodeTag</span>     <span class="n">type</span><span class="p">;</span>
+    <span class="n">Expr</span>       <span class="o">*</span><span class="n">em_expr</span><span class="p">;</span>       <span class="cm">/* the expression */</span>
+    <span class="n">Relids</span>      <span class="n">em_relids</span><span class="p">;</span>     <span class="cm">/* rels contributing to em_expr */</span>
+    <span class="n">bool</span>        <span class="n">em_is_const</span><span class="p">;</span>   <span class="cm">/* is this a pseudo-constant? */</span>
+    <span class="n">bool</span>        <span class="n">em_is_child</span><span class="p">;</span>   <span class="cm">/* is this a child-relation member? */</span>
+    <span class="n">Oid</span>         <span class="n">em_datatype</span><span class="p">;</span>   <span class="cm">/* data type of the expression */</span>
+    <span class="n">JoinDomain</span> <span class="o">*</span><span class="n">em_jdomain</span><span class="p">;</span>    <span class="cm">/* join domain of the source clause */</span>
+<span class="p">}</span> <span class="n">EquivalenceMember</span><span class="p">;</span>
+</code></pre></div></div>
+
+<hr />
+
+<h2 id="practical-example-ec-driven-join-discovery">Practical Example: EC-Driven Join Discovery</h2>
+
+<div class="language-sql highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">SELECT</span> <span class="o">*</span> <span class="k">FROM</span> <span class="n">orders</span> <span class="n">o</span>
+<span class="k">JOIN</span> <span class="n">customers</span> <span class="k">c</span> <span class="k">ON</span> <span class="n">o</span><span class="p">.</span><span class="n">cust_id</span> <span class="o">=</span> <span class="k">c</span><span class="p">.</span><span class="n">id</span>
+<span class="k">JOIN</span> <span class="n">addresses</span> <span class="n">a</span> <span class="k">ON</span> <span class="k">c</span><span class="p">.</span><span class="n">id</span> <span class="o">=</span> <span class="n">a</span><span class="p">.</span><span class="n">cust_id</span>
+<span class="k">WHERE</span> <span class="n">o</span><span class="p">.</span><span class="n">cust_id</span> <span class="o">=</span> <span class="mi">42</span><span class="p">;</span>
+</code></pre></div></div>
+
+<p>After EC construction:</p>
+
+<p><strong>EC = {o.cust_id, c.id, a.cust_id, 42}</strong></p>
+
+<p>This single EC enables:</p>
+<ol>
+  <li><code class="language-plaintext highlighter-rouge">o.cust_id = 42</code> pushed to scan of <code class="language-plaintext highlighter-rouge">orders</code></li>
+  <li><code class="language-plaintext highlighter-rouge">c.id = 42</code> pushed to scan of <code class="language-plaintext highlighter-rouge">customers</code></li>
+  <li><code class="language-plaintext highlighter-rouge">a.cust_id = 42</code> pushed to scan of <code class="language-plaintext highlighter-rouge">addresses</code></li>
+  <li>All three tables can now be joined to each other without explicit join conditions – each has been filtered to rows matching the constant. The join is effectively validated by the EC.</li>
+  <li>If there are indexes on <code class="language-plaintext highlighter-rouge">customers.id</code> and <code class="language-plaintext highlighter-rouge">addresses.cust_id</code>, the optimizer can use them with the constant 42, even though the original query only mentioned <code class="language-plaintext highlighter-rouge">o.cust_id = 42</code>.</li>
+</ol>
+
+<hr />
+
+<h2 id="connections">Connections</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>Subsystem</th>
+      <th>Relationship</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><a href="path-generation">Path Generation</a></td>
+      <td>join_search calls add_paths_to_joinrel() to populate each joinrel with paths</td>
+    </tr>
+    <tr>
+      <td><a href="cost-model">Cost Model</a></td>
+      <td>add_path() uses cost comparisons to maintain the Pareto frontier</td>
+    </tr>
+    <tr>
+      <td><a href="geqo">GEQO</a></td>
+      <td>Alternative search strategy when the number of tables exceeds geqo_threshold</td>
+    </tr>
+    <tr>
+      <td><a href="preprocessing">Preprocessing</a></td>
+      <td>Join-tree flattening determines how many tables enter the DP search</td>
+    </tr>
+    <tr>
+      <td><a href="plan-creation">Plan Creation</a></td>
+      <td>The cheapest path from the top-level joinrel becomes the plan</td>
+    </tr>
+    <tr>
+      <td><a href="../13-statistics/">Statistics</a></td>
+      <td>Selectivity estimates drive the row-count estimates that determine which join orders are cheapest</td>
+    </tr>
+  </tbody>
+</table>
+
+
+      <hr>
+
+      <!-- Prev / Next / Up navigation -->
+      
+      
+      
+
+      <div class="clearfix" style="margin-top: 2rem;">
+        
+          
+          
+
+          
+            
+            <a class="btn btn-primary float-left" href="/postgresql/07-query-optimizer/geqo.html" title="GEQO">&larr; Previous</a>
+          
+
+          
+            
+            <a class="btn btn-primary float-right" href="/postgresql/07-query-optimizer/path-generation.html" title="Path Generation">Next &rarr;</a>
+          
+        
+      </div>
+
+      
+      <div style="text-align: center; margin-top: 1rem;">
+        <a href="/postgresql-internals/">&uarr; Back to Table of Contents</a>
+      </div>
+      
+
+    </div>
+  </div>
+</div>
+
+
+  <!-- Footer -->
+
+<hr>
+
+<footer>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <ul class="list-inline text-center">
+          
+          <li class="list-inline-item">
+            <a href="mailto:amitava.dev@proton.me" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="far fa-envelope fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          
+          
+          <li class="list-inline-item">
+            <a href="https://www.linkedin.com/in/amitavaag" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-linkedin fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          <li class="list-inline-item">
+            <a href="https://github.com/ikouchiha47" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-github fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+        </ul>
+
+        <p class="copyright text-muted">
+          Build with: 
+          <a 
+            href="https://github.com/StartBootstrap/startbootstrap-clean-blog-jekyll"
+            class="text-gray"
+            target="_blank">startbootstrap-clean-blog-jekyll</a></p>
+      </div>
+    </div>
+  </div>
+</footer>
+
+
+  <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="/assets/vendor/blog/js/scripts.js"></script>
+
+<script src="/assets/scripts.js"></script>
+
+
+
+
+
+  <script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+
+    document.querySelectorAll('pre > code.language-mermaid').forEach((codeBlock) => {
+      codeBlock.parentElement.outerHTML = `<pre class="mermaid">${codeBlock.textContent}</pre>`;
+    });
+
+
+    mermaid.initialize({ startOnLoad: true, theme: 'forest' });
+</script>
+
+
+  
+
+</body>
+
+</html>

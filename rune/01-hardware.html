@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+  <title>
+    RUNE Part 1: The Hardware - iko&#39;s logs
+    
+  </title>
+
+  <meta name="description" content="What&#39;s actually in the RUNE prototype, what it cost, and how it evolved from a glowing breadboard circuit to a plastic box held on by velcro.">
+  <meta property="og:description" content="What&#39;s actually in the RUNE prototype, what it cost, and how it evolved from a glowing breadboard circuit to a plastic box held on by velcro.">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="RUNE Part 1: The Hardware">
+  <meta property="og:url" content="https://ikouchiha47.github.io/rune/01-hardware.html">
+
+  
+
+  <link href='https://fonts.googleapis.com/css?family=Lora:400,700,400italic,700italic' rel='stylesheet' type='text/css'>
+  <link href='https://fonts.googleapis.com/css?family=Open+Sans:300italic,400italic,600italic,700italic,800italic,400,300,600,700,800' rel='stylesheet' type='text/css'>
+
+  <!-- <script src="https://use.fontawesome.com/releases/v5.15.3/js/all.js" crossorigin="anonymous"></script> -->
+  <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.15.4/css/all.css" integrity="sha384-DyZ88mC6Up2uqS4h/KRgHuoeGwBcD4Ng9SiP4dIRy0EXTlnuz47vAwmeGwVChigm" crossorigin="anonymous"/>
+
+  <link rel="stylesheet" href="/assets/main.css">
+  <link rel="canonical" href="https://ikouchiha47.github.io/rune/01-hardware.html">
+  <link rel="alternate" type="application/rss+xml" title="iko&#39;s logs" href="/feed.xml">
+
+  <meta name="google-site-verification" content="lWkg6gIxJgzEKX_5XnhcxCtPE9QknaimFWWos_dTvPM" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fira+Sans:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Inconsolata:wght@200..900&family=Jersey+25&family=Kanit:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Merriweather+Sans:ital,wght@0,300..800;1,300..800&family=Nanum+Gothic+Coding&family=Space+Grotesk:wght@300..700&family=Titillium+Web:ital,wght@0,200;0,300;0,400;0,600;0,700;0,900;1,200;1,300;1,400;1,600;1,700&display=swap" rel="stylesheet">
+
+</head>
+
+
+<body>
+
+  <!-- Navigation -->
+<nav class="navbar navbar-expand-lg navbar-light fixed-top" id="mainNav">
+  <div class="container">
+    <a class="navbar-brand" href="/">iko&#39;s logs</a>
+    <button class="navbar-toggler navbar-toggler-right" type="button" data-toggle="collapse" data-target="#navbarResponsive" aria-controls="navbarResponsive" aria-expanded="false" aria-label="Toggle navigation">
+      Menu
+      <i class="fa fa-bars"></i>
+    </button>
+    <div class="collapse navbar-collapse" id="navbarResponsive">
+      <ul class="navbar-nav ml-auto">
+        <li class="nav-item">
+          <a class="nav-link" href="/">Home</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/about">About</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/posts">Posts</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/contact">Contact</a>
+        </li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+
+  <!-- Page Header -->
+
+<header class="masthead" style="background: #0f2027">
+
+  <div class="overlay"></div>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <div class="post-heading">
+          <h1>RUNE Part 1: The Hardware</h1>
+          
+          <h2 class="subheading">From breadboard to a thing that fits on your wrist</h2>
+          
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="container space-grotesk">
+  <div class="row">
+    <div class="col-lg-8 col-md-10 mx-auto">
+
+      <!-- Breadcrumb -->
+      <nav aria-label="breadcrumb" style="margin-bottom: 1.5rem;">
+        <ol class="breadcrumb" style="background: transparent; padding: 0;">
+          
+            <li class="breadcrumb-item"><a href="/rune/">RUNE</a></li>
+          
+          
+          <li class="breadcrumb-item active" aria-current="page">RUNE Part 1: The Hardware</li>
+        </ol>
+      </nav>
+
+      <p><img src="/assets/rune/img/IMG_20260330_173915512.jpg" alt="First working circuit — breadboard, BNO085 Qwiic, nRF52840 XIAO" style="max-width:100%;height:auto;display:block;margin:0 auto 1.5rem;" /></p>
+
+<p>That blue glow is the BLE advertising indicator. That’s the whole device. Everything RUNE does — gesture detection, BLE communication, power management — is running on those two boards jammed into a breadboard at 17:39 on March 30th, somewhere in Bengaluru.</p>
+
+<p>This post is about how it got from there to something you can actually wear.</p>
+
+<hr />
+
+<h2 id="whats-in-it">What’s in it</h2>
+
+<p>Nothing here is cheap.</p>
+
+<p><strong>Seeed Studio XIAO nRF52840 Sense — ₹1100+</strong>
+Nordic nRF52840 MCU: BLE 5.0, 64MHz Cortex-M4F, 256KB RAM, 1MB flash. BLE-certified. USB-C charging. Has an onboard LSM6DS3TR-C 6DOF IMU — which turns out to matter a lot, and not in a good way. That story is <a href="/rune/02-sensor-wars">Part 2</a>.</p>
+
+<p><strong>SparkFun BNO085 Qwiic Breakout — ₹800–1000</strong>
+A 9-axis IMU with a dedicated ARM Cortex-M0+ running Bosch SH-2 sensor fusion at 400Hz internally. More expensive than the MCU. Worth it. Qwiic connector makes the I2C wiring a single keyed cable rather than four loose jumpers that vibrate loose at the worst possible moment.</p>
+
+<p><strong>TP4056-based LiPo charger, 3.7V 300mAh LiPo, perfboard, velcro strap, a small plastic component box.</strong></p>
+
+<p>That’s the full BOM for the prototype. The custom PCB target for RUNE-IV brings this to ₹1400–1950/unit with assembly — Raytac MDBT50Q bare module (₹450–600, smaller than XIAO, still nRF52840, still certified), BNO085 bare chip (₹350–450), LDO + charger + passives + a 2-layer PCB from JLCPCB. Still not cheap. But product-shaped.</p>
+
+<hr />
+
+<h2 id="thanks">Thanks</h2>
+
+<p>Initial soldering was done at <strong>SM Electronics, Kodhalli</strong> — the kind of local shop where you walk in with a board, explain what you need, and walk out with something that works. Parts sourced from <strong>Robocraze</strong>. Eventually learned to solder myself, which is faster than it sounds and more satisfying than it should be.</p>
+
+<hr />
+
+<h2 id="the-physical-evolution">The physical evolution</h2>
+
+<p><strong>Breadboard (March 2026)</strong>
+The photo above. Works. Glows. Falls apart if you look at it wrong. A wearable that disconnects when you move your arm is not a wearable — it’s a desk toy.</p>
+
+<p>The BNO085 resets under vibration because loose breadboard contacts cause momentary I2C glitches that trigger the sensor’s internal watchdog. The fix for production: 100nF ceramic decoupling cap between BNO085 VDD and GND (&lt; 2mm trace), 10µF bulk cap on the 3.3V rail, solid solder joints. For prototyping: the Qwiic cable at least removes the four loose jumpers that were the worst offenders.</p>
+
+<p><strong>Sandwich stack concept</strong>
+Sensor on top (clean signal, away from RF noise and heat), foam spacer in the middle, MCU below, battery behind. This is how every real smartwatch is built internally. Stack &gt; loose wires.</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>[ BNO085 sensor ]
+[ foam spacer   ]   ← 3–8mm, prevents shorts and noise coupling
+[ nRF52840 XIAO ]
+[ LiPo battery  ]
+</code></pre></div></div>
+
+<p><strong>Perfboard</strong>
+Solder both modules to a small perfboard with short solid-core wire between pads. Dramatically more vibration-resistant than breadboard. The I2C glitch resets mostly disappeared.</p>
+
+<p><strong>Plastic component box + velcro strap (April 2026)</strong></p>
+
+<p><img src="/assets/rune/img/IMG_20260429_174628015.jpg" alt="Prototype housing — plastic box, battery inside, wireless" style="max-width:100%;height:auto;display:block;margin:0 auto 1.5rem;" /></p>
+
+<p>Ugly. Self-contained. Battery inside. Wireless. This is what you actually test with — not the breadboard, not a render.</p>
+
+<p><strong>Three.js case models (April 2026)</strong>
+Designed three case iterations in the browser using Three.js before committing to dimensions. v3 landed at:</p>
+
+<ul>
+  <li>Outer body: 29 × 33 × 14.5mm</li>
+  <li>Inner cavity: 26 × 30 × 11.5mm</li>
+  <li>Wall thickness: 1.5mm</li>
+  <li>Strap slots: 22 × 3mm each side</li>
+  <li>USB-C cutout on the +Z face</li>
+</ul>
+
+<p>That’s WHOOP-territory thickness. The model has orbit controls — you can drag and inspect it. When someone asks what it’s going to look like, you show them the Three.js render. When you’re actually testing, you use the box.</p>
+
+<hr />
+
+<h2 id="power">Power</h2>
+
+<p>300mAh LiPo at 3.7V = 1.11 Wh.</p>
+
+<p>Currently: survives one full night on a single charge. Target: one full day minimum, two days on a fresh device.</p>
+
+<p>Approximate draw breakdown:</p>
+<ul>
+  <li>BLE TX at −20dBm instead of 0dBm default: saves ~5mA during connection events</li>
+  <li>PDM microphone disabled at boot (<code class="language-plaintext highlighter-rouge">PIN_PDM_PWR LOW</code>): saves ~1.5mA</li>
+  <li>BNO085 in sleep between gestures: drops from ~1mA to ~few hundred µA</li>
+  <li>nRF52840 deep sleep: ~2µA</li>
+</ul>
+
+<p>Getting from one night to two days means average draw under ~23mA across the duty cycle. That’s tight with BLE active. The sleep/wake logic on the BNO085 is the main variable — and it was completely broken when we first implemented it. <a href="/rune/03-wakeup">That’s Part 3</a>.</p>
+
+<p>The current debugging approach: multimeter in series with the battery line to measure real draw in each state. Serial logs tell you what the firmware thinks it’s doing. The multimeter tells you what’s actually happening.</p>
+
+<hr />
+
+<h2 id="rune-ivv-hardware-direction">RUNE-IV/V hardware direction</h2>
+
+<p>RUNE-IV: custom 2-layer PCB with the Raytac MDBT50Q (no USB-C port thickness penalty) and BNO085 bare chip. Decoupling caps built in. IR transmitter/receiver on the underside for controlling non-smart TVs.</p>
+
+<p>RUNE-V: EMG pads via extendable pogo pins. Clip the EMG module on when you want muscle-based intent detection, off when you don’t. Clip-on or standalone watch form factor. This is the version that makes it something you might actually choose to wear.</p>
+
+<p>Not a fitness tracker. A control surface that happens to sit on your wrist.</p>
+
+<hr />
+
+<h2 id="case-model">Case model</h2>
+
+<p>The Three.js case model (v3) — drag to orbit, scroll to zoom, right-drag to pan. Shows the full stack: battery → BNO085 → XIAO, strap lugs, side expansion port, bottom pogo contacts, and the EMG electrode placement on the inner band.</p>
+
+<div style="position:relative;width:100%;padding-bottom:62.5%;margin-bottom:1.5rem;">
+  <iframe src="/rune/case-preview.html" style="position:absolute;top:0;left:0;width:100%;height:100%;border:none;border-radius:6px;" loading="lazy" title="WristTurn v1 — Modular System 3D Preview">
+  </iframe>
+</div>
+
+
+      <hr>
+
+      <!-- Prev / Next / Up navigation -->
+      
+      
+      
+
+      <div class="clearfix" style="margin-top: 2rem;">
+        
+          
+          
+
+          
+
+          
+            
+            <a class="btn btn-primary float-right" href="/rune/02-sensor-wars.html" title="RUNE Part 2: The Sensor Wars">Next &rarr;</a>
+          
+        
+      </div>
+
+      
+      <div style="text-align: center; margin-top: 1rem;">
+        <a href="/rune/">&uarr; Back to Table of Contents</a>
+      </div>
+      
+
+    </div>
+  </div>
+</div>
+
+
+  <!-- Footer -->
+
+<hr>
+
+<footer>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <ul class="list-inline text-center">
+          
+          <li class="list-inline-item">
+            <a href="mailto:amitava.dev@proton.me" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="far fa-envelope fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          
+          
+          <li class="list-inline-item">
+            <a href="https://www.linkedin.com/in/amitavaag" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-linkedin fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          <li class="list-inline-item">
+            <a href="https://github.com/ikouchiha47" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-github fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+        </ul>
+
+        <p class="copyright text-muted">
+          Build with: 
+          <a 
+            href="https://github.com/StartBootstrap/startbootstrap-clean-blog-jekyll"
+            class="text-gray"
+            target="_blank">startbootstrap-clean-blog-jekyll</a></p>
+      </div>
+    </div>
+  </div>
+</footer>
+
+
+  <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="/assets/vendor/blog/js/scripts.js"></script>
+
+<script src="/assets/scripts.js"></script>
+
+
+
+
+
+  <script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+
+    document.querySelectorAll('pre > code.language-mermaid').forEach((codeBlock) => {
+      codeBlock.parentElement.outerHTML = `<pre class="mermaid">${codeBlock.textContent}</pre>`;
+    });
+
+
+    mermaid.initialize({ startOnLoad: true, theme: 'forest' });
+</script>
+
+
+  
+
+</body>
+
+</html>

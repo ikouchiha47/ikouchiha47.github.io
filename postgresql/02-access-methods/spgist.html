@@ -1,0 +1,596 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+  <title>
+    SP-GiST Index - iko&#39;s logs
+    
+  </title>
+
+  <meta name="description" content="">
+  <meta property="og:description" content="">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="SP-GiST Index">
+  <meta property="og:url" content="https://ikouchiha47.github.io/postgresql/02-access-methods/spgist.html">
+
+  
+
+  <link href='https://fonts.googleapis.com/css?family=Lora:400,700,400italic,700italic' rel='stylesheet' type='text/css'>
+  <link href='https://fonts.googleapis.com/css?family=Open+Sans:300italic,400italic,600italic,700italic,800italic,400,300,600,700,800' rel='stylesheet' type='text/css'>
+
+  <!-- <script src="https://use.fontawesome.com/releases/v5.15.3/js/all.js" crossorigin="anonymous"></script> -->
+  <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.15.4/css/all.css" integrity="sha384-DyZ88mC6Up2uqS4h/KRgHuoeGwBcD4Ng9SiP4dIRy0EXTlnuz47vAwmeGwVChigm" crossorigin="anonymous"/>
+
+  <link rel="stylesheet" href="/assets/main.css">
+  <link rel="canonical" href="https://ikouchiha47.github.io/postgresql/02-access-methods/spgist.html">
+  <link rel="alternate" type="application/rss+xml" title="iko&#39;s logs" href="/feed.xml">
+
+  <meta name="google-site-verification" content="lWkg6gIxJgzEKX_5XnhcxCtPE9QknaimFWWos_dTvPM" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fira+Sans:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Inconsolata:wght@200..900&family=Jersey+25&family=Kanit:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Merriweather+Sans:ital,wght@0,300..800;1,300..800&family=Nanum+Gothic+Coding&family=Space+Grotesk:wght@300..700&family=Titillium+Web:ital,wght@0,200;0,300;0,400;0,600;0,700;0,900;1,200;1,300;1,400;1,600;1,700&display=swap" rel="stylesheet">
+
+</head>
+
+
+<body>
+
+  <!-- Navigation -->
+<nav class="navbar navbar-expand-lg navbar-light fixed-top" id="mainNav">
+  <div class="container">
+    <a class="navbar-brand" href="/">iko&#39;s logs</a>
+    <button class="navbar-toggler navbar-toggler-right" type="button" data-toggle="collapse" data-target="#navbarResponsive" aria-controls="navbarResponsive" aria-expanded="false" aria-label="Toggle navigation">
+      Menu
+      <i class="fa fa-bars"></i>
+    </button>
+    <div class="collapse navbar-collapse" id="navbarResponsive">
+      <ul class="navbar-nav ml-auto">
+        <li class="nav-item">
+          <a class="nav-link" href="/">Home</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/about">About</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/posts">Posts</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/contact">Contact</a>
+        </li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+
+  <!-- Page Header -->
+
+<header class="masthead">
+
+  <div class="overlay"></div>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <div class="post-heading">
+          <h1>SP-GiST Index</h1>
+          
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="container space-grotesk">
+  <div class="row">
+    <div class="col-lg-8 col-md-10 mx-auto">
+
+      <!-- Breadcrumb -->
+      <nav aria-label="breadcrumb" style="margin-bottom: 1.5rem;">
+        <ol class="breadcrumb" style="background: transparent; padding: 0;">
+          
+            <li class="breadcrumb-item"><a href="/postgresql-internals/">PostgreSQL Internals Deep Dive</a></li>
+          
+          
+            
+              <li class="breadcrumb-item"><a href="/postgresql/02-access-methods/">Access Methods</a></li>
+            
+          
+          <li class="breadcrumb-item active" aria-current="page">SP-GiST Index</li>
+        </ol>
+      </nav>
+
+      <h1 id="sp-gist-space-partitioned-generalized-search-tree">SP-GiST (Space-Partitioned Generalized Search Tree)</h1>
+
+<h2 id="summary">Summary</h2>
+
+<p>SP-GiST supports <strong>unbalanced, space-partitioning</strong> tree structures such as
+k-d trees, quadtrees, and radix trees (tries). Unlike GiST, which maintains a
+balanced tree with overlapping bounding predicates, SP-GiST recursively divides
+the search space into non-overlapping partitions. This makes it the natural
+choice for data that decomposes hierarchically – network addresses, text
+prefixes, and point data in low dimensions.</p>
+
+<hr />
+
+<h2 id="key-source-files">Key Source Files</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>File</th>
+      <th>Purpose</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/access/spgist/spginsert.c</code></td>
+      <td><code class="language-plaintext highlighter-rouge">spginsert()</code> – insert routing</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/access/spgist/spgdoinsert.c</code></td>
+      <td><code class="language-plaintext highlighter-rouge">spgdoinsert()</code> – core insert: descend, choose, split</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/access/spgist/spgscan.c</code></td>
+      <td><code class="language-plaintext highlighter-rouge">spggettuple()</code>, <code class="language-plaintext highlighter-rouge">spggetbitmap()</code> – scan with stack-based traversal</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/access/spgist/spgutils.c</code></td>
+      <td><code class="language-plaintext highlighter-rouge">spghandler()</code>, page management, state initialization</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/access/spgist/spgkdtreeproc.c</code></td>
+      <td>k-d tree opclass for <code class="language-plaintext highlighter-rouge">point</code></td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/access/spgist/spgquadtreeproc.c</code></td>
+      <td>Quadtree opclass for <code class="language-plaintext highlighter-rouge">point</code></td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/access/spgist/spgtextproc.c</code></td>
+      <td>Radix tree opclass for <code class="language-plaintext highlighter-rouge">text</code></td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/access/spgist/spgproc.c</code></td>
+      <td>Support for <code class="language-plaintext highlighter-rouge">box</code>, <code class="language-plaintext highlighter-rouge">inet</code>, <code class="language-plaintext highlighter-rouge">range</code> types</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/access/spgist/spgvacuum.c</code></td>
+      <td>VACUUM support</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/access/spgist/spgvalidate.c</code></td>
+      <td>Opclass validation</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/access/spgist/spgxlog.c</code></td>
+      <td>WAL redo</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/access/spgist/README</code></td>
+      <td>Design document</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/access/spgist.h</code></td>
+      <td>User-facing callback structs (<code class="language-plaintext highlighter-rouge">spgConfigIn/Out</code>, <code class="language-plaintext highlighter-rouge">spgChooseIn/Out</code>, etc.)</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/access/spgist_private.h</code></td>
+      <td><code class="language-plaintext highlighter-rouge">SpGistPageOpaqueData</code>, <code class="language-plaintext highlighter-rouge">SpGistState</code>, <code class="language-plaintext highlighter-rouge">SpGistMetaPageData</code></td>
+    </tr>
+  </tbody>
+</table>
+
+<hr />
+
+<h2 id="how-it-works">How It Works</h2>
+
+<h3 id="space-partitioning-concept">Space-Partitioning Concept</h3>
+
+<p>SP-GiST recursively partitions the data space. Each internal node defines a
+partitioning rule, and each child covers a non-overlapping region:</p>
+
+<p><strong>k-d tree</strong> (alternating axis splits):</p>
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>         x &lt; 5
+        /     \
+     y &lt; 3     y &lt; 7
+    /    \    /    \
+  (1,2) (3,4) (6,5) (8,9)
+</code></pre></div></div>
+
+<p><strong>Radix tree</strong> (prefix decomposition):</p>
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>           ""
+          / \
+        "a"  "b"
+        / \    \
+     "ab" "ac" "ba"
+      |          |
+    "abc"      "bar"
+</code></pre></div></div>
+
+<p><strong>Quadtree</strong> (2D quadrant splits):</p>
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>         center=(5,5)
+        /   |   |   \
+       Q1   Q2  Q3  Q4
+      NW    NE  SW  SE
+</code></pre></div></div>
+
+<h3 id="opclass-callback-functions">Opclass Callback Functions</h3>
+
+<table>
+  <thead>
+    <tr>
+      <th>Function</th>
+      <th>Purpose</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">config</code></td>
+      <td>Declare node structure: label type, prefix type, leaf type, whether node labels exist</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">choose</code></td>
+      <td>Given an inner tuple and a new value, decide: <code class="language-plaintext highlighter-rouge">spgMatchNode</code> (descend to child), <code class="language-plaintext highlighter-rouge">spgAddNode</code> (add new child), or <code class="language-plaintext highlighter-rouge">spgSplitTuple</code> (refine the partition)</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">picksplit</code></td>
+      <td>Given a set of leaf tuples, create an inner tuple with partitioning rule and distribute leaves among new nodes</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">inner_consistent</code></td>
+      <td>During scan: which child nodes could contain matching values?</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">leaf_consistent</code></td>
+      <td>Does a specific leaf tuple match the query?</td>
+    </tr>
+  </tbody>
+</table>
+
+<h3 id="page-types">Page Types</h3>
+
+<p>SP-GiST uses two kinds of pages:</p>
+<ul>
+  <li><strong>Inner pages</strong>: Store inner tuples (partitioning rules with node labels and
+downlinks).</li>
+  <li><strong>Leaf pages</strong>: Store leaf tuples (indexed values with TIDs).</li>
+</ul>
+
+<p>A key design choice: inner tuples and leaf tuples are stored on <strong>separate
+pages</strong>. This avoids the complexity of mixed pages and simplifies concurrency.</p>
+
+<h3 id="insert-algorithm">Insert Algorithm</h3>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>spgdoinsert(index, datum, tid)
+  -&gt; start at root inner tuple
+  -&gt; loop:
+       call choose(inner_tuple, datum)
+       switch result:
+         spgMatchNode:
+           follow downlink to child
+           if child is leaf page:
+             if space available: add leaf tuple, done
+             else: call picksplit() to create new inner tuple
+           if child is inner page:
+             continue loop with child inner tuple
+
+         spgAddNode:
+           add a new node to the inner tuple for this datum
+           (may require page split if inner tuple grows too large)
+
+         spgSplitTuple:
+           replace inner tuple with a more specific partitioning
+           (e.g., extend prefix in radix tree)
+</code></pre></div></div>
+
+<h3 id="scan-algorithm">Scan Algorithm</h3>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>spggettuple(scan)
+  -&gt; stack-based traversal (not a priority queue like GiST)
+  -&gt; push root onto stack
+  -&gt; loop:
+       pop item from stack
+       if inner tuple:
+         call inner_consistent(query, inner_tuple)
+         push matching child nodes onto stack
+       if leaf tuple:
+         call leaf_consistent(query, leaf_tuple)
+         if true: return tuple
+</code></pre></div></div>
+
+<hr />
+
+<h2 id="key-data-structures">Key Data Structures</h2>
+
+<h3 id="spgistpageopaquedata">SpGistPageOpaqueData</h3>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="c1">// src/include/access/spgist_private.h</span>
+<span class="k">typedef</span> <span class="k">struct</span> <span class="n">SpGistPageOpaqueData</span>
+<span class="p">{</span>
+    <span class="n">uint16</span>      <span class="n">flags</span><span class="p">;</span>          <span class="c1">// SPGIST_META, SPGIST_LEAF, SPGIST_DELETED, SPGIST_NULLS</span>
+    <span class="n">uint16</span>      <span class="n">nRedirection</span><span class="p">;</span>   <span class="c1">// number of redirect tuples</span>
+    <span class="n">uint16</span>      <span class="n">nPlaceholder</span><span class="p">;</span>   <span class="c1">// number of placeholder tuples</span>
+    <span class="n">TransactionId</span> <span class="n">xid</span><span class="p">;</span>          <span class="c1">// for deleted pages</span>
+<span class="p">}</span> <span class="n">SpGistPageOpaqueData</span><span class="p">;</span>
+</code></pre></div></div>
+
+<h3 id="spgistmetapagedata">SpGistMetaPageData</h3>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="c1">// src/include/access/spgist_private.h</span>
+<span class="k">typedef</span> <span class="k">struct</span> <span class="n">SpGistMetaPageData</span>
+<span class="p">{</span>
+    <span class="n">uint32</span>          <span class="n">magic</span><span class="p">;</span>
+    <span class="n">uint32</span>          <span class="n">flags</span><span class="p">;</span>
+    <span class="n">SpGistLUPCache</span>  <span class="n">lastUsedPages</span><span class="p">;</span>  <span class="c1">// cache of pages with free space</span>
+<span class="p">}</span> <span class="n">SpGistMetaPageData</span><span class="p">;</span>
+</code></pre></div></div>
+
+<h3 id="spgiststate">SpGistState</h3>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="c1">// src/include/access/spgist_private.h</span>
+<span class="k">typedef</span> <span class="k">struct</span> <span class="n">SpGistState</span>
+<span class="p">{</span>
+    <span class="n">SpGistTypeDesc</span> <span class="n">attType</span><span class="p">;</span>           <span class="c1">// original data type</span>
+    <span class="n">SpGistTypeDesc</span> <span class="n">attPrefixType</span><span class="p">;</span>     <span class="c1">// prefix type (from config)</span>
+    <span class="n">SpGistTypeDesc</span> <span class="n">attLabelType</span><span class="p">;</span>      <span class="c1">// node label type (from config)</span>
+    <span class="n">SpGistTypeDesc</span> <span class="n">attLeafType</span><span class="p">;</span>       <span class="c1">// leaf stored type</span>
+    <span class="n">bool</span>           <span class="n">config_leafType</span><span class="p">;</span>   <span class="c1">// was leaf type overridden?</span>
+    <span class="c1">// cached opclass support function OIDs</span>
+    <span class="n">FmgrInfo</span>    <span class="n">chooseFn</span><span class="p">;</span>
+    <span class="n">FmgrInfo</span>    <span class="n">picksplitFn</span><span class="p">;</span>
+    <span class="n">FmgrInfo</span>    <span class="n">innerConsistentFn</span><span class="p">;</span>
+    <span class="n">FmgrInfo</span>    <span class="n">leafConsistentFn</span><span class="p">;</span>
+    <span class="c1">// ...</span>
+<span class="p">}</span> <span class="n">SpGistState</span><span class="p">;</span>
+</code></pre></div></div>
+
+<h3 id="spgchoosein--spgchooseout">spgChooseIn / spgChooseOut</h3>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="c1">// src/include/access/spgist.h</span>
+<span class="k">typedef</span> <span class="k">struct</span> <span class="n">spgChooseIn</span>
+<span class="p">{</span>
+    <span class="n">Datum</span>       <span class="n">datum</span><span class="p">;</span>           <span class="c1">// value being inserted</span>
+    <span class="n">Datum</span>       <span class="n">prefixDatum</span><span class="p">;</span>     <span class="c1">// current inner tuple's prefix</span>
+    <span class="kt">int</span>         <span class="n">nNodes</span><span class="p">;</span>          <span class="c1">// number of child nodes</span>
+    <span class="n">Datum</span>      <span class="o">*</span><span class="n">nodeLabels</span><span class="p">;</span>      <span class="c1">// label for each child node</span>
+    <span class="kt">int</span>         <span class="n">level</span><span class="p">;</span>           <span class="c1">// current depth in tree</span>
+    <span class="n">bool</span>        <span class="n">allTheSame</span><span class="p">;</span>      <span class="c1">// all nodes equivalent?</span>
+<span class="p">}</span> <span class="n">spgChooseIn</span><span class="p">;</span>
+
+<span class="k">typedef</span> <span class="k">struct</span> <span class="n">spgChooseOut</span>
+<span class="p">{</span>
+    <span class="k">enum</span> <span class="p">{</span>
+        <span class="n">spgMatchNode</span><span class="p">,</span>            <span class="c1">// descend to an existing node</span>
+        <span class="n">spgAddNode</span><span class="p">,</span>              <span class="c1">// add a new child node</span>
+        <span class="n">spgSplitTuple</span>            <span class="c1">// refine the inner tuple</span>
+    <span class="p">}</span> <span class="n">resultType</span><span class="p">;</span>
+    <span class="k">union</span> <span class="p">{</span> <span class="p">...</span> <span class="p">}</span> <span class="n">result</span><span class="p">;</span>
+<span class="p">}</span> <span class="n">spgChooseOut</span><span class="p">;</span>
+</code></pre></div></div>
+
+<hr />
+
+<h2 id="diagram-sp-gist-radix-tree-for-text">Diagram: SP-GiST Radix Tree for Text</h2>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>  Indexed values: "abc", "abd", "bcd", "bce"
+
+  Inner page:
+  +------------------------------+
+  | Inner tuple: prefix=""       |
+  | Node 'a' -&gt; leaf page 3     |
+  | Node 'b' -&gt; inner page 4    |
+  +------------------------------+
+
+  Leaf page 3:                   Inner page 4:
+  +------------------+           +------------------------------+
+  | "abc" -&gt; TID_1   |           | Inner tuple: prefix="bc"    |
+  | "abd" -&gt; TID_2   |           | Node 'd' -&gt; leaf page 5     |
+  +------------------+           | Node 'e' -&gt; leaf page 5     |
+                                 +------------------------------+
+
+  Leaf page 5:
+  +------------------+
+  | "d" -&gt; TID_3     |   (suffix after prefix "bc")
+  | "e" -&gt; TID_4     |
+  +------------------+
+</code></pre></div></div>
+
+<p>Note: Leaf tuples store only the <strong>remaining suffix</strong> after the prefix has been
+consumed by ancestor inner tuples. This is a key space optimization.</p>
+
+<hr />
+
+<h2 id="built-in-opclasses">Built-in Opclasses</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>Opclass</th>
+      <th>Data Type</th>
+      <th>Tree Type</th>
+      <th>Operators</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">kd_point_ops</code></td>
+      <td><code class="language-plaintext highlighter-rouge">point</code></td>
+      <td>k-d tree</td>
+      <td><code class="language-plaintext highlighter-rouge">&lt;&lt;</code>, <code class="language-plaintext highlighter-rouge">&gt;&gt;</code>, <code class="language-plaintext highlighter-rouge">~=</code>, <code class="language-plaintext highlighter-rouge">&lt;@</code>, <code class="language-plaintext highlighter-rouge">&lt;-&gt;</code></td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">quad_point_ops</code></td>
+      <td><code class="language-plaintext highlighter-rouge">point</code></td>
+      <td>Quadtree</td>
+      <td>same</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">text_ops</code></td>
+      <td><code class="language-plaintext highlighter-rouge">text</code></td>
+      <td>Radix tree</td>
+      <td><code class="language-plaintext highlighter-rouge">=</code>, <code class="language-plaintext highlighter-rouge">&lt;</code>, <code class="language-plaintext highlighter-rouge">&gt;</code>, <code class="language-plaintext highlighter-rouge">&lt;=</code>, <code class="language-plaintext highlighter-rouge">&gt;=</code>, <code class="language-plaintext highlighter-rouge">^@</code> (starts with)</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">box_ops</code></td>
+      <td><code class="language-plaintext highlighter-rouge">box</code></td>
+      <td>Quadtree</td>
+      <td><code class="language-plaintext highlighter-rouge">&lt;&lt;</code>, <code class="language-plaintext highlighter-rouge">&gt;&gt;</code>, <code class="language-plaintext highlighter-rouge">@&gt;</code>, <code class="language-plaintext highlighter-rouge">&lt;@</code>, <code class="language-plaintext highlighter-rouge">&amp;&amp;</code></td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">inet_ops</code></td>
+      <td><code class="language-plaintext highlighter-rouge">inet</code></td>
+      <td>Radix tree</td>
+      <td><code class="language-plaintext highlighter-rouge">=</code>, <code class="language-plaintext highlighter-rouge">&lt;</code>, <code class="language-plaintext highlighter-rouge">&gt;</code>, <code class="language-plaintext highlighter-rouge">&gt;&gt;=</code>, <code class="language-plaintext highlighter-rouge">&lt;&lt;=</code></td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">range_ops</code></td>
+      <td><code class="language-plaintext highlighter-rouge">anyrange</code></td>
+      <td>Quadtree</td>
+      <td><code class="language-plaintext highlighter-rouge">@&gt;</code>, <code class="language-plaintext highlighter-rouge">&lt;@</code>, <code class="language-plaintext highlighter-rouge">&amp;&amp;</code>, <code class="language-plaintext highlighter-rouge">=</code></td>
+    </tr>
+  </tbody>
+</table>
+
+<hr />
+
+<h2 id="connections">Connections</h2>
+
+<ul>
+  <li><strong>GiST</strong>: Both support spatial data, but GiST uses balanced trees with
+overlapping regions while SP-GiST uses unbalanced trees with non-overlapping
+partitions. SP-GiST can be more efficient for uniformly distributed point
+data.</li>
+  <li><strong>B-tree</strong>: For text prefix searches (<code class="language-plaintext highlighter-rouge">LIKE 'abc%'</code>), the SP-GiST radix
+tree opclass is a specialized alternative to B-tree with <code class="language-plaintext highlighter-rouge">text_pattern_ops</code>.</li>
+  <li><strong>Heap AM</strong>: Like all index AMs, SP-GiST stores TIDs pointing into the heap.</li>
+  <li><strong>WAL</strong>: <code class="language-plaintext highlighter-rouge">spgxlog.c</code> handles redo for inner tuple splits, leaf insertions,
+node additions, and page operations.</li>
+  <li><strong>VACUUM</strong>: <code class="language-plaintext highlighter-rouge">spgvacuum.c</code> removes dead tuples and converts dead inner
+entries to placeholder tuples that can be reclaimed later.</li>
+</ul>
+
+
+      <hr>
+
+      <!-- Prev / Next / Up navigation -->
+      
+      
+      
+
+      <div class="clearfix" style="margin-top: 2rem;">
+        
+          
+          
+
+          
+            
+            <a class="btn btn-primary float-left" href="/postgresql/02-access-methods/heap.html" title="Heap Access Method">&larr; Previous</a>
+          
+
+          
+            
+            <a class="btn btn-primary float-right" href="/postgresql/02-access-methods/table-am-api.html" title="Table AM API">Next &rarr;</a>
+          
+        
+      </div>
+
+      
+      <div style="text-align: center; margin-top: 1rem;">
+        <a href="/postgresql-internals/">&uarr; Back to Table of Contents</a>
+      </div>
+      
+
+    </div>
+  </div>
+</div>
+
+
+  <!-- Footer -->
+
+<hr>
+
+<footer>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <ul class="list-inline text-center">
+          
+          <li class="list-inline-item">
+            <a href="mailto:amitava.dev@proton.me" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="far fa-envelope fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          
+          
+          <li class="list-inline-item">
+            <a href="https://www.linkedin.com/in/amitavaag" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-linkedin fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          <li class="list-inline-item">
+            <a href="https://github.com/ikouchiha47" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-github fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+        </ul>
+
+        <p class="copyright text-muted">
+          Build with: 
+          <a 
+            href="https://github.com/StartBootstrap/startbootstrap-clean-blog-jekyll"
+            class="text-gray"
+            target="_blank">startbootstrap-clean-blog-jekyll</a></p>
+      </div>
+    </div>
+  </div>
+</footer>
+
+
+  <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="/assets/vendor/blog/js/scripts.js"></script>
+
+<script src="/assets/scripts.js"></script>
+
+
+
+
+
+  <script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+
+    document.querySelectorAll('pre > code.language-mermaid').forEach((codeBlock) => {
+      codeBlock.parentElement.outerHTML = `<pre class="mermaid">${codeBlock.textContent}</pre>`;
+    });
+
+
+    mermaid.initialize({ startOnLoad: true, theme: 'forest' });
+</script>
+
+
+  
+
+</body>
+
+</html>

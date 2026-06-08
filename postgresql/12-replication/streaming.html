@@ -1,0 +1,788 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+  <title>
+    Streaming Replication - iko&#39;s logs
+    
+  </title>
+
+  <meta name="description" content="">
+  <meta property="og:description" content="">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Streaming Replication">
+  <meta property="og:url" content="https://ikouchiha47.github.io/postgresql/12-replication/streaming.html">
+
+  
+
+  <link href='https://fonts.googleapis.com/css?family=Lora:400,700,400italic,700italic' rel='stylesheet' type='text/css'>
+  <link href='https://fonts.googleapis.com/css?family=Open+Sans:300italic,400italic,600italic,700italic,800italic,400,300,600,700,800' rel='stylesheet' type='text/css'>
+
+  <!-- <script src="https://use.fontawesome.com/releases/v5.15.3/js/all.js" crossorigin="anonymous"></script> -->
+  <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.15.4/css/all.css" integrity="sha384-DyZ88mC6Up2uqS4h/KRgHuoeGwBcD4Ng9SiP4dIRy0EXTlnuz47vAwmeGwVChigm" crossorigin="anonymous"/>
+
+  <link rel="stylesheet" href="/assets/main.css">
+  <link rel="canonical" href="https://ikouchiha47.github.io/postgresql/12-replication/streaming.html">
+  <link rel="alternate" type="application/rss+xml" title="iko&#39;s logs" href="/feed.xml">
+
+  <meta name="google-site-verification" content="lWkg6gIxJgzEKX_5XnhcxCtPE9QknaimFWWos_dTvPM" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fira+Sans:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Inconsolata:wght@200..900&family=Jersey+25&family=Kanit:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Merriweather+Sans:ital,wght@0,300..800;1,300..800&family=Nanum+Gothic+Coding&family=Space+Grotesk:wght@300..700&family=Titillium+Web:ital,wght@0,200;0,300;0,400;0,600;0,700;0,900;1,200;1,300;1,400;1,600;1,700&display=swap" rel="stylesheet">
+
+</head>
+
+
+<body>
+
+  <!-- Navigation -->
+<nav class="navbar navbar-expand-lg navbar-light fixed-top" id="mainNav">
+  <div class="container">
+    <a class="navbar-brand" href="/">iko&#39;s logs</a>
+    <button class="navbar-toggler navbar-toggler-right" type="button" data-toggle="collapse" data-target="#navbarResponsive" aria-controls="navbarResponsive" aria-expanded="false" aria-label="Toggle navigation">
+      Menu
+      <i class="fa fa-bars"></i>
+    </button>
+    <div class="collapse navbar-collapse" id="navbarResponsive">
+      <ul class="navbar-nav ml-auto">
+        <li class="nav-item">
+          <a class="nav-link" href="/">Home</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/about">About</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/posts">Posts</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/contact">Contact</a>
+        </li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+
+  <!-- Page Header -->
+
+<header class="masthead">
+
+  <div class="overlay"></div>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <div class="post-heading">
+          <h1>Streaming Replication</h1>
+          
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="container space-grotesk">
+  <div class="row">
+    <div class="col-lg-8 col-md-10 mx-auto">
+
+      <!-- Breadcrumb -->
+      <nav aria-label="breadcrumb" style="margin-bottom: 1.5rem;">
+        <ol class="breadcrumb" style="background: transparent; padding: 0;">
+          
+            <li class="breadcrumb-item"><a href="/postgresql-internals/">PostgreSQL Internals Deep Dive</a></li>
+          
+          
+            
+              <li class="breadcrumb-item"><a href="/postgresql/12-replication/">Replication</a></li>
+            
+          
+          <li class="breadcrumb-item active" aria-current="page">Streaming Replication</li>
+        </ol>
+      </nav>
+
+      <h1 id="streaming-replication">Streaming Replication</h1>
+
+<h2 id="summary">Summary</h2>
+
+<p>Physical streaming replication ships raw WAL bytes from a primary to one or
+more standbys, producing byte-identical copies of the database cluster. The
+primary runs a <strong>walsender</strong> process for each connected standby, and each
+standby runs a single <strong>walreceiver</strong> process that writes incoming WAL to
+disk. Replication slots track consumer progress and prevent premature WAL
+removal. This section traces the full lifecycle from connection establishment
+through steady-state streaming and failover.</p>
+
+<hr />
+
+<h2 id="overview">Overview</h2>
+
+<p>Physical streaming replication was introduced in PostgreSQL 9.0 and has been
+the foundation of PostgreSQL high availability ever since. It works at the
+storage level: the walsender reads WAL segment files from <code class="language-plaintext highlighter-rouge">pg_wal/</code> on the
+primary and streams the raw bytes over a TCP connection. The walreceiver on
+the standby writes these bytes to its own <code class="language-plaintext highlighter-rouge">pg_wal/</code> directory, and the startup
+process replays them to keep the standby’s data pages in sync.</p>
+
+<pre><code class="language-mermaid">flowchart LR
+    subgraph Primary
+        WAL["WAL (pg_wal/)"]
+        WS["walsender"]
+        Slot["Replication Slot&lt;br/&gt;restart_lsn&lt;br/&gt;confirmed_flush"]
+        WAL --&gt; WS
+        Slot -.-&gt;|prevents WAL removal| WAL
+    end
+
+    WS -- "WAL byte stream&lt;br/&gt;(TCP COPY mode)" --&gt; WR
+
+    subgraph Standby
+        WR["walreceiver"]
+        SWAL["pg_wal/"]
+        Startup["startup process"]
+        DataPages["Data Pages"]
+        WR --&gt;|writes WAL| SWAL
+        SWAL --&gt;|reads WAL| Startup
+        Startup --&gt;|replays / applies| DataPages
+    end
+
+    WR -.-&gt;|status feedback&lt;br/&gt;write, flush, apply LSN| WS
+    WS -.-&gt;|updates| Slot
+</code></pre>
+
+<p>This design has several important consequences:</p>
+<ul>
+  <li>The standby is a <strong>byte-identical</strong> copy (same data directory layout, same OIDs)</li>
+  <li>All databases and all objects are replicated (no selective filtering)</li>
+  <li>The standby can serve read-only queries while replay continues (Hot Standby)</li>
+  <li>Cascading replication is supported (a standby can feed another standby)</li>
+</ul>
+
+<hr />
+
+<h2 id="key-source-files">Key Source Files</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>File</th>
+      <th>Purpose</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/replication/walsender.c</code></td>
+      <td>Walsender process main loop and protocol handling</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/replication/walreceiver.c</code></td>
+      <td>Walreceiver process main loop</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/replication/walreceiverfuncs.c</code></td>
+      <td>Shared memory management for walreceiver state</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/replication/slot.c</code></td>
+      <td>Replication slot creation, persistence, and invalidation</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/replication/slotfuncs.c</code></td>
+      <td>SQL-callable slot management functions</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/replication/libpqwalreceiver/</code></td>
+      <td>libpq-based transport for walreceiver</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/replication/walsender_private.h</code></td>
+      <td><code class="language-plaintext highlighter-rouge">WalSnd</code>, <code class="language-plaintext highlighter-rouge">WalSndCtlData</code> structures</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/replication/walreceiver.h</code></td>
+      <td><code class="language-plaintext highlighter-rouge">WalRcvData</code> structure and walreceiver states</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/replication/slot.h</code></td>
+      <td><code class="language-plaintext highlighter-rouge">ReplicationSlot</code>, <code class="language-plaintext highlighter-rouge">ReplicationSlotPersistentData</code></td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/replication/repl_gram.y</code></td>
+      <td>Grammar for replication protocol commands</td>
+    </tr>
+  </tbody>
+</table>
+
+<hr />
+
+<h2 id="how-it-works">How It Works</h2>
+
+<h3 id="1-connection-establishment">1. Connection Establishment</h3>
+
+<p>When a standby starts (or restarts streaming), the startup process fills in
+<code class="language-plaintext highlighter-rouge">WalRcvData-&gt;conninfo</code> and <code class="language-plaintext highlighter-rouge">WalRcvData-&gt;receiveStart</code> in shared memory, then
+signals the postmaster to launch a walreceiver. The walreceiver connects to
+the primary using the configured <code class="language-plaintext highlighter-rouge">primary_conninfo</code>:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>Standby                                     Primary
+  |                                            |
+  | startup process sets WalRcvData            |
+  | signals postmaster                         |
+  |                                            |
+  | walreceiver starts                         |
+  |-------- libpq connection (replication) ---&gt;|
+  |                                            | postmaster forks walsender
+  |                                            |
+  |&lt;------- AuthenticationOk ------------------|
+  |                                            |
+  |-------- IDENTIFY_SYSTEM ------------------&gt;|
+  |&lt;------- systemid, timeline, xlogpos -------|
+  |                                            |
+  |-------- START_REPLICATION SLOT s PHYSICAL  |
+  |         WAL_POSITION 0/3000000 -----------&gt;|
+  |                                            |
+  |&lt;------- CopyBothResponse ------------------|
+  |                                            |
+  |&lt;======= WAL data stream ==================&gt;|
+  |         (with bidirectional feedback)       |
+</code></pre></div></div>
+
+<p>The walsender identifies itself by marking its slot in the <code class="language-plaintext highlighter-rouge">PMSignalState</code>
+array, which allows the postmaster to treat it differently during shutdown
+(walsenders are kept alive longer to stream the shutdown checkpoint).</p>
+
+<h3 id="2-the-streaming-protocol">2. The Streaming Protocol</h3>
+
+<p>Once <code class="language-plaintext highlighter-rouge">START_REPLICATION</code> is issued, the connection enters COPY mode with
+bidirectional data flow:</p>
+
+<p><strong>Primary to Standby (WAL data messages):</strong></p>
+
+<p>Each message contains:</p>
+<ul>
+  <li>Message type byte (<code class="language-plaintext highlighter-rouge">'w'</code> for WAL data)</li>
+  <li>Start WAL position of this chunk</li>
+  <li>End WAL position (current end of WAL on primary)</li>
+  <li>Server send timestamp</li>
+  <li>Raw WAL data (up to <code class="language-plaintext highlighter-rouge">MAX_SEND_SIZE</code>, typically 128 KB)</li>
+</ul>
+
+<p><strong>Standby to Primary (status updates):</strong></p>
+
+<p>The walreceiver sends <code class="language-plaintext highlighter-rouge">StandbyStatusUpdate</code> messages containing:</p>
+<ul>
+  <li>Write position (WAL written to OS cache)</li>
+  <li>Flush position (WAL fsynced to disk)</li>
+  <li>Apply position (WAL replayed by startup process)</li>
+  <li>Client send timestamp</li>
+  <li>Reply requested flag</li>
+</ul>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>Primary (walsender)              Standby (walreceiver)
+  |                                        |
+  |--- WAL data (LSN 0/3000000-0/3010000)-&gt;|
+  |--- WAL data (LSN 0/3010000-0/3020000)-&gt;|
+  |                                        | writes to pg_wal/
+  |                                        | updates WalRcv-&gt;flushedUpto
+  |&lt;-- Status: write=0/3020000             |
+  |           flush=0/3020000              |
+  |           apply=0/3015000 -------------|
+  |                                        |
+  | updates WalSnd-&gt;write/flush/apply      |
+  | (used by sync rep and monitoring)      |
+  |                                        |
+</code></pre></div></div>
+
+<h3 id="3-walsender-main-loop">3. Walsender Main Loop</h3>
+
+<p>The walsender main loop in <code class="language-plaintext highlighter-rouge">WalSndLoop()</code> alternates between sending WAL and
+processing feedback. The core logic:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>WalSndLoop():
+    while not stopping:
+        // Check for new WAL to send
+        SendDataUntilCaughtUp():
+            while sentPtr &lt; GetFlushRecPtr():
+                XLogSendPhysical()  // read WAL from disk, send via COPY
+                sentPtr += bytes_sent
+
+        // If caught up, wait for new WAL or timeout
+        if caught_up:
+            WaitForWALToBecomeAvailable()
+            // uses WalSndCtl-&gt;wal_flush_cv condition variable
+
+        // Process any feedback from standby
+        ProcessRepliesIfAny():
+            // updates WalSnd-&gt;write, flush, apply
+            // triggers SyncRepReleaseWaiters() if sync rep enabled
+
+        // Send keepalive if wal_sender_timeout approaching
+        WalSndKeepalive()
+</code></pre></div></div>
+
+<p>The walsender reads WAL using standard file I/O (not shared buffers), reading
+directly from WAL segment files in <code class="language-plaintext highlighter-rouge">pg_wal/</code>. It tracks its position via
+<code class="language-plaintext highlighter-rouge">sentPtr</code> and sends data in chunks up to <code class="language-plaintext highlighter-rouge">MAX_SEND_SIZE</code> (128 KB with default
+8 KB block size).</p>
+
+<h3 id="4-walreceiver-main-loop">4. Walreceiver Main Loop</h3>
+
+<p>The walreceiver runs a complementary loop in <code class="language-plaintext highlighter-rouge">WalReceiverMain()</code>:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>WalReceiverMain():
+    // Connect to primary
+    wrconn = walrcv_connect(conninfo)
+
+    // Start streaming
+    walrcv_startstreaming(wrconn, startpoint, slotname)
+
+    while connected:
+        // Receive WAL data
+        len = walrcv_receive(wrconn, &amp;buf)
+
+        if len &gt; 0:
+            XLogWalRcvWrite(buf, len, recvPtr)  // write to pg_wal/
+            recvPtr += len
+
+            // Periodically flush to disk
+            if should_flush:
+                XLogWalRcvFlush()
+                // updates WalRcv-&gt;flushedUpto in shared memory
+                // wakes startup process to replay more WAL
+
+        // Send status feedback
+        if interval_elapsed or flush_happened:
+            XLogWalRcvSendReply()
+            XLogWalRcvSendHSFeedback()  // hot_standby_feedback
+</code></pre></div></div>
+
+<p>The walreceiver uses the dynamically loaded <code class="language-plaintext highlighter-rouge">libpqwalreceiver</code> module for
+actual network communication. This design allows the main server binary to
+avoid linking against libpq. The module implements functions defined in the
+<code class="language-plaintext highlighter-rouge">WalReceiverFunctionsType</code> function table.</p>
+
+<h3 id="5-replication-slots">5. Replication Slots</h3>
+
+<p>Replication slots solve a critical problem: without them, the primary has no
+reliable way to know which WAL segments a standby still needs. Slots provide:</p>
+
+<ul>
+  <li><strong>WAL retention</strong>: <code class="language-plaintext highlighter-rouge">restart_lsn</code> prevents <code class="language-plaintext highlighter-rouge">pg_wal/</code> cleanup past this point</li>
+  <li><strong>Row retention</strong>: <code class="language-plaintext highlighter-rouge">xmin</code> / <code class="language-plaintext highlighter-rouge">catalog_xmin</code> hold back vacuum’s horizon</li>
+  <li><strong>Progress tracking</strong>: <code class="language-plaintext highlighter-rouge">confirmed_flush</code> records the consumer’s position</li>
+  <li><strong>Crash safety</strong>: slot state is persisted to <code class="language-plaintext highlighter-rouge">pg_replslot/&lt;slotname&gt;/state</code></li>
+</ul>
+
+<h4 id="slot-types">Slot Types</h4>
+
+<table>
+  <thead>
+    <tr>
+      <th>Type</th>
+      <th>Persistency</th>
+      <th>Use</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Physical, persistent</td>
+      <td><code class="language-plaintext highlighter-rouge">RS_PERSISTENT</code></td>
+      <td>Standby that may disconnect and reconnect</td>
+    </tr>
+    <tr>
+      <td>Physical, temporary</td>
+      <td><code class="language-plaintext highlighter-rouge">RS_TEMPORARY</code></td>
+      <td>Session-scoped, dropped on disconnect</td>
+    </tr>
+    <tr>
+      <td>Logical, persistent</td>
+      <td><code class="language-plaintext highlighter-rouge">RS_PERSISTENT</code></td>
+      <td>Logical replication subscriptions</td>
+    </tr>
+    <tr>
+      <td>Logical, ephemeral</td>
+      <td><code class="language-plaintext highlighter-rouge">RS_EPHEMERAL</code></td>
+      <td>Transitional state during slot creation</td>
+    </tr>
+  </tbody>
+</table>
+
+<h4 id="slot-lifecycle">Slot Lifecycle</h4>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>CREATE_REPLICATION_SLOT:
+    ReplicationSlotCreate():
+        acquire ReplicationSlotAllocationLock (exclusive)
+        find free slot in ReplicationSlotCtl-&gt;replication_slots[]
+        set slot-&gt;in_use = true
+        initialize ReplicationSlotPersistentData
+        release lock
+        CreateSlotOnDisk():
+            mkdir pg_replslot/&lt;name&gt;/
+            SaveSlotToPath()  // write state file with CRC
+
+START_REPLICATION (using slot):
+    ReplicationSlotAcquire():
+        set slot-&gt;active_proc = MyProcNumber
+
+Periodic status updates:
+    PhysicalConfirmReceivedLocation():
+        update slot-&gt;data.restart_lsn
+        if dirty: SaveSlotToPath()
+
+DROP_REPLICATION_SLOT:
+    ReplicationSlotDrop():
+        ReplicationSlotMarkDirty()
+        remove pg_replslot/&lt;name&gt;/ directory
+        set slot-&gt;in_use = false
+</code></pre></div></div>
+
+<h4 id="slot-invalidation">Slot Invalidation</h4>
+
+<p>Slots can be invalidated when they block critical operations. The
+<code class="language-plaintext highlighter-rouge">ReplicationSlotInvalidationCause</code> enum tracks the reason:</p>
+
+<ul>
+  <li><code class="language-plaintext highlighter-rouge">RS_INVAL_WAL_REMOVED</code> – required WAL was removed (exceeds <code class="language-plaintext highlighter-rouge">max_slot_wal_keep_size</code>)</li>
+  <li><code class="language-plaintext highlighter-rouge">RS_INVAL_HORIZON</code> – required rows were removed (vacuum advanced past the slot’s xmin)</li>
+  <li><code class="language-plaintext highlighter-rouge">RS_INVAL_WAL_LEVEL</code> – <code class="language-plaintext highlighter-rouge">wal_level</code> was reduced below what the slot requires</li>
+  <li><code class="language-plaintext highlighter-rouge">RS_INVAL_IDLE_TIMEOUT</code> – slot exceeded the configured idle timeout</li>
+</ul>
+
+<p>An invalidated slot will refuse <code class="language-plaintext highlighter-rouge">START_REPLICATION</code> and the consumer must
+create a new slot and re-synchronize from scratch.</p>
+
+<hr />
+
+<h2 id="key-data-structures">Key Data Structures</h2>
+
+<h3 id="walsnd-walsender_privateh">WalSnd (walsender_private.h)</h3>
+
+<p>Each active walsender gets a <code class="language-plaintext highlighter-rouge">WalSnd</code> entry in the shared memory array
+<code class="language-plaintext highlighter-rouge">WalSndCtl-&gt;walsnds[]</code>. The array has <code class="language-plaintext highlighter-rouge">max_wal_senders</code> entries:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">typedef</span> <span class="k">struct</span> <span class="n">WalSnd</span>
+<span class="p">{</span>
+    <span class="n">pid_t</span>       <span class="n">pid</span><span class="p">;</span>               <span class="cm">/* 0 if slot is free */</span>
+    <span class="n">WalSndState</span> <span class="n">state</span><span class="p">;</span>             <span class="cm">/* STARTUP -&gt; CATCHUP -&gt; STREAMING -&gt; STOPPING */</span>
+    <span class="n">XLogRecPtr</span>  <span class="n">sentPtr</span><span class="p">;</span>           <span class="cm">/* WAL sent up to this point */</span>
+
+    <span class="cm">/* Reported positions from the standby */</span>
+    <span class="n">XLogRecPtr</span>  <span class="n">write</span><span class="p">;</span>
+    <span class="n">XLogRecPtr</span>  <span class="n">flush</span><span class="p">;</span>
+    <span class="n">XLogRecPtr</span>  <span class="n">apply</span><span class="p">;</span>
+
+    <span class="cm">/* Measured replication lag */</span>
+    <span class="n">TimeOffset</span>  <span class="n">writeLag</span><span class="p">;</span>
+    <span class="n">TimeOffset</span>  <span class="n">flushLag</span><span class="p">;</span>
+    <span class="n">TimeOffset</span>  <span class="n">applyLag</span><span class="p">;</span>
+
+    <span class="kt">int</span>         <span class="n">sync_standby_priority</span><span class="p">;</span>  <span class="cm">/* 0 = not in sync list */</span>
+    <span class="n">slock_t</span>     <span class="n">mutex</span><span class="p">;</span>
+    <span class="n">TimestampTz</span> <span class="n">replyTime</span><span class="p">;</span>
+    <span class="n">ReplicationKind</span> <span class="n">kind</span><span class="p">;</span>               <span class="cm">/* physical or logical */</span>
+<span class="p">}</span> <span class="n">WalSnd</span><span class="p">;</span>
+</code></pre></div></div>
+
+<h3 id="walsndctldata-walsender_privateh">WalSndCtlData (walsender_private.h)</h3>
+
+<p>The global coordination structure for all walsenders:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">typedef</span> <span class="k">struct</span> <span class="n">WalSndCtlData</span>
+<span class="p">{</span>
+    <span class="cm">/* Synchronous replication queues (one per wait mode) */</span>
+    <span class="n">dlist_head</span>  <span class="n">SyncRepQueue</span><span class="p">[</span><span class="n">NUM_SYNC_REP_WAIT_MODE</span><span class="p">];</span>  <span class="cm">/* write, flush, apply */</span>
+    <span class="n">XLogRecPtr</span>  <span class="n">lsn</span><span class="p">[</span><span class="n">NUM_SYNC_REP_WAIT_MODE</span><span class="p">];</span>
+
+    <span class="n">bits8</span>       <span class="n">sync_standbys_status</span><span class="p">;</span>
+
+    <span class="cm">/* Condition variables for waking walsenders */</span>
+    <span class="n">ConditionVariable</span> <span class="n">wal_flush_cv</span><span class="p">;</span>       <span class="cm">/* physical walsenders */</span>
+    <span class="n">ConditionVariable</span> <span class="n">wal_replay_cv</span><span class="p">;</span>      <span class="cm">/* logical walsenders */</span>
+    <span class="n">ConditionVariable</span> <span class="n">wal_confirm_rcv_cv</span><span class="p">;</span> <span class="cm">/* failover slot sync */</span>
+
+    <span class="n">WalSnd</span>      <span class="n">walsnds</span><span class="p">[</span><span class="n">FLEXIBLE_ARRAY_MEMBER</span><span class="p">];</span>
+<span class="p">}</span> <span class="n">WalSndCtlData</span><span class="p">;</span>
+</code></pre></div></div>
+
+<h3 id="walrcvdata-walreceiverh">WalRcvData (walreceiver.h)</h3>
+
+<p>The walreceiver’s shared memory state, used for communication with the
+startup process:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">typedef</span> <span class="k">struct</span> <span class="n">WalRcvData</span>
+<span class="p">{</span>
+    <span class="n">ProcNumber</span>  <span class="n">procno</span><span class="p">;</span>
+    <span class="n">pid_t</span>       <span class="n">pid</span><span class="p">;</span>
+    <span class="n">WalRcvState</span> <span class="n">walRcvState</span><span class="p">;</span>       <span class="cm">/* STOPPED -&gt; STARTING -&gt; STREAMING -&gt; ... */</span>
+
+    <span class="n">XLogRecPtr</span>  <span class="n">receiveStart</span><span class="p">;</span>      <span class="cm">/* where to start streaming (set by startup) */</span>
+    <span class="n">TimeLineID</span>  <span class="n">receiveStartTLI</span><span class="p">;</span>
+
+    <span class="n">XLogRecPtr</span>  <span class="n">flushedUpto</span><span class="p">;</span>       <span class="cm">/* WAL flushed to disk (updated by walreceiver) */</span>
+    <span class="n">TimeLineID</span>  <span class="n">receivedTLI</span><span class="p">;</span>
+
+    <span class="n">XLogRecPtr</span>  <span class="n">latestChunkStart</span><span class="p">;</span>  <span class="cm">/* start of current batch */</span>
+    <span class="n">XLogRecPtr</span>  <span class="n">latestWalEnd</span><span class="p">;</span>      <span class="cm">/* latest WAL end reported by sender */</span>
+    <span class="n">TimestampTz</span> <span class="n">latestWalEndTime</span><span class="p">;</span>
+
+    <span class="kt">char</span>        <span class="n">conninfo</span><span class="p">[</span><span class="n">MAXCONNINFO</span><span class="p">];</span>
+    <span class="kt">char</span>        <span class="n">slotname</span><span class="p">[</span><span class="n">NAMEDATALEN</span><span class="p">];</span>
+    <span class="cm">/* ... */</span>
+<span class="p">}</span> <span class="n">WalRcvData</span><span class="p">;</span>
+</code></pre></div></div>
+
+<h3 id="replicationslotondisk-slotc">ReplicationSlotOnDisk (slot.c)</h3>
+
+<p>The on-disk format for slot persistence:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">typedef</span> <span class="k">struct</span> <span class="n">ReplicationSlotOnDisk</span>
+<span class="p">{</span>
+    <span class="cm">/* Version-independent header */</span>
+    <span class="n">uint32</span>      <span class="n">magic</span><span class="p">;</span>
+    <span class="n">pg_crc32c</span>   <span class="n">checksum</span><span class="p">;</span>
+
+    <span class="cm">/* Versioned payload */</span>
+    <span class="n">uint32</span>      <span class="n">version</span><span class="p">;</span>
+    <span class="n">uint32</span>      <span class="n">length</span><span class="p">;</span>
+    <span class="n">ReplicationSlotPersistentData</span> <span class="n">slotdata</span><span class="p">;</span>
+<span class="p">}</span> <span class="n">ReplicationSlotOnDisk</span><span class="p">;</span>
+</code></pre></div></div>
+
+<hr />
+
+<h2 id="walsender-state-machine">Walsender State Machine</h2>
+
+<p>The walsender transitions through well-defined states:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>                      Connection
+                      established
+                          |
+                          v
+                   +------------+
+                   |  STARTUP   |  Initializing, handshake
+                   +------------+
+                          |
+                    START_REPLICATION
+                          |
+              +-----------+-----------+
+              |                       |
+              v                       v
+       +------------+         +------------+
+       |  CATCHUP   |         |   BACKUP   |  (BASE_BACKUP command)
+       +------------+         +------------+
+              |
+         caught up with
+         primary WAL
+              |
+              v
+       +------------+
+       | STREAMING  |  Steady state
+       +------------+
+              |
+         shutdown signal
+         (PROCSIG_WALSND_INIT_STOPPING)
+              |
+              v
+       +------------+
+       |  STOPPING  |  Sending final WAL including
+       +------------+  shutdown checkpoint
+              |
+           exit(0)
+</code></pre></div></div>
+
+<hr />
+
+<h2 id="cascading-replication">Cascading Replication</h2>
+
+<p>PostgreSQL supports cascading replication where a standby serves as a
+replication source for downstream standbys. This is enabled when
+<code class="language-plaintext highlighter-rouge">hot_standby = on</code> and <code class="language-plaintext highlighter-rouge">max_wal_senders &gt; 0</code> on the intermediate standby.</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>Primary -----&gt; Standby A -----&gt; Standby B
+(walsender)   (walreceiver     (walreceiver)
+               + walsender)
+</code></pre></div></div>
+
+<p>A cascading walsender (<code class="language-plaintext highlighter-rouge">am_cascading_walsender = true</code>) reads WAL from the
+standby’s local <code class="language-plaintext highlighter-rouge">pg_wal/</code> directory, which was written by the standby’s own
+walreceiver. The standby uses <code class="language-plaintext highlighter-rouge">GetStandbyFlushRecPtr()</code> instead of
+<code class="language-plaintext highlighter-rouge">GetFlushRecPtr()</code> to determine how much WAL is available for streaming.</p>
+
+<hr />
+
+<h2 id="hot-standby-feedback">Hot Standby Feedback</h2>
+
+<p>The <code class="language-plaintext highlighter-rouge">hot_standby_feedback</code> parameter enables the walreceiver to send its
+oldest active transaction ID (<code class="language-plaintext highlighter-rouge">xmin</code>) back to the primary. The primary uses
+this to hold back vacuum, preventing the removal of rows that active queries
+on the standby might still need.</p>
+
+<p>This feedback is sent via <code class="language-plaintext highlighter-rouge">XLogWalRcvSendHSFeedback()</code> as part of the regular
+status update cycle. The primary’s walsender calls
+<code class="language-plaintext highlighter-rouge">PhysicalReplicationSlotNewXmin()</code> to update the slot’s effective xmin.</p>
+
+<p>The trade-off is clear: enabling hot standby feedback prevents “rows removed”
+query cancellations on the standby, but can cause table bloat on the primary
+if the standby runs long transactions.</p>
+
+<hr />
+
+<h2 id="shutdown-coordination">Shutdown Coordination</h2>
+
+<p>Walsender shutdown follows a carefully orchestrated sequence to ensure the
+standby receives all WAL including the shutdown checkpoint:</p>
+
+<ol>
+  <li>All regular backends exit</li>
+  <li>Checkpointer sends <code class="language-plaintext highlighter-rouge">PROCSIG_WALSND_INIT_STOPPING</code> to all walsenders</li>
+  <li>Walsenders transition to <code class="language-plaintext highlighter-rouge">WALSNDSTATE_STOPPING</code> and refuse new commands</li>
+  <li>Checkpointer writes the shutdown checkpoint</li>
+  <li>Postmaster sends <code class="language-plaintext highlighter-rouge">SIGUSR2</code> to walsenders</li>
+  <li>Walsenders send remaining WAL (including shutdown checkpoint)</li>
+  <li>Walsenders wait for standby acknowledgment (if sync rep)</li>
+  <li>Walsenders exit</li>
+</ol>
+
+<hr />
+
+<h2 id="connections-to-other-sections">Connections to Other Sections</h2>
+
+<ul>
+  <li>
+    <p><strong><a href="logical.html">Logical Replication</a></strong> – Logical walsenders share the same
+<code class="language-plaintext highlighter-rouge">WalSnd</code> infrastructure but use the logical decoding pipeline instead of raw
+WAL streaming.</p>
+  </li>
+  <li>
+    <p><strong><a href="synchronous.html">Synchronous Replication</a></strong> – The <code class="language-plaintext highlighter-rouge">WalSnd-&gt;write</code>,
+<code class="language-plaintext highlighter-rouge">flush</code>, and <code class="language-plaintext highlighter-rouge">apply</code> positions reported by walreceivers are the inputs to
+the synchronous commit mechanism.</p>
+  </li>
+  <li>
+    <p><strong><a href="conflict-resolution.html">Conflict Resolution</a></strong> – WAL replay on a hot
+standby can conflict with read queries, and hot standby feedback is one
+mechanism to mitigate these conflicts.</p>
+  </li>
+</ul>
+
+
+      <hr>
+
+      <!-- Prev / Next / Up navigation -->
+      
+      
+      
+
+      <div class="clearfix" style="margin-top: 2rem;">
+        
+          
+          
+
+          
+            
+            <a class="btn btn-primary float-left" href="/postgresql/12-replication/logical.html" title="Logical Replication">&larr; Previous</a>
+          
+
+          
+            
+            <a class="btn btn-primary float-right" href="/postgresql/12-replication/synchronous.html" title="Synchronous Replication">Next &rarr;</a>
+          
+        
+      </div>
+
+      
+      <div style="text-align: center; margin-top: 1rem;">
+        <a href="/postgresql-internals/">&uarr; Back to Table of Contents</a>
+      </div>
+      
+
+    </div>
+  </div>
+</div>
+
+
+  <!-- Footer -->
+
+<hr>
+
+<footer>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <ul class="list-inline text-center">
+          
+          <li class="list-inline-item">
+            <a href="mailto:amitava.dev@proton.me" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="far fa-envelope fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          
+          
+          <li class="list-inline-item">
+            <a href="https://www.linkedin.com/in/amitavaag" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-linkedin fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          <li class="list-inline-item">
+            <a href="https://github.com/ikouchiha47" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-github fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+        </ul>
+
+        <p class="copyright text-muted">
+          Build with: 
+          <a 
+            href="https://github.com/StartBootstrap/startbootstrap-clean-blog-jekyll"
+            class="text-gray"
+            target="_blank">startbootstrap-clean-blog-jekyll</a></p>
+      </div>
+    </div>
+  </div>
+</footer>
+
+
+  <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="/assets/vendor/blog/js/scripts.js"></script>
+
+<script src="/assets/scripts.js"></script>
+
+
+
+
+
+  <script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+
+    document.querySelectorAll('pre > code.language-mermaid').forEach((codeBlock) => {
+      codeBlock.parentElement.outerHTML = `<pre class="mermaid">${codeBlock.textContent}</pre>`;
+    });
+
+
+    mermaid.initialize({ startOnLoad: true, theme: 'forest' });
+</script>
+
+
+  
+
+</body>
+
+</html>

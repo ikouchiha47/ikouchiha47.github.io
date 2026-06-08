@@ -1,0 +1,860 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+  <title>
+    Chasing 1 Million RPS - iko&#39;s logs
+    
+  </title>
+
+  <meta name="description" content="yes, this is clickbait. kind of.">
+  <meta property="og:description" content="yes, this is clickbait. kind of.">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Chasing 1 Million RPS">
+  <meta property="og:url" content="https://ikouchiha47.github.io/millionrps/">
+
+  
+    <meta property="og:image" content="https://ikouchiha47.github.io/img/millionrps.jpg"/>
+  
+
+  <link href='https://fonts.googleapis.com/css?family=Lora:400,700,400italic,700italic' rel='stylesheet' type='text/css'>
+  <link href='https://fonts.googleapis.com/css?family=Open+Sans:300italic,400italic,600italic,700italic,800italic,400,300,600,700,800' rel='stylesheet' type='text/css'>
+
+  <!-- <script src="https://use.fontawesome.com/releases/v5.15.3/js/all.js" crossorigin="anonymous"></script> -->
+  <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.15.4/css/all.css" integrity="sha384-DyZ88mC6Up2uqS4h/KRgHuoeGwBcD4Ng9SiP4dIRy0EXTlnuz47vAwmeGwVChigm" crossorigin="anonymous"/>
+
+  <link rel="stylesheet" href="/assets/main.css">
+  <link rel="canonical" href="https://ikouchiha47.github.io/millionrps/">
+  <link rel="alternate" type="application/rss+xml" title="iko&#39;s logs" href="/feed.xml">
+
+  <meta name="google-site-verification" content="lWkg6gIxJgzEKX_5XnhcxCtPE9QknaimFWWos_dTvPM" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fira+Sans:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Inconsolata:wght@200..900&family=Jersey+25&family=Kanit:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Merriweather+Sans:ital,wght@0,300..800;1,300..800&family=Nanum+Gothic+Coding&family=Space+Grotesk:wght@300..700&family=Titillium+Web:ital,wght@0,200;0,300;0,400;0,600;0,700;0,900;1,200;1,300;1,400;1,600;1,700&display=swap" rel="stylesheet">
+
+</head>
+
+
+<body>
+
+  <!-- Navigation -->
+<nav class="navbar navbar-expand-lg navbar-light fixed-top" id="mainNav">
+  <div class="container">
+    <a class="navbar-brand" href="/">iko&#39;s logs</a>
+    <button class="navbar-toggler navbar-toggler-right" type="button" data-toggle="collapse" data-target="#navbarResponsive" aria-controls="navbarResponsive" aria-expanded="false" aria-label="Toggle navigation">
+      Menu
+      <i class="fa fa-bars"></i>
+    </button>
+    <div class="collapse navbar-collapse" id="navbarResponsive">
+      <ul class="navbar-nav ml-auto">
+        <li class="nav-item">
+          <a class="nav-link" href="/">Home</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/about">About</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/posts">Posts</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/contact">Contact</a>
+        </li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+
+  
+<header class="masthead masthead--boxed" style="background-image: url('/img/millionrps.jpg')">
+
+  <div class="overlay"></div>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <div class="post-heading post-heading--boxed">
+          <h1>Chasing 1 Million RPS</h1>
+          
+          <h2 class="subheading">a journal of hardware, kernel tuning, and diminishing returns</h2>
+          
+          <span class="meta">Posted by
+            <a href="#">ikouchiha47</a>
+            on June 02, 2026 &middot; <span class="reading-time" title="Estimated read time">
+  
+   4 mins  read </span>
+
+          </span>
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="container space-grotesk">
+  <div class="row">
+    <div class="col-lg-8 col-md-10 mx-auto">
+
+      <p><em>yes, this is clickbait. kind of.</em></p>
+
+<h2 id="what-1-million-rps-actually-means">What “1 Million RPS” Actually Means</h2>
+
+<p>“1 million RPS” is not a single number. It depends entirely on what the server is doing per request.</p>
+
+<p>A handler that returns <code class="language-plaintext highlighter-rouge">{"status":"ok"}</code> with no I/O can hit 10-20M RPS on a single machine. A handler that does a primary-key SELECT on a warm Postgres index might do 50k-200k RPS before the database becomes the ceiling. A write with fsync — maybe 5k-20k. An aggregation query with a table scan: 500. These are not the same problem and should not share a headline.</p>
+
+<p>The breakdown matters:</p>
+
+<p><strong>Read-heavy (cache or memory):</strong> latency is microseconds, bottleneck is the network stack and CPU cycles in the request path — TCP, kernel syscalls, HTTP parsing, serialization. This is where IRQ pinning, prefork, and buffer tuning show up. This is the regime we’re in for <code class="language-plaintext highlighter-rouge">/simple</code>.</p>
+
+<p><strong>Compute-intensive (CPU-bound, no I/O):</strong> bottleneck is CPU cores. Throughput scales linearly with cores until you hit scheduling overhead. <code class="language-plaintext highlighter-rouge">/compute</code> in this journal is this case — 128 cores saturated, 1.7M RPS.</p>
+
+<p><strong>Read with DB (SELECT):</strong> you now have a latency floor set by the database round-trip (0.2ms local, 1-5ms over network). At 1ms average, Little’s Law says you need 1000 concurrent connections to drive 1M RPS from a single DB connection pool. Connection limits, query planning, index hits, buffer pool size — all of these cap you before the HTTP layer does.</p>
+
+<p><strong>Write with DB (INSERT/UPDATE):</strong> add write amplification, WAL flushes, lock contention, replication lag. fsync at 10ms latency means 100 RPS per write path, not 1M. Batching and async writes push this up but introduce consistency trade-offs.</p>
+
+<p><strong>Failure handling:</strong> a server doing retries, circuit breaking, or fallback logic on each request burns CPU per failure. At high RPS, even 0.1% error rate with a retry doubles load on a degraded downstream. Failure handling changes the per-request cost model entirely.</p>
+
+<p><strong>Consistency:</strong> a linearizable key-value write (single-node, synchronous) is fast. A distributed write requiring quorum adds network round-trips per request. Eventual consistency lets you write to a single replica and replicate async — throughput goes up, guarantees go down.</p>
+
+<p>The 1M RPS target is a lens, not a finish line. It forces you to be precise about what work the server is actually doing, because vague claims collapse immediately when you try to reproduce them. What workload? What latency? What hardware? What was the client doing?</p>
+
+<p>This journal documents those questions, not the headline number.</p>
+
+<h2 id="what-were-testing">What We’re Testing</h2>
+
+<ul>
+  <li><strong>HTTP servers in Go</strong> — net/http, fasthttp, fiber — with different workloads (tiny JSON, large payloads, CPU-bound computation)</li>
+  <li><strong>Kernel network stack tuning</strong> — IRQ affinity, RPS, RFS, SO_REUSEPORT, socket options</li>
+  <li><strong>Infrastructure</strong> — single machine vs cross-machine, AWS instance families, NIC limitations</li>
+  <li><strong>Load generation</strong> — vegeta, autocannon, wrk — and why the tool matters as much as the server</li>
+  <li><strong>Tradeoffs</strong> — prefork vs single process, pipelining vs independent requests, throughput vs latency</li>
+</ul>
+
+<h2 id="the-setup">The Setup</h2>
+
+<p>All benchmarks run on AWS (ap-south-2, Hyderabad) unless otherwise noted. Server code is Go + Fiber v3. Load generation uses autocannon (for pipelining tests) or vegeta (for rate-controlled tests).</p>
+
+<p>Source code: <a href="https://github.com/ikouchiha47/millionrps">ikouchiha47/millionrps</a></p>
+
+<h2 id="journal">Journal</h2>
+
+<p><em>Entries below are in chronological order. Green = done, orange = in progress, grey = planned.</em></p>
+
+
+      <hr>
+
+      <!-- Journal Timeline -->
+      
+
+      <div class="journal-timeline">
+        
+        <div class="journal-entry">
+          <div class="journal-entry-marker">
+            <span class="journal-entry-dot done"></span>
+            <div class="journal-entry-line"></div>
+          </div>
+          <div class="journal-entry-content">
+            <div class="journal-entry-meta">
+              <span class="journal-entry-date">May 15, 2026</span>
+              
+              <span class="journal-entry-status done">DONE</span>
+              
+              
+              <span class="journal-entry-tags">
+                
+                <span class="journal-tag">go</span>
+                
+                <span class="journal-tag">fiber</span>
+                
+                <span class="journal-tag">fasthttp</span>
+                
+                <span class="journal-tag">net/http</span>
+                
+                <span class="journal-tag">macos</span>
+                
+                <span class="journal-tag">localhost</span>
+                
+                <span class="journal-tag">wrk</span>
+                
+              </span>
+              
+            </div>
+            <h3 class="journal-entry-title">
+              
+                <a href="/millionrps/01-baseline-macos.html">baseline: mac mini, localhost, three servers</a>
+              
+            </h3>
+            
+            <p class="journal-entry-summary">Establish a baseline on a Mac mini M2 (10 cores). Compare net/http, fasthttp, and fiber with and without prefork. Measure /read (pool lookup), /list (large payload), and /compute (CPU-bound aggregation).</p>
+            
+            
+            <div class="journal-entry-result">
+              <span class="result-label">Result:</span> fiber+prefork: 201k RPS, P50 0.49ms, P99 0.68ms. /compute: 33k RPS, P50 2.88ms. Payload size — not the server — is the real ceiling.
+            </div>
+            
+          </div>
+        </div>
+        
+        <div class="journal-entry">
+          <div class="journal-entry-marker">
+            <span class="journal-entry-dot done"></span>
+            <div class="journal-entry-line"></div>
+          </div>
+          <div class="journal-entry-content">
+            <div class="journal-entry-meta">
+              <span class="journal-entry-date">June 01, 2026</span>
+              
+              <span class="journal-entry-status done">DONE</span>
+              
+              
+              <span class="journal-entry-tags">
+                
+                <span class="journal-tag">linux</span>
+                
+                <span class="journal-tag">aws</span>
+                
+                <span class="journal-tag">c6i</span>
+                
+                <span class="journal-tag">SO_REUSEPORT</span>
+                
+                <span class="journal-tag">prefork</span>
+                
+                <span class="journal-tag">vegeta</span>
+                
+                <span class="journal-tag">terraform</span>
+                
+              </span>
+              
+            </div>
+            <h3 class="journal-entry-title">
+              
+                <a href="/millionrps/02-linux-prefork.html">linux confirms it: SO_REUSEPORT actually works</a>
+              
+            </h3>
+            
+            <p class="journal-entry-summary">Two c6i.2xlarge on AWS. Server: fiber+prefork 8 workers. Client: vegeta. Confirm SO_REUSEPORT distributes connections across all 8 workers on Linux. Compare P99 against macOS.</p>
+            
+            
+            <div class="journal-entry-result">
+              <span class="result-label">Result:</span> P99: 22ms (macOS) → 1.4ms (Linux). All 8 workers active. Still bandwidth-bound at 8-13k RPS with 48KB payloads. /read-only hits 49k RPS — server at 3% CPU, client NIC is the ceiling.
+            </div>
+            
+          </div>
+        </div>
+        
+        <div class="journal-entry">
+          <div class="journal-entry-marker">
+            <span class="journal-entry-dot done"></span>
+            <div class="journal-entry-line"></div>
+          </div>
+          <div class="journal-entry-content">
+            <div class="journal-entry-meta">
+              <span class="journal-entry-date">June 03, 2026</span>
+              
+              <span class="journal-entry-status done">DONE</span>
+              
+              
+              <span class="journal-entry-tags">
+                
+                <span class="journal-tag">c8i</span>
+                
+                <span class="journal-tag">aws</span>
+                
+                <span class="journal-tag">RPS</span>
+                
+                <span class="journal-tag">RFS</span>
+                
+                <span class="journal-tag">IRQ</span>
+                
+                <span class="journal-tag">autocannon</span>
+                
+                <span class="journal-tag">pipelining</span>
+                
+                <span class="journal-tag">kernel</span>
+                
+              </span>
+              
+            </div>
+            <h3 class="journal-entry-title">
+              
+                <a href="/millionrps/03-c8i-rps-rfs.html">128 cores, NIC queues, RPS and RFS</a>
+              
+            </h3>
+            
+            <p class="journal-entry-summary">Upgrade server to c8i.32xlarge (128 vCPU). Switch to autocannon with --pipelining 100. Apply RPS and RFS. Capture live metrics during benchmark.</p>
+            
+            
+            <div class="journal-entry-result">
+              <span class="result-label">Result:</span> 634k avg RPS, peaked 1.2M. Server: 1.14% avg CPU, 96% idle. Client (c6i.4xlarge, 16 cores): 82.93% usr CPU, 0% idle. We also used --connections 1000 — the correct value is 5000. Next run will fix this.
+            </div>
+            
+          </div>
+        </div>
+        
+        <div class="journal-entry">
+          <div class="journal-entry-marker">
+            <span class="journal-entry-dot done"></span>
+            <div class="journal-entry-line"></div>
+          </div>
+          <div class="journal-entry-content">
+            <div class="journal-entry-meta">
+              <span class="journal-entry-date">June 04, 2026</span>
+              
+              <span class="journal-entry-status done">DONE</span>
+              
+              
+              <span class="journal-entry-tags">
+                
+                <span class="journal-tag">autocannon</span>
+                
+                <span class="journal-tag">workers</span>
+                
+                <span class="journal-tag">pipelining</span>
+                
+                <span class="journal-tag">c8i</span>
+                
+                <span class="journal-tag">c6i</span>
+                
+                <span class="journal-tag">ramp</span>
+                
+                <span class="journal-tag">client-ceiling</span>
+                
+              </span>
+              
+            </div>
+            <h3 class="journal-entry-title">
+              
+                <a href="/millionrps/04-workers-ramp-client-ceiling.html">2.3M RPS: the --workers flag, connection ramp, and finding the real ceiling</a>
+              
+            </h3>
+            
+            <p class="journal-entry-summary">Discovered --workers flag in autocannon. Upgraded client to c6i.8xlarge. Ran connection ramp 1000→2000→5000. Hit 2.3M RPS at p50 38ms. Proved server has 98% CPU headroom — client is the ceiling at 67% avg CPU across 32 cores.</p>
+            
+            
+            <div class="journal-entry-result">
+              <span class="result-label">Result:</span> 2,299,162 RPS avg. Server: 2.25% CPU, 236 MB/s TX (3.8% of 6250 MB/s ceiling). Client: 67% avg CPU, 28.2/32 cores consumed. Client is the wall.
+            </div>
+            
+          </div>
+        </div>
+        
+        <div class="journal-entry">
+          <div class="journal-entry-marker">
+            <span class="journal-entry-dot done"></span>
+            <div class="journal-entry-line"></div>
+          </div>
+          <div class="journal-entry-content">
+            <div class="journal-entry-meta">
+              <span class="journal-entry-date">June 05, 2026</span>
+              
+              <span class="journal-entry-status done">DONE</span>
+              
+              
+              <span class="journal-entry-tags">
+                
+                <span class="journal-tag">c8i</span>
+                
+                <span class="journal-tag">autocannon</span>
+                
+                <span class="journal-tag">workers</span>
+                
+                <span class="journal-tag">compute</span>
+                
+                <span class="journal-tag">simple</span>
+                
+                <span class="journal-tag">client-ceiling</span>
+                
+                <span class="journal-tag">Little's-Law</span>
+                
+              </span>
+              
+            </div>
+            <h3 class="journal-entry-title">
+              
+                <a href="/millionrps/05-matched-c8i-18m-rps.html">18M RPS on /simple, 1.7M on /compute: matched c8i hardware</a>
+              
+            </h3>
+            
+            <p class="journal-entry-summary">Upgrade both server and client to c8i.32xlarge (128 vCPU, 50 Gbps). Run autocannon with 120 workers. Hit 18M RPS on /simple and 1.7M on /compute. Discover the client is the ceiling for /simple, server is the ceiling for /compute.</p>
+            
+            
+            <div class="journal-entry-result">
+              <span class="result-label">Result:</span> 18,164,736 RPS on /simple (server 26% CPU). 1,744,862 RPS on /compute (server 94% CPU). For /simple the client is always the wall regardless of hardware.
+            </div>
+            
+          </div>
+        </div>
+        
+        <div class="journal-entry">
+          <div class="journal-entry-marker">
+            <span class="journal-entry-dot done"></span>
+            <div class="journal-entry-line"></div>
+          </div>
+          <div class="journal-entry-content">
+            <div class="journal-entry-meta">
+              <span class="journal-entry-date">June 06, 2026</span>
+              
+              <span class="journal-entry-status done">DONE</span>
+              
+              
+              <span class="journal-entry-tags">
+                
+                <span class="journal-tag">IRQ</span>
+                
+                <span class="journal-tag">irqbalance</span>
+                
+                <span class="journal-tag">taskset</span>
+                
+                <span class="journal-tag">RPS</span>
+                
+                <span class="journal-tag">RFS</span>
+                
+                <span class="journal-tag">c6i</span>
+                
+                <span class="journal-tag">pipelining</span>
+                
+                <span class="journal-tag">packet-rate</span>
+                
+                <span class="journal-tag">haproxy</span>
+                
+              </span>
+              
+            </div>
+            <h3 class="journal-entry-title">
+              
+                <a href="/millionrps/06-irq-pinning-experiment.html">IRQ pinning: when it matters and when it doesn't</a>
+              
+            </h3>
+            
+            <p class="journal-entry-summary">Full IRQ pinning experiment on c6i.2xlarge (8 vCPU) as server. Three steps: baseline, IRQ pinning only, IRQ + RPS/RFS. Run on /simple and /compute. Read the HAProxy blog. Understand why packet rate — not RPS — is what makes IRQ pinning matter.</p>
+            
+            
+            <div class="journal-entry-result">
+              <span class="result-label">Result:</span> IRQ pinning had no meaningful effect on /simple (+1%). Hurt /compute (-9%) due to taskset reducing compute cores. Root cause: packet rate at our load level is too low to saturate IRQ cores. The HAProxy regime requires millions of packets/sec, not millions of RPS.
+            </div>
+            
+          </div>
+        </div>
+        
+        <div class="journal-entry">
+          <div class="journal-entry-marker">
+            <span class="journal-entry-dot done"></span>
+            <div class="journal-entry-line"></div>
+          </div>
+          <div class="journal-entry-content">
+            <div class="journal-entry-meta">
+              <span class="journal-entry-date">June 07, 2026</span>
+              
+              <span class="journal-entry-status done">DONE</span>
+              
+              
+              <span class="journal-entry-tags">
+                
+                <span class="journal-tag">c8i</span>
+                
+                <span class="journal-tag">IRQ</span>
+                
+                <span class="journal-tag">vegeta</span>
+                
+                <span class="journal-tag">pipelining</span>
+                
+                <span class="journal-tag">packet-rate</span>
+                
+                <span class="journal-tag">client-ceiling</span>
+                
+              </span>
+              
+            </div>
+            <h3 class="journal-entry-title">
+              
+                <a href="/millionrps/06b-irq-c8i-and-vegeta.html">IRQ on c8i + vegeta without pipelining: still the client</a>
+              
+            </h3>
+            
+            <p class="journal-entry-summary">Ran the IRQ experiment on matched c8i hardware. Then switched to vegeta (no pipelining) to generate realistic packet rates. Both hit client ceiling regardless of tuning.</p>
+            
+            
+            <div class="journal-entry-result">
+              <span class="result-label">Result:</span> c8i IRQ+RPS/RFS: 18M RPS, flat vs baseline. Vegeta 8 parallel processes: 580k actual RPS ceiling. Server at 5% CPU in both cases.
+            </div>
+            
+          </div>
+        </div>
+        
+        <div class="journal-entry">
+          <div class="journal-entry-marker">
+            <span class="journal-entry-dot done"></span>
+            <div class="journal-entry-line"></div>
+          </div>
+          <div class="journal-entry-content">
+            <div class="journal-entry-meta">
+              <span class="journal-entry-date">June 08, 2026</span>
+              
+              <span class="journal-entry-status done">DONE</span>
+              
+              
+              <span class="journal-entry-tags">
+                
+                <span class="journal-tag">c6in</span>
+                
+                <span class="journal-tag">read</span>
+                
+                <span class="journal-tag">NIC</span>
+                
+                <span class="journal-tag">IRQ</span>
+                
+                <span class="journal-tag">pipelining</span>
+                
+                <span class="journal-tag">autocannon</span>
+                
+                <span class="journal-tag">profiling</span>
+                
+              </span>
+              
+            </div>
+            <h3 class="journal-entry-title">
+              
+                <a href="/millionrps/08-c6in-read-nic-ceiling.html">switching to /read: c6in.8xlarge, 50 Gbps, and IRQ pinning on a loaded NIC</a>
+              
+            </h3>
+            
+            <p class="journal-entry-summary">Switched from /simple (16 bytes) to /read (4.5KB) on c6in.8xlarge (50 Gbps dedicated NIC). Used autocannon without pipelining. Hit 790k RPS at 500 connections with NIC at 72% utilization. Applied IRQ pinning. Flat.</p>
+            
+            
+            <div class="journal-entry-result">
+              <span class="result-label">Result:</span> 790k RPS avg at 500c, server TX 3.49 GB/s (56% of 50 Gbps ceiling), 85% CPU busy. IRQ pinning: within noise across all connection counts. 352k interrupts/sec — IRQ cores not saturated.
+            </div>
+            
+          </div>
+        </div>
+        
+        <div class="journal-entry">
+          <div class="journal-entry-marker">
+            <span class="journal-entry-dot done"></span>
+            <div class="journal-entry-line"></div>
+          </div>
+          <div class="journal-entry-content">
+            <div class="journal-entry-meta">
+              <span class="journal-entry-date">June 09, 2026</span>
+              
+              <span class="journal-entry-status done">DONE</span>
+              
+              
+              <span class="journal-entry-tags">
+                
+                <span class="journal-tag">profiling</span>
+                
+                <span class="journal-tag">pprof</span>
+                
+                <span class="journal-tag">gofakeit</span>
+                
+                <span class="journal-tag">mutex</span>
+                
+                <span class="journal-tag">block-profile</span>
+                
+                <span class="journal-tag">c6in</span>
+                
+                <span class="journal-tag">prefork</span>
+                
+              </span>
+              
+            </div>
+            <h3 class="journal-entry-title">
+              
+                <a href="/millionrps/09-profiling-gofakeit-mutex.html">403 seconds of waste, per 60 seconds of work</a>
+              
+            </h3>
+            
+            <p class="journal-entry-summary">Ran Go pprof against the /read handler at 800k RPS. CPU profile showed gofakeit at 2.25% — looked minor. Block profile showed 403.90s of goroutine wait time in 60 real seconds, all on one mutex, all from one line of code. Fixed it. RPS didn't move on no-prefork. Re-enabled prefork on c8i.32xlarge (128 workers): 1.33M RPS vs 1.01M no-prefork. +31% at 10k connections.</p>
+            
+            
+            <div class="journal-entry-result">
+              <span class="result-label">Result:</span> block.prof: gofakeit mutex = 403.90s blocked / 60s real = 6.7 cores wasted. Fix: 807k → 809k (flat — write syscall is the ceiling, not the mutex). Prefork 128w on c8i: 1,329,306 RPS at 10k connections vs 1,011,994 no-prefork (+31%). Prefork wins at every connection count on 128 cores.
+            </div>
+            
+          </div>
+        </div>
+        
+        <div class="journal-entry">
+          <div class="journal-entry-marker">
+            <span class="journal-entry-dot done"></span>
+            <div class="journal-entry-line"></div>
+          </div>
+          <div class="journal-entry-content">
+            <div class="journal-entry-meta">
+              <span class="journal-entry-date">June 10, 2026</span>
+              
+              <span class="journal-entry-status done">DONE</span>
+              
+              
+              <span class="journal-entry-tags">
+                
+                <span class="journal-tag">GOMAXPROCS</span>
+                
+                <span class="journal-tag">prefork</span>
+                
+                <span class="journal-tag">threads</span>
+                
+                <span class="journal-tag">fiber</span>
+                
+                <span class="journal-tag">source</span>
+                
+              </span>
+              
+            </div>
+            <h3 class="journal-entry-title">
+              
+                <a href="/millionrps/10-gomaxprocs-prefork.html">GOMAXPROCS sets fiber's worker count, not the thread count</a>
+              
+            </h3>
+            
+            <p class="journal-entry-summary">Hypothesis: setting GOMAXPROCS=1 per prefork worker would cut its ~15 OS threads and improve cache locality. Result: only 2 processes started. I assumed the fork machinery broke. It didn't — the fiber v3 source spawns runtime.GOMAXPROCS(0) children, so GOMAXPROCS=1 means one worker. Each child already runs GOMAXPROCS(1) regardless.</p>
+            
+            
+            <div class="journal-entry-result">
+              <span class="result-label">Result:</span> GOMAXPROCS=128: 129 processes (1 master + 128 workers), 1,333,453 RPS at 10k connections. GOMAXPROCS=1: 2 processes (1 master + 1 worker), 110,627 RPS at 100c declining to 87,856 at 10k. The env var controls worker count, not per-worker threading — each child overrides to GOMAXPROCS(1) in the source.
+            </div>
+            
+          </div>
+        </div>
+        
+        <div class="journal-entry">
+          <div class="journal-entry-marker">
+            <span class="journal-entry-dot done"></span>
+            <div class="journal-entry-line"></div>
+          </div>
+          <div class="journal-entry-content">
+            <div class="journal-entry-meta">
+              <span class="journal-entry-date">June 11, 2026</span>
+              
+              <span class="journal-entry-status done">DONE</span>
+              
+              
+              <span class="journal-entry-tags">
+                
+                <span class="journal-tag">threads</span>
+                
+                <span class="journal-tag">netpoller</span>
+                
+                <span class="journal-tag">GOMAXPROCS</span>
+                
+                <span class="journal-tag">pipelining</span>
+                
+                <span class="journal-tag">NIC</span>
+                
+                <span class="journal-tag">bandwidth</span>
+                
+                <span class="journal-tag">c8i</span>
+                
+                <span class="journal-tag">c6in</span>
+                
+              </span>
+              
+            </div>
+            <h3 class="journal-entry-title">
+              
+                <a href="/millionrps/11-threads-gomaxprocs-pipelining.html">Three things that don't move /read past the NIC</a>
+              
+            </h3>
+            
+            <p class="journal-entry-summary">/read at 4.5KB hits 1.32M RPS = 6.1 GB/s = 98% of the 50 Gbps NIC. Three things that should plausibly raise it, don't: per-worker thread count is flat across 100c-5000c (epoll), 32 workers match 128 workers (NIC-bound), and pipelining 1→50 stays flat. The same pipelining sweep on /simple (16B) goes 4.4M → 17M, because that endpoint is packet-bound, not bandwidth-bound.</p>
+            
+            
+            <div class="journal-entry-result">
+              <span class="result-label">Result:</span> Per-worker threads: ~10 (c6in) / ~15 (c8i), flat across 50× connection range. 32 vs 128 workers on c8i /read: 1,322,240 vs 1,322,291 RPS — identical. Pipelining 1→50 on /read: flat ~1.33M. On /simple: 4.4M → 16.9M. The /read ceiling is NIC bandwidth at every angle.
+            </div>
+            
+          </div>
+        </div>
+        
+        <div class="journal-entry">
+          <div class="journal-entry-marker">
+            <span class="journal-entry-dot done"></span>
+            <div class="journal-entry-line"></div>
+          </div>
+          <div class="journal-entry-content">
+            <div class="journal-entry-meta">
+              <span class="journal-entry-date">June 12, 2026</span>
+              
+              <span class="journal-entry-status done">DONE</span>
+              
+              
+              <span class="journal-entry-tags">
+                
+                <span class="journal-tag">gzip</span>
+                
+                <span class="journal-tag">compression</span>
+                
+                <span class="journal-tag">bandwidth</span>
+                
+                <span class="journal-tag">NIC</span>
+                
+                <span class="journal-tag">MTU</span>
+                
+                <span class="journal-tag">jumbo-frames</span>
+                
+                <span class="journal-tag">c6in</span>
+                
+                <span class="journal-tag">c8i</span>
+                
+                <span class="journal-tag">client-ceiling</span>
+                
+              </span>
+              
+            </div>
+            <h3 class="journal-entry-title">
+              
+                <a href="/millionrps/12-gzip-bandwidth-wall.html">gzip moved the wall, and exposed a lie</a>
+              
+            </h3>
+            
+            <p class="journal-entry-summary">Pre-gzipped the /read pool (4520B → 2289B, 1.97x) to cut bytes on a CPU-bound box. With a c6in client gzip HALVED RPS (794k → 418k) — the client was the bottleneck and decompression overloaded it. Swapped to a c8i.32xlarge client and the real /read ceiling appeared: 1.31M RPS, NIC-bound at 90%, not the 790k 'CPU-bound' from entry 08. At that real ceiling gzip raised RPS 32% (1.31M → 1.73M) by halving NIC load and shifting the wall to CPU. MTU was already 9001, so both payloads are a single packet — the gzip win is bytes copied, not syscalls saved.</p>
+            
+            
+            <div class="journal-entry-result">
+              <span class="result-label">Result:</span> Compression: 4520B → 2289B (1.97x). c6in client: /read 794,310 vs /read-gz 417,619 — gzip halved it. c8i client: /read 1,311,710 @ 90% NIC (NIC-bound), /read-gz 1,731,000 @ 80% CPU (CPU-bound), +32%. Per-request server CPU: raw 20.1µs, gz 14.8µs. The 'c6in /read = 790k, CPU-bound' from entry 08 was a client-bound artifact.
+            </div>
+            
+          </div>
+        </div>
+        
+        <div class="journal-entry">
+          <div class="journal-entry-marker">
+            <span class="journal-entry-dot pending"></span>
+            <div class="journal-entry-line"></div>
+          </div>
+          <div class="journal-entry-content">
+            <div class="journal-entry-meta">
+              <span class="journal-entry-date">June 15, 2026</span>
+              
+              <span class="journal-entry-status pending">PENDING</span>
+              
+              
+              <span class="journal-entry-tags">
+                
+                <span class="journal-tag">IRQ</span>
+                
+                <span class="journal-tag">irqbalance</span>
+                
+                <span class="journal-tag">isolcpus</span>
+                
+                <span class="journal-tag">c8i</span>
+                
+                <span class="journal-tag">kernel</span>
+                
+                <span class="journal-tag">planned</span>
+                
+              </span>
+              
+            </div>
+            <h3 class="journal-entry-title">
+              
+                planned: IRQ pinning + matched hardware
+              
+            </h3>
+            
+            <p class="journal-entry-summary">Apply proper IRQ isolation as described in the HAProxy blog. Stop irqbalance and crond. Pin 16 NIC IRQs to dedicated cores. Run fiber workers on clean cores only. Upgrade client to c8i.32xlarge. Waiting for AWS quota increase to 320 vCPU.</p>
+            
+            
+            <div class="journal-entry-result">
+              <span class="result-label">Result:</span> pending
+            </div>
+            
+          </div>
+        </div>
+        
+      </div>
+
+    </div>
+  </div>
+</div>
+
+
+  <!-- Footer -->
+
+<hr>
+
+<footer>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <ul class="list-inline text-center">
+          
+          <li class="list-inline-item">
+            <a href="mailto:amitava.dev@proton.me" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="far fa-envelope fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          
+          
+          <li class="list-inline-item">
+            <a href="https://www.linkedin.com/in/amitavaag" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-linkedin fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          <li class="list-inline-item">
+            <a href="https://github.com/ikouchiha47" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-github fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+        </ul>
+
+        <p class="copyright text-muted">
+          Build with: 
+          <a 
+            href="https://github.com/StartBootstrap/startbootstrap-clean-blog-jekyll"
+            class="text-gray"
+            target="_blank">startbootstrap-clean-blog-jekyll</a></p>
+      </div>
+    </div>
+  </div>
+</footer>
+
+
+  <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="/assets/vendor/blog/js/scripts.js"></script>
+
+<script src="/assets/scripts.js"></script>
+
+
+
+
+
+  <script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+
+    document.querySelectorAll('pre > code.language-mermaid').forEach((codeBlock) => {
+      codeBlock.parentElement.outerHTML = `<pre class="mermaid">${codeBlock.textContent}</pre>`;
+    });
+
+
+    mermaid.initialize({ startOnLoad: true, theme: 'forest' });
+</script>
+
+
+  
+
+</body>
+
+</html>

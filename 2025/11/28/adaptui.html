@@ -1,0 +1,1069 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+  <title>
+    Adapt UI - iko&#39;s logs
+    
+  </title>
+
+  <meta name="description" content="Generate UIs on the fly that adapts to your needs">
+  <meta property="og:description" content="Generate UIs on the fly that adapts to your needs">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Adapt UI">
+  <meta property="og:url" content="https://ikouchiha47.github.io/2025/11/28/adaptui.html">
+
+  
+
+  <link href='https://fonts.googleapis.com/css?family=Lora:400,700,400italic,700italic' rel='stylesheet' type='text/css'>
+  <link href='https://fonts.googleapis.com/css?family=Open+Sans:300italic,400italic,600italic,700italic,800italic,400,300,600,700,800' rel='stylesheet' type='text/css'>
+
+  <!-- <script src="https://use.fontawesome.com/releases/v5.15.3/js/all.js" crossorigin="anonymous"></script> -->
+  <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.15.4/css/all.css" integrity="sha384-DyZ88mC6Up2uqS4h/KRgHuoeGwBcD4Ng9SiP4dIRy0EXTlnuz47vAwmeGwVChigm" crossorigin="anonymous"/>
+
+  <link rel="stylesheet" href="/assets/main.css">
+  <link rel="canonical" href="https://ikouchiha47.github.io/2025/11/28/adaptui.html">
+  <link rel="alternate" type="application/rss+xml" title="iko&#39;s logs" href="/feed.xml">
+
+  <meta name="google-site-verification" content="lWkg6gIxJgzEKX_5XnhcxCtPE9QknaimFWWos_dTvPM" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fira+Sans:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Inconsolata:wght@200..900&family=Jersey+25&family=Kanit:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Merriweather+Sans:ital,wght@0,300..800;1,300..800&family=Nanum+Gothic+Coding&family=Space+Grotesk:wght@300..700&family=Titillium+Web:ital,wght@0,200;0,300;0,400;0,600;0,700;0,900;1,200;1,300;1,400;1,600;1,700&display=swap" rel="stylesheet">
+
+</head>
+
+
+<body>
+
+  <!-- Navigation -->
+<nav class="navbar navbar-expand-lg navbar-light fixed-top" id="mainNav">
+  <div class="container">
+    <a class="navbar-brand" href="/">iko&#39;s logs</a>
+    <button class="navbar-toggler navbar-toggler-right" type="button" data-toggle="collapse" data-target="#navbarResponsive" aria-controls="navbarResponsive" aria-expanded="false" aria-label="Toggle navigation">
+      Menu
+      <i class="fa fa-bars"></i>
+    </button>
+    <div class="collapse navbar-collapse" id="navbarResponsive">
+      <ul class="navbar-nav ml-auto">
+        <li class="nav-item">
+          <a class="nav-link" href="/">Home</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/about">About</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/posts">Posts</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/contact">Contact</a>
+        </li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+
+  <!-- Page Header -->
+
+<header class="masthead" style="background: #FFA500">
+
+  <div class="overlay"></div>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <div class="post-heading">
+          <h1>Adapt UI</h1>
+          
+          <h2 class="subheading">UI that adapts to your need</h2>
+          
+          <span class="meta">Posted by
+            <a href="#">ikouchiha47</a>
+            on November 28, 2025 &middot; <span class="reading-time" title="Estimated read time">
+  
+   33 mins  read </span>
+
+          </span>
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="container space-grotesk">
+  <div class="row">
+    <div class="col-lg-8 col-md-10 mx-auto">
+
+      <p><a href="https://github.com/ikouchiha47/adaptui">Code</a></p>
+
+<h1 id="building-ui-on-demand-the-adaptui-architecture">Building UI on Demand: The AdaptUI Architecture</h1>
+
+<h2 id="the-big-idea">The Big Idea</h2>
+
+<p>Why do we need a different app for every single thing? A travel app, a food app, a comparison app, a planning app. Each with its own interface, its own navigation patterns, its own way of showing information.</p>
+
+<p>What if the UI could just adapt to what you’re asking for?</p>
+
+<p>That’s AdaptUI. One app that generates custom interfaces on demand. You ask for “romantic restaurants in Paris,” you get a list with romantic-themed filters. You ask “compare DSLR vs mobile camera,” you get a comparison table. You ask “plan a 3 day trip to Tokyo,” you get an itinerary timeline. Same app, different UI, every time.</p>
+
+<p>The key insight: <strong>Don’t build HTML. Build with pre-built components and pass variants to select the right one.</strong></p>
+
+<pre><code class="language-mermaid">graph LR
+    A[User Query] --&gt; B[Query Analysis]
+    B --&gt; C[Data Gathering]
+    C --&gt; D[UI Generation]
+    D --&gt; E[Component Selection]
+    E --&gt; F[Rendered UI]
+    
+    style A fill:#6366F1
+    style F fill:#10B981
+</code></pre>
+
+<h2 id="the-two-phase-architecture">The Two-Phase Architecture</h2>
+
+<p>The system works in two completely separate phases:</p>
+
+<p><strong>Phase 1: Data Gathering</strong> - Complex reasoning, multi-source fetching, enrichment<br />
+<strong>Phase 2: UI Generation</strong> - Component selection and variant configuration</p>
+
+<p>This separation is critical. Phase 1 can take 3-5 seconds doing real work (API calls, parallel searches, photo fetching). Phase 2 takes 1-2 seconds just selecting components.</p>
+
+<pre><code class="language-mermaid">graph TD
+    subgraph Phase1["Phase 1: Data Gathering (3-5s)"]
+        A1[Query Analysis] --&gt; A2[Multi-Source Fetching]
+        A2 --&gt; A3[Data Enrichment]
+        A3 --&gt; A4[Clustering &amp; Ranking]
+    end
+    
+    subgraph Phase2["Phase 2: UI Generation (1-2s)"]
+        B1[Component Selection] --&gt; B2[Variant Configuration]
+        B2 --&gt; B3[Schema Generation]
+    end
+    
+    A4 --&gt; B1
+    
+    style Phase1 fill:#1E293B
+    style Phase2 fill:#0F172A
+</code></pre>
+
+<hr />
+
+<h2 id="phase-1-data-gathering-the-heavy-lifting">Phase 1: Data Gathering (The Heavy Lifting)</h2>
+
+<p>This is where all the intelligence happens. The system takes your query, figures out what data you need, fetches it from multiple sources, and enriches it with context.</p>
+
+<h3 id="step-1-query-analysis">Step 1: Query Analysis</h3>
+
+<p>QueryAnalysisService uses an LLM to extract structured parameters from natural language:</p>
+
+<div class="language-typescript highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="nx">Input</span><span class="p">:</span> <span class="dl">"</span><span class="s2">romantic restaurants in Paris</span><span class="dl">"</span>
+
+<span class="nx">Output</span><span class="p">:</span> <span class="p">{</span>
+  <span class="nl">intent</span><span class="p">:</span> <span class="dl">"</span><span class="s2">search</span><span class="dl">"</span><span class="p">,</span>
+  <span class="nx">categories</span><span class="p">:</span> <span class="p">[</span><span class="dl">"</span><span class="s2">dining</span><span class="dl">"</span><span class="p">],</span>
+  <span class="nx">sentiment</span><span class="p">:</span> <span class="p">{</span>
+    <span class="nl">emotion</span><span class="p">:</span> <span class="dl">"</span><span class="s2">romantic</span><span class="dl">"</span><span class="p">,</span>
+    <span class="nx">intensity</span><span class="p">:</span> <span class="dl">"</span><span class="s2">high</span><span class="dl">"</span><span class="p">,</span>
+    <span class="nx">vibe</span><span class="p">:</span> <span class="p">[</span><span class="dl">"</span><span class="s2">intimate</span><span class="dl">"</span><span class="p">,</span> <span class="dl">"</span><span class="s2">quiet</span><span class="dl">"</span><span class="p">,</span> <span class="dl">"</span><span class="s2">candlelit</span><span class="dl">"</span><span class="p">]</span>
+  <span class="p">},</span>
+  <span class="nx">temporal</span><span class="p">:</span> <span class="p">{</span>
+    <span class="nl">suggestedTimeOfDay</span><span class="p">:</span> <span class="dl">"</span><span class="s2">evening</span><span class="dl">"</span><span class="p">,</span>
+    <span class="nx">timeReasoning</span><span class="p">:</span> <span class="dl">"</span><span class="s2">Romantic dining is best enjoyed during sunset and evening hours</span><span class="dl">"</span>
+  <span class="p">},</span>
+  <span class="nx">parameters</span><span class="p">:</span> <span class="p">{</span>
+    <span class="nl">destination</span><span class="p">:</span> <span class="dl">"</span><span class="s2">Paris</span><span class="dl">"</span><span class="p">,</span>
+    <span class="nx">establishments</span><span class="p">:</span> <span class="p">[</span><span class="dl">"</span><span class="s2">restaurant</span><span class="dl">"</span><span class="p">],</span>
+    <span class="nx">keywords</span><span class="p">:</span> <span class="p">[</span><span class="dl">"</span><span class="s2">romantic</span><span class="dl">"</span><span class="p">,</span> <span class="dl">"</span><span class="s2">intimate</span><span class="dl">"</span><span class="p">]</span>
+  <span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div></div>
+
+<p>This isn’t keyword matching. It understands context, emotion, and intent.</p>
+
+<h3 id="step-2-query-expansion--parallel-fetching">Step 2: Query Expansion &amp; Parallel Fetching</h3>
+
+<p>In advanced mode, QueryProcessingService expands the query:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>"romantic restaurants" 
+  → ["romantic restaurants", "intimate dining", "candlelit dinner", "date night spots"]
+</code></pre></div></div>
+
+<p>Then executes all searches in parallel against Google Places API. This gives you 10-15 highly relevant places instead of just the top 5 from a single search.</p>
+
+<pre><code class="language-mermaid">graph TD
+    A[Original Query] --&gt; B[Query Expansion]
+    B --&gt; C1[Search 1: romantic restaurants]
+    B --&gt; C2[Search 2: intimate dining]
+    B --&gt; C3[Search 3: candlelit dinner]
+    B --&gt; C4[Search 4: date night spots]
+    
+    C1 --&gt; D[Deduplication]
+    C2 --&gt; D
+    C3 --&gt; D
+    C4 --&gt; D
+    
+    D --&gt; E[Hybrid Ranking]
+    E --&gt; F[Top 15 Places]
+    
+    style A fill:#6366F1
+    style F fill:#10B981
+</code></pre>
+
+<h3 id="step-3-data-enrichment-manual-control-layer">Step 3: Data Enrichment (Manual Control Layer)</h3>
+
+<p>This is where we add the manual control layer. DataEnrichmentService has a pluggable architecture:</p>
+
+<div class="language-typescript highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="kd">class</span> <span class="nc">DataEnrichmentService</span> <span class="p">{</span>
+  <span class="k">private</span> <span class="nx">enrichers</span><span class="p">:</span> <span class="nb">Map</span><span class="o">&lt;</span><span class="kr">string</span><span class="p">,</span> <span class="nx">CategoryEnricher</span><span class="o">&gt;</span> <span class="o">=</span> <span class="k">new</span> <span class="nc">Map</span><span class="p">();</span>
+  
+  <span class="k">async</span> <span class="nf">enrichPlace</span><span class="p">(</span><span class="nx">place</span><span class="p">:</span> <span class="nx">Place</span><span class="p">,</span> <span class="nx">analysis</span><span class="p">:</span> <span class="nx">QueryAnalysis</span><span class="p">):</span> <span class="nb">Promise</span><span class="o">&lt;</span><span class="nx">EnrichedPlace</span><span class="o">&gt;</span> <span class="p">{</span>
+    <span class="kd">const</span> <span class="nx">category</span> <span class="o">=</span> <span class="nx">analysis</span><span class="p">.</span><span class="nx">categories</span><span class="p">[</span><span class="mi">0</span><span class="p">];</span> <span class="c1">// 'dining', 'accommodation', etc.</span>
+    <span class="kd">const</span> <span class="nx">enricher</span> <span class="o">=</span> <span class="k">this</span><span class="p">.</span><span class="nx">enrichers</span><span class="p">.</span><span class="nf">get</span><span class="p">(</span><span class="nx">category</span><span class="p">);</span>
+    
+    <span class="k">if </span><span class="p">(</span><span class="nx">enricher</span><span class="p">)</span> <span class="p">{</span>
+      <span class="c1">// Use registered enricher (fast, rule-based)</span>
+      <span class="k">return</span> <span class="nx">enricher</span><span class="p">.</span><span class="nf">enrich</span><span class="p">(</span><span class="nx">place</span><span class="p">,</span> <span class="nx">analysis</span><span class="p">);</span>
+    <span class="p">}</span> <span class="k">else</span> <span class="p">{</span>
+      <span class="c1">// Fall back to LLM enrichment (flexible, slower)</span>
+      <span class="k">return</span> <span class="k">this</span><span class="p">.</span><span class="nf">llmEnrich</span><span class="p">(</span><span class="nx">place</span><span class="p">,</span> <span class="nx">analysis</span><span class="p">);</span>
+    <span class="p">}</span>
+  <span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div></div>
+
+<p>For travel queries, we could register a TravelEnricher with rule-based logic:</p>
+
+<div class="language-typescript highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="kd">class</span> <span class="nc">TravelEnricher</span> <span class="k">implements</span> <span class="nx">CategoryEnricher</span> <span class="p">{</span>
+  <span class="k">async</span> <span class="nf">enrich</span><span class="p">(</span><span class="nx">place</span><span class="p">:</span> <span class="nx">Place</span><span class="p">,</span> <span class="nx">analysis</span><span class="p">:</span> <span class="nx">QueryAnalysis</span><span class="p">):</span> <span class="nb">Promise</span><span class="o">&lt;</span><span class="kr">string</span><span class="p">[]</span><span class="o">&gt;</span> <span class="p">{</span>
+    <span class="kd">const</span> <span class="na">vibes</span><span class="p">:</span> <span class="kr">string</span><span class="p">[]</span> <span class="o">=</span> <span class="p">[];</span>
+    
+    <span class="c1">// Rule-based vibe tagging</span>
+    <span class="k">if </span><span class="p">(</span><span class="nx">place</span><span class="p">.</span><span class="nx">priceLevel</span> <span class="o">===</span> <span class="mi">1</span><span class="p">)</span> <span class="nx">vibes</span><span class="p">.</span><span class="nf">push</span><span class="p">(</span><span class="dl">'</span><span class="s1">budget</span><span class="dl">'</span><span class="p">,</span> <span class="dl">'</span><span class="s1">affordable</span><span class="dl">'</span><span class="p">);</span>
+    <span class="k">if </span><span class="p">(</span><span class="nx">place</span><span class="p">.</span><span class="nx">priceLevel</span> <span class="o">&gt;=</span> <span class="mi">4</span><span class="p">)</span> <span class="nx">vibes</span><span class="p">.</span><span class="nf">push</span><span class="p">(</span><span class="dl">'</span><span class="s1">luxury</span><span class="dl">'</span><span class="p">,</span> <span class="dl">'</span><span class="s1">upscale</span><span class="dl">'</span><span class="p">);</span>
+    <span class="k">if </span><span class="p">(</span><span class="nx">place</span><span class="p">.</span><span class="nx">rating</span> <span class="o">&gt;=</span> <span class="mf">4.3</span> <span class="o">&amp;&amp;</span> <span class="nx">place</span><span class="p">.</span><span class="nx">userRatingsTotal</span> <span class="o">&lt;</span> <span class="mi">1500</span><span class="p">)</span> <span class="nx">vibes</span><span class="p">.</span><span class="nf">push</span><span class="p">(</span><span class="dl">'</span><span class="s1">hidden-gem</span><span class="dl">'</span><span class="p">);</span>
+    <span class="k">if </span><span class="p">(</span><span class="nx">place</span><span class="p">.</span><span class="nx">userRatingsTotal</span> <span class="o">&gt;=</span> <span class="mi">5000</span><span class="p">)</span> <span class="nx">vibes</span><span class="p">.</span><span class="nf">push</span><span class="p">(</span><span class="dl">'</span><span class="s1">popular</span><span class="dl">'</span><span class="p">,</span> <span class="dl">'</span><span class="s1">touristy</span><span class="dl">'</span><span class="p">);</span>
+    
+    <span class="c1">// Match with query emotion</span>
+    <span class="k">if </span><span class="p">(</span><span class="nx">analysis</span><span class="p">.</span><span class="nx">sentiment</span><span class="p">.</span><span class="nx">emotion</span> <span class="o">===</span> <span class="dl">'</span><span class="s1">romantic</span><span class="dl">'</span><span class="p">)</span> <span class="p">{</span>
+      <span class="k">if </span><span class="p">(</span><span class="nx">place</span><span class="p">.</span><span class="nx">types</span><span class="p">?.</span><span class="nf">includes</span><span class="p">(</span><span class="dl">'</span><span class="s1">fine_dining</span><span class="dl">'</span><span class="p">))</span> <span class="nx">vibes</span><span class="p">.</span><span class="nf">push</span><span class="p">(</span><span class="dl">'</span><span class="s1">romantic</span><span class="dl">'</span><span class="p">,</span> <span class="dl">'</span><span class="s1">intimate</span><span class="dl">'</span><span class="p">);</span>
+    <span class="p">}</span>
+    
+    <span class="k">return</span> <span class="nx">vibes</span><span class="p">;</span>
+  <span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div></div>
+
+<p><em>But this is far from reality, it needs extensive research and analysis and rate-limiter dance to gather data to quantify like so</em></p>
+
+<p><strong>Why manual enrichment?</strong> Because it gives us control over what services become tools in agents or nodes in flows. We can decide which categories get fast rule-based enrichment (travel) and which fall back to LLM enrichment (products, services).</p>
+
+<pre><code class="language-mermaid">graph TD
+    A[Place Data] --&gt; B{Category?}
+    B --&gt;|dining| C[TravelEnricher]
+    B --&gt;|accommodation| C
+    B --&gt;|activities| C
+    B --&gt;|products| D[LLM Enrichment]
+    B --&gt;|services| D
+    
+    C --&gt; E[Rule-Based Vibes]
+    D --&gt; F[LLM-Generated Vibes]
+    
+    E --&gt; G[Enriched Place]
+    F --&gt; G
+    
+    style C fill:#10B981
+    style D fill:#F59E0B
+</code></pre>
+
+<h3 id="step-4-photo-fetching--coordinate-validation">Step 4: Photo Fetching &amp; Coordinate Validation</h3>
+
+<p>For each place, we fetch:</p>
+<ul>
+  <li>Up to 5 photos from Google Places API</li>
+  <li>Opening hours and current status</li>
+  <li>Validated coordinates (with geocoding fallback)</li>
+</ul>
+
+<h3 id="step-5-geographical-clustering">Step 5: Geographical Clustering</h3>
+
+<p>Places are clustered by proximity using k-means. Instead of showing 15 individual places, you get 3-5 geographical areas, each with 3-5 places. The LLM names each cluster (“Sukhumvit Nightlife”, “Old Town Heritage”).</p>
+
+<h3 id="step-6-ranking-with-multiple-signals">Step 6: Ranking with Multiple Signals</h3>
+
+<p>RankingService applies:</p>
+<ul>
+  <li>Base score: rating × log(review count)</li>
+  <li>Crowd intelligence: quiet/moderate/busy based on review count</li>
+  <li>Temporal relevance: boost places that are open now</li>
+  <li>LLM relevance: semantic match to query intent</li>
+</ul>
+
+<p><strong>Output of Phase 1:</strong></p>
+
+<div class="language-typescript highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="p">{</span>
+  <span class="nl">places</span><span class="p">:</span> <span class="p">[</span>
+    <span class="p">{</span>
+      <span class="na">name</span><span class="p">:</span> <span class="dl">"</span><span class="s2">Le Jules Verne</span><span class="dl">"</span><span class="p">,</span>
+      <span class="na">priceLevel</span><span class="p">:</span> <span class="mi">4</span><span class="p">,</span>
+      <span class="na">rating</span><span class="p">:</span> <span class="mf">4.8</span><span class="p">,</span>
+      <span class="na">photoUrls</span><span class="p">:</span> <span class="p">[</span><span class="dl">"</span><span class="s2">url1</span><span class="dl">"</span><span class="p">,</span> <span class="dl">"</span><span class="s2">url2</span><span class="dl">"</span><span class="p">,</span> <span class="dl">"</span><span class="s2">url3</span><span class="dl">"</span><span class="p">],</span>
+      <span class="na">coordinates</span><span class="p">:</span> <span class="p">{</span> <span class="na">lat</span><span class="p">:</span> <span class="mf">48.8584</span><span class="p">,</span> <span class="na">lng</span><span class="p">:</span> <span class="mf">2.2945</span> <span class="p">},</span>
+      <span class="na">enrichment</span><span class="p">:</span> <span class="p">{</span>
+        <span class="na">vibe</span><span class="p">:</span> <span class="p">[</span><span class="dl">'</span><span class="s1">romantic</span><span class="dl">'</span><span class="p">,</span> <span class="dl">'</span><span class="s1">upscale</span><span class="dl">'</span><span class="p">,</span> <span class="dl">'</span><span class="s1">view</span><span class="dl">'</span><span class="p">,</span> <span class="dl">'</span><span class="s1">fine-dining</span><span class="dl">'</span><span class="p">],</span>
+        <span class="na">popularity</span><span class="p">:</span> <span class="p">{</span> <span class="na">crowdLevel</span><span class="p">:</span> <span class="dl">'</span><span class="s1">moderate</span><span class="dl">'</span><span class="p">,</span> <span class="na">localFavorite</span><span class="p">:</span> <span class="kc">false</span> <span class="p">}</span>
+      <span class="p">}</span>
+    <span class="p">}</span>
+  <span class="p">]</span>
+<span class="p">}</span>
+</code></pre></div></div>
+
+<p>Clean, enriched, clustered data. Everything the UI needs.</p>
+
+<hr />
+
+<h2 id="phase-2-ui-generation-component-selection">Phase 2: UI Generation (Component Selection)</h2>
+
+<p>This is where the magic happens. But it’s surprisingly simple because Phase 1 did all the hard work.</p>
+
+<h3 id="the-component-based-approach">The Component-Based Approach</h3>
+
+<p>Instead of generating HTML, we select from pre-built components and pass variants:</p>
+
+<div class="language-typescript highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="c1">// Component Registry</span>
+<span class="p">{</span>
+  <span class="dl">'</span><span class="s1">filter-chips</span><span class="dl">'</span><span class="p">:</span> <span class="nx">FilterChipsRenderer</span><span class="p">,</span>
+  <span class="dl">'</span><span class="s1">card-travel</span><span class="dl">'</span><span class="p">:</span> <span class="nx">CardTravelRenderer</span><span class="p">,</span>
+  <span class="dl">'</span><span class="s1">card-restaurant</span><span class="dl">'</span><span class="p">:</span> <span class="nx">CardRestaurantRenderer</span><span class="p">,</span>
+  <span class="dl">'</span><span class="s1">list-travel</span><span class="dl">'</span><span class="p">:</span> <span class="nx">ListTravelRenderer</span><span class="p">,</span>
+  <span class="dl">'</span><span class="s1">photo-grid</span><span class="dl">'</span><span class="p">:</span> <span class="nx">PhotoGridRenderer</span><span class="p">,</span>
+  <span class="dl">'</span><span class="s1">badge-time</span><span class="dl">'</span><span class="p">:</span> <span class="nx">TimeBadgeRenderer</span><span class="p">,</span>
+  <span class="dl">'</span><span class="s1">badge-crowd</span><span class="dl">'</span><span class="p">:</span> <span class="nx">CrowdBadgeRenderer</span>
+<span class="p">}</span>
+</code></pre></div></div>
+
+<p>The LLM doesn’t generate UI code. It selects components and configures variants:</p>
+
+<div class="language-typescript highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="p">{</span>
+  <span class="nl">type</span><span class="p">:</span> <span class="dl">"</span><span class="s2">filter-chips</span><span class="dl">"</span><span class="p">,</span>
+  <span class="nx">props</span><span class="p">:</span> <span class="p">{</span>
+    <span class="nl">options</span><span class="p">:</span> <span class="p">[</span>
+      <span class="p">{</span> <span class="na">id</span><span class="p">:</span> <span class="dl">"</span><span class="s2">romantic</span><span class="dl">"</span><span class="p">,</span> <span class="na">label</span><span class="p">:</span> <span class="dl">"</span><span class="s2">Romantic</span><span class="dl">"</span><span class="p">,</span> <span class="na">icon</span><span class="p">:</span> <span class="dl">"</span><span class="s2">heart</span><span class="dl">"</span><span class="p">,</span> <span class="na">selected</span><span class="p">:</span> <span class="kc">true</span> <span class="p">},</span>
+      <span class="p">{</span> <span class="na">id</span><span class="p">:</span> <span class="dl">"</span><span class="s2">intimate</span><span class="dl">"</span><span class="p">,</span> <span class="na">label</span><span class="p">:</span> <span class="dl">"</span><span class="s2">Intimate</span><span class="dl">"</span><span class="p">,</span> <span class="na">icon</span><span class="p">:</span> <span class="dl">"</span><span class="s2">candle</span><span class="dl">"</span> <span class="p">},</span>
+      <span class="p">{</span> <span class="na">id</span><span class="p">:</span> <span class="dl">"</span><span class="s2">upscale</span><span class="dl">"</span><span class="p">,</span> <span class="na">label</span><span class="p">:</span> <span class="dl">"</span><span class="s2">Upscale</span><span class="dl">"</span><span class="p">,</span> <span class="na">icon</span><span class="p">:</span> <span class="dl">"</span><span class="s2">diamond</span><span class="dl">"</span> <span class="p">}</span>
+    <span class="p">]</span>
+  <span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div></div>
+
+<pre><code class="language-mermaid">graph LR
+    A[Enriched Data] --&gt; B[LLM Analysis]
+    B --&gt; C[Component Selection]
+    C --&gt; D1[filter-chips]
+    C --&gt; D2[card-travel]
+    C --&gt; D3[photo-grid]
+    C --&gt; D4[badge-time]
+    
+    D1 --&gt; E[ComponentRenderer]
+    D2 --&gt; E
+    D3 --&gt; E
+    D4 --&gt; E
+    
+    E --&gt; F[React Native UI]
+    
+    style A fill:#6366F1
+    style F fill:#10B981
+</code></pre>
+
+<h3 id="dynamic-filter-generation">Dynamic Filter Generation</h3>
+
+<p>This is the breakthrough. The LLM generates filters based on three sources:</p>
+
+<ol>
+  <li><strong>Query emotion</strong>: “romantic” → prioritize romantic, intimate, candlelit</li>
+  <li><strong>Data vibes</strong>: What’s actually in the enriched data (romantic, upscale, cozy, quiet)</li>
+  <li><strong>Data characteristics</strong>: Price levels, crowd levels, ratings</li>
+</ol>
+
+<div class="language-typescript highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="c1">// LLM sees:</span>
+<span class="nx">Query</span> <span class="nx">emotion</span><span class="p">:</span> <span class="nx">romantic</span>
+<span class="nx">Data</span> <span class="nx">vibes</span><span class="p">:</span> <span class="nx">romantic</span><span class="p">,</span> <span class="nx">intimate</span><span class="p">,</span> <span class="nx">upscale</span><span class="p">,</span> <span class="nx">cozy</span><span class="p">,</span> <span class="nx">candlelit</span><span class="p">,</span> <span class="nx">quiet</span>
+<span class="nx">Data</span> <span class="nx">characteristics</span><span class="p">:</span> <span class="nx">Price</span> <span class="nx">levels</span> <span class="mi">2</span><span class="o">-</span><span class="mi">4</span><span class="p">,</span> <span class="nx">Ratings</span> <span class="mf">4.5</span><span class="o">-</span><span class="mf">4.9</span><span class="p">,</span> <span class="nx">Crowd</span><span class="p">:</span> <span class="nx">quiet</span> <span class="nx">to</span> <span class="nx">moderate</span>
+
+<span class="c1">// LLM generates:</span>
+<span class="p">{</span>
+  <span class="nl">type</span><span class="p">:</span> <span class="dl">"</span><span class="s2">filter-chips</span><span class="dl">"</span><span class="p">,</span>
+  <span class="nx">props</span><span class="p">:</span> <span class="p">{</span>
+    <span class="nl">options</span><span class="p">:</span> <span class="p">[</span>
+      <span class="p">{</span> <span class="na">id</span><span class="p">:</span> <span class="dl">"</span><span class="s2">romantic</span><span class="dl">"</span><span class="p">,</span> <span class="na">label</span><span class="p">:</span> <span class="dl">"</span><span class="s2">Romantic</span><span class="dl">"</span><span class="p">,</span> <span class="na">icon</span><span class="p">:</span> <span class="dl">"</span><span class="s2">heart</span><span class="dl">"</span><span class="p">,</span> <span class="na">selected</span><span class="p">:</span> <span class="kc">true</span> <span class="p">},</span>
+      <span class="p">{</span> <span class="na">id</span><span class="p">:</span> <span class="dl">"</span><span class="s2">intimate</span><span class="dl">"</span><span class="p">,</span> <span class="na">label</span><span class="p">:</span> <span class="dl">"</span><span class="s2">Intimate</span><span class="dl">"</span><span class="p">,</span> <span class="na">icon</span><span class="p">:</span> <span class="dl">"</span><span class="s2">candle</span><span class="dl">"</span> <span class="p">},</span>
+      <span class="p">{</span> <span class="na">id</span><span class="p">:</span> <span class="dl">"</span><span class="s2">candlelit</span><span class="dl">"</span><span class="p">,</span> <span class="na">label</span><span class="p">:</span> <span class="dl">"</span><span class="s2">Candlelit</span><span class="dl">"</span><span class="p">,</span> <span class="na">icon</span><span class="p">:</span> <span class="dl">"</span><span class="s2">flame</span><span class="dl">"</span> <span class="p">},</span>
+      <span class="p">{</span> <span class="na">id</span><span class="p">:</span> <span class="dl">"</span><span class="s2">upscale</span><span class="dl">"</span><span class="p">,</span> <span class="na">label</span><span class="p">:</span> <span class="dl">"</span><span class="s2">Upscale</span><span class="dl">"</span><span class="p">,</span> <span class="na">icon</span><span class="p">:</span> <span class="dl">"</span><span class="s2">diamond</span><span class="dl">"</span> <span class="p">},</span>
+      <span class="p">{</span> <span class="na">id</span><span class="p">:</span> <span class="dl">"</span><span class="s2">cozy</span><span class="dl">"</span><span class="p">,</span> <span class="na">label</span><span class="p">:</span> <span class="dl">"</span><span class="s2">Cozy</span><span class="dl">"</span><span class="p">,</span> <span class="na">icon</span><span class="p">:</span> <span class="dl">"</span><span class="s2">home</span><span class="dl">"</span> <span class="p">}</span>
+    <span class="p">]</span>
+  <span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div></div>
+
+<p>Different query, different filters:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>"fun bars in Bangkok" → [Party, Live Music, Rooftop, Budget, Popular]
+"peaceful temples in Kyoto" → [Zen, Garden, Hidden Gem, Traditional, Peaceful]
+</code></pre></div></div>
+
+<h3 id="photo-grid-variants">Photo Grid Variants</h3>
+
+<p>Each highlight card can have different photo layouts:</p>
+
+<div class="language-typescript highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="nx">photoGridVariant</span><span class="p">:</span> <span class="dl">"</span><span class="s2">hero-left</span><span class="dl">"</span> <span class="o">|</span> <span class="dl">"</span><span class="s2">hero-right</span><span class="dl">"</span> <span class="o">|</span> <span class="dl">"</span><span class="s2">equal-row</span><span class="dl">"</span>
+</code></pre></div></div>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>┌─────────┬───┐  "hero-left" - Hero photo left, 2 stacked right
+│    1    │ 2 │  Use for: Romantic, luxury, featured attractions
+│  HERO   ├───┤
+│         │ 3 │
+└─────────┴───┘
+
+┌───┬─────────┐  "hero-right" - 2 stacked left, hero photo right  
+│ 1 │         │  Use for: Temples, nature, cultural sites
+├───┤    3    │
+│ 2 │  HERO   │
+└───┴─────────┘
+</code></pre></div></div>
+
+<p>The LLM mixes variants across highlights for visual interest.</p>
+
+<h3 id="device-aware-layout">Device-Aware Layout</h3>
+
+<p>The LLM adjusts layout based on screen size:</p>
+
+<div class="language-typescript highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="c1">// &lt; 375px: Single column, large touch targets (48px)</span>
+<span class="c1">// 375-768px: Single or 2-column grid</span>
+<span class="c1">// &gt; 768px: 2-3 column grid</span>
+</code></pre></div></div>
+
+<p>It also adjusts component density based on emotion intensity. High-intensity romantic queries get more spacious layouts. High-intensity fun queries get more compact, energetic layouts.</p>
+
+<h3 id="capability-based-components">Capability-Based Components</h3>
+
+<p>CapabilityDetector checks what’s available:</p>
+
+<div class="language-typescript highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="p">{</span>
+  <span class="nl">photos</span><span class="p">:</span> <span class="kc">true</span><span class="p">,</span>      <span class="c1">// Can show photo grids</span>
+  <span class="nx">maps</span><span class="p">:</span> <span class="kc">true</span><span class="p">,</span>        <span class="c1">// Can show map views</span>
+  <span class="nx">location</span><span class="p">:</span> <span class="kc">true</span><span class="p">,</span>    <span class="c1">// User location available</span>
+  <span class="nx">transport</span><span class="p">:</span> <span class="kc">true</span><span class="p">,</span>   <span class="c1">// Can show transport tickets</span>
+  <span class="nx">neighborhood</span><span class="p">:</span> <span class="kc">true</span> <span class="c1">// Can show area insights</span>
+<span class="p">}</span>
+</code></pre></div></div>
+
+<p>The LLM only generates components for available capabilities. No photo grids if photos aren’t available. No map views if maps aren’t supported.</p>
+
+<p><strong>Output of Phase 2:</strong></p>
+
+<div class="language-typescript highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="p">{</span>
+  <span class="nl">id</span><span class="p">:</span> <span class="dl">"</span><span class="s2">schema-123</span><span class="dl">"</span><span class="p">,</span>
+  <span class="nx">version</span><span class="p">:</span> <span class="dl">"</span><span class="s2">1.0</span><span class="dl">"</span><span class="p">,</span>
+  <span class="nx">uiType</span><span class="p">:</span> <span class="dl">"</span><span class="s2">list</span><span class="dl">"</span><span class="p">,</span>
+  <span class="nx">title</span><span class="p">:</span> <span class="dl">"</span><span class="s2">Romantic Restaurants in Paris</span><span class="dl">"</span><span class="p">,</span>
+  <span class="nx">theme</span><span class="p">:</span> <span class="p">{</span> <span class="nx">colors</span><span class="p">,</span> <span class="nx">typography</span><span class="p">,</span> <span class="nx">spacing</span><span class="p">,</span> <span class="nx">borderRadius</span> <span class="p">},</span>
+  <span class="nx">layout</span><span class="p">:</span> <span class="p">{</span> <span class="nl">type</span><span class="p">:</span> <span class="dl">"</span><span class="s2">stack</span><span class="dl">"</span><span class="p">,</span> <span class="nx">config</span><span class="p">:</span> <span class="p">{</span> <span class="nl">flexDirection</span><span class="p">:</span> <span class="dl">"</span><span class="s2">column</span><span class="dl">"</span> <span class="p">}</span> <span class="p">},</span>
+  <span class="nx">components</span><span class="p">:</span> <span class="p">[</span>
+    <span class="p">{</span> <span class="na">type</span><span class="p">:</span> <span class="dl">"</span><span class="s2">filter-chips</span><span class="dl">"</span><span class="p">,</span> <span class="na">props</span><span class="p">:</span> <span class="p">{</span> <span class="na">options</span><span class="p">:</span> <span class="p">[...]</span> <span class="p">}</span> <span class="p">},</span>
+    <span class="p">{</span> <span class="na">type</span><span class="p">:</span> <span class="dl">"</span><span class="s2">list-travel</span><span class="dl">"</span><span class="p">,</span> <span class="na">props</span><span class="p">:</span> <span class="p">{</span> <span class="na">items</span><span class="p">:</span> <span class="p">[...]</span> <span class="p">}</span> <span class="p">}</span>
+  <span class="p">]</span>
+<span class="p">}</span>
+</code></pre></div></div>
+
+<p>ComponentRenderer takes this schema and renders it to React Native components. No hydration. No manual data mapping. The schema is complete.</p>
+
+<hr />
+
+<h2 id="the-plugin-system-extensibility">The Plugin System: Extensibility</h2>
+
+<p>The plugin system allows registering new components and capabilities:</p>
+
+<div class="language-typescript highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="nx">pluginRegistry</span><span class="p">.</span><span class="nf">register</span><span class="p">({</span>
+  <span class="na">id</span><span class="p">:</span> <span class="dl">'</span><span class="s1">neighborhood</span><span class="dl">'</span><span class="p">,</span>
+  <span class="na">label</span><span class="p">:</span> <span class="dl">'</span><span class="s1">Neighborhood Insights</span><span class="dl">'</span><span class="p">,</span>
+  <span class="na">component</span><span class="p">:</span> <span class="nx">NeighborhoodPlugin</span><span class="p">,</span>
+  <span class="na">capability</span><span class="p">:</span> <span class="p">{</span> <span class="na">id</span><span class="p">:</span> <span class="dl">'</span><span class="s1">neighborhood</span><span class="dl">'</span><span class="p">,</span> <span class="na">label</span><span class="p">:</span> <span class="dl">'</span><span class="s1">Neighborhood</span><span class="dl">'</span><span class="p">,</span> <span class="na">icon</span><span class="p">:</span> <span class="dl">'</span><span class="s1">map</span><span class="dl">'</span> <span class="p">}</span>
+<span class="p">});</span>
+</code></pre></div></div>
+
+<p>When a plugin is registered:</p>
+
+<ol>
+  <li><strong>Component is added to registry</strong>: ComponentRenderer can now render it</li>
+  <li><strong>Capability is detected</strong>: CapabilityDetector includes it in available features</li>
+  <li><strong>LLM knows about it</strong>: UI generation prompt includes the new capability</li>
+  <li><strong>LLM can use it</strong>: Can generate UI with the new component</li>
+</ol>
+
+<pre><code class="language-mermaid">graph TD
+    A[Plugin Registration] --&gt; B[Component Registry]
+    A --&gt; C[Capability Detector]
+    A --&gt; D[UI Generation Prompt]
+    
+    B --&gt; E[ComponentRenderer]
+    C --&gt; F[Available Features]
+    D --&gt; G[LLM Generation]
+    
+    E --&gt; H[Rendered UI]
+    F --&gt; G
+    G --&gt; H
+    
+    style A fill:#6366F1
+    style H fill:#10B981
+</code></pre>
+
+<p>This means you can extend the system without changing core code. Add a new plugin, and the LLM can immediately use it.</p>
+
+<hr />
+
+<h2 id="where-we-are-vs-where-were-going">Where We Are vs Where We’re Going</h2>
+
+<h3 id="current-state-simplified-ui-generation">Current State: Simplified UI Generation</h3>
+
+<p>The system uses a simplified approach:</p>
+
+<p><strong>Static Mode</strong>: Uses the existing TravelScreen component. Fixed layout, fixed filters. Fast and reliable.</p>
+
+<p><strong>Dynamic Mode</strong>: LLM generates a complete UISchema with all data populated. No hydration. No manual mapping.</p>
+
+<p>The prompt includes:</p>
+<ul>
+  <li>Full enriched data (sanitized to remove API keys)</li>
+  <li>Query analysis with intent, sentiment, temporal context</li>
+  <li>Device context with screen dimensions</li>
+  <li>Capabilities (photos, maps, location, transport)</li>
+  <li>Data characteristics extracted dynamically</li>
+</ul>
+
+<p>The LLM returns a complete schema. ComponentRenderer renders it. That’s it.</p>
+
+<pre><code class="language-mermaid">graph LR
+    A[Enriched Data] --&gt; B[Build Prompt]
+    B --&gt; C[LLM Generation]
+    C --&gt; D[Complete Schema]
+    D --&gt; E[ComponentRenderer]
+    E --&gt; F[React Native UI]
+    
+    style A fill:#6366F1
+    style F fill:#10B981
+</code></pre>
+
+<h3 id="what-changed-deleted-the-hydration-layer">What Changed: Deleted the Hydration Layer</h3>
+
+<p>The original hybrid approach had a <code class="language-plaintext highlighter-rouge">hydrateStructure()</code> method with 200+ lines of code. It manually:</p>
+<ul>
+  <li>Populated badges</li>
+  <li>Converted filter options</li>
+  <li>Collected photos</li>
+  <li>Flattened data structures</li>
+  <li>Handled 10+ special cases</li>
+</ul>
+
+<p>Every new component type needed new hydration logic. Every edge case needed new conditionals.</p>
+
+<p><strong>We deleted all that.</strong> The LLM does it now. Better prompts, better models (GPT-4, Claude 3.5), better validation.</p>
+
+<h3 id="why-it-works-now">Why It Works Now</h3>
+
+<ol>
+  <li>
+    <p><strong>Data is already enriched</strong>: Phase 1 did all the hard work. Photos are URLs, coordinates are validated, vibes are tagged.</p>
+  </li>
+  <li>
+    <p><strong>Prompt is comprehensive</strong>: The LLM has everything it needs to make intelligent decisions.</p>
+  </li>
+  <li>
+    <p><strong>Components are pre-built</strong>: The LLM doesn’t generate code. It selects components and configures variants.</p>
+  </li>
+  <li>
+    <p><strong>Validation is simple</strong>: Check if schema has components, theme, layout. If not, fall back to static mode.</p>
+  </li>
+</ol>
+
+<h3 id="why-simple-1-shot-prompt-doesnt-work">Why Simple 1-Shot Prompt Doesn’t Work</h3>
+
+<p>The naive approach would be: “Generate a UI for romantic restaurants in Paris” and let the LLM create everything from scratch.</p>
+
+<p><strong>This fails catastrophically.</strong></p>
+
+<p>The problem isn’t that the LLM can’t generate UI. It can. The problem is <strong>you can’t fix bad UI with text alone.</strong></p>
+
+<pre><code class="language-mermaid">graph TD
+    A[1-Shot Prompt] --&gt; B{LLM Generates UI}
+    B --&gt; C[Broken Layout]
+    B --&gt; D[Wrong Colors]
+    B --&gt; E[Bad Spacing]
+    B --&gt; F[Inconsistent Typography]
+    
+    C --&gt; G[Can't Fix Without Vision]
+    D --&gt; G
+    E --&gt; G
+    F --&gt; G
+    
+    style G fill:#EF4444
+</code></pre>
+
+<p><strong>In a production system:</strong></p>
+<ul>
+  <li>✅ <strong>Broken UI can be iterated and fixed</strong> - validation errors, missing fields, wrong component types</li>
+  <li>❌ <strong>Bad UI can’t be fixed without vision</strong> - ugly colors, poor spacing, inconsistent design</li>
+</ul>
+
+<p>The LLM has no visual feedback loop. It can’t see that the colors clash, the spacing is cramped, or the typography is inconsistent. It’s generating JSON blind.</p>
+
+<h3 id="the-component-registry-constraint">The Component Registry Constraint</h3>
+
+<p>The solution: <strong>Don’t let the LLM generate UI. Let it select from pre-built components.</strong></p>
+
+<div class="language-typescript highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="c1">// Component Registry - Pre-built, visually validated components</span>
+<span class="p">{</span>
+  <span class="dl">'</span><span class="s1">filter-chips</span><span class="dl">'</span><span class="p">:</span> <span class="nx">FilterChipsRenderer</span><span class="p">,</span>      <span class="c1">// ✅ Spacing tested</span>
+  <span class="dl">'</span><span class="s1">card-travel</span><span class="dl">'</span><span class="p">:</span> <span class="nx">CardTravelRenderer</span><span class="p">,</span>        <span class="c1">// ✅ Colors validated</span>
+  <span class="dl">'</span><span class="s1">list-travel</span><span class="dl">'</span><span class="p">:</span> <span class="nx">ListTravelRenderer</span><span class="p">,</span>        <span class="c1">// ✅ Typography consistent</span>
+  <span class="dl">'</span><span class="s1">photo-grid</span><span class="dl">'</span><span class="p">:</span> <span class="nx">PhotoGridRenderer</span><span class="p">,</span>          <span class="c1">// ✅ Layout responsive</span>
+  <span class="dl">'</span><span class="s1">badge-time</span><span class="dl">'</span><span class="p">:</span> <span class="nx">TimeBadgeRenderer</span><span class="p">,</span>          <span class="c1">// ✅ Icons aligned</span>
+  <span class="dl">'</span><span class="s1">badge-crowd</span><span class="dl">'</span><span class="p">:</span> <span class="nx">CrowdBadgeRenderer</span>         <span class="c1">// ✅ Contrast checked</span>
+<span class="p">}</span>
+</code></pre></div></div>
+
+<p>The LLM’s job is <strong>component selection and configuration</strong>, not UI generation:</p>
+
+<div class="language-typescript highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="c1">// LLM doesn't generate this:</span>
+<span class="o">&lt;</span><span class="nx">View</span> <span class="nx">style</span><span class="o">=&gt;</span>
+  <span class="o">&lt;</span><span class="nx">Text</span> <span class="nx">style</span><span class="o">=&gt;</span><span class="nx">Romantic</span><span class="o">&lt;</span><span class="sr">/Text</span><span class="err">&gt;
+</span><span class="o">&lt;</span><span class="sr">/View</span><span class="err">&gt;
+</span>
+<span class="c1">// LLM generates this:</span>
+<span class="p">{</span>
+  <span class="nl">type</span><span class="p">:</span> <span class="dl">"</span><span class="s2">filter-chips</span><span class="dl">"</span><span class="p">,</span>
+  <span class="nx">props</span><span class="p">:</span> <span class="p">{</span>
+    <span class="nl">options</span><span class="p">:</span> <span class="p">[</span>
+      <span class="p">{</span> <span class="na">id</span><span class="p">:</span> <span class="dl">"</span><span class="s2">romantic</span><span class="dl">"</span><span class="p">,</span> <span class="na">label</span><span class="p">:</span> <span class="dl">"</span><span class="s2">Romantic</span><span class="dl">"</span><span class="p">,</span> <span class="na">icon</span><span class="p">:</span> <span class="dl">"</span><span class="s2">heart</span><span class="dl">"</span> <span class="p">}</span>
+    <span class="p">]</span>
+  <span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div></div>
+
+<p>The actual rendering is done by pre-built components that have been visually validated by humans.</p>
+
+<h3 id="what-didnt-work-full-autonomous-generation-v1">What Didn’t Work: Full Autonomous Generation (v1)</h3>
+
+<p>The initial attempt at full autonomous generation failed because:</p>
+
+<ol>
+  <li><strong>LLM hallucinated components</strong>: Generated <code class="language-plaintext highlighter-rouge">&lt;ComparisonTable&gt;</code> that didn’t exist in the registry</li>
+  <li><strong>Inconsistent data binding</strong>: Sometimes used <code class="language-plaintext highlighter-rouge">place.name</code>, sometimes <code class="language-plaintext highlighter-rouge">place.title</code>, sometimes <code class="language-plaintext highlighter-rouge">place.destination</code></li>
+  <li><strong>No validation</strong>: Invalid schemas crashed the renderer with cryptic errors</li>
+  <li><strong>No fallback</strong>: When generation failed, the app showed a blank screen</li>
+</ol>
+
+<p>The solution was to add:</p>
+<ul>
+  <li><strong>Component registry validation</strong>: Only allow registered component types, reject unknown components</li>
+  <li><strong>Schema validation</strong>: Check required fields before rendering, provide helpful error messages</li>
+  <li><strong>Fallback to static mode</strong>: If generation fails, use the pre-built TravelScreen</li>
+  <li><strong>Comprehensive prompts</strong>: Include full component documentation with examples</li>
+</ul>
+
+<p>Now it works 95%+ of the time. The 5% failures fall back gracefully to static mode.</p>
+
+<hr />
+
+<h2 id="the-future-where-were-heading">The Future: Where We’re Heading</h2>
+
+<h3 id="streaming-results">Streaming Results</h3>
+
+<p>Phase 1 takes 3-5 seconds. That’s too long. The plan is to stream results as they come in:</p>
+
+<pre><code class="language-mermaid">graph LR
+    A[Query] --&gt; B[First 3 Places]
+    B --&gt; C[Render Partial UI]
+    A --&gt; D[Next 5 Places]
+    D --&gt; E[Update UI]
+    A --&gt; F[Final 7 Places]
+    F --&gt; G[Complete UI]
+    
+    style A fill:#6366F1
+    style G fill:#10B981
+</code></pre>
+
+<p>Show the first 3 places while fetching the rest. Update the UI incrementally. The schema supports this - just update the <code class="language-plaintext highlighter-rouge">items</code> array.</p>
+
+<h3 id="predictive-caching">Predictive Caching</h3>
+
+<p>CacheService already caches API responses and UI schemas. The next step is predictive caching:</p>
+
+<ul>
+  <li>Pre-fetch common queries (“romantic restaurants in Paris”, “fun bars in Bangkok”)</li>
+  <li>Use user location to predict likely queries</li>
+  <li>Cache expires after 24 hours</li>
+</ul>
+
+<h3 id="better-ranking">Better Ranking</h3>
+
+<p>RankingService uses multiple signals, but it’s still basic. The plan is to add:</p>
+
+<ul>
+  <li><strong>User preferences</strong>: Learn from past selections</li>
+  <li><strong>Time-based boosting</strong>: Breakfast places in morning, bars at night</li>
+  <li><strong>Distance-based filtering</strong>: Only show places within X km</li>
+  <li><strong>Social signals</strong>: Trending on Instagram, mentioned on Reddit</li>
+</ul>
+
+<h3 id="multi-intent-support">Multi-Intent Support</h3>
+
+<p>QueryAnalysisService can return multiple intents. “Romantic restaurants and hotels in Paris” should generate two separate UI sections:</p>
+
+<pre><code class="language-mermaid">graph TD
+    A[Query] --&gt; B[Multi-Intent Analysis]
+    B --&gt; C1[Intent 1: Restaurants]
+    B --&gt; C2[Intent 2: Hotels]
+    
+    C1 --&gt; D1[Data Gathering 1]
+    C2 --&gt; D2[Data Gathering 2]
+    
+    D1 --&gt; E1[UI Schema 1]
+    D2 --&gt; E2[UI Schema 2]
+    
+    E1 --&gt; F[Stacked UI]
+    E2 --&gt; F
+    
+    style A fill:#6366F1
+    style F fill:#10B981
+</code></pre>
+
+<p>The architecture supports this - just generate multiple schemas and stack them.</p>
+
+<h3 id="llm-generated-theming-system">LLM-Generated Theming System</h3>
+
+<p>Right now, themes are hardcoded. Every UI uses the same color palette, typography, and spacing.</p>
+
+<p>The next step is <strong>LLM-generated themes</strong> that match the query emotion.</p>
+
+<p><strong>The Problem:</strong> You can’t fix bad colors with text alone. The LLM needs visual feedback.</p>
+
+<p><strong>The Solution:</strong> Use vision models (GPT-4V, Claude 3.5 Sonnet) to validate generated themes.</p>
+
+<pre><code class="language-mermaid">graph TD
+    A[Query: romantic restaurants] --&gt; B[LLM Generates Theme]
+    B --&gt; C[Render Preview]
+    C --&gt; D[Vision Model Validates]
+    D --&gt; E{Good Design?}
+    E --&gt;|Yes| F[Use Theme]
+    E --&gt;|No| G[Regenerate with Feedback]
+    G --&gt; B
+    
+    style F fill:#10B981
+    style G fill:#F59E0B
+</code></pre>
+
+<p><strong>The Flow:</strong></p>
+
+<ol>
+  <li><strong>LLM generates theme</strong> based on query emotion:
+    <div class="language-typescript highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="nx">Query</span><span class="p">:</span> <span class="dl">"</span><span class="s2">romantic restaurants in Paris</span><span class="dl">"</span>
+<span class="nx">Emotion</span><span class="p">:</span> <span class="nx">romantic</span>
+   
+<span class="nx">Theme</span><span class="p">:</span> <span class="p">{</span>
+  <span class="nl">colors</span><span class="p">:</span> <span class="p">{</span>
+    <span class="na">primary</span><span class="p">:</span> <span class="dl">"</span><span class="s2">#FF6B9D</span><span class="dl">"</span><span class="p">,</span>      <span class="c1">// Soft pink</span>
+    <span class="na">secondary</span><span class="p">:</span> <span class="dl">"</span><span class="s2">#C44569</span><span class="dl">"</span><span class="p">,</span>    <span class="c1">// Deep rose</span>
+    <span class="na">background</span><span class="p">:</span> <span class="dl">"</span><span class="s2">#2D1B2E</span><span class="dl">"</span><span class="p">,</span>   <span class="c1">// Dark purple</span>
+    <span class="na">surface</span><span class="p">:</span> <span class="dl">"</span><span class="s2">#3E2C41</span><span class="dl">"</span><span class="p">,</span>      <span class="c1">// Muted purple</span>
+    <span class="na">accent</span><span class="p">:</span> <span class="dl">"</span><span class="s2">#FFD700</span><span class="dl">"</span>        <span class="c1">// Gold</span>
+  <span class="p">},</span>
+  <span class="nx">typography</span><span class="p">:</span> <span class="p">{</span>
+    <span class="nl">heading</span><span class="p">:</span> <span class="p">{</span> <span class="na">fontSize</span><span class="p">:</span> <span class="mi">28</span><span class="p">,</span> <span class="na">fontWeight</span><span class="p">:</span> <span class="dl">"</span><span class="s2">600</span><span class="dl">"</span><span class="p">,</span> <span class="na">letterSpacing</span><span class="p">:</span> <span class="mf">0.5</span> <span class="p">},</span>
+    <span class="nx">body</span><span class="p">:</span> <span class="p">{</span> <span class="nl">fontSize</span><span class="p">:</span> <span class="mi">16</span><span class="p">,</span> <span class="nx">fontWeight</span><span class="p">:</span> <span class="dl">"</span><span class="s2">400</span><span class="dl">"</span><span class="p">,</span> <span class="nx">lineHeight</span><span class="p">:</span> <span class="mi">24</span> <span class="p">}</span>
+  <span class="p">},</span>
+  <span class="nx">spacing</span><span class="p">:</span> <span class="p">{</span> <span class="nl">base</span><span class="p">:</span> <span class="mi">20</span><span class="p">,</span> <span class="nx">tight</span><span class="p">:</span> <span class="mi">12</span><span class="p">,</span> <span class="nx">loose</span><span class="p">:</span> <span class="mi">32</span> <span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div>    </div>
+  </li>
+  <li>
+    <p><strong>Render preview</strong> with the generated theme</p>
+  </li>
+  <li><strong>Vision model validates</strong> the design:
+    <div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>Prompt: "Does this UI have good color contrast, readable typography, 
+and appropriate spacing for a romantic restaurant app? 
+Rate 1-10 and explain issues."
+   
+Response: "7/10 - Good color harmony but primary pink (#FF6B9D) 
+has poor contrast against dark background. Suggest #FF8FB3 instead."
+</code></pre></div>    </div>
+  </li>
+  <li><strong>Iterate until validated</strong> (max 3 attempts)</li>
+</ol>
+
+<p><strong>Why This Works:</strong></p>
+
+<ul>
+  <li>✅ <strong>Vision models can see</strong> what text-only models can’t</li>
+  <li>✅ <strong>Iterative refinement</strong> fixes issues before users see them</li>
+  <li>✅ <strong>Emotion-matched themes</strong> enhance the experience</li>
+  <li>✅ <strong>Automated validation</strong> scales better than human review</li>
+</ul>
+
+<p><strong>Inspired by:</strong> <a href="https://cookbook.openai.com/examples/gpt-5/gpt-5_frontend">OpenAI Cookbook - GPT-5 Frontend Generation</a></p>
+
+<p>This is the gateway to fully autonomous UI generation. Once themes are validated visually, we can trust the LLM to generate complete UIs without human oversight.</p>
+
+<h3 id="cross-platform-rendering">Cross-Platform Rendering</h3>
+
+<p>The UISchema is platform-agnostic. Right now it renders to React Native. But the same schema could render to:</p>
+
+<ul>
+  <li><strong>React</strong> for web</li>
+  <li><strong>SwiftUI</strong> for iOS</li>
+  <li><strong>Jetpack Compose</strong> for Android</li>
+</ul>
+
+<p>Just implement ComponentRenderer for each platform. Write once, render anywhere.</p>
+
+<pre><code class="language-mermaid">graph TD
+    A[UISchema] --&gt; B{Platform?}
+    B --&gt;|React Native| C[RN ComponentRenderer]
+    B --&gt;|React Web| D[Web ComponentRenderer]
+    B --&gt;|SwiftUI| E[iOS ComponentRenderer]
+    B --&gt;|Compose| F[Android ComponentRenderer]
+    
+    C --&gt; G[Mobile App]
+    D --&gt; H[Web App]
+    E --&gt; I[iOS App]
+    F --&gt; J[Android App]
+    
+    style A fill:#6366F1
+</code></pre>
+
+<hr />
+
+<h2 id="the-bet">The Bet</h2>
+
+<p>The bet is that <strong>component selection</strong> is good enough now, and <strong>theme generation</strong> is the next frontier.</p>
+
+<h3 id="what-works-today">What Works Today:</h3>
+
+<p>✅ <strong>Query analysis</strong>: 90%+ accuracy on intent, sentiment, temporal context<br />
+✅ <strong>Data enrichment</strong>: Photos, coordinates, crowd levels - all reliable<br />
+✅ <strong>Component selection</strong>: GPT-4 and Claude 3.5 select valid components 95%+ of the time<br />
+✅ <strong>Filter generation</strong>: Dynamic filters match query emotion and data characteristics<br />
+✅ <strong>Device adaptation</strong>: Different layouts for different screen sizes<br />
+✅ <strong>Capability detection</strong>: Only generates UI for available features</p>
+
+<h3 id="what-doesnt-work-yet">What Doesn’t Work Yet:</h3>
+
+<p>⚠️ <strong>Speed</strong>: 3-5 seconds is too slow. Needs streaming and predictive caching.<br />
+⚠️ <strong>Theming</strong>: Hardcoded colors don’t match query emotion. Needs LLM-generated themes with vision validation.<br />
+⚠️ <strong>Consistency</strong>: Same query sometimes generates slightly different UIs. Needs better caching.<br />
+⚠️ <strong>Multi-intent</strong>: Can’t handle complex queries with multiple intents yet.</p>
+
+<h3 id="the-key-insight">The Key Insight:</h3>
+
+<p><strong>In production, broken UI can be iterated and fixed. Bad UI can’t be fixed without vision.</strong></p>
+
+<p>That’s why we constrain the LLM to component selection. The components are pre-built and visually validated. The LLM just picks which ones to use and how to configure them.</p>
+
+<p>But themes are different. Themes need to be generated dynamically to match the query emotion. And that requires vision models to validate the design before users see it.</p>
+
+<p><strong>The theming system is the gateway to fully autonomous UI generation.</strong> Once we can trust the LLM to generate good-looking themes with vision validation, we can trust it to generate complete UIs.</p>
+
+<p>The technology is there. The architecture is there. It just needs the vision feedback loop.</p>
+
+<p>That’s the bet.</p>
+
+<hr />
+
+<h2 id="architecture-summary">Architecture Summary</h2>
+
+<pre><code class="language-mermaid">graph TD
+    subgraph Input["User Input"]
+        A[Natural Language Query]
+    end
+    
+    subgraph Phase1["Phase 1: Data Gathering (3-5s)"]
+        B[Query Analysis] --&gt; C[Query Expansion]
+        C --&gt; D[Parallel Fetching]
+        D --&gt; E[Data Enrichment]
+        E --&gt; F[Clustering]
+        F --&gt; G[Ranking]
+    end
+    
+    subgraph Phase2["Phase 2: UI Generation (1-2s)"]
+        H[Component Selection] --&gt; I[Variant Configuration]
+        I --&gt; J[Schema Generation]
+    end
+    
+    subgraph Output["Rendered Output"]
+        K[React Native UI]
+    end
+    
+    A --&gt; B
+    G --&gt; H
+    J --&gt; K
+    
+    style Input fill:#6366F1
+    style Phase1 fill:#1E293B
+    style Phase2 fill:#0F172A
+    style Output fill:#10B981
+</code></pre>
+
+<p><strong>46 services. 2 phases. 1 goal: UI that adapts to what you need.</strong></p>
+
+
+
+      <hr>
+      <div class="row mb-5 mt-5">
+  <div class="col-md-6 d-flex align-items-end ">
+    <span>Thanks. <i>mind sharing?</i></span>
+  </div>
+
+  <!-- Right Column with Social Media Icons (on the right for larger screens, on bottom for smaller screens) -->
+  <div class="col-md-6 order-md-2 order-1 text-md-right text-center mt-3 mt-md-0">
+    <div>
+
+      <a
+          href="https://www.linkedin.com/sharing/share-offsite?url=ikouchiha47.github.io/2025/11/28/adaptui.html"
+          onclick="window.open(this.href, 'pop-up', 'left=20,top=20,width=500,height=500,toolbar=1,resizable=0'); return false;"
+          class="d-inline-block mr-2"
+       >
+        <span class="fa-stack fa-lg" style="color: #0077b5;">
+          <i class="fas fa-square fa-stack-2x"></i>
+          <i class="fab fa-linkedin fa-stack-1x fa-inverse"></i>
+        </span>
+      </a>
+
+      <a
+          href="https://twitter.com/intent/tweet?text=Adapt UI&url=ikouchiha47.github.io/2025/11/28/adaptui.html"
+          onclick="window.open(this.href, 'pop-up', 'left=20,top=20,width=500,height=500,toolbar=1,resizable=0'); return false;"
+          class="d-inline-block mr-2">
+        <span class="fa-stack fa-lg" style="color: #1DA1F2;">
+          <i class="fas fa-square fa-stack-2x"></i>
+          <i class="fab fa-twitter fa-stack-1x fa-inverse"></i>
+        </span>
+      </a>
+
+      <a
+          href="http://www.reddit.com/submit?url=ikouchiha47.github.io/2025/11/28/adaptui.html"
+          onclick="window.open(this.href, 'pop-up', 'left=20,top=20,width=500,height=500,toolbar=1,resizable=0'); return false;"
+          class="d-inline-block mr-2">
+        <span class="fa-stack fa-lg" style="color: #FF4500;">
+          <i class="fas fa-square fa-stack-2x"></i>
+          <i class="fab fa-reddit fa-stack-1x fa-inverse"></i>
+        </span>
+      </a>
+    </div>
+  </div>
+</div>
+
+<hr/>
+
+
+      <div class="clearfix">
+
+        
+        <a class="btn btn-primary float-left" href="/2025/11/16/ai-code-editors.html" data-toggle="tooltip" data-placement="top" title="Goodbye *ibe Coding">&larr; Previous<span class="d-none d-md-inline">
+            Post</span></a>
+        
+        
+        <a class="btn btn-primary float-right" href="/p/b8e2c4/materials-science-notes/" data-toggle="tooltip" data-placement="top" title="Materials Science Engineering Notes">Next<span class="d-none d-md-inline">
+            Post</span> &rarr;</a>
+        
+
+      </div>
+
+    </div>
+  </div>
+</div>
+
+
+  <!-- Footer -->
+
+<hr>
+
+<footer>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <ul class="list-inline text-center">
+          
+          <li class="list-inline-item">
+            <a href="mailto:amitava.dev@proton.me" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="far fa-envelope fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          
+          
+          <li class="list-inline-item">
+            <a href="https://www.linkedin.com/in/amitavaag" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-linkedin fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          <li class="list-inline-item">
+            <a href="https://github.com/ikouchiha47" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-github fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+        </ul>
+
+        <p class="copyright text-muted">
+          Build with: 
+          <a 
+            href="https://github.com/StartBootstrap/startbootstrap-clean-blog-jekyll"
+            class="text-gray"
+            target="_blank">startbootstrap-clean-blog-jekyll</a></p>
+      </div>
+    </div>
+  </div>
+</footer>
+
+
+  <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="/assets/vendor/blog/js/scripts.js"></script>
+
+<script src="/assets/scripts.js"></script>
+
+
+
+
+
+  <script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+
+    document.querySelectorAll('pre > code.language-mermaid').forEach((codeBlock) => {
+      codeBlock.parentElement.outerHTML = `<pre class="mermaid">${codeBlock.textContent}</pre>`;
+    });
+
+
+    mermaid.initialize({ startOnLoad: true, theme: 'forest' });
+</script>
+
+
+  
+
+</body>
+
+</html>
