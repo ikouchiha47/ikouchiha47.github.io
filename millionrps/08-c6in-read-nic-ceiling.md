@@ -3,7 +3,7 @@ layout: journal_entry
 title: "switching to /read: c6in.8xlarge, 50 Gbps, and IRQ pinning on a loaded NIC"
 subtitle: "790k RPS, server at 72% NIC, 85% CPU — IRQ pinning still flat"
 group: millionrps
-group_title: "chasing 1 million rps"
+group_title: "Chasing 1 Million RPS"
 group_url: "/millionrps/"
 entry_date: 2026-06-08
 status: done

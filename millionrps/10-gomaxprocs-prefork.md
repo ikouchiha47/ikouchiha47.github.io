@@ -3,7 +3,7 @@ layout: journal_entry
 title: "GOMAXPROCS sets fiber's worker count, not the thread count"
 subtitle: "129 workers became 2. I assumed I broke the fork loop. The source says I asked for 1 worker."
 group: millionrps
-group_title: "chasing 1 million rps"
+group_title: "Chasing 1 Million RPS"
 group_url: "/millionrps/"
 entry_date: 2026-06-10
 status: done

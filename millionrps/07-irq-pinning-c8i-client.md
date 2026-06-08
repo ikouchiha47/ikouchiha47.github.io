@@ -3,7 +3,7 @@ layout: journal_entry
 title: "planned: IRQ pinning + matched hardware"
 subtitle: "stop irqbalance, isolate cores, c8i.32xlarge vs c8i.32xlarge"
 group: millionrps
-group_title: "chasing 1 million rps"
+group_title: "Chasing 1 Million RPS"
 group_url: "/millionrps/"
 entry_date: 2026-06-15
 status: pending

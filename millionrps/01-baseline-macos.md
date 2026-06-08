@@ -3,7 +3,7 @@ layout: journal_entry
 title: "baseline: mac mini, localhost, three servers"
 subtitle: "net/http vs fasthttp vs fiber — what does Go give you out of the box?"
 group: millionrps
-group_title: "chasing 1 million rps"
+group_title: "Chasing 1 Million RPS"
 group_url: "/millionrps/"
 entry_date: 2026-05-15
 status: done

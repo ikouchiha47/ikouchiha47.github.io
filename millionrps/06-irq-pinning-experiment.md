@@ -3,7 +3,7 @@ layout: journal_entry
 title: "IRQ pinning: when it matters and when it doesn't"
 subtitle: "three-step experiment on c6i.2xlarge — baseline, IRQ only, IRQ + RPS/RFS"
 group: millionrps
-group_title: "chasing 1 million rps"
+group_title: "Chasing 1 Million RPS"
 group_url: "/millionrps/"
 entry_date: 2026-06-06
 status: done

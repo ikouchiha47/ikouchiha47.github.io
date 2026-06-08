@@ -3,7 +3,7 @@ layout: journal_entry
 title: "403 seconds of waste, per 60 seconds of work"
 subtitle: "pprof on /read: the block profile found what the CPU profile hid"
 group: millionrps
-group_title: "chasing 1 million rps"
+group_title: "Chasing 1 Million RPS"
 group_url: "/millionrps/"
 entry_date: 2026-06-09
 status: done

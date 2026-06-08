@@ -3,7 +3,7 @@ layout: journal_entry
 title: "linux confirms it: SO_REUSEPORT actually works"
 subtitle: "c6i.2xlarge, cross-machine, P99 drops from 22ms to 1.4ms"
 group: millionrps
-group_title: "chasing 1 million rps"
+group_title: "Chasing 1 Million RPS"
 group_url: "/millionrps/"
 entry_date: 2026-06-01
 status: done

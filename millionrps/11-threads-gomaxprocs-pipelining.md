@@ -3,7 +3,7 @@ layout: journal_entry
 title: "Three things that don't move /read past the NIC"
 subtitle: "Thread count is flat across 50× load. 32 workers tie 128. Pipelining does nothing. The NIC is the wall."
 group: millionrps
-group_title: "chasing 1 million rps"
+group_title: "Chasing 1 Million RPS"
 group_url: "/millionrps/"
 entry_date: 2026-06-11
 status: done

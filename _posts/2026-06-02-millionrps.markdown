@@ -1,9 +1,10 @@
 ---
 active: true
 layout: journal_index
-title: "chasing 1 million rps"
+title: "Chasing 1 Million RPS"
 subtitle: "a journal of hardware, kernel tuning, and diminishing returns"
 date: 2026-06-02 00:00:00
+background: /img/millionrps.jpg
 background_color: "#0d1117"
 group: millionrps
 is_index: true

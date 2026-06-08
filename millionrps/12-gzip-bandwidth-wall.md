@@ -3,7 +3,7 @@ layout: journal_entry
 title: "gzip moved the wall, and exposed a lie"
 subtitle: "Same gzip cut RPS in half on one client and raised it 32% on another. The 790k 'CPU-bound' ceiling was never real."
 group: millionrps
-group_title: "chasing 1 million rps"
+group_title: "Chasing 1 Million RPS"
 group_url: "/millionrps/"
 entry_date: 2026-06-12
 status: done
