@@ -4,7 +4,7 @@ layout: default
 
 <!-- Page Header -->
 {% if page.background %}
-<header class="masthead" style="background-image: url('{{ page.background | prepend: site.baseurl | replace: '//', '/' }}')">
+<header class="masthead{% if page.boxed_heading %} masthead--boxed{% endif %}" style="background-image: url('{{ page.background | prepend: site.baseurl | replace: '//', '/' }}')">
 {% elsif page.background_color %}
 <header class="masthead" style="background: {{page.background_color }}">
 {% else %}

@@ -222,13 +222,21 @@ pre {
   strong { display: block; margin-bottom: 0.3rem; font-size: 0.8rem; letter-spacing: 0.05em; text-transform: uppercase; }
 }
 
-// Masthead text over a cover image: give each line its own background box
-// so white text stays readable, staggered so it reads as offset rectangles
-// rather than one solid block.
+// Masthead text over a cover image: each line gets a solid background block
+// so white text stays readable. Left edges are aligned (no stagger) and each
+// block hugs its longest line's width.
+header.masthead--boxed .overlay {
+  background-color: #000;
+  opacity: 0.62;
+}
+
 header.masthead .post-heading--boxed {
   h1,
   .subheading,
   .meta {
+    width: fit-content;
+    max-width: 100%;
+    margin-left: 0;
     background-color: rgba(13, 17, 23, 0.92);
     padding: 0.18em 0.45em;
     border-radius: 3px;
@@ -236,33 +244,15 @@ header.masthead .post-heading--boxed {
     -webkit-box-decoration-break: clone;
   }
 
-  // Single-line lines: box hugs the longest (only) line.
-  h1,
-  .meta {
-    width: fit-content;
-    max-width: 100%;
-  }
-
-  // Subtitle can wrap: render it inline so each wrapped line gets its own
-  // background hugging that line, instead of one full-width rectangle.
-  // line-height kept close to box height (text + vertical padding) so the
-  // two wrapped line-boxes touch instead of leaving a gap between them.
-  .subheading {
-    display: inline;
-    line-height: 1.32;
-  }
-
   h1 {
-    margin-left: 0;
     margin-bottom: 0.6rem;
   }
 
   .subheading {
-    margin-left: 1.75rem;
+    margin-bottom: 0.6rem;
   }
 
   .meta {
-    margin-left: 0.9rem;
-    margin-top: 0.8rem;
+    margin-top: 0;
   }
 }
