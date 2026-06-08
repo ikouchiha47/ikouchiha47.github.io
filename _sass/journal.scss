@@ -221,3 +221,34 @@ pre {
 
   strong { display: block; margin-bottom: 0.3rem; font-size: 0.8rem; letter-spacing: 0.05em; text-transform: uppercase; }
 }
+
+// Masthead text over a cover image: give each line its own background box
+// so white text stays readable, staggered so it reads as offset rectangles
+// rather than one solid block.
+.post-heading--boxed {
+  h1,
+  .subheading,
+  .meta {
+    width: fit-content;
+    max-width: 100%;
+    background-color: rgba(13, 17, 23, 0.82);
+    padding: 0.12em 0.45em;
+    border-radius: 3px;
+    box-decoration-break: clone;
+    -webkit-box-decoration-break: clone;
+  }
+
+  h1 {
+    margin-left: 0;
+    margin-bottom: 0.6rem;
+  }
+
+  .subheading {
+    margin-left: 1.75rem;
+    margin-bottom: 0.6rem;
+  }
+
+  .meta {
+    margin-left: 0.9rem;
+  }
+}

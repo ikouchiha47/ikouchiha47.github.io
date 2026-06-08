@@ -6,6 +6,7 @@ subtitle: "a journal of hardware, kernel tuning, and diminishing returns"
 date: 2026-06-02 00:00:00
 background: /img/millionrps.jpg
 background_color: "#0d1117"
+boxed_heading: true
 group: millionrps
 is_index: true
 permalink: /millionrps/

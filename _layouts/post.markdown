@@ -14,7 +14,7 @@ layout: default
   <div class="container">
     <div class="row">
       <div class="col-lg-8 col-md-10 mx-auto">
-        <div class="post-heading">
+        <div class="post-heading{% if page.boxed_heading %} post-heading--boxed{% endif %}">
           <h1>{{ page.title }}</h1>
           {% if page.subtitle %}
           <h2 class="subheading">{{ page.subtitle }}</h2>
