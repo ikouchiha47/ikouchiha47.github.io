@@ -230,7 +230,7 @@ header.masthead .post-heading--boxed {
   .subheading,
   .meta {
     background-color: rgba(13, 17, 23, 0.92);
-    padding: 0.12em 0.45em;
+    padding: 0.18em 0.45em;
     border-radius: 3px;
     box-decoration-break: clone;
     -webkit-box-decoration-break: clone;
@@ -245,9 +245,11 @@ header.masthead .post-heading--boxed {
 
   // Subtitle can wrap: render it inline so each wrapped line gets its own
   // background hugging that line, instead of one full-width rectangle.
+  // line-height kept close to box height (text + vertical padding) so the
+  // two wrapped line-boxes touch instead of leaving a gap between them.
   .subheading {
     display: inline;
-    line-height: 1.9;
+    line-height: 1.32;
   }
 
   h1 {

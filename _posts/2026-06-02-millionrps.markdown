@@ -14,7 +14,7 @@ permalink: /millionrps/
 
 _yes, this is clickbait. kind of._
 
-## what "1 million RPS" actually means
+## What "1 Million RPS" Actually Means
 
 "1 million RPS" is not a single number. It depends entirely on what the server is doing per request.
 
@@ -38,7 +38,7 @@ The 1M RPS target is a lens, not a finish line. It forces you to be precise abou
 
 This journal documents those questions, not the headline number.
 
-## what we're testing
+## What We're Testing
 
 - **HTTP servers in Go** — net/http, fasthttp, fiber — with different workloads (tiny JSON, large payloads, CPU-bound computation)
 - **Kernel network stack tuning** — IRQ affinity, RPS, RFS, SO_REUSEPORT, socket options
@@ -46,12 +46,12 @@ This journal documents those questions, not the headline number.
 - **Load generation** — vegeta, autocannon, wrk — and why the tool matters as much as the server
 - **Tradeoffs** — prefork vs single process, pipelining vs independent requests, throughput vs latency
 
-## the setup
+## The Setup
 
 All benchmarks run on AWS (ap-south-2, Hyderabad) unless otherwise noted. Server code is Go + Fiber v3. Load generation uses autocannon (for pipelining tests) or vegeta (for rate-controlled tests).
 
 Source code: [ikouchiha47/millionrps](https://github.com/ikouchiha47/millionrps)
 
-## journal
+## Journal
 
 *Entries below are in chronological order. Green = done, orange = in progress, grey = planned.*
