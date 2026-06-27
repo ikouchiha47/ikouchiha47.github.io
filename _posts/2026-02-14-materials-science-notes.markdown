@@ -6,8 +6,8 @@ subtitle: "Technical notes from a materials science platform"
 date: 2026-02-14 00:00:00
 background_color: '#000'
 group: materials-science
-hidden: true
-sitemap: false
+hidden: falae
+sitemap: true
 permalink: /p/b8e2c4/materials-science-notes/
 ---
 
