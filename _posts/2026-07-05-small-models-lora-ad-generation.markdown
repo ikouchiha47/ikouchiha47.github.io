@@ -5,7 +5,7 @@ layout: post
 title: "The product isn't the prompt"
 subtitle: "Why I stopped thinking about prompt engineering and started thinking about decision systems"
 description: "After joining a generative AI startup, I realized the real moat wasn't better prompts. It was knowing how to decide what should happen before the model is ever called."
-date: 2026-07-05 21:00:00
+date: 2026-07-04
 background: 'blue'
 ---
 I thought I'd be building AI systems
