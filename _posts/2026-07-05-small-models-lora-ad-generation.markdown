@@ -1,121 +1,225 @@
 ---
+
 active: true
 layout: post
-title: "Stop shipping prompt templates"
-subtitle: "Category-aware routing, LoRA adapters, and the generation layer that compounds"
-description: "Most generative ad platforms are thin wrappers over third-party models. A lightweight classifier + router + per-category LoRA adapters gives you actual ownership of the output strategy."
+title: "The product isn't the prompt"
+subtitle: "Why I stopped thinking about prompt engineering and started thinking about decision systems"
+description: "After joining a generative AI startup, I realized the real moat wasn't better prompts. It was knowing how to decide what should happen before the model is ever called."
 date: 2026-07-05 21:00:00
 background: 'blue'
 ---
+I thought I'd be building AI systems
 
-# The wrapper trap
+When I joined a startup building AI generated images and videos, I expected to spend my time solving difficult generation problems.
 
-I joined a generative media startup expecting to work on real architecture decisions. What I found was a fixed set of hand-written prompt templates for a handful of ad types, sitting in front of Flux or GPT-image. No routing. No model selection. No adaptation to what was actually being generated.
+- Model routing.
+- Evaluation.
+- Fine tuning. (Although not my forte)
+- Specialized pipelines.
 
-That approach is fundamentally limited. It is not a moat. It is a demo that someone else can replicate in a weekend.
+Instead, I found myself building folders full of prompt templates.
 
-The problem is not the models. The problem is treating every generation request as the same problem.
-
-# Categories break models in different ways
-
-A watch hanging from a pocket fails differently than a piece of jewellery or a bag. Diffusion models struggle with object relationships, scale, material properties, and occlusion. These failure modes are not uniform across product categories.
-
-- A watch requires precise attachment geometry and realistic chain physics.
-- Jewellery needs accurate metal reflectance and small-detail preservation.
-- Clothing involves fabric deformation, drape, and body occlusion.
-
-One prompt template cannot handle all three without constant firefighting. The model does not know which failure mode it is in. It just generates.
-
-Video makes this worse. Image-to-video coherence, audio-video sync, non-abrupt cuts, and transitions are real, hard problems. One company (Higgsfield) built an entire business just on transitions and effects. Most teams treat these as afterthoughts that a general pipeline will solve for free. It does not work.
-
-# What actually owns the generation strategy
-
-The defensible work is what sits between the user's raw intent and the model call. Three layers:
-
-1. **Classification layer** — lightweight model or heuristic that identifies product category, intent type, and any constraints (aspect ratio, brand palette, output length).
-
-2. **Routing layer** — decides which base model, LoRA adapter, generation parameters, and post-processing pipeline to use. This is conceptually a mixture-of-experts router, though not in the model-architecture sense.
-
-3. **Prompt middleware + adapter layer** — translates the classified intent into category-specific prompts, injects constraints, and applies a LoRA adapter fine-tuned on "golden" examples for that category.
-
-Do this well and you stop being a wrapper. You start owning the adaptation logic that improves with usage data.
-
-# Why LoRA is the right tool here
-
-Full fine-tuning per category is expensive and slow. LoRA adapters are small, cheap to train, and can be swapped at inference time without reloading the base model.
-
-- Train one adapter per category on 200–500 high-quality examples that actually performed well.
-- Keep the base model frozen. Only the adapter weights change.
-- At inference, the router picks the adapter (or none) based on the classification.
-- You can run multiple adapters in parallel and A/B test them.
-
-The data you collect — category, prompt, model, adapter, user rating or downstream metric — becomes the real asset. It tells you which adapter wins for which subcategory. That dataset is hard to replicate because it is tied to your actual usage patterns.
-
-# What "golden metrics" look like per category
-
-You need a way to judge success that is not just "the user liked it." For each category, define 2–3 observable signals:
-
-- Watch category: chain attachment success rate, correct scale relative to pocket, metal reflectance score from a small vision model.
-- Jewellery: detail preservation on small elements, correct metal type (gold vs silver reflectance), no floating components.
-- Clothing: fabric drape realism, body occlusion handling, no distorted limbs or missing buttons.
-
-These are not subjective. They are measurable. You log the generation, run the checks, and feed the result back into the router. Over time the router learns which adapter + parameter set produces the highest golden metric score for each category.
-
-# A minimal implementation sketch
-
-Start simple. You do not need a full MoE model.
-
-```python
-# pseudocode, not production
-class GenerationRouter:
-    def __init__(self):
-        self.classifier = load_lightweight_classifier()  # e.g. DistilBERT or even regex + heuristics
-        self.adapters = {
-            "watch": load_lora("watch_v1"),
-            "jewellery": load_lora("jewellery_v2"),
-            "clothing": load_lora("clothing_v1"),
-        }
-        self.metrics = load_golden_metrics()
-
-    def generate(self, prompt, user_context):
-        category, intent = self.classifier.classify(prompt)
-        adapter = self.adapters.get(category)
-        params = self.metrics.best_params(category, intent)
-
-        result = call_model(
-            prompt=self.middleware.rewrite(prompt, category),
-            adapter=adapter,
-            **params
-        )
-
-        score = self.metrics.evaluate(result, category)
-        self.metrics.log(category, params, score)
-        return result
+```
+experts/
+    ecommerce/
+      prompts.txt
+    jewellery/
+      prompts.txt
+    watches/
+      prompts.txt
+    fashion/
+      prompts.txt
 ```
 
-The middleware layer is where you do the category-specific prompt rewriting:
+To give credit where due, the `prompts.txt` is not a single file, but a structured set of files, which allows sharing of prompts, templating, and even versioning.
 
-```python
-# middleware.py
-def rewrite(prompt, category):
-    if category == "watch":
-        return f"product photography of a {prompt}, precise chain attachment, realistic pocket interaction, macro detail, commercial lighting"
-    if category == "jewellery":
-        return f"close-up of {prompt}, accurate metal reflectance, small detail preservation, no floating elements, studio lighting"
-    ...
-    return prompt
-```
+- Every feature meant adding another prompt.
+- Every failure meant tweaking another prompt.
 
-You start with two or three categories that show clearly divergent failure modes. Build the classifier first. Log everything. Add adapters only after you have data showing one strategy beats the others on your golden metrics.
+It worked well enough to ship products, but something felt fundamentally wrong.
 
-# The data flywheel
+Whenever I suggested evolving the architecture, the response was usually the same.
 
-Usage data → better classification → better adapter performance → higher retention in the categories that actually use you → more data.
+> "We're in a red ocean. We have to keep sailing."
 
-Static prompt templates do not improve with usage. They just sit there. Every generation is a cold start.
+I understood the business pressure. Speed matters.
+But every week I became more convinced we were optimizing the wrong layer.
 
-A router + adapter system gets better the more you use it. The router learns which adapter wins for each subcategory. The adapters themselves can be retrained on your own high-scoring outputs. This compounds.
+*Different products fail for different reasons.*
 
-If you are still shipping the same prompt templates you wrote in month one, you are not building a product. You are maintaining a demo that someone else can replace the moment they point a similar set of templates at the same APIs.
+---
 
-Own the routing and adaptation instead.
+The first thing that bothered me was how differently models behaved across categories.
+
+To humans, these prompts are obviously different.
+
+- A pocket watch.
+- A wrist watch.
+- A wall clock.
+- A handbag.
+- A necklace.
+
+To a diffusion model, they are simply distributions of pixels and language.
+
+Sometimes that difference matters a lot.
+
+I remember asking a model to generate a watch dangling from a pocket.
+
+Instead of a pocket watch hanging from a chain, it generated something closer to a wall clock attached to clothing.
+
+- The physics made no sense.
+- The object relationship was wrong.
+- Changing the wording to "pocket watch" suddenly produced much better results.
+
+Interestingly, another model interpreted the original prompt correctly.
+
+That was the moment something clicked.
+
+**The problem wasn't just prompt engineering.**
+
+Different models understood different concepts with different levels of accuracy.
+
+A prompt isn't a strategy, if one is serious about making a business. Given the advent of agentic cli tools and cursor like editors, there is nothing preventing another person to replicate and refine prompts. 
+
+The more categories I looked at, the more obvious it became.
+
+- A watch fails differently from jewellery.
+- Jewellery fails differently from clothing.
+- Clothing fails differently from furniture.
+
+Even within watches, a luxury wrist watch and an antique pocket watch have different visual expectations.
+
+Yet our pipeline treated every request as the same problem.
+
+- Take a prompt.
+- Insert it into a template.
+- Call the model.
+- Hope for the best.
+
+**That isn't really a generation strategy. It's a wrapper.**
+
+The interesting work happens before generation. At some point I stopped asking,
+
+"How do we write a better prompt?"
+
+Instead I started asking,
+
+"How do we decide what should happen before generation even begins?"
+
+That completely changed how I thought about the system.
+
+A user asking for an advertisement isn't really asking for pixels. They're describing intent.
+- What are they selling?
+- Who is the audience?
+- Is this luxury?
+- Is it fashion?
+- Is it food?
+- Does this become an image?
+- A short video?
+- A cinematic product showcase?
+
+Those decisions shouldn't be hidden inside prompt text.
+They should exist as first class components of the system.
+
+I started imagining a team of specialists. Instead of one giant generation pipeline, I started thinking about specialists.
+
+**Imagine a creative director instead of a prompt template.**
+
+The director receives a request. The first decision isn't which prompt to use.
+
+The first decision is which expert should handle the request.
+
+- A jewellery expert.
+- A fashion expert.
+- A luxury goods expert.
+- A food photography expert.
+
+Each expert:
+- Understands different failure modes.
+- Choose a different model.
+- Choose different generation parameters.
+- Choose an entirely different pipeline.
+
+Some categories might use a LoRA. Others might use a custom workflow. Others might rely on a different base model entirely.
+
+The important part is that specialization becomes intentional instead of accidental.
+
+**The router becomes the product**
+
+---
+
+People often say AI startups are just wrappers around foundation models.
+
+They're usually right.
+
+But I don't think the wrapper is the interesting part.
+
+The interesting part is everything between user intent and the model call.
+
+A good system might
+- classify the request.
+- Select the appropriate model.
+- Choose a category specific adapter.
+- Inject constraints, Run validation.
+- Evaluate the output, and
+- Record what succeeded.
+
+> Over time, that decision layer becomes smarter. Not because the frontier models changed, because your system learned which decisions produce better outcomes.
+
+*That is much harder to copy than a collection of prompts.*
+
+---
+
+This is where LoRA adapters become useful. LoRA is one piece, not the destination
+
+- Not because every category needs fine tuning.
+- Not because every model should have an adapter.
+
+But because some domains genuinely benefit from specialization.
+
+Imagine training adapters only on high quality examples for a specific category.
+
+- One for watches.
+- One for jewellery.
+- One for cosmetics. etc.
+
+Now the router isn't just choosing prompts. It's choosing expertise.
+
+That expertise can evolve independently as new data arrives.
+
+**Data becomes your advantage**
+
+---
+
+Every generation tells you something.
+
+- Which model was used?
+- Which adapter? and parameters?
+
+- Did the user regenerate?
+- Did they download it?
+- Did they publish it or reject it?
+
+Over time you stop collecting prompts. You start collecting decisions and outcomes.
+
+That feedback loop becomes increasingly difficult for competitors to replicate because it reflects how your users actually create content.
+
+---
+
+## Looking back
+
+When I first joined, I thought prompt engineering would be the interesting part of the job.
+
+It wasn't.
+
+The interesting part was realizing that prompts were only the visible surface of a much larger system.
+
+The companies that survive won't win because they discovered the perfect prompt.
+
+They'll win because they build better decision systems.
+
+Foundation models will continue improving.
+
+The real question is no longer which model you call.
+
+It's how intelligently you decide to call it.
