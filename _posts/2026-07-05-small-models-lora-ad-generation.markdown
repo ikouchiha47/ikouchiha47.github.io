@@ -148,6 +148,35 @@ The important part is that specialization becomes intentional instead of acciden
 
 ---
 
+### The Missing Creator Loop
+
+There was one fatal flaw that no amount of clever routing or LoRA adapters could fix.
+
+**We had no creators.**
+
+Not a single person on the team regularly made marketing content for a living. We were a group of technical people trying to build a creative tool for a domain we didn’t deeply understand.
+
+We assumed that if we built a good enough prompt-to-video system, creators would naturally come and use it. That was a serious mistake.
+
+Professional short-form video is not a "write one good prompt" problem. It is a craft that involves:
+
+- Understanding hook structures that work in the first 1-3 seconds
+- Color grading and visual rhythm specific to the platform
+- Pacing, cut timing, and visual storytelling
+- Rapid iteration across dozens of variations
+- Tight feedback loops between concept, generation, and editing
+
+None of this was researched. There was no internal studio, no embedded creator, no regular user testing with actual marketing professionals. Even the one video specialist on the team refused to use the product.
+
+We spent months building prose-mirror features and debating internal architecture while completely ignoring the fundamental truth: **if real creators won't use your tool to make their living, nothing else matters.**
+
+The best generative media companies treat creators as the primary feedback mechanism from day one. We treated them as the last-mile problem.
+
+This wasn't a technical failure.  
+It was a **creator bankruptcy**.
+
+---
+
 People often say AI startups are just wrappers around foundation models.
 
 They're usually right.
