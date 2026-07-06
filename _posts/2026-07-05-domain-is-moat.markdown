@@ -2,9 +2,9 @@
 
 active: true
 layout: post
-title: "The product isn't the prompt"
-subtitle: "Why I stopped thinking about prompt engineering and started thinking about decision systems"
-description: "After joining a generative AI startup, I realized the real moat wasn't better prompts. It was knowing how to decide what should happen before the model is ever called."
+title: "Domain is Moat"
+subtitle: "Why most generative AI products fail at the creator layer"
+description: "Most teams treat prompts and models as the product. The real moat is understanding the domain deeply enough to build the right decision systems and feedback loops."
 date: 2026-07-04
 background_color: linear-gradient(135deg, #0f172a 0%, #1e2937 50%, #334155 100%)
 ---
