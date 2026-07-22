@@ -1,7 +1,7 @@
 ---
 layout: journal_entry
-title: "sharding didn't fix it"
-subtitle: "We hypothesised the single run() goroutine was the bottleneck. We were wrong."
+title: "Sharding the SSE fan-out goroutine: same ceiling, different drop point"
+subtitle: "8 parallel shard goroutines per topic instead of 1. The events/s ceiling didn't move. Here's why."
 group: millionrps
 group_title: "Chasing 1 Million RPS"
 group_url: "/millionrps/"

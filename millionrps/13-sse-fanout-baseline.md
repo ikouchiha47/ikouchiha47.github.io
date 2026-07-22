@@ -1,7 +1,7 @@
 ---
 layout: journal_entry
-title: "the problem changed"
-subtitle: "Not RPS anymore. One write, N subscribers. The ceiling is now about fan-out, not throughput."
+title: "Go SSE fan-out baseline: 7.5M events/s, then it collapses"
+subtitle: "One write, 64K subscribers. Measuring the in-process fan-out ceiling with goroutines and buffered channels."
 group: millionrps
 group_title: "Chasing 1 Million RPS"
 group_url: "/millionrps/"

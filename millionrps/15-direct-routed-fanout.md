@@ -1,7 +1,7 @@
 ---
 layout: journal_entry
-title: "the right architecture, the wrong event shape"
-subtitle: "Process separation with direct routing cut events/s by 60%. The IPC mechanism wasn't the problem — fanning out individual increments was."
+title: "Direct-routed SSE fan-out: process separation regressed 60%, aggregation is the fix"
+subtitle: "Separate registry, fanout-node, and likes-server binaries with consistent-hash routing. HTTP POST per event is 500× more expensive than an in-process channel send."
 group: millionrps
 group_title: "Chasing 1 Million RPS"
 group_url: "/millionrps/"
