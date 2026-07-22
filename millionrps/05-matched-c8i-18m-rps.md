@@ -3,6 +3,8 @@ layout: journal_entry
 title: "18M RPS on /simple, 1.7M on /compute: matched c8i hardware"
 subtitle: "c8i.32xlarge × 2, 120 autocannon workers — server at 26% on simple, 94% on compute"
 group: millionrps
+chapter: 1
+chapter_title: "Simple HTTP"
 group_title: "Chasing 1 Million RPS"
 group_url: "/millionrps/"
 entry_date: 2026-06-05

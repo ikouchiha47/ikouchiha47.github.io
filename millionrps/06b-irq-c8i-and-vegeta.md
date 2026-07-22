@@ -3,6 +3,8 @@ layout: journal_entry
 title: "IRQ on c8i + vegeta without pipelining: still the client"
 subtitle: "18M RPS stays flat with tuning. 580k vegeta ceiling. The tool is always the wall."
 group: millionrps
+chapter: 1
+chapter_title: "Simple HTTP"
 group_title: "Chasing 1 Million RPS"
 group_url: "/millionrps/"
 entry_date: 2026-06-07

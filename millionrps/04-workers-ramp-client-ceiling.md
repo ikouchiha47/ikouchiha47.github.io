@@ -3,6 +3,8 @@ layout: journal_entry
 title: "2.3M RPS: the --workers flag, connection ramp, and finding the real ceiling"
 subtitle: "c6i.8xlarge client, 30 workers, 1000→5000 connections — server at 2%, client at 67%"
 group: millionrps
+chapter: 1
+chapter_title: "Simple HTTP"
 group_title: "Chasing 1 Million RPS"
 group_url: "/millionrps/"
 entry_date: 2026-06-04

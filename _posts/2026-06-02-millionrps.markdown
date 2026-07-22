@@ -52,6 +52,16 @@ All benchmarks run on AWS (ap-south-2, Hyderabad) unless otherwise noted. Server
 
 Source code: [ikouchiha47/millionrps](https://github.com/ikouchiha47/millionrps)
 
+## Chapters
+
+Each chapter is a different class of high-throughput problem. Same hardware, same Go, different bottlenecks.
+
+**Chapter 1 — Simple HTTP:** a handler returning a large JSON payload. No I/O, no computation. Ceiling is the network stack: IRQ affinity, prefork, NIC bandwidth, compression.
+
+**Chapter 2 — Fan-out (SSE likes):** one write → N subscribers. The metric shifts from RPS to events delivered per second. Bottlenecks are goroutine contention, IPC overhead, and the cost of fanning a single event to 64K open connections.
+
+**Chapter 3 — Metrics ingestion** *(planned)*: write-heavy, time-series, aggregation at ingestion. Different shape again.
+
 ## Journal
 
 *Entries below are in chronological order. Green = done, orange = in progress, grey = planned.*

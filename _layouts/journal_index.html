@@ -41,7 +41,19 @@ layout: default
       {% assign entries = site.pages | where: "group", page.group | where_exp: "p", "p.is_index != true" | sort: "entry_date" %}
 
       <div class="journal-timeline">
+        {% assign current_chapter = nil %}
         {% for entry in entries %}
+
+          {% if entry.chapter != current_chapter %}
+            {% assign current_chapter = entry.chapter %}
+            {% if entry.chapter %}
+            <div class="journal-chapter-header">
+              <span class="journal-chapter-label">Chapter {{ entry.chapter }}</span>
+              {% if entry.chapter_title %}<span class="journal-chapter-title">{{ entry.chapter_title }}</span>{% endif %}
+            </div>
+            {% endif %}
+          {% endif %}
+
         <div class="journal-entry">
           <div class="journal-entry-marker">
             <span class="journal-entry-dot {% if entry.status == 'pending' %}pending{% elsif entry.status == 'wip' %}wip{% else %}done{% endif %}"></span>
