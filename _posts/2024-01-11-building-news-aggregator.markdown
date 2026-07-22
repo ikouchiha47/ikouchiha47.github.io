@@ -16,6 +16,7 @@ The task at hand was to create a service that aggregates news from different sou
 
 The YAML configuration file outlines the news sources, their URLs, HTTP methods, parameters, and the rules for extracting relevant information. Let's break down the key components:
 
+{% raw %}
 ```yaml
 news:
   sources:
@@ -67,6 +68,7 @@ news:
       fields:
         # ... (fields configuration)
 ```
+{% endraw %}
 
 The configuration allows for multiple news sources, each with its own set of parameters and transformation rules.
 

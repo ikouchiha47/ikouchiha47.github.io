@@ -550,6 +550,7 @@ The solution: **Don't let the LLM generate UI. Let it select from pre-built comp
 
 The LLM's job is **component selection and configuration**, not UI generation:
 
+{% raw %}
 ```typescript
 // LLM doesn't generate this:
 <View style={{ padding: 16, backgroundColor: '#1E293B', borderRadius: 12 }}>
@@ -566,6 +567,7 @@ The LLM's job is **component selection and configuration**, not UI generation:
   }
 }
 ```
+{% endraw %}
 
 The actual rendering is done by pre-built components that have been visually validated by humans.
 

@@ -448,6 +448,7 @@ cat: /tmp/sometext: No such file or directory
 
 In order to see this, lets start a `docker container` with a `nginx` server running. And inspect the directories from there.
 
+{% raw %}
 ```console
 root@vagrant:~# docker run --name webserver -d nginx
 root@vagrant:~# sudo lsns
@@ -501,6 +502,7 @@ root@vagrant:~#
 root@vagrant:~# ls /proc/5426/root | grep new_test
 new_test_file
 ```
+{% endraw %}
 The last bit shows, that, `linux containers` are basically `processes` that can be interracted with using regular `linux system tools`. 
 
 
@@ -568,12 +570,14 @@ root@vagrant:~#
 
 We can leverage joining processes from a new container to the network namespace from another (webserver) container. In linux terms it probably looks like
 
+{% raw %}
 ```shell
 WEB_SERVER_PID=$(docker inspect -f '{{.State.Pid}}' webserver)
 
 # Join the network namespace
 unshare --net=/proc/$WEB_SERVER_PID/ns/net /bin/bash
 ```
+{% endraw %}
 
 Coming back to debugging with another docker container. 
 
