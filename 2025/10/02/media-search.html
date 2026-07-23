@@ -1,0 +1,1137 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+  <title>
+    Cinestar - iko&#39;s logs
+    
+  </title>
+
+  <meta name="description" content="Index images, videos. Search in natural lanuage, for images and relevant segments in videos">
+  <meta property="og:description" content="Index images, videos. Search in natural lanuage, for images and relevant segments in videos">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Cinestar">
+  <meta property="og:url" content="https://ikouchiha47.github.io/2025/10/02/media-search.html">
+
+  
+
+  <link href='https://fonts.googleapis.com/css?family=Lora:400,700,400italic,700italic' rel='stylesheet' type='text/css'>
+  <link href='https://fonts.googleapis.com/css?family=Open+Sans:300italic,400italic,600italic,700italic,800italic,400,300,600,700,800' rel='stylesheet' type='text/css'>
+
+  <!-- <script src="https://use.fontawesome.com/releases/v5.15.3/js/all.js" crossorigin="anonymous"></script> -->
+  <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.15.4/css/all.css" integrity="sha384-DyZ88mC6Up2uqS4h/KRgHuoeGwBcD4Ng9SiP4dIRy0EXTlnuz47vAwmeGwVChigm" crossorigin="anonymous"/>
+
+  <link rel="stylesheet" href="/assets/main.css">
+  <link rel="canonical" href="https://ikouchiha47.github.io/2025/10/02/media-search.html">
+  <link rel="alternate" type="application/rss+xml" title="iko&#39;s logs" href="/feed.xml">
+
+  <meta name="google-site-verification" content="lWkg6gIxJgzEKX_5XnhcxCtPE9QknaimFWWos_dTvPM" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fira+Sans:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Inconsolata:wght@200..900&family=Jersey+25&family=Kanit:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Merriweather+Sans:ital,wght@0,300..800;1,300..800&family=Nanum+Gothic+Coding&family=Space+Grotesk:wght@300..700&family=Titillium+Web:ital,wght@0,200;0,300;0,400;0,600;0,700;0,900;1,200;1,300;1,400;1,600;1,700&display=swap" rel="stylesheet">
+
+</head>
+
+
+<body>
+
+  <!-- Navigation -->
+<nav class="navbar navbar-expand-lg navbar-light fixed-top" id="mainNav">
+  <div class="container">
+    <a class="navbar-brand" href="/">iko&#39;s logs</a>
+    <button class="navbar-toggler navbar-toggler-right" type="button" data-toggle="collapse" data-target="#navbarResponsive" aria-controls="navbarResponsive" aria-expanded="false" aria-label="Toggle navigation">
+      Menu
+      <i class="fa fa-bars"></i>
+    </button>
+    <div class="collapse navbar-collapse" id="navbarResponsive">
+      <ul class="navbar-nav ml-auto">
+        <li class="nav-item">
+          <a class="nav-link" href="/">Home</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/about">About</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/posts">Posts</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/contact">Contact</a>
+        </li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+
+  <!-- Page Header -->
+
+<header class="masthead" style="background: green">
+
+  <div class="overlay"></div>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <div class="post-heading">
+          <h1>Cinestar</h1>
+          
+          <h2 class="subheading">A Local-First Media Search, Organiser</h2>
+          
+          <span class="meta">Posted by
+            <a href="#">ikouchiha47</a>
+            on October 02, 2025 &middot; <span class="reading-time" title="Estimated read time">
+  
+   27 mins  read </span>
+
+          </span>
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="container space-grotesk">
+  <div class="row">
+    <div class="col-lg-8 col-md-10 mx-auto">
+
+      <p><a href="https://github.com/ikouchiha47/cinestar-release/releases/tag/v0.1.53">Download</a></p>
+
+<h2 id="1-core-principle-privacy-first-local-ai">1. Core Principle: Privacy-First, Local AI</h2>
+
+<p>The design of Cinestar originates from a commitment to user privacy. The goal was to create a powerful media search tool that does not require cloud uploads. This privacy-first principle dictated the first major technical decision: the exclusive use of <strong>local AI models</strong>.</p>
+
+<p>The initial prototype was an Electron application focused on local image search. The <code class="language-plaintext highlighter-rouge">ImageJobProcessor</code> performed two key tasks on the user’s machine:</p>
+
+<ol>
+  <li><strong>Local Image Captioning:</strong> A locally-run LLM generated a descriptive caption for each image.</li>
+  <li><strong>Local Indexing:</strong> Captions and metadata were stored in a local SQLite database.</li>
+</ol>
+
+<p>This approach provided a powerful keyword search for photos while ensuring that all data and processing remained on the user’s machine.</p>
+
+<h2 id="2-video-processing-resource-management-and-ffmpeg">2. Video Processing: Resource Management and FFmpeg</h2>
+
+<p>Extending the system to video introduced the complexity of <code class="language-plaintext highlighter-rouge">ffmpeg</code>. The initial approach of shelling out <code class="language-plaintext highlighter-rouge">ffmpeg</code> commands directly led to severe resource contention and UI freezes. A single large video file could overwhelm the system.</p>
+
+<h3 id="the-ffmpeg-journey-trial-and-error">The FFmpeg Journey: Trial and Error</h3>
+
+<p>Several approaches were tested before arriving at the current solution:</p>
+
+<p><strong>Attempt 1: Direct Shell Execution</strong></p>
+
+<div class="language-bash highlighter-rouge"><div class="highlight"><pre class="highlight"><code>ffmpeg <span class="nt">-i</span> video.mp4 <span class="nt">-vn</span> <span class="nt">-acodec</span> pcm_s16le audio.wav
+</code></pre></div></div>
+
+<ul>
+  <li><strong>Problem</strong>: No resource limits, multiple concurrent processes caused CPU spikes to 100%</li>
+  <li><strong>Result</strong>: UI freezes, system instability</li>
+</ul>
+
+<p><strong>Attempt 2: Sequential Processing</strong></p>
+
+<div class="language-bash highlighter-rouge"><div class="highlight"><pre class="highlight"><code>
+ffmpeg <span class="nt">-i</span> video.mp4 <span class="nt">-vn</span> <span class="nt">-acodec</span> pcm_s16le audio.wav <span class="o">&amp;&amp;</span> <span class="se">\</span>
+ffmpeg <span class="nt">-i</span> video.mp4 <span class="nt">-vf</span> <span class="s2">"select='eq(pict_type,I)'"</span> <span class="nt">-vsync</span> vfr frame_%04d.png
+</code></pre></div></div>
+
+<ul>
+  <li><strong>Problem</strong>: Blocking operations, no parallelism</li>
+  <li><strong>Result</strong>: Extremely slow for large video libraries</li>
+</ul>
+
+<p><strong>Attempt 3: Resource-Aware Pool (Final Solution)</strong></p>
+
+<ul>
+  <li>Implemented a semaphore-based pool limiting concurrent FFmpeg instances (default: 2)</li>
+  <li>Job queue with priority scheduling</li>
+  <li>Graceful degradation under load</li>
+  <li><strong>Result</strong>: Stable performance, predictable resource usage</li>
+</ul>
+
+<p>The solution was the implementation of a <strong>resource-aware processing pool</strong>. This system manages a limited number of concurrent <code class="language-plaintext highlighter-rouge">ffmpeg</code> instances, queuing jobs and executing them as resources become available. This was a critical step towards a stable and scalable architecture.</p>
+
+<h2 id="3-architectural-model-cqrs-for-a-responsive-ui">3. Architectural Model: CQRS for a Responsive UI</h2>
+
+<p>While the <code class="language-plaintext highlighter-rouge">ffmpeg</code> resource pool solved stability, it revealed a deeper architectural challenge: the conflict between long-running write operations (indexing) and instantaneous read operations (searching). Mixing these two concerns resulted in a sluggish user experience.</p>
+
+<p>The adoption of a <strong>Command Query Responsibility Segregation (CQRS)</strong>-inspired model addressed this. A hard line was drawn between the read and write paths:</p>
+
+<pre><code class="language-mermaid">graph TB
+    subgraph "User Interface"
+        UI[React Frontend]
+    end
+    
+    subgraph "Read Path (Fast)"
+        UI --&gt;|Search Query| Search[Search API]
+        Search --&gt;|Vector Search| VectorDB[(vector.db&lt;br/&gt;sqlite-vec)]
+        Search --&gt;|Metadata| MainDB[(main.db&lt;br/&gt;SQLite)]
+        VectorDB --&gt;|Results| Search
+        MainDB --&gt;|Results| Search
+        Search --&gt;|&lt; 100ms| UI
+    end
+    
+    subgraph "Write Path (Async)"
+        UI --&gt;|Add Media| JobQueue[Job Queue]
+        JobQueue --&gt;|Process| VideoProc[VideoJobProcessor]
+        JobQueue --&gt;|Process| ImageProc[ImageJobProcessor]
+        VideoProc --&gt;|FFmpeg Pool| FFmpeg[FFmpeg Instances&lt;br/&gt;Max: 2]
+        VideoProc --&gt;|Whisper| Transcribe[Audio Transcription]
+        VideoProc --&gt;|Ollama| Vision[Visual Captioning]
+        VideoProc --&gt;|Update| VectorDB
+        VideoProc --&gt;|Update| MainDB
+        ImageProc --&gt;|Update| VectorDB
+        ImageProc --&gt;|Update| MainDB
+    end
+    
+    subgraph "Refinement Scheduler"
+        Scheduler[RefinementJobScheduler]
+        Scheduler --&gt;|Schedule Pass 2&lt;br/&gt;+5min| JobQueue
+        Scheduler --&gt;|Schedule Pass 3&lt;br/&gt;+30min| JobQueue
+    end
+    
+    VideoProc -.-&gt;|Trigger| Scheduler
+</code></pre>
+
+<p><strong>The Write Path:</strong> A robust, asynchronous job processing system (<code class="language-plaintext highlighter-rouge">JobQueue</code>, <code class="language-plaintext highlighter-rouge">VideoJobProcessor</code>, <code class="language-plaintext highlighter-rouge">ImageJobProcessor</code>) designed for throughput and resilience. Its sole responsibility is to ingest and process media to update the search index.</p>
+
+<p><strong>The Read Path:</strong> A highly optimized query system designed for speed. It directly queries the search index and has no knowledge of the background processing.</p>
+
+<p>This separation is key to the application’s responsive UI, allowing for seamless user interaction during intensive indexing tasks.</p>
+
+<h2 id="4-the-five-phase-indexing-pipeline">4. The Five-Phase Indexing Pipeline</h2>
+
+<p>The CQRS architecture enabled a focused approach to the core video search problem. The goal was to make a video searchable <em>while it is still being processed</em>, and then continuously improve search quality over time. This was achieved through a five-phase processing pipeline with progressive threshold-based refinement.</p>
+
+<pre><code class="language-mermaid">sequenceDiagram
+    participant User
+    participant Video as Video File
+    participant P0 as Phase 0&lt;br/&gt;(Audio)
+    participant P1 as Phase 1&lt;br/&gt;(Visual)
+    participant P2 as Phase 2&lt;br/&gt;(T:0.8)
+    participant P3 as Phase 3&lt;br/&gt;(T:0.6)
+    participant P4 as Phase 4&lt;br/&gt;(T:0.4)
+    participant Search as Search Index
+    
+    User-&gt;&gt;Video: Add Video
+    Video-&gt;&gt;P0: Start Processing
+    
+    Note over P0: Segment into 5min chunks
+    loop For each segment
+        P0-&gt;&gt;P0: Transcribe (Whisper)
+        P0-&gt;&gt;Search: Index immediately
+        Note right of Search: ✓ Searchable!
+    end
+    
+    P0-&gt;&gt;P1: Trigger Phase 1
+    loop For each segment
+        P1-&gt;&gt;P1: Extract keyframes
+        P1-&gt;&gt;P1: Caption (Llama 3.2 Vision)
+        P1-&gt;&gt;P1: Scene reconstruction (Llama 3.2)
+        P1-&gt;&gt;Search: Update with multi-modal data
+    end
+    
+    P1-&gt;&gt;P2: Trigger immediately
+    P2-&gt;&gt;Search: Coarse segmentation (T:0.8)
+    
+    Note over P3: Wait 5 minutes
+    P2-&gt;&gt;P3: Schedule Pass 2
+    P3-&gt;&gt;Search: Medium refinement (T:0.6)
+    
+    Note over P4: Wait 30 minutes (conditional)
+    P3-&gt;&gt;P4: Schedule Pass 3
+    P4-&gt;&gt;Search: Fine refinement (T:0.4)
+</code></pre>
+
+<h3 id="phase-0-iterative-audio-indexing">Phase 0: Iterative Audio Indexing</h3>
+
+<p>The primary goal of this phase is <strong>immediate searchability</strong>. The process is as follows:</p>
+
+<ol>
+  <li><strong>Segmentation:</strong> The <code class="language-plaintext highlighter-rouge">BatchProcessor</code> splits the video into 5-minute segments (300 seconds).</li>
+  <li><strong>Transcription:</strong> The audio of each segment is transcribed using <strong>Whisper</strong> (local model).</li>
+  <li><strong>Embedding Generation:</strong> Text is embedded using <strong>BGE-large</strong> (1024-dimensional vectors).</li>
+  <li><strong>Immediate Indexing:</strong> As soon as a segment’s transcription is complete, it is immediately indexed in both <code class="language-plaintext highlighter-rouge">video-rag.db</code> (metadata) and <code class="language-plaintext highlighter-rouge">vector.db</code> (searchable embeddings). This allows a user to start searching a long video moments after it has been added.</li>
+</ol>
+
+<p><strong>Performance:</strong> A 60-minute video becomes searchable in ~40 seconds (12 segments × ~3s each).</p>
+
+<h3 id="phase-1-multi-modal-enrichment">Phase 1: Multi-Modal Enrichment</h3>
+
+<p>After the initial audio indexing, a deeper, multi-modal analysis begins for each segment:</p>
+
+<ol>
+  <li><strong>Keyframe Extraction:</strong> 4 keyframes are extracted per segment at 20%, 40%, 60%, and 80% positions using FFmpeg.</li>
+  <li><strong>Visual Captioning:</strong> <strong>Moondream:v2</strong> (2B parameters, running via Ollama) generates captions for each keyframe.</li>
+  <li><strong>Scene Reconstruction with Temporal Context:</strong> The system uses <strong>Llama 3.2</strong> (3B parameters) to synthesize a scene description by combining:
+    <ul>
+      <li><strong>Current segment data:</strong> Audio transcription + 4 keyframe captions + OCR text (if available)</li>
+      <li><strong>Temporal context:</strong> Reconstructed scenes from previous segments (configurable context window)</li>
+    </ul>
+  </li>
+</ol>
+
+<p>This RNN-style approach allows the model to understand scene continuity and narrative flow across the video.</p>
+
+<ol>
+  <li><strong>Enhanced Embedding:</strong> A new multi-modal embedding is generated from the combined text:
+    <div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>   [Transcription] + Visual Context: [Captions] + Scene: [Reconstruction]
+</code></pre></div>    </div>
+  </li>
+  <li><strong>Index Enhancement:</strong> The search index is updated with this new multi-modal data, replacing the audio-only embedding.</li>
+</ol>
+
+<p><strong>Performance:</strong> ~10-15 seconds per 5-minute segment (4-8s captioning, 2-3s reconstruction, 0.5s embedding).</p>
+
+<p><strong>Search Impact:</strong> Enables queries like “romantic scene in dimly lit room” or “action sequence” that would be impossible with audio alone.</p>
+
+<h4 id="semantic-scene-understanding-with-temporal-context">Semantic Scene Understanding with Temporal Context</h4>
+
+<p>The scene reconstruction process creates a rich, contextual understanding that goes beyond simple object detection. By combining audio, visual information, <strong>and temporal context from previous segments</strong>, the system can understand:</p>
+
+<p><strong>Object Interactions:</strong></p>
+
+<ul>
+  <li>“person handing object to another person”</li>
+  <li>“dog playing with ball in park”</li>
+  <li>“chef chopping vegetables on cutting board”</li>
+</ul>
+
+<p><strong>Spatial Relationships:</strong></p>
+
+<ul>
+  <li>“car parked next to building”</li>
+  <li>“people sitting around table”</li>
+  <li>“mountains in the background behind the lake”</li>
+</ul>
+
+<p><strong>Temporal Actions:</strong></p>
+
+<ul>
+  <li>“person walking towards camera”</li>
+  <li>“door opening slowly”</li>
+  <li>“liquid pouring into glass”</li>
+</ul>
+
+<p><strong>Contextual Scenes:</strong></p>
+
+<ul>
+  <li>“tense conversation in office setting” (combines facial expressions, body language, dialogue tone)</li>
+  <li>“celebration with people dancing” (combines movement, audio cues, visual atmosphere)</li>
+  <li>“cooking demonstration with ingredients on counter” (combines objects, actions, spatial layout)</li>
+</ul>
+
+<p><strong>Narrative Continuity (Temporal Context):</strong></p>
+
+<p>The system maintains a sliding window of previous segment descriptions, enabling it to understand:</p>
+<ul>
+  <li>Scene transitions: “After the introduction, the speaker begins the demonstration”</li>
+  <li>Character tracking: “The same person continues explaining the concept”</li>
+  <li>Story progression: “Following the setup, the action sequence begins”</li>
+</ul>
+
+<p><strong>Example Scene Reconstruction Prompt:</strong></p>
+
+<pre><code class="language-txt">Previous segments: 
+  → "Person introduces topic in office setting" 
+  → "Close-up of whiteboard with diagrams"
+
+Current segment:
+Time: 120s-180s
+Audio: "So as you can see from this example..."
+Visual: Person pointing at screen. Audience visible. Presentation slide.
+Text (OCR): "Key Findings 2024"
+
+Write a paragraph describing what happens in this scene:
+</code></pre>
+
+<p>This RNN-style temporal context allows the model to understand that this is a <strong>continuation</strong> of the presentation, not an isolated scene. The system effectively creates a “semantic memory” of the video that captures not just what objects are present, but how they relate to each other, what’s happening, and how the narrative flows over time.</p>
+
+<h3 id="phases-2-4-progressive-threshold-based-refinement">Phases 2-4: Progressive Threshold-Based Refinement</h3>
+
+<p>After the initial indexing and enrichment, the system enters a continuous improvement loop with three additional refinement passes, each using progressively lower confidence thresholds:</p>
+
+<p><strong>Phase 2 - Coarse Segmentation (Threshold: 0.8)</strong></p>
+
+<ul>
+  <li>Triggered: Immediately after Phase 1</li>
+  <li>Purpose: Initial coarse segmentation for immediate results</li>
+  <li>Creates broader segments with high-confidence content</li>
+</ul>
+
+<p><strong>Phase 3 - Medium Refinement (Threshold: 0.6)</strong></p>
+
+<ul>
+  <li>Triggered: 5 minutes after initial processing</li>
+  <li>Purpose: Medium-grained analysis to capture more nuanced content</li>
+  <li>Identifies additional segments that were missed in the first pass</li>
+</ul>
+
+<p><strong>Phase 4 - Fine Refinement (Threshold: 0.4)</strong></p>
+
+<ul>
+  <li>Triggered: 30 minutes after initial processing (conditional)</li>
+  <li>Purpose: Deep analysis for maximum search coverage</li>
+  <li>Conditional execution based on video length and existing segment count</li>
+  <li>Captures subtle content changes and low-confidence segments</li>
+</ul>
+
+<p>The <code class="language-plaintext highlighter-rouge">RefinementJobScheduler</code> manages this process:</p>
+<ul>
+  <li>Schedules future passes with configurable delays and jitter (±20%) to prevent system overload</li>
+  <li>Tracks metrics for each pass (segments created, processing time, search quality)</li>
+  <li>Applies conditional logic to skip unnecessary refinement (e.g., short videos, already well-segmented content)</li>
+</ul>
+
+<p>This five-phase approach ensures videos are searchable almost instantly (Phase 0), enriched with multi-modal understanding (Phase 1), and progressively refined over time (Phases 2-4) for maximum search quality.</p>
+
+<h2 id="5-the-search-system-intelligence-through-multi-modal-query-understanding">5. The Search System: Intelligence Through Multi-Modal Query Understanding</h2>
+
+<p>The search system is designed to understand what users are looking for, not just match keywords. This is achieved through a sophisticated multi-stage pipeline that analyzes queries, generates appropriate embeddings, and intelligently ranks results.</p>
+
+<h3 id="query-classification-and-transformation">Query Classification and Transformation</h3>
+
+<p>When a user types a search query, the system first analyzes it to understand the <strong>intent</strong> and <strong>modality</strong>:</p>
+
+<p><strong>Step 1: Query Type Classification</strong></p>
+
+<p>The system uses Llama 3.2 (3B) to classify queries into five types:</p>
+
+<ol>
+  <li><strong>TEMPORAL</strong> - Time-based queries (“beginning”, “first 5 minutes”, “after 2:30”)</li>
+  <li><strong>SPATIAL</strong> - Visual object queries (“red car”, “mountains”, “person wearing hat”)</li>
+  <li><strong>AUDIO</strong> - Sound/speech queries (“talking about cooking”, “music playing”)</li>
+  <li><strong>ACTION</strong> - Activity queries (“person jumping”, “someone cooking”, “dancing”)</li>
+  <li><strong>MIXED</strong> - Combinations (“beginning where someone is cooking”)</li>
+</ol>
+
+<p><strong>Example Classification:</strong></p>
+
+<div class="language-typescript highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="c1">// Query: "romantic scene in dimly lit room"</span>
+<span class="nx">classification</span> <span class="o">=</span> <span class="p">{</span>
+  <span class="na">type</span><span class="p">:</span> <span class="dl">"</span><span class="s2">spatial</span><span class="dl">"</span><span class="p">,</span>
+  <span class="na">confidence</span><span class="p">:</span> <span class="mf">0.92</span><span class="p">,</span>
+  <span class="na">spatialElements</span><span class="p">:</span> <span class="p">[</span><span class="dl">"</span><span class="s2">romantic scene</span><span class="dl">"</span><span class="p">,</span> <span class="dl">"</span><span class="s2">dimly lit room</span><span class="dl">"</span><span class="p">],</span>
+  <span class="na">audioElements</span><span class="p">:</span> <span class="p">[],</span>
+  <span class="na">actionElements</span><span class="p">:</span> <span class="p">[]</span>
+<span class="p">}</span>
+</code></pre></div></div>
+
+<p><strong>Step 2: Multi-Modal Query Transformation</strong></p>
+
+<p>Based on the classification, the query is transformed and expanded with modality-specific keywords:</p>
+
+<div class="language-typescript highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="c1">// Original: "person talking about technology"</span>
+<span class="nx">transformed</span> <span class="o">=</span> <span class="p">{</span>
+  <span class="na">searchKeywords</span><span class="p">:</span> <span class="p">{</span>
+    <span class="na">text</span><span class="p">:</span> <span class="p">[</span><span class="dl">"</span><span class="s2">person</span><span class="dl">"</span><span class="p">,</span> <span class="dl">"</span><span class="s2">technology</span><span class="dl">"</span><span class="p">],</span>
+    <span class="na">visual</span><span class="p">:</span> <span class="p">[</span><span class="dl">"</span><span class="s2">person</span><span class="dl">"</span><span class="p">,</span> <span class="dl">"</span><span class="s2">speaking</span><span class="dl">"</span><span class="p">,</span> <span class="dl">"</span><span class="s2">presentation</span><span class="dl">"</span><span class="p">],</span>
+    <span class="na">audio</span><span class="p">:</span> <span class="p">[</span><span class="dl">"</span><span class="s2">talking</span><span class="dl">"</span><span class="p">,</span> <span class="dl">"</span><span class="s2">technology</span><span class="dl">"</span><span class="p">,</span> <span class="dl">"</span><span class="s2">speech</span><span class="dl">"</span><span class="p">],</span>
+    <span class="na">action</span><span class="p">:</span> <span class="p">[</span><span class="dl">"</span><span class="s2">talking</span><span class="dl">"</span><span class="p">,</span> <span class="dl">"</span><span class="s2">speaking</span><span class="dl">"</span><span class="p">],</span>
+    <span class="na">temporal</span><span class="p">:</span> <span class="p">[]</span>
+  <span class="p">},</span>
+  <span class="na">transformed</span><span class="p">:</span> <span class="dl">"</span><span class="s2">person speaking about technology, visual: person presenting, audio: technology discussion</span><span class="dl">"</span>
+<span class="p">}</span>
+</code></pre></div></div>
+
+<p>This transformation ensures the search understands both what’s being said (audio) and what’s being shown (visual).</p>
+
+<h3 id="hybrid-search-architecture">Hybrid Search Architecture</h3>
+
+<p>The system uses a <strong>hybrid search</strong> approach that combines two complementary methods:</p>
+
+<p><strong>1. Vector Similarity Search (70% weight)</strong></p>
+
+<ul>
+  <li>Uses <code class="language-plaintext highlighter-rouge">sqlite-vec</code> extension for efficient vector operations</li>
+  <li>Searches 1024-dimensional BGE-large embeddings</li>
+  <li>Finds semantically similar content even without exact keyword matches</li>
+  <li>L2 distance threshold: 15.0 (strict) for high-quality matches</li>
+</ul>
+
+<p><strong>2. Full-Text Search / FTS (30% weight)</strong></p>
+
+<ul>
+  <li>Uses SQLite’s FTS5 with BM25 ranking</li>
+  <li>Matches exact keywords and phrases</li>
+  <li>Handles queries with specific terminology</li>
+  <li>Complements vector search for precise term matching</li>
+</ul>
+
+<p><strong>Hybrid Scoring Formula:</strong></p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>final_score = α × vector_similarity + (1 - α) × fts_score
+</code></pre></div></div>
+<p>Where α = 0.7 (configurable)</p>
+
+<p><strong>Why Hybrid?</strong></p>
+<ul>
+  <li><strong>Vector-only</strong> misses exact term matches (e.g., searching for “iPhone” might miss if only described as “smartphone”)</li>
+  <li><strong>FTS-only</strong> misses semantic similarity (e.g., “romantic scene” won’t match “couple in candlelit dinner”)</li>
+  <li><strong>Hybrid</strong> gets the best of both: semantic understanding + precise matching</li>
+</ul>
+
+<h3 id="query-aware-score-boosting">Query-Aware Score Boosting</h3>
+
+<p>Results are further enhanced based on query type:</p>
+
+<div class="language-typescript highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="c1">// Temporal queries boost video segments with timestamps</span>
+<span class="k">if </span><span class="p">(</span><span class="nx">queryType</span> <span class="o">===</span> <span class="dl">'</span><span class="s1">temporal</span><span class="dl">'</span> <span class="o">&amp;&amp;</span> <span class="nx">result</span><span class="p">.</span><span class="nx">path</span><span class="p">.</span><span class="nf">includes</span><span class="p">(</span><span class="dl">'</span><span class="s1">#t=</span><span class="dl">'</span><span class="p">))</span> <span class="p">{</span>
+  <span class="nx">score</span> <span class="o">*=</span> <span class="mf">1.1</span><span class="p">;</span> <span class="c1">// 10% boost</span>
+<span class="p">}</span>
+
+<span class="c1">// Spatial queries boost full videos over segments</span>
+<span class="k">if </span><span class="p">(</span><span class="nx">queryType</span> <span class="o">===</span> <span class="dl">'</span><span class="s1">spatial</span><span class="dl">'</span> <span class="o">&amp;&amp;</span> <span class="nx">result</span><span class="p">.</span><span class="kd">type</span> <span class="o">===</span> <span class="dl">'</span><span class="s1">video</span><span class="dl">'</span><span class="p">)</span> <span class="p">{</span>
+  <span class="nx">score</span> <span class="o">*=</span> <span class="mf">1.05</span><span class="p">;</span> <span class="c1">// 5% boost</span>
+<span class="p">}</span>
+</code></pre></div></div>
+
+<p>This ensures that:</p>
+
+<ul>
+  <li>Time-based queries prioritize specific segments</li>
+  <li>Visual queries favor complete videos with full context</li>
+  <li>Audio queries weight transcription matches higher</li>
+</ul>
+
+<h3 id="search-performance-optimizations">Search Performance Optimizations</h3>
+
+<p><strong>1. Database Architecture</strong></p>
+
+<ul>
+  <li><code class="language-plaintext highlighter-rouge">SQLite</code> with <code class="language-plaintext highlighter-rouge">sqlite-vec</code> extension for local vector search</li>
+  <li>Separate FTS5 virtual table (<code class="language-plaintext highlighter-rouge">media_fts</code>) for text search</li>
+  <li>Indexed joins for fast result merging</li>
+</ul>
+
+<p><strong>2. Search Cancellation</strong></p>
+
+<ul>
+  <li>Robust cancellation mechanism for responsive UI</li>
+  <li>Old queries immediately cancelled when user types new query</li>
+  <li>Prevents resource waste on stale searches</li>
+</ul>
+
+<p><strong>3. Result Deduplication</strong></p>
+
+<ul>
+  <li>Parent videos and segments deduplicated intelligently</li>
+  <li>Shows parent video with “(X segments match)” indicator</li>
+  <li>Preserves segment information for precise navigation</li>
+</ul>
+
+<h3 id="search-flow-example">Search Flow Example</h3>
+
+<pre><code class="language-mermaid">sequenceDiagram
+    participant User
+    participant UI
+    participant Classifier as Query Classifier&lt;br/&gt;(Llama 3.2)
+    participant Embedder as Embedding Generator&lt;br/&gt;(BGE-large)
+    participant Vector as Vector Search&lt;br/&gt;(sqlite-vec)
+    participant FTS as Full-Text Search&lt;br/&gt;(FTS5)
+    participant Ranker as Hybrid Ranker
+    
+    User-&gt;&gt;UI: "romantic scene"
+    UI-&gt;&gt;Classifier: Classify query type
+    Classifier-&gt;&gt;UI: type="spatial", confidence=0.9
+    
+    UI-&gt;&gt;Classifier: Transform query
+    Classifier-&gt;&gt;UI: keywords={visual: ["romantic", "scene", "couple"]}
+    
+    UI-&gt;&gt;Embedder: Generate embedding
+    Embedder-&gt;&gt;UI: 1024D vector
+    
+    par Parallel Search
+        UI-&gt;&gt;Vector: Search with embedding
+        Vector-&gt;&gt;UI: Results with similarity scores
+    and
+        UI-&gt;&gt;FTS: Search with keywords
+        FTS-&gt;&gt;UI: Results with BM25 scores
+    end
+    
+    UI-&gt;&gt;Ranker: Merge results (α=0.7)
+    Ranker-&gt;&gt;UI: Hybrid scores + type boosting
+    
+    UI-&gt;&gt;User: Ranked results
+</code></pre>
+
+<p>This multi-stage approach ensures that searches are both <strong>intelligent</strong> (understanding intent) and <strong>precise</strong> (matching relevant content), delivering results that match the user’s mental model of what they’re looking for.</p>
+
+<h3 id="media-specific-search-optimizations">Media-Specific Search Optimizations</h3>
+
+<p>The search system applies different strategies for images vs. videos, reflecting their fundamental differences in content structure:</p>
+
+<h4 id="image-search">Image Search</h4>
+
+<p><strong>Indexing:</strong></p>
+
+<ul>
+  <li>Single-step captioning using Moondream:v2 vision model</li>
+  <li>One caption per image describing visual content</li>
+  <li>Caption → Text embedding (BGE-large 1024D)</li>
+</ul>
+
+<p><strong>Search:</strong></p>
+
+<ul>
+  <li>Query against single caption embedding</li>
+  <li>No temporal context (images are static)</li>
+  <li>Standard hybrid search (vector + FTS)</li>
+</ul>
+
+<p><strong>Example:</strong></p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>Image: sunset-beach.jpg
+Caption: "Golden sunset over ocean with silhouetted palm trees"
+Embedding: [1024D vector from caption]
+Search: "beach sunset" → Direct similarity match
+</code></pre></div></div>
+
+<h4 id="video-search">Video Search</h4>
+
+<p><strong>Indexing:</strong></p>
+
+<ul>
+  <li>Multi-stage, multi-modal process across 5 phases</li>
+  <li>Each 5-minute batch generates:
+    <ul>
+      <li><strong>Audio transcription</strong> → <code class="language-plaintext highlighter-rouge">transcription_embedding</code></li>
+      <li><strong>4 keyframe captions</strong> → <code class="language-plaintext highlighter-rouge">caption_embedding</code></li>
+      <li><strong>Scene reconstruction</strong> (audio + visual + temporal context) → <code class="language-plaintext highlighter-rouge">reconstruction_embedding</code></li>
+    </ul>
+  </li>
+  <li>Multiple embeddings per video segment</li>
+</ul>
+
+<p><strong>Search:</strong></p>
+
+<ul>
+  <li>Query against multi-modal embeddings (audio + visual + scene)</li>
+  <li><strong>Query-aware score boosting:</strong>
+    <ul>
+      <li>Temporal queries (<code class="language-plaintext highlighter-rouge">"beginning"</code>, <code class="language-plaintext highlighter-rouge">"first 5 minutes"</code>) → Boost segments with timestamps (1.1×)</li>
+      <li>Spatial queries (<code class="language-plaintext highlighter-rouge">"red car"</code>, <code class="language-plaintext highlighter-rouge">"mountains"</code>) → Boost full videos over segments (1.05×)</li>
+      <li>Audio queries (<code class="language-plaintext highlighter-rouge">"talking about technology"</code>) → Weight transcription matches higher</li>
+    </ul>
+  </li>
+  <li><strong>Video deduplication:</strong> Parent videos and segments merged to prevent duplicates</li>
+  <li><strong>Segment navigation:</strong> Results link to specific timestamps</li>
+</ul>
+
+<p><strong>Example:</strong></p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>Video: presentation.mp4 (20 minutes)
+Batch 1 (0-5min):
+  - Transcription: "Welcome everyone, today we'll discuss..."
+  - Keyframes: ["Speaker at podium", "Title slide", "Audience", "Diagram"]
+  - Scene: "Professional presentation begins in conference room with speaker introducing topic to seated audience"
+  - Temporal context: [Start of video]
+  - Embedding: [Multi-modal 1024D vector]
+
+Batch 2 (5-10min):
+  - Transcription: "As you can see from this example..."
+  - Keyframes: ["Close-up of screen", "Pointing gesture", "Data chart", "Audience reaction"]
+  - Scene: "Continuing the presentation, speaker explains technical concepts using visual aids while audience takes notes"
+  - Temporal context: ["Professional presentation begins..."]
+  - Embedding: [Enhanced with narrative continuity]
+
+Search: "presentation about technology" 
+  → Matches both batches with different scores
+  → Deduplicates to show parent video with "2 segments match"
+  → Clicking opens video player with segment navigation
+</code></pre></div></div>
+
+<p><strong>Key Differences:</strong></p>
+
+<table>
+  <thead>
+    <tr>
+      <th>Aspect</th>
+      <th>Images</th>
+      <th>Videos</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><strong>Granularity</strong></td>
+      <td>1 item = 1 image</td>
+      <td>1 video = N segments/batches</td>
+    </tr>
+    <tr>
+      <td><strong>Embeddings</strong></td>
+      <td>1 caption embedding</td>
+      <td>3 embeddings per segment (audio, visual, scene)</td>
+    </tr>
+    <tr>
+      <td><strong>Temporal Context</strong></td>
+      <td>None (static)</td>
+      <td>RNN-style sliding window</td>
+    </tr>
+    <tr>
+      <td><strong>Query Boosting</strong></td>
+      <td>Standard scoring</td>
+      <td>Type-aware (temporal/spatial/audio)</td>
+    </tr>
+    <tr>
+      <td><strong>Result Deduplication</strong></td>
+      <td>Not needed</td>
+      <td>Parent + segments merged</td>
+    </tr>
+    <tr>
+      <td><strong>Navigation</strong></td>
+      <td>Direct image view</td>
+      <td>Timestamp-based seeking</td>
+    </tr>
+    <tr>
+      <td><strong>Processing Time</strong></td>
+      <td>~2-5s per image</td>
+      <td>~40s for 60min video (Phase 0)</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>This differentiated approach ensures that each media type is indexed and searched in a way that matches how users naturally think about that content—images as single visual moments, videos as temporal narratives with multiple modalities.</p>
+
+<h2 id="6-challenges-and-solutions">6. Challenges and Solutions</h2>
+
+<h3 id="challenge-1-ollama-resource-contention">Challenge 1: Ollama Resource Contention</h3>
+
+<p><strong>Problem:</strong> Search queries took 10+ seconds during video indexing because Phase 1 captioning and search embeddings competed for the same Ollama instance.</p>
+
+<p><strong>Solution:</strong> Implemented dual Ollama architecture:</p>
+<ul>
+  <li><strong>Search embeddings</strong> → Direct Ollama (port 11434) - No queuing, fast response</li>
+  <li><strong>Indexing operations</strong> → Nginx load balancer (port 11435) → 2 Ollama instances</li>
+</ul>
+
+<p><strong>Result:</strong> Search latency reduced from 10,281ms to 500-1000ms during active indexing.</p>
+
+<h3 id="challenge-2-database-synchronization">Challenge 2: Database Synchronization</h3>
+
+<p><strong>Problem:</strong> Video segments were stored in <code class="language-plaintext highlighter-rouge">video-rag.db</code> but not indexed in <code class="language-plaintext highlighter-rouge">vector.db</code>, causing 0 search results despite successful processing.</p>
+
+<p><strong>Solution:</strong> Added immediate vector indexing step in Phase 0, right after segment storage. Both databases are now kept in sync.</p>
+
+<p><strong>Result:</strong> Videos become searchable immediately after transcription completes.</p>
+
+<h3 id="challenge-3-progress-tracking-across-phases">Challenge 3: Progress Tracking Across Phases</h3>
+
+<p><strong>Problem:</strong> UI showed incorrect progress when jobs were resumed after app restart.</p>
+
+<p><strong>Solution:</strong> Implemented phase-specific progress tracking with database persistence. Each phase tracks 0-100% independently, and the system can resume from any phase.</p>
+
+<p><strong>Result:</strong> Accurate progress display and graceful resume capability.</p>
+
+<h2 id="7-performance-metrics">7. Performance Metrics</h2>
+
+<h3 id="video-processing-timeline-20-minute-video">Video Processing Timeline (20-minute video)</h3>
+
+<table>
+  <thead>
+    <tr>
+      <th>Phase</th>
+      <th>Duration</th>
+      <th>Cumulative</th>
+      <th>Status</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Phase 0 (Audio)</td>
+      <td>~40s</td>
+      <td>40s</td>
+      <td>✓ Searchable</td>
+    </tr>
+    <tr>
+      <td>Phase 1 (Visual)</td>
+      <td>~60s</td>
+      <td>100s</td>
+      <td>✓ Multi-modal</td>
+    </tr>
+    <tr>
+      <td>Phase 2 (T:0.8)</td>
+      <td>~10s</td>
+      <td>110s</td>
+      <td>✓ Coarse</td>
+    </tr>
+    <tr>
+      <td>Phase 3 (T:0.6)</td>
+      <td>+5min</td>
+      <td>+5min</td>
+      <td>✓ Medium</td>
+    </tr>
+    <tr>
+      <td>Phase 4 (T:0.4)</td>
+      <td>+30min</td>
+      <td>+30min</td>
+      <td>✓ Fine</td>
+    </tr>
+  </tbody>
+</table>
+
+<h3 id="search-performance">Search Performance</h3>
+
+<ul>
+  <li><strong>Vector search latency:</strong> 7-50ms (database query)</li>
+  <li><strong>Embedding generation:</strong> 500-1000ms (BGE-large)</li>
+  <li><strong>Total search time:</strong> &lt; 1 second (typical)</li>
+  <li><strong>Search during indexing:</strong> &lt; 1 second (with dual Ollama setup)</li>
+</ul>
+
+<h3 id="resource-usage">Resource Usage</h3>
+
+<ul>
+  <li><strong>FFmpeg pool:</strong> Max 2 concurrent instances</li>
+  <li><strong>Ollama instances:</strong> 2 (load-balanced for indexing) + 1 (dedicated for search)</li>
+  <li><strong>Memory:</strong> ~4GB (with all models loaded)</li>
+  <li><strong>Disk:</strong> ~500MB per hour of video (embeddings + metadata)</li>
+</ul>
+
+<h2 id="8-technology-stack">8. Technology Stack</h2>
+
+<h3 id="core-framework">Core Framework</h3>
+
+<table>
+  <thead>
+    <tr>
+      <th>Component</th>
+      <th>Technology</th>
+      <th>Purpose</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Desktop Framework</td>
+      <td>Electron</td>
+      <td>Cross-platform desktop app</td>
+    </tr>
+    <tr>
+      <td>Frontend</td>
+      <td>React + TypeScript</td>
+      <td>UI components</td>
+    </tr>
+    <tr>
+      <td>Styling</td>
+      <td>TailwindCSS + shadcn/ui</td>
+      <td>Modern, responsive design</td>
+    </tr>
+    <tr>
+      <td>Icons</td>
+      <td>Lucide</td>
+      <td>Consistent iconography</td>
+    </tr>
+  </tbody>
+</table>
+
+<h3 id="ai--ml-models">AI &amp; ML Models</h3>
+
+<table>
+  <thead>
+    <tr>
+      <th>Model</th>
+      <th>Parameters</th>
+      <th>Purpose</th>
+      <th>Runtime</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Whisper</td>
+      <td>Base</td>
+      <td>Audio transcription</td>
+      <td>Local CPU</td>
+    </tr>
+    <tr>
+      <td>BGE-large</td>
+      <td>335M</td>
+      <td>Text embeddings (1024D)</td>
+      <td>Ollama</td>
+    </tr>
+    <tr>
+      <td>Moondream:v2</td>
+      <td>2B</td>
+      <td>Visual captioning</td>
+      <td>Ollama</td>
+    </tr>
+    <tr>
+      <td>Llama 3.2</td>
+      <td>3B</td>
+      <td>Scene reconstruction &amp; query analysis</td>
+      <td>Ollama</td>
+    </tr>
+  </tbody>
+</table>
+
+<h3 id="data-layer">Data Layer</h3>
+
+<table>
+  <thead>
+    <tr>
+      <th>Component</th>
+      <th>Technology</th>
+      <th>Purpose</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Main Database</td>
+      <td>SQLite</td>
+      <td>Metadata, jobs, configuration</td>
+    </tr>
+    <tr>
+      <td>Vector Database</td>
+      <td>SQLite + sqlite-vec</td>
+      <td>Semantic search with embeddings</td>
+    </tr>
+    <tr>
+      <td>Video Database</td>
+      <td>SQLite (video-rag.db)</td>
+      <td>Video segments, batches, transcriptions</td>
+    </tr>
+  </tbody>
+</table>
+
+<h3 id="media-processing">Media Processing</h3>
+
+<table>
+  <thead>
+    <tr>
+      <th>Tool</th>
+      <th>Purpose</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>FFmpeg</td>
+      <td>Video/audio extraction, keyframe generation</td>
+    </tr>
+    <tr>
+      <td>FFprobe</td>
+      <td>Video metadata analysis</td>
+    </tr>
+    <tr>
+      <td>Sharp</td>
+      <td>Image processing (thumbnails, compression)</td>
+    </tr>
+  </tbody>
+</table>
+
+<h3 id="infrastructure">Infrastructure</h3>
+
+<table>
+  <thead>
+    <tr>
+      <th>Component</th>
+      <th>Technology</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>AI Runtime</td>
+      <td>Ollama (2 instances + nginx load balancer)</td>
+    </tr>
+    <tr>
+      <td>Process Management</td>
+      <td>Node.js child processes with semaphore pools</td>
+    </tr>
+    <tr>
+      <td>IPC</td>
+      <td>Electron IPC (main ↔ renderer)</td>
+    </tr>
+  </tbody>
+</table>
+
+<h2 id="9-future-enhancements">9. Future Enhancements</h2>
+
+<h3 id="short-term">Short-term</h3>
+
+<ul>
+  <li><strong>Intelligent Query Cache:</strong> Semantic caching layer using embeddings to eliminate redundant search operations. Expected 35-55% cache hit rate with &lt;5ms latency for cached queries</li>
+  <li><strong>OCR Integration:</strong> Extract text from video frames for document/presentation search</li>
+  <li><strong>Audio Fingerprinting:</strong> Detect duplicate videos and similar content</li>
+  <li><strong>Batch Export:</strong> Export search results with timestamps for video editing workflows</li>
+</ul>
+
+<h3 id="medium-term">Medium-term</h3>
+
+<ul>
+  <li><strong>Face Recognition:</strong> Local face detection and clustering for person-based search</li>
+  <li><strong>Object Detection:</strong> Identify and track objects across video frames</li>
+  <li><strong>Multi-language Support:</strong> Extend transcription beyond English</li>
+</ul>
+
+<h3 id="long-term">Long-term</h3>
+
+<ul>
+  <li><strong>Distributed Processing:</strong> Support for processing across multiple machines</li>
+  <li><strong>Plugin System:</strong> Allow community-developed processors and search filters</li>
+  <li><strong>Mobile Companion App:</strong> View and search indexed content from mobile devices</li>
+</ul>
+
+<h2 id="conclusion">Conclusion</h2>
+
+<p>Cinestar’s architecture is the result of an iterative engineering process. The core principles of a CQRS-inspired model, phased processing, and a steadfast commitment to privacy through local AI have resulted in a platform that is both powerful and responsive. This demonstrates that a world-class search experience can be delivered without compromising user privacy, with all processing and data storage handled on the local machine.</p>
+
+<p>The five-phase pipeline ensures that users get immediate value (Phase 0) while the system continuously improves search quality in the background (Phases 1-4). The dual-database architecture (metadata + vectors) and dual-Ollama setup (search + indexing) provide both speed and intelligence without sacrificing user experience.</p>
+
+<p><strong>Key Takeaways:</strong></p>
+
+<ul>
+  <li><strong>Privacy is non-negotiable:</strong> Local AI models can match cloud services</li>
+  <li><strong>Progressive enhancement works:</strong> Users don’t wait for perfection</li>
+  <li><strong>CQRS enables responsiveness:</strong> Separate read/write paths prevent UI blocking</li>
+  <li><strong>Threshold-based refinement:</strong> Continuous improvement without user intervention</li>
+</ul>
+
+
+      <hr>
+      <div class="row mb-5 mt-5">
+  <div class="col-md-6 d-flex align-items-end ">
+    <span>Thanks. <i>mind sharing?</i></span>
+  </div>
+
+  <!-- Right Column with Social Media Icons (on the right for larger screens, on bottom for smaller screens) -->
+  <div class="col-md-6 order-md-2 order-1 text-md-right text-center mt-3 mt-md-0">
+    <div>
+
+      <a
+          href="https://www.linkedin.com/sharing/share-offsite?url=ikouchiha47.github.io/2025/10/02/media-search.html"
+          onclick="window.open(this.href, 'pop-up', 'left=20,top=20,width=500,height=500,toolbar=1,resizable=0'); return false;"
+          class="d-inline-block mr-2"
+       >
+        <span class="fa-stack fa-lg" style="color: #0077b5;">
+          <i class="fas fa-square fa-stack-2x"></i>
+          <i class="fab fa-linkedin fa-stack-1x fa-inverse"></i>
+        </span>
+      </a>
+
+      <a
+          href="https://twitter.com/intent/tweet?text=Cinestar&url=ikouchiha47.github.io/2025/10/02/media-search.html"
+          onclick="window.open(this.href, 'pop-up', 'left=20,top=20,width=500,height=500,toolbar=1,resizable=0'); return false;"
+          class="d-inline-block mr-2">
+        <span class="fa-stack fa-lg" style="color: #1DA1F2;">
+          <i class="fas fa-square fa-stack-2x"></i>
+          <i class="fab fa-twitter fa-stack-1x fa-inverse"></i>
+        </span>
+      </a>
+
+      <a
+          href="http://www.reddit.com/submit?url=ikouchiha47.github.io/2025/10/02/media-search.html"
+          onclick="window.open(this.href, 'pop-up', 'left=20,top=20,width=500,height=500,toolbar=1,resizable=0'); return false;"
+          class="d-inline-block mr-2">
+        <span class="fa-stack fa-lg" style="color: #FF4500;">
+          <i class="fas fa-square fa-stack-2x"></i>
+          <i class="fab fa-reddit fa-stack-1x fa-inverse"></i>
+        </span>
+      </a>
+    </div>
+  </div>
+</div>
+
+<hr/>
+
+
+      <div class="clearfix">
+
+        
+        <a class="btn btn-primary float-left" href="/2024/12/16/sqlite_supercharged.html" data-toggle="tooltip" data-placement="top" title="Supercharge a platform backed by sqlite">&larr; Previous<span class="d-none d-md-inline">
+            Post</span></a>
+        
+        
+        <a class="btn btn-primary float-right" href="/2025/11/16/ai-code-editors.html" data-toggle="tooltip" data-placement="top" title="Goodbye *ibe Coding">Next<span class="d-none d-md-inline">
+            Post</span> &rarr;</a>
+        
+
+      </div>
+
+    </div>
+  </div>
+</div>
+
+
+  <!-- Footer -->
+
+<hr>
+
+<footer>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <ul class="list-inline text-center">
+          
+          <li class="list-inline-item">
+            <a href="mailto:amitava.dev@proton.me" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="far fa-envelope fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          
+          
+          <li class="list-inline-item">
+            <a href="https://www.linkedin.com/in/amitavaag" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-linkedin fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          <li class="list-inline-item">
+            <a href="https://github.com/ikouchiha47" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-github fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+        </ul>
+
+        <p class="copyright text-muted">
+          Build with: 
+          <a 
+            href="https://github.com/StartBootstrap/startbootstrap-clean-blog-jekyll"
+            class="text-gray"
+            target="_blank">startbootstrap-clean-blog-jekyll</a></p>
+      </div>
+    </div>
+  </div>
+</footer>
+
+
+  <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="/assets/vendor/blog/js/scripts.js"></script>
+
+<script src="/assets/scripts.js"></script>
+
+
+
+
+
+  <script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+
+    document.querySelectorAll('pre > code.language-mermaid').forEach((codeBlock) => {
+      codeBlock.parentElement.outerHTML = `<pre class="mermaid">${codeBlock.textContent}</pre>`;
+    });
+
+
+    mermaid.initialize({ startOnLoad: true, theme: 'forest' });
+</script>
+
+
+  
+
+</body>
+
+</html>

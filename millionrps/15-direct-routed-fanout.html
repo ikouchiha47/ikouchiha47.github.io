@@ -1,0 +1,427 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+  <title>
+    Direct-routed SSE fan-out: process separation regressed 60%, aggregation is the fix - iko&#39;s logs
+    
+  </title>
+
+  <meta name="description" content="">
+  <meta property="og:description" content="">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Direct-routed SSE fan-out: process separation r...">
+  <meta property="og:url" content="https://ikouchiha47.github.io/millionrps/15-direct-routed-fanout.html">
+
+  
+
+  <link href='https://fonts.googleapis.com/css?family=Lora:400,700,400italic,700italic' rel='stylesheet' type='text/css'>
+  <link href='https://fonts.googleapis.com/css?family=Open+Sans:300italic,400italic,600italic,700italic,800italic,400,300,600,700,800' rel='stylesheet' type='text/css'>
+
+  <!-- <script src="https://use.fontawesome.com/releases/v5.15.3/js/all.js" crossorigin="anonymous"></script> -->
+  <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.15.4/css/all.css" integrity="sha384-DyZ88mC6Up2uqS4h/KRgHuoeGwBcD4Ng9SiP4dIRy0EXTlnuz47vAwmeGwVChigm" crossorigin="anonymous"/>
+
+  <link rel="stylesheet" href="/assets/main.css">
+  <link rel="canonical" href="https://ikouchiha47.github.io/millionrps/15-direct-routed-fanout.html">
+  <link rel="alternate" type="application/rss+xml" title="iko&#39;s logs" href="/feed.xml">
+
+  <meta name="google-site-verification" content="lWkg6gIxJgzEKX_5XnhcxCtPE9QknaimFWWos_dTvPM" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fira+Sans:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Inconsolata:wght@200..900&family=Jersey+25&family=Kanit:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Merriweather+Sans:ital,wght@0,300..800;1,300..800&family=Nanum+Gothic+Coding&family=Space+Grotesk:wght@300..700&family=Titillium+Web:ital,wght@0,200;0,300;0,400;0,600;0,700;0,900;1,200;1,300;1,400;1,600;1,700&display=swap" rel="stylesheet">
+
+</head>
+
+
+<body>
+
+  <!-- Navigation -->
+<nav class="navbar navbar-expand-lg navbar-light fixed-top" id="mainNav">
+  <div class="container">
+    <a class="navbar-brand" href="/">iko&#39;s logs</a>
+    <button class="navbar-toggler navbar-toggler-right" type="button" data-toggle="collapse" data-target="#navbarResponsive" aria-controls="navbarResponsive" aria-expanded="false" aria-label="Toggle navigation">
+      Menu
+      <i class="fa fa-bars"></i>
+    </button>
+    <div class="collapse navbar-collapse" id="navbarResponsive">
+      <ul class="navbar-nav ml-auto">
+        <li class="nav-item">
+          <a class="nav-link" href="/">Home</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/about">About</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/posts">Posts</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/contact">Contact</a>
+        </li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+
+  
+<header class="masthead">
+
+  <div class="overlay"></div>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <div class="post-heading">
+          <h1>Direct-routed SSE fan-out: process separation regressed 60%, aggregation is the fix</h1>
+          
+          <h2 class="subheading">Separate registry, fanout-node, and likes-server binaries with consistent-hash routing. HTTP POST per event is 500× more expensive than an in-process channel send.</h2>
+          
+          <span class="meta">
+            July 16, 2026
+            
+            &mdash; <span class="journal-entry-status done">DONE</span>
+            
+          </span>
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="container space-grotesk">
+  <div class="row">
+    <div class="col-lg-8 col-md-10 mx-auto">
+
+      <!-- Breadcrumb -->
+      <nav aria-label="breadcrumb" style="margin-bottom: 1.5rem;">
+        <ol class="breadcrumb" style="background: transparent; padding: 0;">
+          <li class="breadcrumb-item"><a href="/millionrps/">Chasing 1 Million RPS</a></li>
+          <li class="breadcrumb-item active" aria-current="page">Direct-routed SSE fan-out: process separation regressed 60%, aggregation is the fix</li>
+        </ol>
+      </nav>
+
+      
+      <div style="margin-bottom: 1.5rem;">
+        
+        <span class="journal-tag">SSE</span>
+        
+        <span class="journal-tag">fan-out</span>
+        
+        <span class="journal-tag">dispatcher</span>
+        
+        <span class="journal-tag">registry</span>
+        
+        <span class="journal-tag">process-separation</span>
+        
+        <span class="journal-tag">IPC</span>
+        
+        <span class="journal-tag">HTTP-push</span>
+        
+        <span class="journal-tag">aggregation</span>
+        
+      </div>
+      
+
+      <p>Source code: <a href="https://github.com/ikouchiha47/gothun">ikouchiha47/gothun</a> — <code class="language-plaintext highlighter-rouge">src/likes/</code></p>
+
+<h2 id="what-checkpoints-4-and-5-proved">what checkpoints 4 and 5 proved</h2>
+
+<p>The in-process ceiling is ~7.5M events/s at 20K SSE connections. It doesn’t matter whether fan-out uses 1 goroutine or 8 per topic — the number barely moves. The write path and the fan-out goroutines are on the same process competing for CPU. The OS scheduler doesn’t know which one matters more.</p>
+
+<p>The obvious move: separate them. Give the write path its own process. Give fan-out its own process. Let the OS schedule them independently. Connect them with something fast.</p>
+
+<p>That’s what checkpoint 6 built.</p>
+
+<h2 id="three-binaries">three binaries</h2>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>┌─────────────┐   POST /push    ┌──────────────┐   SSE stream
+│ likes-server│ ─────────────── │  fanout-node  │ ─────────────▶ subscribers
+│   (:8083)   │                 │    (:8084)    │
+└──────┬──────┘                 └──────┬────────┘
+       │ GET /node?post_id=X           │ POST /register
+       │                        ┌──────▴──────┐
+       └──────────────────────▶ │   registry   │
+                                 │   (:8085)   │
+                                 └─────────────┘
+</code></pre></div></div>
+
+<p><strong><code class="language-plaintext highlighter-rouge">registry</code></strong> — consistent hash ring (FNV32, sorted node list). Fanout-nodes register on startup, deregister on shutdown. Persists state to a flat JSON file. HTTP API: <code class="language-plaintext highlighter-rouge">GET /node?post_id=X</code>, <code class="language-plaintext highlighter-rouge">POST /register</code>, <code class="language-plaintext highlighter-rouge">DELETE /register</code>.</p>
+
+<p><strong><code class="language-plaintext highlighter-rouge">fanout-node</code></strong> — holds SSE connections (<code class="language-plaintext highlighter-rouge">GET /stream/:postID</code>). Receives push events via <code class="language-plaintext highlighter-rouge">POST /push</code> with <code class="language-plaintext highlighter-rouge">{"post_id":"...","count":N}</code>. Calls <code class="language-plaintext highlighter-rouge">hub.Publish()</code> into the existing sharded hub, which fans to local SSE subscribers. Registers itself with the registry on startup.</p>
+
+<p><strong><code class="language-plaintext highlighter-rouge">likes-server</code></strong> — write path only (fasthttp). After incrementing the counter, resolves the owning fanout-node via a local ring cache (one FNV32 hash — no network call on the hot path). Enqueues the push to a buffered per-node channel (512 slots). A background goroutine drains the channel via HTTP POST to the fanout-node. Fire-and-forget: the write path returns before the push completes.</p>
+
+<p>This is the <strong>dispatcher pattern</strong>: likes-server is the dispatcher, registry owns the routing map, fanout-nodes are the realtime messaging servers.</p>
+
+<h2 id="what-the-code-looks-like">what the code looks like</h2>
+
+<p>Ring cache on the write side — the registry is only consulted at startup and when a node registers or deregisters:</p>
+
+<div class="language-go highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">type</span> <span class="n">NodeRing</span> <span class="k">struct</span> <span class="p">{</span>
+    <span class="n">mu</span>    <span class="n">sync</span><span class="o">.</span><span class="n">RWMutex</span>
+    <span class="n">nodes</span> <span class="p">[]</span><span class="kt">string</span>       <span class="c">// sorted FNV32 hash → address</span>
+    <span class="n">ring</span>  <span class="k">map</span><span class="p">[</span><span class="kt">uint32</span><span class="p">]</span><span class="kt">string</span>
+<span class="p">}</span>
+
+<span class="k">func</span> <span class="p">(</span><span class="n">r</span> <span class="o">*</span><span class="n">NodeRing</span><span class="p">)</span> <span class="n">Resolve</span><span class="p">(</span><span class="n">postID</span> <span class="kt">string</span><span class="p">)</span> <span class="kt">string</span> <span class="p">{</span>
+    <span class="n">h</span> <span class="o">:=</span> <span class="n">fnv32</span><span class="p">(</span><span class="n">postID</span><span class="p">)</span>
+    <span class="n">r</span><span class="o">.</span><span class="n">mu</span><span class="o">.</span><span class="n">RLock</span><span class="p">()</span>
+    <span class="k">defer</span> <span class="n">r</span><span class="o">.</span><span class="n">mu</span><span class="o">.</span><span class="n">RUnlock</span><span class="p">()</span>
+    <span class="c">// binary search for first node &gt;= h (wrap around)</span>
+    <span class="o">...</span>
+<span class="p">}</span>
+</code></pre></div></div>
+
+<p>Per-node send channels with a background drainer:</p>
+
+<div class="language-go highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">type</span> <span class="n">Dispatcher</span> <span class="k">struct</span> <span class="p">{</span>
+    <span class="n">queues</span> <span class="k">map</span><span class="p">[</span><span class="kt">string</span><span class="p">]</span><span class="k">chan</span> <span class="n">PushEvent</span>  <span class="c">// fanout-node addr → buffered chan</span>
+    <span class="n">ring</span>   <span class="o">*</span><span class="n">NodeRing</span>
+    <span class="n">drops</span>  <span class="n">atomic</span><span class="o">.</span><span class="n">Int64</span>
+<span class="p">}</span>
+
+<span class="k">func</span> <span class="p">(</span><span class="n">d</span> <span class="o">*</span><span class="n">Dispatcher</span><span class="p">)</span> <span class="n">Send</span><span class="p">(</span><span class="n">postID</span> <span class="kt">string</span><span class="p">,</span> <span class="n">count</span> <span class="kt">int64</span><span class="p">)</span> <span class="p">{</span>
+    <span class="n">addr</span> <span class="o">:=</span> <span class="n">d</span><span class="o">.</span><span class="n">ring</span><span class="o">.</span><span class="n">Resolve</span><span class="p">(</span><span class="n">postID</span><span class="p">)</span>
+    <span class="n">ch</span> <span class="o">:=</span> <span class="n">d</span><span class="o">.</span><span class="n">queues</span><span class="p">[</span><span class="n">addr</span><span class="p">]</span>
+    <span class="k">select</span> <span class="p">{</span>
+    <span class="k">case</span> <span class="n">ch</span> <span class="o">&lt;-</span> <span class="n">PushEvent</span><span class="p">{</span><span class="n">PostID</span><span class="o">:</span> <span class="n">postID</span><span class="p">,</span> <span class="n">Count</span><span class="o">:</span> <span class="n">count</span><span class="p">}</span><span class="o">:</span>
+    <span class="k">default</span><span class="o">:</span>
+        <span class="n">d</span><span class="o">.</span><span class="n">drops</span><span class="o">.</span><span class="n">Add</span><span class="p">(</span><span class="m">1</span><span class="p">)</span>  <span class="c">// push_dropped counter</span>
+    <span class="p">}</span>
+<span class="p">}</span>
+
+<span class="k">func</span> <span class="p">(</span><span class="n">d</span> <span class="o">*</span><span class="n">Dispatcher</span><span class="p">)</span> <span class="n">drain</span><span class="p">(</span><span class="n">addr</span> <span class="kt">string</span><span class="p">,</span> <span class="n">ch</span> <span class="o">&lt;-</span><span class="k">chan</span> <span class="n">PushEvent</span><span class="p">)</span> <span class="p">{</span>
+    <span class="k">for</span> <span class="n">ev</span> <span class="o">:=</span> <span class="k">range</span> <span class="n">ch</span> <span class="p">{</span>
+        <span class="n">httpPost</span><span class="p">(</span><span class="n">addr</span><span class="o">+</span><span class="s">"/push"</span><span class="p">,</span> <span class="n">ev</span><span class="p">)</span>  <span class="c">// ~50µs per call</span>
+    <span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div></div>
+
+<p>The fanout-node side is the same sharded hub from CP5 — <code class="language-plaintext highlighter-rouge">hub.Publish()</code> routes to the right shard, shard goroutine iterates subscriber slice.</p>
+
+<h2 id="results">results</h2>
+
+<div class="bench-table-wrap">
+<table class="bench-table">
+<thead><tr><th>SSE Connections</th><th>Events/s</th><th>Delivery%</th><th>Write inc/s</th><th>Push Dropped</th><th>RSS</th><th>FDs</th></tr></thead>
+<tbody>
+<tr><td>2,000</td><td>1,809,297</td><td>39.3%</td><td>23,021</td><td>412,088</td><td>322 MB</td><td>2,009</td></tr>
+<tr><td>10,000</td><td>2,782,320</td><td>23.0%</td><td>12,123</td><td>277,996</td><td>687 MB</td><td>10,008</td></tr>
+<tr><td>20,000</td><td>2,654,385</td><td>11.0%</td><td>12,022</td><td>319,901</td><td>1,145 MB</td><td>20,008</td></tr>
+<tr><td>64,000</td><td>2,457,384</td><td>3.2%</td><td>11,840</td><td>343,507</td><td>3,082 MB</td><td>64,008</td></tr>
+</tbody>
+</table>
+</div>
+
+<p>500 goroutines writing to 10 posts round-robin. <code class="language-plaintext highlighter-rouge">push_dropped</code> = events dropped at likes-server because the per-node send channel (512 slots) was full.</p>
+
+<h2 id="vs-checkpoint-5">vs checkpoint 5</h2>
+
+<div class="bench-table-wrap">
+<table class="bench-table">
+<thead><tr><th>SSE Connections</th><th>Events/s CP5</th><th>Events/s CP6</th><th>Delta</th></tr></thead>
+<tbody>
+<tr><td>2,000</td><td>4,452,394</td><td>1,809,297</td><td>−59%</td></tr>
+<tr><td>10,000</td><td>6,682,850</td><td>2,782,320</td><td>−58%</td></tr>
+<tr><td>20,000</td><td>7,543,145</td><td>2,654,385</td><td>−65%</td></tr>
+<tr><td>64,000</td><td>2,599,775</td><td>2,457,384</td><td>−5%</td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="journal-callout warning">
+<strong>Warning</strong>
+Process separation regressed events/s by ~60% at every connection count except 64K. The architecture is better. The numbers are worse.
+</div>
+
+<h2 id="why-it-got-slower">why it got slower</h2>
+
+<p>At 23K inc/s, the likes-server fires 23K HTTP POST requests per second to the fanout-node. Each POST carries:</p>
+
+<ul>
+  <li>JSON encode of <code class="language-plaintext highlighter-rouge">{post_id, count}</code></li>
+  <li>TCP write + kernel copy</li>
+  <li>HTTP headers (request + response)</li>
+  <li>Response wait (even 200 OK takes ~50µs RTT on the same VPC)</li>
+</ul>
+
+<p><strong>~50µs per event</strong> vs <strong>~100ns for an in-process channel send</strong>. That’s 500× more expensive per unit of work.</p>
+
+<p>The 512-slot push channel fills because fanout-node is simultaneously trying to serve N SSE writes. When the drainer goroutine is blocked waiting on an HTTP response, events pile up on the send channel faster than they drain. <code class="language-plaintext highlighter-rouge">push_dropped</code> runs at 300–400K events per measurement phase.</p>
+
+<p>There are now <strong>two drop points</strong> instead of one:</p>
+
+<ol>
+  <li><code class="language-plaintext highlighter-rouge">push_dropped</code> at likes-server — the per-node channel is full</li>
+  <li>Shard channel drops at fanout-node — subscriber channels full, same failure mode as CP5</li>
+</ol>
+
+<p>The 64K result is a near-tie (−5%) because at 64K SSE connections, CP5 was already collapsing under its own fan-out iteration time. Both checkpoints hit the same floor from different directions.</p>
+
+<div class="journal-callout finding">
+<strong>Finding</strong>
+The IPC mechanism (HTTP POST) costs ~500× more than in-process channels. Switching to gRPC streaming reduces per-call overhead but doesn't change the fundamental problem: we're still dispatching one message per increment. At 23K inc/s, even a 5µs RPC still generates 115ms of serial IPC work per second per drainer goroutine.
+</div>
+
+<h2 id="what-real-systems-actually-do">what real systems actually do</h2>
+
+<p>After the regression, I looked at how production fan-out systems handle this. The answer is consistent across Ably, Discord, and YouTube Live.</p>
+
+<p><strong>Nobody fans out individual increments.</strong></p>
+
+<ul>
+  <li><strong>Ably</strong> publishes presence/count updates on a 100–200ms aggregation window. Individual state changes within the window are collapsed — subscribers receive the final value, not every transition.</li>
+  <li><strong>Discord</strong> coalesces typing indicators and member-count updates over a 5s window before broadcasting. The websocket message carries the current count, not a delta per event.</li>
+  <li><strong>YouTube Live</strong> updates concurrent viewer counts on a 5–10s server-side ticker. The counter increments millions of times per second; the fan-out rate is once per tick per channel.</li>
+</ul>
+
+<p>The insight: <strong>like counts are not a reliable stream</strong>. Viewers don’t need every intermediate value. They need the current value, refreshed fast enough to feel live (~100ms is imperceptible). The semantics are “here is the count right now,” not “here is every individual increment.”</p>
+
+<p>At a 100ms aggregation window with 10 posts:</p>
+
+<ul>
+  <li>23K inc/s across 10 posts = 2,300 increments/post/second</li>
+  <li>100ms window = 230 increments accumulated per post per flush</li>
+  <li>Fan-out dispatches = 10 posts × 10 flushes/s = <strong>100 publishes/s</strong></li>
+</ul>
+
+<p>100 HTTP POSTs/s is trivially cheap. The drainer goroutine is idle 99% of the time. The push channel never fills. <code class="language-plaintext highlighter-rouge">push_dropped</code> goes to zero.</p>
+
+<p>The 2,300x reduction in fan-out work means the IPC transport is irrelevant. HTTP, gRPC, Unix socket — it doesn’t matter at 100 calls/second.</p>
+
+<div class="journal-callout finding">
+<strong>Finding</strong>
+The dispatcher→registry→fanout-node architecture is correct. The event shape is wrong. Aggregation before dispatch eliminates the IPC bottleneck without changing the transport layer.
+</div>
+
+<h2 id="what-comes-next">what comes next</h2>
+
+<p>Checkpoint 7: <strong>aggregation tier inside likes-server</strong>.</p>
+
+<p>A <code class="language-plaintext highlighter-rouge">CountAggregator</code> accumulates increments per postID in memory. A ticker fires every 100ms and flushes the current snapshot — <code class="language-plaintext highlighter-rouge">map[postID]currentCount</code> — one POST per fanout-node per tick. The drainer goroutine sends one batched payload instead of one payload per increment.</p>
+
+<p>Expected result: push_dropped → 0. Write throughput restores to pre-fan-out levels. Delivery% should recover to CP5 range or better, since the fanout-node is no longer saturated by incoming push load while trying to serve SSE writes.</p>
+
+<p>The shard channel drop rate at fanout-node is still a question — we’ll see whether the subscriber side becomes the new limit once the push side is no longer the problem.</p>
+
+
+      <hr>
+
+      <!-- Prev / Next -->
+      
+      
+      
+
+      <div class="clearfix" style="margin-top: 2rem;">
+        
+          
+          
+
+          
+            
+            <a class="btn btn-primary float-left" href="/millionrps/14-sharded-fanout.html">&larr; Sharding the SSE fan-out goroutine: same ceiling, different drop point</a>
+          
+
+          
+            
+            <a class="btn btn-primary float-right" href="/millionrps/16-aggregation-tier.html">100ms aggregation tier: collapsing 23K dispatches/s into 100 &rarr;</a>
+          
+        
+      </div>
+
+      <div style="text-align: center; margin-top: 1rem;">
+        <a href="/millionrps/">&uarr; Back to Journal</a>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+
+  <!-- Footer -->
+
+<hr>
+
+<footer>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <ul class="list-inline text-center">
+          
+          <li class="list-inline-item">
+            <a href="mailto:amitava.dev@proton.me" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="far fa-envelope fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          
+          
+          <li class="list-inline-item">
+            <a href="https://www.linkedin.com/in/amitavaag" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-linkedin fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          <li class="list-inline-item">
+            <a href="https://github.com/ikouchiha47" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-github fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+        </ul>
+
+        <p class="copyright text-muted">
+          Build with: 
+          <a 
+            href="https://github.com/StartBootstrap/startbootstrap-clean-blog-jekyll"
+            class="text-gray"
+            target="_blank">startbootstrap-clean-blog-jekyll</a></p>
+      </div>
+    </div>
+  </div>
+</footer>
+
+
+  <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="/assets/vendor/blog/js/scripts.js"></script>
+
+<script src="/assets/scripts.js"></script>
+
+
+
+
+
+  <script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+
+    document.querySelectorAll('pre > code.language-mermaid').forEach((codeBlock) => {
+      codeBlock.parentElement.outerHTML = `<pre class="mermaid">${codeBlock.textContent}</pre>`;
+    });
+
+
+    mermaid.initialize({ startOnLoad: true, theme: 'forest' });
+</script>
+
+
+  
+
+</body>
+
+</html>

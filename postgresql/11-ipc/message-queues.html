@@ -1,0 +1,616 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+  <title>
+    Message Queues - iko&#39;s logs
+    
+  </title>
+
+  <meta name="description" content="">
+  <meta property="og:description" content="">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Message Queues">
+  <meta property="og:url" content="https://ikouchiha47.github.io/postgresql/11-ipc/message-queues.html">
+
+  
+
+  <link href='https://fonts.googleapis.com/css?family=Lora:400,700,400italic,700italic' rel='stylesheet' type='text/css'>
+  <link href='https://fonts.googleapis.com/css?family=Open+Sans:300italic,400italic,600italic,700italic,800italic,400,300,600,700,800' rel='stylesheet' type='text/css'>
+
+  <!-- <script src="https://use.fontawesome.com/releases/v5.15.3/js/all.js" crossorigin="anonymous"></script> -->
+  <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.15.4/css/all.css" integrity="sha384-DyZ88mC6Up2uqS4h/KRgHuoeGwBcD4Ng9SiP4dIRy0EXTlnuz47vAwmeGwVChigm" crossorigin="anonymous"/>
+
+  <link rel="stylesheet" href="/assets/main.css">
+  <link rel="canonical" href="https://ikouchiha47.github.io/postgresql/11-ipc/message-queues.html">
+  <link rel="alternate" type="application/rss+xml" title="iko&#39;s logs" href="/feed.xml">
+
+  <meta name="google-site-verification" content="lWkg6gIxJgzEKX_5XnhcxCtPE9QknaimFWWos_dTvPM" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fira+Sans:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Inconsolata:wght@200..900&family=Jersey+25&family=Kanit:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Merriweather+Sans:ital,wght@0,300..800;1,300..800&family=Nanum+Gothic+Coding&family=Space+Grotesk:wght@300..700&family=Titillium+Web:ital,wght@0,200;0,300;0,400;0,600;0,700;0,900;1,200;1,300;1,400;1,600;1,700&display=swap" rel="stylesheet">
+
+</head>
+
+
+<body>
+
+  <!-- Navigation -->
+<nav class="navbar navbar-expand-lg navbar-light fixed-top" id="mainNav">
+  <div class="container">
+    <a class="navbar-brand" href="/">iko&#39;s logs</a>
+    <button class="navbar-toggler navbar-toggler-right" type="button" data-toggle="collapse" data-target="#navbarResponsive" aria-controls="navbarResponsive" aria-expanded="false" aria-label="Toggle navigation">
+      Menu
+      <i class="fa fa-bars"></i>
+    </button>
+    <div class="collapse navbar-collapse" id="navbarResponsive">
+      <ul class="navbar-nav ml-auto">
+        <li class="nav-item">
+          <a class="nav-link" href="/">Home</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/about">About</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/posts">Posts</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/contact">Contact</a>
+        </li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+
+  <!-- Page Header -->
+
+<header class="masthead">
+
+  <div class="overlay"></div>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <div class="post-heading">
+          <h1>Message Queues</h1>
+          
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="container space-grotesk">
+  <div class="row">
+    <div class="col-lg-8 col-md-10 mx-auto">
+
+      <!-- Breadcrumb -->
+      <nav aria-label="breadcrumb" style="margin-bottom: 1.5rem;">
+        <ol class="breadcrumb" style="background: transparent; padding: 0;">
+          
+            <li class="breadcrumb-item"><a href="/postgresql-internals/">PostgreSQL Internals Deep Dive</a></li>
+          
+          
+            
+              <li class="breadcrumb-item"><a href="/postgresql/11-ipc/">IPC</a></li>
+            
+          
+          <li class="breadcrumb-item active" aria-current="page">Message Queues</li>
+        </ol>
+      </nav>
+
+      <h1 id="shared-memory-message-queues">Shared Memory Message Queues</h1>
+
+<p>When a parallel query runs, the leader process must exchange data with its workers:
+sending query parameters, receiving result tuples, and relaying error messages.
+PostgreSQL uses two primitives for this: <strong>shm_mq</strong> (a lock-free ring buffer for
+streaming bytes between exactly one sender and one receiver) and <strong>shm_toc</strong> (a
+simple table of contents that maps integer keys to addresses within a DSM segment).</p>
+
+<hr />
+
+<h2 id="overview">Overview</h2>
+
+<p>The parallel query communication stack has three layers:</p>
+
+<ol>
+  <li>
+    <p><strong>DSM segment</strong> – A chunk of dynamic shared memory created by the leader and
+attached by each worker (see <a href="shared-memory.md">Shared Memory</a>).</p>
+  </li>
+  <li>
+    <p><strong>shm_toc</strong> – A table of contents at the start of the DSM segment that lets
+each participant find the data structures it needs by key.</p>
+  </li>
+  <li>
+    <p><strong>shm_mq</strong> – Ring buffers allocated within the DSM segment, one per
+communication channel (typically one error queue and one tuple queue per worker).</p>
+  </li>
+</ol>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>DSM Segment
++------------------------------------------------------------+
+| shm_toc (header + entries)                                 |
+|   key 0 -&gt; query text                                      |
+|   key 1 -&gt; serialized PlannedStmt                          |
+|   key 2 -&gt; serialized params                               |
+|   key 3 -&gt; shm_mq[0] (worker 0 tuple queue)               |
+|   key 4 -&gt; shm_mq[1] (worker 1 tuple queue)               |
+|   key 5 -&gt; shm_mq[2] (worker 0 error queue)               |
+|   key 6 -&gt; shm_mq[3] (worker 1 error queue)               |
+|   ...                                                       |
+| [allocated chunks referenced by TOC entries]                |
++------------------------------------------------------------+
+</code></pre></div></div>
+
+<hr />
+
+<h2 id="key-source-files">Key Source Files</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>File</th>
+      <th>Role</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/storage/shm_mq.h</code></td>
+      <td>shm_mq public API, <code class="language-plaintext highlighter-rouge">shm_mq_result</code> enum</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/storage/ipc/shm_mq.c</code></td>
+      <td>Ring buffer implementation</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/storage/shm_toc.h</code></td>
+      <td>shm_toc API, estimator macros</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/storage/ipc/shm_toc.c</code></td>
+      <td>TOC create/attach/allocate/lookup</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/access/transam/parallel.c</code></td>
+      <td>Parallel query setup using shm_toc + shm_mq</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/executor/tqueue.c</code></td>
+      <td>Tuple queue: serializes/deserializes tuples over shm_mq</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/libpq/pqmq.c</code></td>
+      <td>Redirects libpq protocol messages through shm_mq (error reporting)</td>
+    </tr>
+  </tbody>
+</table>
+
+<hr />
+
+<h2 id="how-it-works-shm_toc">How It Works: shm_toc</h2>
+
+<h3 id="structure">Structure</h3>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="cm">/* src/backend/storage/ipc/shm_toc.c */</span>
+<span class="k">typedef</span> <span class="k">struct</span> <span class="n">shm_toc_entry</span>
+<span class="p">{</span>
+    <span class="n">uint64</span>  <span class="n">key</span><span class="p">;</span>       <span class="cm">/* Arbitrary identifier */</span>
+    <span class="n">Size</span>    <span class="n">offset</span><span class="p">;</span>    <span class="cm">/* Byte offset from TOC start */</span>
+<span class="p">}</span> <span class="n">shm_toc_entry</span><span class="p">;</span>
+
+<span class="k">struct</span> <span class="n">shm_toc</span>
+<span class="p">{</span>
+    <span class="n">uint64</span>      <span class="n">toc_magic</span><span class="p">;</span>             <span class="cm">/* Magic number for validation */</span>
+    <span class="n">slock_t</span>     <span class="n">toc_mutex</span><span class="p">;</span>             <span class="cm">/* Protects concurrent inserts */</span>
+    <span class="n">Size</span>        <span class="n">toc_total_bytes</span><span class="p">;</span>       <span class="cm">/* Total managed space */</span>
+    <span class="n">Size</span>        <span class="n">toc_allocated_bytes</span><span class="p">;</span>   <span class="cm">/* Space already allocated */</span>
+    <span class="n">uint32</span>      <span class="n">toc_nentry</span><span class="p">;</span>            <span class="cm">/* Number of TOC entries */</span>
+    <span class="n">shm_toc_entry</span> <span class="n">toc_entry</span><span class="p">[</span><span class="n">FLEXIBLE_ARRAY_MEMBER</span><span class="p">];</span>
+<span class="p">};</span>
+</code></pre></div></div>
+
+<p>The TOC is a bump allocator that grows entries from the front and data chunks from
+the back of the managed space:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>+--------+--------+--------+-----+            +-------+-------+
+| entry0 | entry1 | entry2 | ... |  (free)    | chunk2| chunk1|
++--------+--------+--------+-----+            +-------+-------+
+^                                                              ^
+toc start                                              toc start + total_bytes
+</code></pre></div></div>
+
+<p><code class="language-plaintext highlighter-rouge">shm_toc_allocate(toc, nbytes)</code> carves <code class="language-plaintext highlighter-rouge">nbytes</code> from the back.
+<code class="language-plaintext highlighter-rouge">shm_toc_insert(toc, key, address)</code> records the mapping. Lookups are linear
+scans (the TOC is designed for a small number of keys, typically under 20).</p>
+
+<h3 id="estimator">Estimator</h3>
+
+<p>Before creating a DSM segment, the leader must estimate how large it needs to be.
+The estimator macros help with this:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="n">shm_toc_estimator</span> <span class="n">e</span><span class="p">;</span>
+<span class="n">shm_toc_initialize_estimator</span><span class="p">(</span><span class="o">&amp;</span><span class="n">e</span><span class="p">);</span>
+<span class="n">shm_toc_estimate_chunk</span><span class="p">(</span><span class="o">&amp;</span><span class="n">e</span><span class="p">,</span> <span class="n">query_text_len</span><span class="p">);</span>
+<span class="n">shm_toc_estimate_chunk</span><span class="p">(</span><span class="o">&amp;</span><span class="n">e</span><span class="p">,</span> <span class="n">planned_stmt_len</span><span class="p">);</span>
+<span class="n">shm_toc_estimate_chunk</span><span class="p">(</span><span class="o">&amp;</span><span class="n">e</span><span class="p">,</span> <span class="n">shm_mq_size</span> <span class="o">*</span> <span class="n">nworkers</span><span class="p">);</span>
+<span class="n">shm_toc_estimate_keys</span><span class="p">(</span><span class="o">&amp;</span><span class="n">e</span><span class="p">,</span> <span class="mi">3</span> <span class="o">+</span> <span class="n">nworkers</span><span class="p">);</span>
+<span class="n">Size</span> <span class="n">segsize</span> <span class="o">=</span> <span class="n">shm_toc_estimate</span><span class="p">(</span><span class="o">&amp;</span><span class="n">e</span><span class="p">);</span>
+</code></pre></div></div>
+
+<h3 id="create-and-attach">Create and Attach</h3>
+
+<p>The leader creates the TOC:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="n">dsm_segment</span> <span class="o">*</span><span class="n">seg</span> <span class="o">=</span> <span class="n">dsm_create</span><span class="p">(</span><span class="n">segsize</span><span class="p">,</span> <span class="mi">0</span><span class="p">);</span>
+<span class="n">shm_toc</span> <span class="o">*</span><span class="n">toc</span> <span class="o">=</span> <span class="n">shm_toc_create</span><span class="p">(</span><span class="n">PARALLEL_MAGIC</span><span class="p">,</span> <span class="n">dsm_segment_address</span><span class="p">(</span><span class="n">seg</span><span class="p">),</span> <span class="n">segsize</span><span class="p">);</span>
+</code></pre></div></div>
+
+<p>Workers attach:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="n">dsm_segment</span> <span class="o">*</span><span class="n">seg</span> <span class="o">=</span> <span class="n">dsm_attach</span><span class="p">(</span><span class="n">handle</span><span class="p">);</span>
+<span class="n">shm_toc</span> <span class="o">*</span><span class="n">toc</span> <span class="o">=</span> <span class="n">shm_toc_attach</span><span class="p">(</span><span class="n">PARALLEL_MAGIC</span><span class="p">,</span> <span class="n">dsm_segment_address</span><span class="p">(</span><span class="n">seg</span><span class="p">));</span>
+</code></pre></div></div>
+
+<p>The magic number serves as a version check. If a worker attaches to a segment
+with the wrong magic, <code class="language-plaintext highlighter-rouge">shm_toc_attach()</code> returns NULL.</p>
+
+<hr />
+
+<h2 id="how-it-works-shm_mq">How It Works: shm_mq</h2>
+
+<h3 id="ring-buffer-design">Ring Buffer Design</h3>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="cm">/* src/backend/storage/ipc/shm_mq.c */</span>
+<span class="k">struct</span> <span class="n">shm_mq</span>
+<span class="p">{</span>
+    <span class="n">slock_t</span>          <span class="n">mq_mutex</span><span class="p">;</span>          <span class="cm">/* Protects sender/receiver assignment */</span>
+    <span class="n">PGPROC</span>          <span class="o">*</span><span class="n">mq_receiver</span><span class="p">;</span>       <span class="cm">/* Receiver's PGPROC (for SetLatch) */</span>
+    <span class="n">PGPROC</span>          <span class="o">*</span><span class="n">mq_sender</span><span class="p">;</span>         <span class="cm">/* Sender's PGPROC (for SetLatch) */</span>
+    <span class="n">pg_atomic_uint64</span> <span class="n">mq_bytes_read</span><span class="p">;</span>     <span class="cm">/* Total bytes consumed by receiver */</span>
+    <span class="n">pg_atomic_uint64</span> <span class="n">mq_bytes_written</span><span class="p">;</span>  <span class="cm">/* Total bytes produced by sender */</span>
+    <span class="n">Size</span>             <span class="n">mq_ring_size</span><span class="p">;</span>      <span class="cm">/* Capacity of the ring buffer */</span>
+    <span class="n">bool</span>             <span class="n">mq_detached</span><span class="p">;</span>       <span class="cm">/* Has either side disconnected? */</span>
+    <span class="n">uint8</span>            <span class="n">mq_ring_offset</span><span class="p">;</span>    <span class="cm">/* Offset of mq_ring from struct start */</span>
+    <span class="kt">char</span>             <span class="n">mq_ring</span><span class="p">[</span><span class="n">FLEXIBLE_ARRAY_MEMBER</span><span class="p">];</span>  <span class="cm">/* The ring buffer */</span>
+<span class="p">};</span>
+</code></pre></div></div>
+
+<p>This is a classic single-producer, single-consumer ring buffer. The sender writes
+at position <code class="language-plaintext highlighter-rouge">mq_bytes_written % mq_ring_size</code> and the receiver reads at
+<code class="language-plaintext highlighter-rouge">mq_bytes_read % mq_ring_size</code>. The difference <code class="language-plaintext highlighter-rouge">mq_bytes_written - mq_bytes_read</code>
+is the amount of unread data.</p>
+
+<p>No locks are needed for data transfer. The <code class="language-plaintext highlighter-rouge">mq_mutex</code> only protects the one-time
+assignment of <code class="language-plaintext highlighter-rouge">mq_sender</code> and <code class="language-plaintext highlighter-rouge">mq_receiver</code>. After that, synchronization relies
+entirely on atomic reads/writes of the byte counters and memory barriers.</p>
+
+<h3 id="message-framing">Message Framing</h3>
+
+<p>Each message is preceded by a length word. <code class="language-plaintext highlighter-rouge">shm_mq_send()</code> writes the length
+followed by the data bytes. <code class="language-plaintext highlighter-rouge">shm_mq_receive()</code> reads the length first, then
+reads that many bytes. Messages can wrap around the ring buffer; the implementation
+handles the split transparently.</p>
+
+<h3 id="flow-control-and-wakeups">Flow Control and Wakeups</h3>
+
+<p>When the ring buffer is full (sender) or empty (receiver), the process must wait:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>Sender:
+  1. Check: is there room? (mq_bytes_written - mq_bytes_read &lt; mq_ring_size)
+  2. If no room and nowait=true: return SHM_MQ_WOULD_BLOCK
+  3. If no room and nowait=false:
+       a. SetLatch(mq_receiver-&gt;procLatch)  -- wake receiver to consume data
+       b. WaitLatch(MyLatch, ...)            -- sleep until receiver reads
+       c. Retry
+
+Receiver:
+  1. Check: is there data? (mq_bytes_written &gt; mq_bytes_read)
+  2. If no data and nowait=true: return SHM_MQ_WOULD_BLOCK
+  3. If no data and nowait=false:
+       a. SetLatch(mq_sender-&gt;procLatch)    -- wake sender to produce data
+       b. WaitLatch(MyLatch, ...)            -- sleep until sender writes
+       c. Retry
+</code></pre></div></div>
+
+<h3 id="send-batching">Send Batching</h3>
+
+<p>The <code class="language-plaintext highlighter-rouge">shm_mq_handle</code> (backend-private state) tracks <code class="language-plaintext highlighter-rouge">mqh_send_pending</code>: bytes
+written to the ring but not yet reflected in <code class="language-plaintext highlighter-rouge">mq_bytes_written</code>. The counter is
+only updated (making data visible to the receiver) when either:</p>
+
+<ul>
+  <li>The pending bytes reach 1/4 of the ring size, or</li>
+  <li>A flush is explicitly requested (<code class="language-plaintext highlighter-rouge">force_flush = true</code>), or</li>
+  <li>The ring is full and the sender must wait.</li>
+</ul>
+
+<p>This batching reduces the frequency of atomic writes and <code class="language-plaintext highlighter-rouge">SetLatch</code> calls, both
+of which involve CPU cache line bouncing.</p>
+
+<h3 id="detach">Detach</h3>
+
+<p>Either side can call <code class="language-plaintext highlighter-rouge">shm_mq_detach()</code>, which sets <code class="language-plaintext highlighter-rouge">mq_detached = true</code> and wakes
+the counterparty. After detach, any send or receive returns <code class="language-plaintext highlighter-rouge">SHM_MQ_DETACHED</code>.</p>
+
+<hr />
+
+<h2 id="key-data-structures">Key Data Structures</h2>
+
+<h3 id="shm_mq_handle-backend-private">shm_mq_handle (Backend-Private)</h3>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">struct</span> <span class="n">shm_mq_handle</span>
+<span class="p">{</span>
+    <span class="n">shm_mq</span>                 <span class="o">*</span><span class="n">mqh_queue</span><span class="p">;</span>           <span class="cm">/* The shared queue */</span>
+    <span class="n">dsm_segment</span>            <span class="o">*</span><span class="n">mqh_segment</span><span class="p">;</span>         <span class="cm">/* Owning DSM segment */</span>
+    <span class="n">BackgroundWorkerHandle</span> <span class="o">*</span><span class="n">mqh_handle</span><span class="p">;</span>          <span class="cm">/* For detecting worker death */</span>
+    <span class="kt">char</span>                   <span class="o">*</span><span class="n">mqh_buffer</span><span class="p">;</span>          <span class="cm">/* Reassembly buffer */</span>
+    <span class="n">Size</span>                    <span class="n">mqh_buflen</span><span class="p">;</span>          <span class="cm">/* Buffer allocation size */</span>
+    <span class="n">Size</span>                    <span class="n">mqh_send_pending</span><span class="p">;</span>    <span class="cm">/* Bytes written but not flushed */</span>
+    <span class="n">Size</span>                    <span class="n">mqh_partial_bytes</span><span class="p">;</span>   <span class="cm">/* Partial message progress */</span>
+    <span class="n">Size</span>                    <span class="n">mqh_expected_bytes</span><span class="p">;</span>  <span class="cm">/* Expected message size */</span>
+    <span class="n">bool</span>                    <span class="n">mqh_length_word_complete</span><span class="p">;</span>  <span class="cm">/* Have we read the length? */</span>
+    <span class="n">bool</span>                    <span class="n">mqh_counterparty_attached</span><span class="p">;</span> <span class="cm">/* Is the other end connected? */</span>
+<span class="p">};</span>
+</code></pre></div></div>
+
+<h3 id="shm_mq_result">shm_mq_result</h3>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">typedef</span> <span class="k">enum</span>
+<span class="p">{</span>
+    <span class="n">SHM_MQ_SUCCESS</span><span class="p">,</span>      <span class="cm">/* Message sent or received */</span>
+    <span class="n">SHM_MQ_WOULD_BLOCK</span><span class="p">,</span>  <span class="cm">/* Non-blocking: try again later */</span>
+    <span class="n">SHM_MQ_DETACHED</span><span class="p">,</span>     <span class="cm">/* Counterparty has disconnected */</span>
+<span class="p">}</span> <span class="n">shm_mq_result</span><span class="p">;</span>
+</code></pre></div></div>
+
+<h3 id="shm_mq_iovec">shm_mq_iovec</h3>
+
+<p>For scatter-gather sends, <code class="language-plaintext highlighter-rouge">shm_mq_sendv()</code> accepts an array of <code class="language-plaintext highlighter-rouge">shm_mq_iovec</code>:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">typedef</span> <span class="k">struct</span>
+<span class="p">{</span>
+    <span class="k">const</span> <span class="kt">char</span> <span class="o">*</span><span class="n">data</span><span class="p">;</span>
+    <span class="n">Size</span>        <span class="n">len</span><span class="p">;</span>
+<span class="p">}</span> <span class="n">shm_mq_iovec</span><span class="p">;</span>
+</code></pre></div></div>
+
+<p>This avoids copying when a message is assembled from multiple pieces (e.g., a
+length header plus payload).</p>
+
+<hr />
+
+<h2 id="diagram-parallel-query-communication">Diagram: Parallel Query Communication</h2>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>Leader Backend
++--------------------------------------------------+
+|                                                  |
+|  1. dsm_create(segsize)                          |
+|  2. shm_toc_create(magic, seg, segsize)          |
+|  3. Allocate and insert:                         |
+|       - query_string                             |
+|       - PlannedStmt (serialized)                 |
+|       - Params (serialized)                      |
+|       - shm_mq per worker (tuple + error)        |
+|  4. Launch workers via RegisterDynamicBGWorker   |
+|  5. Wait on WaitEventSet for shm_mq readability  |
+|                                                  |
+|  tuple_mq[0] &lt;------- Worker 0                   |
+|  tuple_mq[1] &lt;------- Worker 1                   |
+|  error_mq[0] &lt;------- Worker 0                   |
+|  error_mq[1] &lt;------- Worker 1                   |
++--------------------------------------------------+
+
+Worker 0                            Worker 1
++-----------------------------+     +-----------------------------+
+| 1. dsm_attach(handle)       |     | 1. dsm_attach(handle)       |
+| 2. shm_toc_attach(magic)    |     | 2. shm_toc_attach(magic)    |
+| 3. Look up query, params    |     | 3. Look up query, params    |
+| 4. Attach to tuple_mq[0]   |     | 4. Attach to tuple_mq[1]   |
+| 5. Execute partial plan     |     | 5. Execute partial plan     |
+| 6. shm_mq_send(tuples)     |     | 6. shm_mq_send(tuples)     |
+| 7. shm_mq_detach()         |     | 7. shm_mq_detach()         |
++-----------------------------+     +-----------------------------+
+</code></pre></div></div>
+
+<h3 id="tuple-queue-protocol">Tuple Queue Protocol</h3>
+
+<p>The executor’s <code class="language-plaintext highlighter-rouge">tqueue.c</code> layer sits on top of <code class="language-plaintext highlighter-rouge">shm_mq</code>. For each result tuple:</p>
+
+<ol>
+  <li>The worker serializes the tuple into a <code class="language-plaintext highlighter-rouge">MinimalTuple</code> (no system columns).</li>
+  <li>It sends the tuple via <code class="language-plaintext highlighter-rouge">shm_mq_send()</code>.</li>
+  <li>The leader receives via <code class="language-plaintext highlighter-rouge">shm_mq_receive()</code> and deserializes.</li>
+</ol>
+
+<p>For tuples containing by-reference types that point into the worker’s memory
+(e.g., TOAST pointers, record types), the tuple queue includes a type remapping
+mechanism that ensures the leader can interpret the data correctly.</p>
+
+<h3 id="error-reporting-via-pqmq">Error Reporting via pqmq</h3>
+
+<p><code class="language-plaintext highlighter-rouge">pqmq.c</code> redirects the standard libpq error reporting protocol through <code class="language-plaintext highlighter-rouge">shm_mq</code>.
+When a worker calls <code class="language-plaintext highlighter-rouge">ereport(ERROR, ...)</code>, the error message is serialized using
+the standard libpq protocol format and sent via the error queue. The leader
+receives these messages and re-raises them in its own context, so errors from
+workers appear seamlessly in the client’s error stream.</p>
+
+<hr />
+
+<h2 id="ring-buffer-synchronization-detail">Ring Buffer Synchronization Detail</h2>
+
+<p>The lock-free protocol relies on careful ordering of memory operations:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>SENDER writes data to mq_ring:
+  1. Write bytes to mq_ring[write_pos .. write_pos + len]
+  2. pg_write_barrier()                    -- ensure ring writes are visible
+  3. pg_atomic_write_u64(&amp;mq_bytes_written, new_value)  -- publish
+
+RECEIVER reads data from mq_ring:
+  1. pg_atomic_read_u64(&amp;mq_bytes_written)  -- observe available bytes
+  2. pg_read_barrier()                      -- ensure subsequent reads see ring data
+  3. Read bytes from mq_ring[read_pos .. read_pos + len]
+  4. pg_atomic_write_u64(&amp;mq_bytes_read, new_value)  -- release consumed space
+</code></pre></div></div>
+
+<p>The atomic operations on the byte counters and the memory barriers guarantee that:</p>
+<ul>
+  <li>The receiver never reads data that the sender has not finished writing.</li>
+  <li>The sender never overwrites data that the receiver has not finished reading.</li>
+</ul>
+
+<p>No mutex is held during data transfer. The <code class="language-plaintext highlighter-rouge">mq_mutex</code> spinlock is only acquired
+during the one-time setup of <code class="language-plaintext highlighter-rouge">mq_sender</code> and <code class="language-plaintext highlighter-rouge">mq_receiver</code>.</p>
+
+<hr />
+
+<h2 id="connections">Connections</h2>
+
+<ul>
+  <li>
+    <p><strong><a href="shared-memory.md">Shared Memory</a></strong> – shm_mq and shm_toc are laid out within
+DSM segments. The DSM lifecycle governs when queues are created and destroyed.</p>
+  </li>
+  <li>
+    <p><strong><a href="latches-and-events.md">Latches and Wait Events</a></strong> – shm_mq uses SetLatch to
+wake the counterparty. The leader uses a WaitEventSet to monitor multiple queues.</p>
+  </li>
+  <li>
+    <p><strong><a href="procarray.md">ProcArray</a></strong> – shm_mq stores PGPROC pointers for sender and
+receiver, using them to access <code class="language-plaintext highlighter-rouge">procLatch</code> for signaling.</p>
+  </li>
+  <li>
+    <p><strong>Chapter 8 (Executor)</strong> – Parallel Gather and Gather Merge nodes consume tuples
+from shm_mq queues. The executor’s tqueue.c serializes tuples for transport.</p>
+  </li>
+  <li>
+    <p><strong>Chapter 10 (Memory)</strong> – DSA (Dynamic Shared Area) provides a more general
+allocator on top of DSM for cases like parallel hash joins, where the data
+structure is more complex than a simple ring buffer.</p>
+  </li>
+</ul>
+
+
+      <hr>
+
+      <!-- Prev / Next / Up navigation -->
+      
+      
+      
+
+      <div class="clearfix" style="margin-top: 2rem;">
+        
+          
+          
+
+          
+            
+            <a class="btn btn-primary float-left" href="/postgresql/11-ipc/latches-and-events.html" title="Latches and Wait Events">&larr; Previous</a>
+          
+
+          
+            
+            <a class="btn btn-primary float-right" href="/postgresql/11-ipc/procarray.html" title="ProcArray and PGPROC">Next &rarr;</a>
+          
+        
+      </div>
+
+      
+      <div style="text-align: center; margin-top: 1rem;">
+        <a href="/postgresql-internals/">&uarr; Back to Table of Contents</a>
+      </div>
+      
+
+    </div>
+  </div>
+</div>
+
+
+  <!-- Footer -->
+
+<hr>
+
+<footer>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <ul class="list-inline text-center">
+          
+          <li class="list-inline-item">
+            <a href="mailto:amitava.dev@proton.me" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="far fa-envelope fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          
+          
+          <li class="list-inline-item">
+            <a href="https://www.linkedin.com/in/amitavaag" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-linkedin fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          <li class="list-inline-item">
+            <a href="https://github.com/ikouchiha47" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-github fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+        </ul>
+
+        <p class="copyright text-muted">
+          Build with: 
+          <a 
+            href="https://github.com/StartBootstrap/startbootstrap-clean-blog-jekyll"
+            class="text-gray"
+            target="_blank">startbootstrap-clean-blog-jekyll</a></p>
+      </div>
+    </div>
+  </div>
+</footer>
+
+
+  <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="/assets/vendor/blog/js/scripts.js"></script>
+
+<script src="/assets/scripts.js"></script>
+
+
+
+
+
+  <script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+
+    document.querySelectorAll('pre > code.language-mermaid').forEach((codeBlock) => {
+      codeBlock.parentElement.outerHTML = `<pre class="mermaid">${codeBlock.textContent}</pre>`;
+    });
+
+
+    mermaid.initialize({ startOnLoad: true, theme: 'forest' });
+</script>
+
+
+  
+
+</body>
+
+</html>

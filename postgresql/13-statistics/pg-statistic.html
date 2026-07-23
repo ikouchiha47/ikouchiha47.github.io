@@ -1,0 +1,577 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+  <title>
+    pg_statistic and Single-Column Statistics - iko&#39;s logs
+    
+  </title>
+
+  <meta name="description" content="">
+  <meta property="og:description" content="">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="pg_statistic and Single-Column Statistics">
+  <meta property="og:url" content="https://ikouchiha47.github.io/postgresql/13-statistics/pg-statistic.html">
+
+  
+
+  <link href='https://fonts.googleapis.com/css?family=Lora:400,700,400italic,700italic' rel='stylesheet' type='text/css'>
+  <link href='https://fonts.googleapis.com/css?family=Open+Sans:300italic,400italic,600italic,700italic,800italic,400,300,600,700,800' rel='stylesheet' type='text/css'>
+
+  <!-- <script src="https://use.fontawesome.com/releases/v5.15.3/js/all.js" crossorigin="anonymous"></script> -->
+  <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.15.4/css/all.css" integrity="sha384-DyZ88mC6Up2uqS4h/KRgHuoeGwBcD4Ng9SiP4dIRy0EXTlnuz47vAwmeGwVChigm" crossorigin="anonymous"/>
+
+  <link rel="stylesheet" href="/assets/main.css">
+  <link rel="canonical" href="https://ikouchiha47.github.io/postgresql/13-statistics/pg-statistic.html">
+  <link rel="alternate" type="application/rss+xml" title="iko&#39;s logs" href="/feed.xml">
+
+  <meta name="google-site-verification" content="lWkg6gIxJgzEKX_5XnhcxCtPE9QknaimFWWos_dTvPM" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fira+Sans:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Inconsolata:wght@200..900&family=Jersey+25&family=Kanit:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Merriweather+Sans:ital,wght@0,300..800;1,300..800&family=Nanum+Gothic+Coding&family=Space+Grotesk:wght@300..700&family=Titillium+Web:ital,wght@0,200;0,300;0,400;0,600;0,700;0,900;1,200;1,300;1,400;1,600;1,700&display=swap" rel="stylesheet">
+
+</head>
+
+
+<body>
+
+  <!-- Navigation -->
+<nav class="navbar navbar-expand-lg navbar-light fixed-top" id="mainNav">
+  <div class="container">
+    <a class="navbar-brand" href="/">iko&#39;s logs</a>
+    <button class="navbar-toggler navbar-toggler-right" type="button" data-toggle="collapse" data-target="#navbarResponsive" aria-controls="navbarResponsive" aria-expanded="false" aria-label="Toggle navigation">
+      Menu
+      <i class="fa fa-bars"></i>
+    </button>
+    <div class="collapse navbar-collapse" id="navbarResponsive">
+      <ul class="navbar-nav ml-auto">
+        <li class="nav-item">
+          <a class="nav-link" href="/">Home</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/about">About</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/posts">Posts</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/contact">Contact</a>
+        </li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+
+  <!-- Page Header -->
+
+<header class="masthead">
+
+  <div class="overlay"></div>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <div class="post-heading">
+          <h1>pg_statistic and Single-Column Statistics</h1>
+          
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="container space-grotesk">
+  <div class="row">
+    <div class="col-lg-8 col-md-10 mx-auto">
+
+      <!-- Breadcrumb -->
+      <nav aria-label="breadcrumb" style="margin-bottom: 1.5rem;">
+        <ol class="breadcrumb" style="background: transparent; padding: 0;">
+          
+            <li class="breadcrumb-item"><a href="/postgresql-internals/">PostgreSQL Internals Deep Dive</a></li>
+          
+          
+            
+              <li class="breadcrumb-item"><a href="/postgresql/13-statistics/">Statistics & Monitoring</a></li>
+            
+          
+          <li class="breadcrumb-item active" aria-current="page">pg_statistic and Single-Column Statistics</li>
+        </ol>
+      </nav>
+
+      <h1 id="pg_statistic-and-single-column-statistics">pg_statistic and Single-Column Statistics</h1>
+
+<h2 id="summary">Summary</h2>
+
+<p>Every column in every analyzed table gets a row in <code class="language-plaintext highlighter-rouge">pg_statistic</code> containing up to five “slots” of statistical data. The most important slots hold the <strong>Most Common Values (MCV)</strong> list, an equi-depth <strong>histogram</strong> of the remaining values, a <strong>correlation</strong> coefficient between logical and physical tuple order, and for array/tsvector types, <strong>most common elements</strong>. These statistics drive virtually every selectivity estimate in the query planner. Understanding the slot system, how ANALYZE populates it, and how the planner reads it is essential for diagnosing bad query plans.</p>
+
+<hr />
+
+<h2 id="overview">Overview</h2>
+
+<p>PostgreSQL does not hardcode the meaning of statistical data into the <code class="language-plaintext highlighter-rouge">pg_statistic</code> catalog. Instead, it provides a generic <strong>slot system</strong>: each row has five slots, and each slot has a <code class="language-plaintext highlighter-rouge">stakind</code> integer that identifies what kind of data it holds, an associated operator OID, a collation OID, a <code class="language-plaintext highlighter-rouge">float4[]</code> array for numeric statistical values, and an <code class="language-plaintext highlighter-rouge">anyarray</code> for data values. This design allows custom data types to define their own statistics kinds through custom <code class="language-plaintext highlighter-rouge">typanalyze</code> functions.</p>
+
+<p>The standard statistics kinds defined by core PostgreSQL are:</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>Kind</th>
+      <th>Constant</th>
+      <th>Slot Contents</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>1</td>
+      <td><code class="language-plaintext highlighter-rouge">STATISTIC_KIND_MCV</code></td>
+      <td>Most common values and their frequencies</td>
+    </tr>
+    <tr>
+      <td>2</td>
+      <td><code class="language-plaintext highlighter-rouge">STATISTIC_KIND_HISTOGRAM</code></td>
+      <td>Equi-depth histogram boundary values</td>
+    </tr>
+    <tr>
+      <td>3</td>
+      <td><code class="language-plaintext highlighter-rouge">STATISTIC_KIND_CORRELATION</code></td>
+      <td>Physical-vs-logical order correlation coefficient</td>
+    </tr>
+    <tr>
+      <td>4</td>
+      <td><code class="language-plaintext highlighter-rouge">STATISTIC_KIND_MCELEM</code></td>
+      <td>Most common elements (for arrays, tsvector)</td>
+    </tr>
+    <tr>
+      <td>5</td>
+      <td><code class="language-plaintext highlighter-rouge">STATISTIC_KIND_DECHIST</code></td>
+      <td>Distinct element count histogram</td>
+    </tr>
+    <tr>
+      <td>6</td>
+      <td><code class="language-plaintext highlighter-rouge">STATISTIC_KIND_RANGE_LENGTH_HISTOGRAM</code></td>
+      <td>Range type length distribution</td>
+    </tr>
+    <tr>
+      <td>7</td>
+      <td><code class="language-plaintext highlighter-rouge">STATISTIC_KIND_BOUNDS_HISTOGRAM</code></td>
+      <td>Range type bounds histogram</td>
+    </tr>
+  </tbody>
+</table>
+
+<hr />
+
+<h2 id="key-source-files">Key Source Files</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>File</th>
+      <th>Purpose</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/catalog/pg_statistic.h</code></td>
+      <td>Catalog definition, slot kind constants, field documentation</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/commands/analyze.c</code></td>
+      <td>ANALYZE command, sampling, <code class="language-plaintext highlighter-rouge">std_typanalyze</code>, <code class="language-plaintext highlighter-rouge">compute_scalar_stats</code></td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/utils/cache/lsyscache.c</code></td>
+      <td><code class="language-plaintext highlighter-rouge">get_attstatsslot()</code> – planner’s API to read statistics</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/utils/adt/selfuncs.c</code></td>
+      <td>Selectivity estimation functions that consume statistics</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/commands/vacuum.h</code></td>
+      <td><code class="language-plaintext highlighter-rouge">VacAttrStats</code> struct used during ANALYZE</td>
+    </tr>
+  </tbody>
+</table>
+
+<hr />
+
+<h2 id="how-it-works">How It Works</h2>
+
+<h3 id="the-analyze-pipeline">The ANALYZE Pipeline</h3>
+
+<p>ANALYZE follows a well-defined sequence to populate statistics for each column of a table.</p>
+
+<pre><code class="language-mermaid">flowchart TD
+    START["ANALYZE table_name"] --&gt; SAMPLE["Sample rows using\nblock-level two-stage sampling"]
+    SAMPLE --&gt; TARGROWS["Target = 300 * statistics_target\n(default: 30,000 rows)"]
+    TARGROWS --&gt; FOREACH["For each column ..."]
+    FOREACH --&gt; EXAMINE["examine_attribute()\nPick typanalyze function"]
+    EXAMINE --&gt; COMPUTE["compute_stats callback\n(usually std_typanalyze)"]
+    COMPUTE --&gt; SORT["Sort sampled values"]
+    SORT --&gt; MCV_BUILD["Build MCV list\n(values appearing &gt; avg frequency)"]
+    MCV_BUILD --&gt; HIST_BUILD["Build histogram\nfrom non-MCV values"]
+    HIST_BUILD --&gt; CORR_BUILD["Compute correlation\nwith physical tuple order"]
+    CORR_BUILD --&gt; UPDATE["update_attstats()\nWrite to pg_statistic"]
+    UPDATE --&gt; NEXT["Next column"]
+</code></pre>
+
+<p><strong>Sampling strategy</strong>: ANALYZE uses a two-phase block sampling algorithm (Vitter’s reservoir sampling variant). It first selects a random set of pages, then takes all visible tuples from those pages. The target sample size is <code class="language-plaintext highlighter-rouge">300 * statistics_target</code>.</p>
+
+<p><strong>typanalyze dispatch</strong>: For most scalar types, the default <code class="language-plaintext highlighter-rouge">std_typanalyze</code> function is used. It sets up callbacks for <code class="language-plaintext highlighter-rouge">compute_scalar_stats()</code>, which handles MCV, histogram, and correlation computation. Custom types (arrays, tsvectors, ranges) register their own typanalyze functions that compute type-specific statistics.</p>
+
+<h3 id="most-common-values-mcv">Most Common Values (MCV)</h3>
+
+<p>The MCV list captures values that appear significantly more often than average. During <code class="language-plaintext highlighter-rouge">compute_scalar_stats()</code>:</p>
+
+<ol>
+  <li>Sort all non-null sampled values.</li>
+  <li>Count runs of identical values.</li>
+  <li>Include a value in the MCV list if its frequency exceeds <code class="language-plaintext highlighter-rouge">1.0 / statistics_target</code> AND the value appears more than once.</li>
+  <li>Store up to <code class="language-plaintext highlighter-rouge">statistics_target</code> values, ordered by decreasing frequency.</li>
+</ol>
+
+<p>The MCV slot stores:</p>
+<ul>
+  <li><code class="language-plaintext highlighter-rouge">stavalues</code>: The actual values (as <code class="language-plaintext highlighter-rouge">anyarray</code>)</li>
+  <li><code class="language-plaintext highlighter-rouge">stanumbers</code>: Their frequencies as fractions of total rows</li>
+  <li><code class="language-plaintext highlighter-rouge">staop</code>: The <code class="language-plaintext highlighter-rouge">=</code> operator OID for the data type</li>
+</ul>
+
+<h3 id="histogram">Histogram</h3>
+
+<p>The histogram describes the distribution of values that are NOT in the MCV list (a “compressed histogram”). This is crucial: when both MCV and histogram exist, the histogram covers only the non-MCV portion of the data.</p>
+
+<ol>
+  <li>Remove all values that appear in the MCV list.</li>
+  <li>Sort the remaining values.</li>
+  <li>Pick <code class="language-plaintext highlighter-rouge">statistics_target + 1</code> boundary values at equal intervals (equi-depth bins).</li>
+  <li>The first boundary is the minimum, the last is the maximum.</li>
+</ol>
+
+<p>The histogram slot stores:</p>
+<ul>
+  <li><code class="language-plaintext highlighter-rouge">stavalues</code>: The boundary values (M values defining M-1 bins)</li>
+  <li><code class="language-plaintext highlighter-rouge">stanumbers</code>: NULL (not used for standard histograms)</li>
+  <li><code class="language-plaintext highlighter-rouge">staop</code>: The <code class="language-plaintext highlighter-rouge">&lt;</code> operator OID for the data type</li>
+</ul>
+
+<h3 id="correlation">Correlation</h3>
+
+<p>Correlation measures how closely the physical (on-disk) order of tuples matches the logical sort order of a column’s values. It ranges from -1.0 to +1.0.</p>
+
+<ul>
+  <li><strong>+1.0</strong>: Perfectly sorted in ascending order (common after CLUSTER or after loading sorted data)</li>
+  <li><strong>-1.0</strong>: Perfectly sorted in descending order</li>
+  <li><strong>~0.0</strong>: No correlation (random order)</li>
+</ul>
+
+<p>The planner uses correlation to decide between index scan and bitmap index scan. A high correlation means an index scan will read pages roughly sequentially (good for I/O). A low correlation means random page access, making bitmap scans (which sort TIDs by block number before fetching) more attractive.</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>Correlation = Pearson coefficient between:
+  - sequence number of each value in sort order
+  - physical tuple position (block number * tuples_per_block + offset)
+</code></pre></div></div>
+
+<h3 id="the-stadistinct-field">The stadistinct Field</h3>
+
+<p>Outside the slots, <code class="language-plaintext highlighter-rouge">pg_statistic</code> has a <code class="language-plaintext highlighter-rouge">stadistinct</code> field with special encoding:</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>Value</th>
+      <th>Meaning</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">0</code></td>
+      <td>Unknown or not computed</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">&gt; 0</code></td>
+      <td>Actual number of distinct values (e.g., 5 for a boolean-like column)</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">&lt; 0</code></td>
+      <td>Negative multiplier of the table’s row count (e.g., -1.0 means unique, -0.5 means ~50% distinct)</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>The negative encoding handles the common case where the number of distinct values is proportional to table size. Since <code class="language-plaintext highlighter-rouge">pg_class.reltuples</code> may be updated more frequently than <code class="language-plaintext highlighter-rouge">pg_statistic</code>, expressing ndistinct as a fraction avoids stale absolute counts.</p>
+
+<hr />
+
+<h2 id="key-data-structures">Key Data Structures</h2>
+
+<h3 id="formdata_pg_statistic">FormData_pg_statistic</h3>
+
+<p>The catalog tuple structure, defined in <code class="language-plaintext highlighter-rouge">pg_statistic.h</code>:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="n">CATALOG</span><span class="p">(</span><span class="n">pg_statistic</span><span class="p">,</span><span class="mi">2619</span><span class="p">,</span><span class="n">StatisticRelationId</span><span class="p">)</span>
+<span class="p">{</span>
+    <span class="n">Oid</span>     <span class="n">starelid</span><span class="p">;</span>       <span class="cm">/* relation OID */</span>
+    <span class="n">int16</span>   <span class="n">staattnum</span><span class="p">;</span>      <span class="cm">/* column number */</span>
+    <span class="n">bool</span>    <span class="n">stainherit</span><span class="p">;</span>     <span class="cm">/* includes inheritance children? */</span>
+
+    <span class="n">float4</span>  <span class="n">stanullfrac</span><span class="p">;</span>    <span class="cm">/* fraction of NULLs */</span>
+    <span class="n">int32</span>   <span class="n">stawidth</span><span class="p">;</span>       <span class="cm">/* average width in bytes (post-TOAST) */</span>
+    <span class="n">float4</span>  <span class="n">stadistinct</span><span class="p">;</span>    <span class="cm">/* distinct value count (see encoding above) */</span>
+
+    <span class="cm">/* Five slots, each with kind/op/coll/numbers/values */</span>
+    <span class="n">int16</span>   <span class="n">stakind1</span> <span class="p">...</span> <span class="n">stakind5</span><span class="p">;</span>
+    <span class="n">Oid</span>     <span class="n">staop1</span>   <span class="p">...</span> <span class="n">staop5</span><span class="p">;</span>
+    <span class="n">Oid</span>     <span class="n">stacoll1</span> <span class="p">...</span> <span class="n">stacoll5</span><span class="p">;</span>
+
+    <span class="cm">/* Variable-length portion */</span>
+    <span class="n">float4</span>  <span class="n">stanumbers1</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="p">...</span> <span class="n">stanumbers5</span><span class="p">[</span><span class="mi">1</span><span class="p">];</span>
+    <span class="n">anyarray</span> <span class="n">stavalues1</span>    <span class="p">...</span> <span class="n">stavalues5</span><span class="p">;</span>
+<span class="p">};</span>
+</code></pre></div></div>
+
+<p>The unique key is <code class="language-plaintext highlighter-rouge">(starelid, staattnum, stainherit)</code>. There is one row per column per inheritance mode (own stats vs. including children).</p>
+
+<h3 id="vacattrstats">VacAttrStats</h3>
+
+<p>The in-memory working structure during ANALYZE:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">typedef</span> <span class="k">struct</span> <span class="n">VacAttrStats</span> <span class="p">{</span>
+    <span class="cm">/* Column identity */</span>
+    <span class="kt">int</span>         <span class="n">attr_cnt</span><span class="p">;</span>
+    <span class="n">Form_pg_attribute</span> <span class="o">*</span><span class="n">attrs</span><span class="p">;</span>
+
+    <span class="cm">/* Sampling info */</span>
+    <span class="kt">int</span>         <span class="n">rows_in_sample</span><span class="p">;</span>
+    <span class="kt">double</span>      <span class="n">total_rows</span><span class="p">;</span>
+
+    <span class="cm">/* Computed statistics (copied into pg_statistic) */</span>
+    <span class="n">float4</span>      <span class="n">stanullfrac</span><span class="p">;</span>
+    <span class="n">int32</span>       <span class="n">stawidth</span><span class="p">;</span>
+    <span class="n">float4</span>      <span class="n">stadistinct</span><span class="p">;</span>
+
+    <span class="cm">/* Slot data */</span>
+    <span class="n">int16</span>       <span class="n">stakind</span><span class="p">[</span><span class="n">STATISTIC_NUM_SLOTS</span><span class="p">];</span>
+    <span class="n">Oid</span>         <span class="n">staop</span><span class="p">[</span><span class="n">STATISTIC_NUM_SLOTS</span><span class="p">];</span>
+    <span class="kt">int</span>         <span class="n">numnumbers</span><span class="p">[</span><span class="n">STATISTIC_NUM_SLOTS</span><span class="p">];</span>
+    <span class="n">float4</span>     <span class="o">*</span><span class="n">stanumbers</span><span class="p">[</span><span class="n">STATISTIC_NUM_SLOTS</span><span class="p">];</span>
+    <span class="kt">int</span>         <span class="n">numvalues</span><span class="p">[</span><span class="n">STATISTIC_NUM_SLOTS</span><span class="p">];</span>
+    <span class="n">Datum</span>      <span class="o">*</span><span class="n">stavalues</span><span class="p">[</span><span class="n">STATISTIC_NUM_SLOTS</span><span class="p">];</span>
+
+    <span class="cm">/* Callbacks set by typanalyze */</span>
+    <span class="n">AnalyzeAttrComputeStatsFunc</span> <span class="n">compute_stats</span><span class="p">;</span>
+    <span class="cm">/* ... */</span>
+<span class="p">}</span> <span class="n">VacAttrStats</span><span class="p">;</span>
+</code></pre></div></div>
+
+<hr />
+
+<h2 id="how-the-planner-reads-statistics">How the Planner Reads Statistics</h2>
+
+<p>The planner accesses statistics through <code class="language-plaintext highlighter-rouge">get_attstatsslot()</code> in <code class="language-plaintext highlighter-rouge">lsyscache.c</code>. This function:</p>
+
+<ol>
+  <li>Fetches the <code class="language-plaintext highlighter-rouge">pg_statistic</code> tuple from the syscache.</li>
+  <li>Searches the five <code class="language-plaintext highlighter-rouge">stakind</code> fields for the requested kind.</li>
+  <li>Extracts the <code class="language-plaintext highlighter-rouge">stanumbers</code> and <code class="language-plaintext highlighter-rouge">stavalues</code> arrays from the matching slot.</li>
+  <li>Returns them in a <code class="language-plaintext highlighter-rouge">AttStatsSlot</code> struct for the caller.</li>
+</ol>
+
+<p>Selectivity functions in <code class="language-plaintext highlighter-rouge">selfuncs.c</code> then use these arrays. For example, <code class="language-plaintext highlighter-rouge">var_eq_const()</code> estimates the selectivity of <code class="language-plaintext highlighter-rouge">column = constant</code> by:</p>
+
+<ol>
+  <li>Searching the MCV list for the constant. If found, return its frequency directly.</li>
+  <li>If not found, compute <code class="language-plaintext highlighter-rouge">(1 - sum_of_mcv_frequencies - null_fraction) / num_distinct_non_mcv</code>. This assumes uniform distribution among non-MCV values.</li>
+</ol>
+
+<pre><code class="language-mermaid">flowchart LR
+    CLAUSE["WHERE col = 42"] --&gt; SELFUNC["eqsel() / var_eq_const()"]
+    SELFUNC --&gt; LOAD["get_attstatsslot(STATISTIC_KIND_MCV)"]
+    LOAD --&gt; SEARCH{"42 in MCV list?"}
+    SEARCH --&gt;|"Yes"| FREQ["Return frequency directly"]
+    SEARCH --&gt;|"No"| UNIFORM["Assume uniform among\nnon-MCV values"]
+    UNIFORM --&gt; CALC["(1 - mcv_freq - null_frac)\n/ ndistinct_remaining"]
+</code></pre>
+
+<p>For range queries (<code class="language-plaintext highlighter-rouge">col &lt; 42</code>), the planner uses <code class="language-plaintext highlighter-rouge">scalarineqsel()</code>, which:</p>
+
+<ol>
+  <li>Sums MCV frequencies for values satisfying the condition.</li>
+  <li>Uses the histogram to interpolate what fraction of non-MCV values satisfy it.</li>
+  <li>Combines the two fractions.</li>
+</ol>
+
+<hr />
+
+<h2 id="practical-implications">Practical Implications</h2>
+
+<h3 id="when-statistics-go-stale">When Statistics Go Stale</h3>
+
+<p>After bulk operations (COPY, mass UPDATE, mass DELETE), the statistics in <code class="language-plaintext highlighter-rouge">pg_statistic</code> no longer reflect the actual data distribution. Common symptoms:</p>
+
+<ul>
+  <li>Sequential scans on large tables where index scans would be faster</li>
+  <li>Nested loop joins where hash joins would be appropriate</li>
+  <li>Grossly wrong row count estimates visible in <code class="language-plaintext highlighter-rouge">EXPLAIN ANALYZE</code></li>
+</ul>
+
+<p>Autovacuum triggers ANALYZE when <code class="language-plaintext highlighter-rouge">pg_stat_user_tables.n_mod_since_analyze</code> exceeds <code class="language-plaintext highlighter-rouge">autovacuum_analyze_threshold + autovacuum_analyze_scale_factor * reltuples</code>. The defaults (50 + 10% of rows) mean small tables are re-analyzed quickly, but large tables may take many modifications before re-analysis.</p>
+
+<h3 id="adjusting-statistics_target">Adjusting statistics_target</h3>
+
+<p>For columns used in WHERE clauses with highly skewed distributions, raising the per-column statistics target captures more of the tail in the MCV list:</p>
+
+<div class="language-sql highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">ALTER</span> <span class="k">TABLE</span> <span class="n">orders</span> <span class="k">ALTER</span> <span class="k">COLUMN</span> <span class="n">status</span> <span class="k">SET</span> <span class="k">STATISTICS</span> <span class="mi">1000</span><span class="p">;</span>
+<span class="k">ANALYZE</span> <span class="n">orders</span><span class="p">;</span>
+</code></pre></div></div>
+
+<p>This produces up to 1000 MCV entries and 1001 histogram bins for that column, at the cost of a larger sample (300,000 rows) and more catalog storage.</p>
+
+<h3 id="inspecting-statistics">Inspecting Statistics</h3>
+
+<p>The <code class="language-plaintext highlighter-rouge">pg_stats</code> view provides a human-readable interface to <code class="language-plaintext highlighter-rouge">pg_statistic</code>:</p>
+
+<div class="language-sql highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">SELECT</span> <span class="n">attname</span><span class="p">,</span> <span class="n">null_frac</span><span class="p">,</span> <span class="n">n_distinct</span><span class="p">,</span>
+       <span class="n">most_common_vals</span><span class="p">,</span> <span class="n">most_common_freqs</span><span class="p">,</span>
+       <span class="n">histogram_bounds</span><span class="p">,</span> <span class="n">correlation</span>
+<span class="k">FROM</span> <span class="n">pg_stats</span>
+<span class="k">WHERE</span> <span class="n">tablename</span> <span class="o">=</span> <span class="s1">'orders'</span> <span class="k">AND</span> <span class="n">attname</span> <span class="o">=</span> <span class="s1">'status'</span><span class="p">;</span>
+</code></pre></div></div>
+
+<hr />
+
+<h2 id="connections-to-other-chapters">Connections to Other Chapters</h2>
+
+<ul>
+  <li><strong>Chapter 7 (Query Planner)</strong>: Every selectivity function in <code class="language-plaintext highlighter-rouge">selfuncs.c</code> depends on the data described here. Bad statistics produce bad plans.</li>
+  <li><strong>Chapter 8 (VACUUM)</strong>: Autovacuum is responsible for triggering ANALYZE. The <code class="language-plaintext highlighter-rouge">n_mod_since_analyze</code> counter in cumulative stats drives the decision.</li>
+  <li><strong>Chapter 13 (Extended Statistics)</strong>: When single-column statistics are insufficient due to column correlations, extended statistics (next section) fill the gap.</li>
+  <li><strong>Chapter 2 (Storage)</strong>: The <code class="language-plaintext highlighter-rouge">stawidth</code> field reflects post-TOAST storage width, not the logical value size. The <code class="language-plaintext highlighter-rouge">correlation</code> field directly relates to the physical layout of heap pages.</li>
+</ul>
+
+
+      <hr>
+
+      <!-- Prev / Next / Up navigation -->
+      
+      
+      
+
+      <div class="clearfix" style="margin-top: 2rem;">
+        
+          
+          
+
+          
+            
+            <a class="btn btn-primary float-left" href="/postgresql/13-statistics/extended-stats.html" title="Extended Statistics">&larr; Previous</a>
+          
+
+          
+            
+            <a class="btn btn-primary float-right" href="/postgresql/14-platform/" title="Platform Layer">Next &rarr;</a>
+          
+        
+      </div>
+
+      
+      <div style="text-align: center; margin-top: 1rem;">
+        <a href="/postgresql-internals/">&uarr; Back to Table of Contents</a>
+      </div>
+      
+
+    </div>
+  </div>
+</div>
+
+
+  <!-- Footer -->
+
+<hr>
+
+<footer>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <ul class="list-inline text-center">
+          
+          <li class="list-inline-item">
+            <a href="mailto:amitava.dev@proton.me" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="far fa-envelope fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          
+          
+          <li class="list-inline-item">
+            <a href="https://www.linkedin.com/in/amitavaag" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-linkedin fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          <li class="list-inline-item">
+            <a href="https://github.com/ikouchiha47" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-github fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+        </ul>
+
+        <p class="copyright text-muted">
+          Build with: 
+          <a 
+            href="https://github.com/StartBootstrap/startbootstrap-clean-blog-jekyll"
+            class="text-gray"
+            target="_blank">startbootstrap-clean-blog-jekyll</a></p>
+      </div>
+    </div>
+  </div>
+</footer>
+
+
+  <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="/assets/vendor/blog/js/scripts.js"></script>
+
+<script src="/assets/scripts.js"></script>
+
+
+
+
+
+  <script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+
+    document.querySelectorAll('pre > code.language-mermaid').forEach((codeBlock) => {
+      codeBlock.parentElement.outerHTML = `<pre class="mermaid">${codeBlock.textContent}</pre>`;
+    });
+
+
+    mermaid.initialize({ startOnLoad: true, theme: 'forest' });
+</script>
+
+
+  
+
+</body>
+
+</html>

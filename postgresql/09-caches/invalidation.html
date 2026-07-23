@@ -1,0 +1,525 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+  <title>
+    Invalidation - iko&#39;s logs
+    
+  </title>
+
+  <meta name="description" content="">
+  <meta property="og:description" content="">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Invalidation">
+  <meta property="og:url" content="https://ikouchiha47.github.io/postgresql/09-caches/invalidation.html">
+
+  
+
+  <link href='https://fonts.googleapis.com/css?family=Lora:400,700,400italic,700italic' rel='stylesheet' type='text/css'>
+  <link href='https://fonts.googleapis.com/css?family=Open+Sans:300italic,400italic,600italic,700italic,800italic,400,300,600,700,800' rel='stylesheet' type='text/css'>
+
+  <!-- <script src="https://use.fontawesome.com/releases/v5.15.3/js/all.js" crossorigin="anonymous"></script> -->
+  <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.15.4/css/all.css" integrity="sha384-DyZ88mC6Up2uqS4h/KRgHuoeGwBcD4Ng9SiP4dIRy0EXTlnuz47vAwmeGwVChigm" crossorigin="anonymous"/>
+
+  <link rel="stylesheet" href="/assets/main.css">
+  <link rel="canonical" href="https://ikouchiha47.github.io/postgresql/09-caches/invalidation.html">
+  <link rel="alternate" type="application/rss+xml" title="iko&#39;s logs" href="/feed.xml">
+
+  <meta name="google-site-verification" content="lWkg6gIxJgzEKX_5XnhcxCtPE9QknaimFWWos_dTvPM" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fira+Sans:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Inconsolata:wght@200..900&family=Jersey+25&family=Kanit:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Merriweather+Sans:ital,wght@0,300..800;1,300..800&family=Nanum+Gothic+Coding&family=Space+Grotesk:wght@300..700&family=Titillium+Web:ital,wght@0,200;0,300;0,400;0,600;0,700;0,900;1,200;1,300;1,400;1,600;1,700&display=swap" rel="stylesheet">
+
+</head>
+
+
+<body>
+
+  <!-- Navigation -->
+<nav class="navbar navbar-expand-lg navbar-light fixed-top" id="mainNav">
+  <div class="container">
+    <a class="navbar-brand" href="/">iko&#39;s logs</a>
+    <button class="navbar-toggler navbar-toggler-right" type="button" data-toggle="collapse" data-target="#navbarResponsive" aria-controls="navbarResponsive" aria-expanded="false" aria-label="Toggle navigation">
+      Menu
+      <i class="fa fa-bars"></i>
+    </button>
+    <div class="collapse navbar-collapse" id="navbarResponsive">
+      <ul class="navbar-nav ml-auto">
+        <li class="nav-item">
+          <a class="nav-link" href="/">Home</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/about">About</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/posts">Posts</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/contact">Contact</a>
+        </li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+
+  <!-- Page Header -->
+
+<header class="masthead">
+
+  <div class="overlay"></div>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <div class="post-heading">
+          <h1>Invalidation</h1>
+          
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="container space-grotesk">
+  <div class="row">
+    <div class="col-lg-8 col-md-10 mx-auto">
+
+      <!-- Breadcrumb -->
+      <nav aria-label="breadcrumb" style="margin-bottom: 1.5rem;">
+        <ol class="breadcrumb" style="background: transparent; padding: 0;">
+          
+            <li class="breadcrumb-item"><a href="/postgresql-internals/">PostgreSQL Internals Deep Dive</a></li>
+          
+          
+            
+              <li class="breadcrumb-item"><a href="/postgresql/09-caches/">Caches</a></li>
+            
+          
+          <li class="breadcrumb-item active" aria-current="page">Invalidation</li>
+        </ol>
+      </nav>
+
+      <h1 id="cache-invalidation-and-cross-backend-coherence">Cache Invalidation and Cross-Backend Coherence</h1>
+
+<p>PostgreSQL runs each backend as an independent process with private caches. When one backend modifies a system catalog (via DDL or catalog DML), every other backend must eventually learn that its cached data may be stale. The <strong>shared invalidation (sinval)</strong> system provides this cross-backend coherence through a shared-memory message queue and a per-backend dispatch layer.</p>
+
+<h2 id="overview">Overview</h2>
+
+<p>The invalidation system has two layers:</p>
+
+<ol>
+  <li>
+    <p><strong><code class="language-plaintext highlighter-rouge">inval.c</code></strong> – The per-backend <strong>invalidation dispatcher</strong>. It accumulates invalidation events during a transaction, processes them locally at command boundaries, broadcasts them to other backends on commit, and dispatches incoming messages to registered callback functions.</p>
+  </li>
+  <li>
+    <p><strong><code class="language-plaintext highlighter-rouge">sinval.c</code> / <code class="language-plaintext highlighter-rouge">sinvaladt.c</code></strong> – The <strong>shared invalidation queue</strong> in shared memory. A circular buffer that all backends write to (on commit) and read from (opportunistically). Backends that fall too far behind are signaled to catch up.</p>
+  </li>
+</ol>
+
+<p>Together, these ensure that every backend’s caches eventually converge to a consistent view, while allowing reads to proceed without locking.</p>
+
+<h2 id="key-source-files">Key Source Files</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>File</th>
+      <th>Role</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/utils/cache/inval.c</code></td>
+      <td>Per-backend invalidation dispatcher, callback management, transactional queuing</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/utils/inval.h</code></td>
+      <td>Public API for invalidation: <code class="language-plaintext highlighter-rouge">CacheInvalidateHeapTuple()</code>, callback registration</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/storage/ipc/sinval.c</code></td>
+      <td>Send/receive shared invalidation messages</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/storage/ipc/sinvaladt.c</code></td>
+      <td>Shared memory ring buffer implementation</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/storage/sinval.h</code></td>
+      <td><code class="language-plaintext highlighter-rouge">SharedInvalidationMessage</code> union, message type definitions</td>
+    </tr>
+  </tbody>
+</table>
+
+<h2 id="how-it-works">How It Works</h2>
+
+<h3 id="step-1-generating-invalidation-events">Step 1: Generating Invalidation Events</h3>
+
+<p>When a catalog tuple is inserted, updated, or deleted via <code class="language-plaintext highlighter-rouge">CatalogTupleInsert()</code>, <code class="language-plaintext highlighter-rouge">CatalogTupleUpdate()</code>, or <code class="language-plaintext highlighter-rouge">CatalogTupleDelete()</code>, the catalog access code calls <code class="language-plaintext highlighter-rouge">CacheInvalidateHeapTuple()</code>. This function:</p>
+
+<ol>
+  <li>Calls <code class="language-plaintext highlighter-rouge">PrepareToInvalidateCacheTuple()</code> from <code class="language-plaintext highlighter-rouge">catcache.c</code>, which determines which catcaches could contain entries for this tuple and computes the hash value for each.</li>
+  <li>Queues a <code class="language-plaintext highlighter-rouge">SharedInvalCatcacheMsg</code> for each affected catcache.</li>
+  <li>If the tuple is from <code class="language-plaintext highlighter-rouge">pg_class</code>, <code class="language-plaintext highlighter-rouge">pg_attribute</code>, <code class="language-plaintext highlighter-rouge">pg_index</code>, or <code class="language-plaintext highlighter-rouge">pg_constraint</code> (for foreign keys), also queues a <code class="language-plaintext highlighter-rouge">SharedInvalRelcacheMsg</code> for the affected relation.</li>
+  <li>If the change affects snapshot validity, queues a <code class="language-plaintext highlighter-rouge">SharedInvalSnapshotMsg</code>.</li>
+</ol>
+
+<p>These messages are <strong>not sent immediately</strong>. They are stored in per-transaction arrays in <code class="language-plaintext highlighter-rouge">TopTransactionContext</code>.</p>
+
+<h3 id="step-2-local-processing-at-command-boundary">Step 2: Local Processing at Command Boundary</h3>
+
+<p>At <code class="language-plaintext highlighter-rouge">CommandCounterIncrement()</code>, <code class="language-plaintext highlighter-rouge">CommandEndInvalidationMessages()</code> is called. It:</p>
+
+<ol>
+  <li>Processes all pending catcache invalidations locally (so subsequent commands in the same transaction see the updated catalog state).</li>
+  <li>Processes all pending relcache invalidations locally.</li>
+  <li>Fires registered syscache and relcache callbacks.</li>
+  <li>Optionally writes invalidation records to WAL (when <code class="language-plaintext highlighter-rouge">wal_level = logical</code>, for logical decoding of in-progress transactions).</li>
+</ol>
+
+<p>The messages remain in the transaction’s pending lists for eventual broadcast.</p>
+
+<h3 id="step-3-broadcast-on-commit">Step 3: Broadcast on Commit</h3>
+
+<p>At transaction commit, <code class="language-plaintext highlighter-rouge">AtEOXact_Inval(true)</code> sends all accumulated messages to the shared invalidation queue via <code class="language-plaintext highlighter-rouge">SendSharedInvalidMessages()</code>. On abort, <code class="language-plaintext highlighter-rouge">AtEOXact_Inval(false)</code> processes the messages locally (to undo any catalog state the aborted transaction loaded) but does not broadcast them.</p>
+
+<h3 id="step-4-other-backends-read-messages">Step 4: Other Backends Read Messages</h3>
+
+<p>Other backends call <code class="language-plaintext highlighter-rouge">AcceptInvalidationMessages()</code> at safe points – typically at the start of each transaction, after acquiring locks, and during <code class="language-plaintext highlighter-rouge">ProcessCatchupInterrupt()</code>. This function calls <code class="language-plaintext highlighter-rouge">ReceiveSharedInvalidMessages()</code>, which reads messages from the shared queue and dispatches each one to <code class="language-plaintext highlighter-rouge">LocalExecuteInvalidationMessage()</code>.</p>
+
+<p><code class="language-plaintext highlighter-rouge">LocalExecuteInvalidationMessage()</code> examines the message type and calls the appropriate handler:</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>Message Type ID</th>
+      <th>Struct</th>
+      <th>Handler</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>&gt;= 0 (catcache ID)</td>
+      <td><code class="language-plaintext highlighter-rouge">SharedInvalCatcacheMsg</code></td>
+      <td><code class="language-plaintext highlighter-rouge">SysCacheInvalidate(id, hashValue)</code></td>
+    </tr>
+    <tr>
+      <td>-1 (<code class="language-plaintext highlighter-rouge">SHAREDINVALCATALOG_ID</code>)</td>
+      <td><code class="language-plaintext highlighter-rouge">SharedInvalCatalogMsg</code></td>
+      <td><code class="language-plaintext highlighter-rouge">CatalogCacheFlushCatalog(catId)</code></td>
+    </tr>
+    <tr>
+      <td>-2 (<code class="language-plaintext highlighter-rouge">SHAREDINVALRELCACHE_ID</code>)</td>
+      <td><code class="language-plaintext highlighter-rouge">SharedInvalRelcacheMsg</code></td>
+      <td><code class="language-plaintext highlighter-rouge">RelationCacheInvalidateEntry(relId)</code></td>
+    </tr>
+    <tr>
+      <td>-3 (<code class="language-plaintext highlighter-rouge">SHAREDINVALSMGR_ID</code>)</td>
+      <td><code class="language-plaintext highlighter-rouge">SharedInvalSmgrMsg</code></td>
+      <td><code class="language-plaintext highlighter-rouge">smgrcloserellocator(rlocator)</code></td>
+    </tr>
+    <tr>
+      <td>-4 (<code class="language-plaintext highlighter-rouge">SHAREDINVALRELMAP_ID</code>)</td>
+      <td><code class="language-plaintext highlighter-rouge">SharedInvalRelmapMsg</code></td>
+      <td><code class="language-plaintext highlighter-rouge">RelationMapInvalidate(dbId)</code></td>
+    </tr>
+    <tr>
+      <td>-5 (<code class="language-plaintext highlighter-rouge">SHAREDINVALSNAPSHOT_ID</code>)</td>
+      <td><code class="language-plaintext highlighter-rouge">SharedInvalSnapshotMsg</code></td>
+      <td><code class="language-plaintext highlighter-rouge">InvalidateCatalogSnapshot()</code></td>
+    </tr>
+    <tr>
+      <td>-6 (<code class="language-plaintext highlighter-rouge">SHAREDINVALRELSYNC_ID</code>)</td>
+      <td><code class="language-plaintext highlighter-rouge">SharedInvalRelSyncMsg</code></td>
+      <td><code class="language-plaintext highlighter-rouge">CallRelSyncCallbacks(relid)</code></td>
+    </tr>
+  </tbody>
+</table>
+
+<p>After processing all messages, the system fires any registered callbacks.</p>
+
+<pre><code class="language-mermaid">sequenceDiagram
+    participant BackendA as Backend A
+    participant InvalA as inval.c (A)
+    participant SinvalQ as Sinval Queue&lt;br/&gt;(shared memory)
+    participant InvalB as inval.c (B)
+    participant BackendB as Backend B
+
+    BackendA-&gt;&gt;InvalA: ALTER TABLE foo ...
+    InvalA-&gt;&gt;InvalA: Queue catcache + relcache msgs
+    BackendA-&gt;&gt;InvalA: CommandCounterIncrement()
+    InvalA-&gt;&gt;InvalA: Process locally (own caches)
+
+    BackendA-&gt;&gt;InvalA: COMMIT
+    InvalA-&gt;&gt;SinvalQ: SendSharedInvalidMessages()
+
+    Note over BackendB: Next transaction start
+    BackendB-&gt;&gt;InvalB: AcceptInvalidationMessages()
+    InvalB-&gt;&gt;SinvalQ: ReceiveSharedInvalidMessages()
+    SinvalQ--&gt;&gt;InvalB: Messages for Backend B
+    InvalB-&gt;&gt;InvalB: LocalExecuteInvalidationMessage()
+    InvalB-&gt;&gt;InvalB: Fire syscache/relcache callbacks
+    InvalB-&gt;&gt;BackendB: Caches updated
+</code></pre>
+
+<h3 id="the-shared-invalidation-queue-sinvaladtc">The Shared Invalidation Queue (sinvaladt.c)</h3>
+
+<p>The queue is a <strong>circular buffer</strong> in shared memory, sized at startup. Each backend maintains a read pointer (<code class="language-plaintext highlighter-rouge">nextMsgNum</code>) tracking how far it has read. Key properties:</p>
+
+<ul>
+  <li><strong>Lock-free reads</strong>: Backends read from the queue without taking a lock on the buffer (they use their own local state to track position).</li>
+  <li><strong>Lightweight write locking</strong>: Writers acquire a lightweight lock briefly to insert messages.</li>
+  <li><strong>Catchup signal</strong>: If a backend’s read pointer falls so far behind the oldest writer that the buffer would wrap around, <code class="language-plaintext highlighter-rouge">sinvaladt.c</code> sends a <code class="language-plaintext highlighter-rouge">PROCSIG_CATCHUP_INTERRUPT</code> signal to the lagging backend. The handler sets <code class="language-plaintext highlighter-rouge">catchupInterruptPending = true</code>, and at the next safe point the backend processes all pending messages.</li>
+  <li><strong>Reset on overflow</strong>: If a backend has fallen impossibly far behind (the queue has wrapped past it), a full cache reset is triggered via the <code class="language-plaintext highlighter-rouge">resetFunction</code> callback, which calls <code class="language-plaintext highlighter-rouge">InvalidateSystemCaches()</code> to flush everything.</li>
+</ul>
+
+<p class="warning">A backend stuck in a long-running query (or idle in transaction) blocks the sinval queue from advancing past its read pointer. This can force the queue to grow or, in extreme cases, trigger <code class="language-plaintext highlighter-rouge">PROCSIG_CATCHUP_INTERRUPT</code> processing that interrupts client I/O.</p>
+
+<h3 id="callback-registration">Callback Registration</h3>
+
+<p>Higher-level caches (plan cache, type cache, etc.) register callbacks to be notified of invalidation events:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="cm">/* Register a per-catcache callback */</span>
+<span class="n">CacheRegisterSyscacheCallback</span><span class="p">(</span><span class="n">PROCOID</span><span class="p">,</span> <span class="n">PlanCacheObjectCallback</span><span class="p">,</span> <span class="p">(</span><span class="n">Datum</span><span class="p">)</span> <span class="mi">0</span><span class="p">);</span>
+
+<span class="cm">/* Register a relcache callback */</span>
+<span class="n">CacheRegisterRelcacheCallback</span><span class="p">(</span><span class="n">PlanCacheRelCallback</span><span class="p">,</span> <span class="p">(</span><span class="n">Datum</span><span class="p">)</span> <span class="mi">0</span><span class="p">);</span>
+</code></pre></div></div>
+
+<p>When <code class="language-plaintext highlighter-rouge">inval.c</code> processes a catcache invalidation for <code class="language-plaintext highlighter-rouge">PROCOID</code>, it calls <code class="language-plaintext highlighter-rouge">CallSyscacheCallbacks(PROCOID, hashvalue)</code>, which iterates over all registered callbacks for that cache ID.</p>
+
+<p>There is a hard limit of 64 syscache callbacks and 64 relcache callbacks. This is sufficient because callbacks are registered once per subsystem, not per cached entry.</p>
+
+<h2 id="key-data-structures">Key Data Structures</h2>
+
+<h3 id="sharedinvalidationmessage">SharedInvalidationMessage</h3>
+
+<p>A union type that fits all message variants in a compact format:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>SharedInvalidationMessage (union)
+  +-- id                    message type (first byte, shared by all variants)
+  |
+  +-- cc (SharedInvalCatcacheMsg)
+  |     id &gt;= 0             catcache ID
+  |     dbId                database OID (0 for shared catalogs)
+  |     hashValue           hash of the invalidated tuple's keys
+  |
+  +-- cat (SharedInvalCatalogMsg)
+  |     id = -1             flush entire catalog
+  |     dbId, catId         which catalog in which database
+  |
+  +-- rc (SharedInvalRelcacheMsg)
+  |     id = -2             relcache invalidation
+  |     dbId, relId         which relation (0 = all)
+  |
+  +-- sm (SharedInvalSmgrMsg)
+  |     id = -3             storage manager file invalidation
+  |     rlocator            RelFileLocator
+  |
+  +-- rm (SharedInvalRelmapMsg)
+  |     id = -4             relation map invalidation
+  |     dbId
+  |
+  +-- sn (SharedInvalSnapshotMsg)
+  |     id = -5             snapshot invalidation
+  |     dbId, relId
+  |
+  +-- rs (SharedInvalRelSyncMsg)
+        id = -6             replication relation sync
+        dbId, relid
+</code></pre></div></div>
+
+<h3 id="transinvalidationinfo">TransInvalidationInfo</h3>
+
+<p>Per-subtransaction control structure that tracks ranges of messages in the pending arrays:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>TransInvalidationInfo
+  +-- parent                enclosing subtransaction's info
+  +-- catcache messages     range [start..end) in the catcache msg array
+  +-- relcache messages     range [start..end) in the relcache msg array
+</code></pre></div></div>
+
+<p>On subtransaction commit, the child’s ranges are absorbed into the parent. On abort, the child’s messages are processed locally and discarded.</p>
+
+<h3 id="transactional-vs-non-transactional-invalidation">Transactional vs. Non-Transactional Invalidation</h3>
+
+<p>Most invalidation messages are transactional – queued during the transaction and only broadcast on commit. Two exceptions:</p>
+
+<ul>
+  <li><strong>smgr invalidation</strong> (<code class="language-plaintext highlighter-rouge">CacheInvalidateSmgr</code>): Sent immediately when a physical file is created or removed. Other backends must stop caching file descriptors for the old file.</li>
+  <li><strong>relmap invalidation</strong> (<code class="language-plaintext highlighter-rouge">CacheInvalidateRelmap</code>): Sent immediately when the <code class="language-plaintext highlighter-rouge">pg_filenode.map</code> is updated. Required because relmap changes happen outside normal catalog update paths.</li>
+</ul>
+
+<p>These non-transactional messages use <code class="language-plaintext highlighter-rouge">SendSharedInvalidMessages()</code> directly, bypassing the per-transaction queuing.</p>
+
+<h3 id="inplace-updates">Inplace Updates</h3>
+
+<p>Some catalog updates (e.g., updating <code class="language-plaintext highlighter-rouge">pg_class.relfrozenxid</code> during VACUUM) are done as <strong>inplace heap updates</strong> that do not go through normal transactional machinery. The invalidation system handles these via <code class="language-plaintext highlighter-rouge">PreInplace_Inval()</code>, <code class="language-plaintext highlighter-rouge">AtInplace_Inval()</code>, and <code class="language-plaintext highlighter-rouge">ForgetInplace_Inval()</code>, which manage a separate invalidation context that sends messages immediately within the inplace update’s critical section.</p>
+
+<h2 id="the-debug_discard_caches-guc">The debug_discard_caches GUC</h2>
+
+<p>When compiled with <code class="language-plaintext highlighter-rouge">DISCARD_CACHES_ENABLED</code> (assert-enabled builds), the <code class="language-plaintext highlighter-rouge">debug_discard_caches</code> GUC causes all caches to be flushed at every possible invalidation point. This is useful for testing that code correctly handles cache invalidation, but has extreme performance impact. Values:</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>Value</th>
+      <th>Behavior</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>0</td>
+      <td>Normal (default in production builds)</td>
+    </tr>
+    <tr>
+      <td>1</td>
+      <td>Discard caches at every <code class="language-plaintext highlighter-rouge">AcceptInvalidationMessages()</code></td>
+    </tr>
+    <tr>
+      <td>3</td>
+      <td>Also discard caches recursively during cache rebuilds</td>
+    </tr>
+    <tr>
+      <td>5</td>
+      <td>Maximum aggressiveness</td>
+    </tr>
+  </tbody>
+</table>
+
+<h2 id="connections">Connections</h2>
+
+<ul>
+  <li><strong><a href="catalog-cache">Catalog Cache</a></strong> – Catcache invalidation is the most frequent message type. <code class="language-plaintext highlighter-rouge">CatCacheInvalidate()</code> is called for each matching catcache.</li>
+  <li><strong><a href="relation-cache">Relation Cache</a></strong> – Relcache invalidation messages trigger <code class="language-plaintext highlighter-rouge">RelationCacheInvalidateEntry()</code>. Init file deletion is coordinated here.</li>
+  <li><strong><a href="plan-cache">Plan Cache</a></strong> – Registers both relcache and syscache callbacks to detect when cached plans become stale.</li>
+  <li><strong><a href="type-cache">Type Cache</a></strong> – Registers syscache callbacks for <code class="language-plaintext highlighter-rouge">pg_type</code> and <code class="language-plaintext highlighter-rouge">pg_opclass</code> changes.</li>
+  <li><strong>Chapter 3 (Transactions)</strong> – Invalidation messages are transactional: broadcast on commit, processed locally on abort.</li>
+  <li><strong>Chapter 5 (Locking)</strong> – DDL takes <code class="language-plaintext highlighter-rouge">AccessExclusiveLock</code> to ensure invalidation is processed before any concurrent backend can access the modified object.</li>
+  <li><strong>Chapter 11 (IPC)</strong> – The sinval queue is a shared-memory IPC mechanism. <code class="language-plaintext highlighter-rouge">PROCSIG_CATCHUP_INTERRUPT</code> uses the signal infrastructure.</li>
+</ul>
+
+
+      <hr>
+
+      <!-- Prev / Next / Up navigation -->
+      
+      
+      
+
+      <div class="clearfix" style="margin-top: 2rem;">
+        
+          
+          
+
+          
+            
+            <a class="btn btn-primary float-left" href="/postgresql/09-caches/catalog-cache.html" title="Catalog Cache">&larr; Previous</a>
+          
+
+          
+            
+            <a class="btn btn-primary float-right" href="/postgresql/09-caches/plan-cache.html" title="Plan Cache">Next &rarr;</a>
+          
+        
+      </div>
+
+      
+      <div style="text-align: center; margin-top: 1rem;">
+        <a href="/postgresql-internals/">&uarr; Back to Table of Contents</a>
+      </div>
+      
+
+    </div>
+  </div>
+</div>
+
+
+  <!-- Footer -->
+
+<hr>
+
+<footer>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <ul class="list-inline text-center">
+          
+          <li class="list-inline-item">
+            <a href="mailto:amitava.dev@proton.me" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="far fa-envelope fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          
+          
+          <li class="list-inline-item">
+            <a href="https://www.linkedin.com/in/amitavaag" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-linkedin fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          <li class="list-inline-item">
+            <a href="https://github.com/ikouchiha47" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-github fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+        </ul>
+
+        <p class="copyright text-muted">
+          Build with: 
+          <a 
+            href="https://github.com/StartBootstrap/startbootstrap-clean-blog-jekyll"
+            class="text-gray"
+            target="_blank">startbootstrap-clean-blog-jekyll</a></p>
+      </div>
+    </div>
+  </div>
+</footer>
+
+
+  <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="/assets/vendor/blog/js/scripts.js"></script>
+
+<script src="/assets/scripts.js"></script>
+
+
+
+
+
+  <script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+
+    document.querySelectorAll('pre > code.language-mermaid').forEach((codeBlock) => {
+      codeBlock.parentElement.outerHTML = `<pre class="mermaid">${codeBlock.textContent}</pre>`;
+    });
+
+
+    mermaid.initialize({ startOnLoad: true, theme: 'forest' });
+</script>
+
+
+  
+
+</body>
+
+</html>

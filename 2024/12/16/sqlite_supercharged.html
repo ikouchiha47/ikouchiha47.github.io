@@ -1,0 +1,576 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+  <title>
+    Supercharge a platform backed by sqlite - iko&#39;s logs
+    
+  </title>
+
+  <meta name="description" content="With better defaults and some tooling around sqlite can work really well.">
+  <meta property="og:description" content="With better defaults and some tooling around sqlite can work really well.">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Supercharge a platform backed by sqlite">
+  <meta property="og:url" content="https://ikouchiha47.github.io/2024/12/16/sqlite_supercharged.html">
+
+  
+    <meta property="og:image" content="https://ikouchiha47.github.ioblue"/>
+  
+
+  <link href='https://fonts.googleapis.com/css?family=Lora:400,700,400italic,700italic' rel='stylesheet' type='text/css'>
+  <link href='https://fonts.googleapis.com/css?family=Open+Sans:300italic,400italic,600italic,700italic,800italic,400,300,600,700,800' rel='stylesheet' type='text/css'>
+
+  <!-- <script src="https://use.fontawesome.com/releases/v5.15.3/js/all.js" crossorigin="anonymous"></script> -->
+  <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.15.4/css/all.css" integrity="sha384-DyZ88mC6Up2uqS4h/KRgHuoeGwBcD4Ng9SiP4dIRy0EXTlnuz47vAwmeGwVChigm" crossorigin="anonymous"/>
+
+  <link rel="stylesheet" href="/assets/main.css">
+  <link rel="canonical" href="https://ikouchiha47.github.io/2024/12/16/sqlite_supercharged.html">
+  <link rel="alternate" type="application/rss+xml" title="iko&#39;s logs" href="/feed.xml">
+
+  <meta name="google-site-verification" content="lWkg6gIxJgzEKX_5XnhcxCtPE9QknaimFWWos_dTvPM" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fira+Sans:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Inconsolata:wght@200..900&family=Jersey+25&family=Kanit:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Merriweather+Sans:ital,wght@0,300..800;1,300..800&family=Nanum+Gothic+Coding&family=Space+Grotesk:wght@300..700&family=Titillium+Web:ital,wght@0,200;0,300;0,400;0,600;0,700;0,900;1,200;1,300;1,400;1,600;1,700&display=swap" rel="stylesheet">
+
+</head>
+
+
+<body>
+
+  <!-- Navigation -->
+<nav class="navbar navbar-expand-lg navbar-light fixed-top" id="mainNav">
+  <div class="container">
+    <a class="navbar-brand" href="/">iko&#39;s logs</a>
+    <button class="navbar-toggler navbar-toggler-right" type="button" data-toggle="collapse" data-target="#navbarResponsive" aria-controls="navbarResponsive" aria-expanded="false" aria-label="Toggle navigation">
+      Menu
+      <i class="fa fa-bars"></i>
+    </button>
+    <div class="collapse navbar-collapse" id="navbarResponsive">
+      <ul class="navbar-nav ml-auto">
+        <li class="nav-item">
+          <a class="nav-link" href="/">Home</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/about">About</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/posts">Posts</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/contact">Contact</a>
+        </li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+
+  <!-- Page Header -->
+
+<header class="masthead" style="background-image: url('blue')">
+
+  <div class="overlay"></div>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <div class="post-heading">
+          <h1>Supercharge a platform backed by sqlite</h1>
+          
+          <h2 class="subheading">Partition, cleanup & backup your sqlite database</h2>
+          
+          <span class="meta">Posted by
+            <a href="#">ikouchiha47</a>
+            on December 16, 2024 &middot; <span class="reading-time" title="Estimated read time">
+  
+   19 mins  read </span>
+
+          </span>
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="container space-grotesk">
+  <div class="row">
+    <div class="col-lg-8 col-md-10 mx-auto">
+
+      <h1 id="epilogue">Epilogue</h1>
+
+<p>Sqlite has come a long way. Its an embedded database, which mean you don’t need to
+maintain any server client architecture.</p>
+
+<p>Over the years, the addition of <code class="language-plaintext highlighter-rouge">WAL</code> mode, with introduction of <code class="language-plaintext highlighter-rouge">BEGIN IMMEDIATE</code>,
+and other pragma directives.</p>
+
+<p>There have been some work on sqlite derivatives. like <code class="language-plaintext highlighter-rouge">rqlite</code>, which is tries to
+be distributed. The selling point is:</p>
+
+<pre><code class="language-log">It's ideal as a lightweight, distributed relational data store for
+both developers and operators. 
+Think Consul or etcd, but with relational modeling available.
+</code></pre>
+
+<p>There has been a mozilla backed/sponsored project called <code class="language-plaintext highlighter-rouge">sqlite-vec</code> which uses sqlite
+for vector search. <a href="https://github.com/asg017/sqlite-vec">sqlite-vec</a></p>
+
+<p>The goal here is to solve more of a infrastructural setup with sqlite.</p>
+
+<h1 id="structure-of-a-sqlite-file">Structure of a sqlite file.</h1>
+
+<p>In our previous blog, we tried to understand quite a lot about indexing strategies,
+referencing sqlite codebase for examples.</p>
+
+<p>Before going into the easy part, we will do a quick shallow dive, 
+on how the sqlite file looks like, for sake of coolness. You are free to skip it.</p>
+
+<p>We will need to create a sqlite file, and use hexedit to see what it looks
+like under the hood.</p>
+
+<div class="language-shell highlighter-rouge"><div class="highlight"><pre class="highlight"><code>sqlite3 test.sqlite3
+</code></pre></div></div>
+
+<div class="language-sql highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">create</span> <span class="k">table</span> <span class="n">users</span> <span class="p">(</span><span class="n">id</span> <span class="nb">integer</span> <span class="k">primary</span> <span class="k">key</span> <span class="n">autoincrement</span><span class="p">,</span> <span class="n">email</span> <span class="nb">varchar</span><span class="p">(</span><span class="mi">255</span><span class="p">)</span> <span class="k">not</span> <span class="k">null</span><span class="p">);</span>
+<span class="p">.</span><span class="n">quit</span>
+</code></pre></div></div>
+
+<p><code class="language-plaintext highlighter-rouge">hexedit test.sqlite</code></p>
+
+<p>Looks something like this:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>00000000   53 51 4C 69  74 65 20 66  6F 72 6D 61  74 20 33 00  10 00 01 01  SQLite format 3.....
+00000014   00 40 20 20  00 00 00 01  00 00 00 03  00 00 00 00  00 00 00 00  .@  ................
+00000028   00 00 00 01  00 00 00 04  00 00 00 00  00 00 00 00  00 00 00 01  ....................
+0000003C   00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00  ....................
+00000050   00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 01  00 2E 7A 71  ..................zq
+00000064   0D 00 00 00  02 0F 40 00  0F 92 0F 40  00 00 00 00  00 00 00 00  ......@....@........
+00000078   00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00  ....................
+0000008C   00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00  ....................
+000000A0   00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00  ....................
+000000B4   00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00  ....................
+000000C8   00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00  ....................
+000000DC   00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00  ....................
+000000F0   00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00  ....................
+00000104   00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00  ....................
+00000118   00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00  ....................
+0000012C   00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00  ....................
+00000140   00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00  ....................
+00000154   00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00  ....................
+00000168   00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00  ....................
+0000017C   00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00  ....................
+00000F14   00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00  ............................................
+00000F40   50 02 06 17  2B 2B 01 59  74 61 62 6C  65 73 71 6C  69 74 65 5F  73 65 71 75  65 6E 63 65  73 71 6C 69  74 65 5F 73  65 71 75 65  6E 63 65 03  P...++.Ytablesqlite_sequencesqlite_sequence.
+00000F6C   43 52 45 41  54 45 20 54  41 42 4C 45  20 73 71 6C  69 74 65 5F  73 65 71 75  65 6E 63 65  28 6E 61 6D  65 2C 73 65  71 29 6C 01  07 17 17 17  CREATE TABLE sqlite_sequence(name,seq)l.....
+00000F98   01 81 37 74  61 62 6C 65  75 73 65 72  73 75 73 65  72 73 02 43  52 45 41 54  45 20 54 41  42 4C 45 20  75 73 65 72  73 28 69 64  20 69 6E 74  ..7tableusersusers.CREATE TABLE users(id int
+00000FC4   65 67 65 72  20 70 72 69  6D 61 72 79  20 6B 65 79  20 61 75 74  6F 69 6E 63  72 65 6D 65  6E 74 2C 20  65 6D 61 69  6C 20 76 61  72 63 68 61  eger primary key autoincrement, email varcha
+00000FF0   72 28 32 35  35 29 20 6E  6F 74 20 6E  75 6C 6C 29  0D 00 00 00  00 10 00 00  00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00  r(255) not null)............................
+0000101C   00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00  ............................................
+00001048   00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00  ............................................
+00001074   00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00  ............................................
+</code></pre></div></div>
+
+<div class="language-sql highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="n">sqlite</span><span class="o">&gt;</span> <span class="k">insert</span> <span class="k">into</span> <span class="n">users</span><span class="p">(</span><span class="n">email</span><span class="p">)</span> <span class="k">values</span><span class="p">(</span><span class="s1">'a@b.c'</span><span class="p">),(</span><span class="s1">'c@d.e'</span><span class="p">);</span>
+<span class="n">sqlite</span><span class="o">&gt;</span> <span class="p">.</span><span class="n">quit</span>
+</code></pre></div></div>
+
+<pre><code class="language-logs">00001FCC   00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00  ....................
+00001FE0   00 00 00 00  00 00 00 00  00 00 00 00  08 02 03 00  17 63 40 64  .................c@d
+00001FF4   2E 65 08 01  03 00 17 61  40 62 2E 63  0D 00 00 00  01 0F F5 00  .e.....a@b.c........
+00002008   0F F5 00 00  00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00  ....................
+</code></pre>
+
+<p>Now on <code class="language-plaintext highlighter-rouge">hexedit</code>, Press <code class="language-plaintext highlighter-rouge">Ctrl+Space</code> to set mark, and use the arrow keys.
+It should highlight the text corresponding to the hex codes selected, and
+refer to the <a href="https://sqlite.org/fileformat2.html#the_database_header">docs</a></p>
+
+<p>A SQLite database file is organized into a series of fixed-size pages. 
+Each page serves as a fundamental unit of storage, typically <strong>1024 bytes</strong> (though other sizes like 4096 bytes are possible).</p>
+
+<p>The structure comprises:</p>
+
+<ul>
+  <li><strong>Database Header (First 100 Bytes):</strong> Contains metadata about the database.</li>
+  <li><strong>Pages (Subsequent Blocks):</strong> Each page can be a B-Tree node (table/index), freelist, or other special-purpose pages.</li>
+</ul>
+
+<h4 id="database-header">Database Header</h4>
+
+<p>The file starts with a Database Header, which reads to <code class="language-plaintext highlighter-rouge">SQLite format 3 null termination.</code>
+Sometimes also called a magic number. 
+Pretty common technique used.</p>
+
+<ul>
+  <li>
+    <p>A total of 100bytes is used out of which, the first <code class="language-plaintext highlighter-rouge">16</code>, makes up the text.</p>
+  </li>
+  <li>
+    <p><strong>Following Bytes (Offset <code class="language-plaintext highlighter-rouge">0x10</code> onwards):</strong><br />
+These bytes encode critical metadata such as:</p>
+    <ul>
+      <li><strong>Page Size:</strong> Specifies the size of each page (commonly 1024 bytes).</li>
+      <li><strong>Write/Read Version Numbers:</strong> Indicate the file format version.</li>
+      <li><strong>Other Parameters:</strong> Control aspects like payload fractions, file change counters, etc.</li>
+    </ul>
+  </li>
+</ul>
+
+<h4 id="pages-and-their-structure">Pages and Their Structure</h4>
+
+<p>After the 100-byte header, the file is segmented into pages. Each page starts at a multiple of the page size (e.g., <code class="language-plaintext highlighter-rouge">0x400</code> for <code class="language-plaintext highlighter-rouge">1024-byte pages</code>).</p>
+
+<ul>
+  <li><strong>Empty Areas (<code class="language-plaintext highlighter-rouge">000000A0</code> to <code class="language-plaintext highlighter-rouge">00000F28</code>):</strong><br />
+These zeroed bytes represent <strong>unused or free space</strong> within the database. Reasons include:
+    <ul>
+      <li><strong>Freelist Pages:</strong> Previously used pages that are now available for reuse.</li>
+      <li><strong>Reserved Space:</strong> Anticipated future data insertions.</li>
+      <li><strong>Database Shrinking:</strong> Data deletions may leave pages empty.</li>
+    </ul>
+  </li>
+  <li>
+    <p><strong>Offset <code class="language-plaintext highlighter-rouge">00000F40</code> to <code class="language-plaintext highlighter-rouge">00001074</code>:</strong><br />
+This region contains human-readable SQL statements like <code class="language-plaintext highlighter-rouge">CREATE TABLE</code> commands. Here’s how SQLite organizes and accesses this information:</p>
+
+    <ol>
+      <li><strong><code class="language-plaintext highlighter-rouge">sqlite_master</code> Table:</strong>
+        <ul>
+          <li>Located on <strong>Page 1</strong>, which is the root B-Tree page for the schema.</li>
+          <li>Stores metadata about all database objects (tables, indexes, triggers, views).</li>
+        </ul>
+      </li>
+      <li><strong>B-Tree Structure:</strong>
+        <ul>
+          <li><strong>Page Header:</strong> Contains information like the number of cells (entries) and pointers to cell data.</li>
+          <li><strong>Cell Pointer Array:</strong> An array of offsets pointing to the actual data (cells) within the page.</li>
+        </ul>
+      </li>
+      <li><strong>Cells:</strong>
+        <ul>
+          <li>Each cell contains a record with fields such as <code class="language-plaintext highlighter-rouge">type</code>, <code class="language-plaintext highlighter-rouge">name</code>, <code class="language-plaintext highlighter-rouge">tbl_name</code>, <code class="language-plaintext highlighter-rouge">rootpage</code>, and <code class="language-plaintext highlighter-rouge">sql</code>.</li>
+          <li>For example, the <code class="language-plaintext highlighter-rouge">CREATE TABLE</code> statements you see are stored in the <code class="language-plaintext highlighter-rouge">sql</code> field of <code class="language-plaintext highlighter-rouge">sqlite_master</code>.</li>
+        </ul>
+      </li>
+    </ol>
+  </li>
+</ul>
+
+<p>Key Components:</p>
+
+<ol>
+  <li><strong>Page Numbering:</strong>
+    <ul>
+      <li>Pages are numbered starting from <strong>1</strong> (with <strong>Page 1</strong> being the schema root).</li>
+      <li>The <strong>database header</strong> contains the total number of pages and other relevant information.</li>
+    </ul>
+  </li>
+  <li><strong>Page Headers:</strong>
+    <ul>
+      <li>Each page begins with a header that specifies:
+        <ul>
+          <li><strong>Page Type:</strong> Table B-Tree, Index B-Tree, freelist, etc.</li>
+          <li><strong>Number of Cells:</strong> How many records are on the page.</li>
+          <li><strong>Cell Pointer Array Offset:</strong> Where the array of cell pointers starts.</li>
+        </ul>
+      </li>
+    </ul>
+
+    <p><strong>Example Insight:</strong></p>
+
+    <pre><code class="language-log">00001FE0   00 00 00 00  00 00 00 00  00 00 00 00  08 02 03 00  17 63 40 64  .................c@d
+</code></pre>
+
+    <ul>
+      <li>This could represent a page header with specific flags or pointers, indicating the type and structure of the page.</li>
+    </ul>
+  </li>
+  <li><strong>Cell Pointers:</strong>
+    <ul>
+      <li>After the page header, there’s an array of <strong>cell pointers</strong>.</li>
+      <li>Each pointer is an <strong>offset</strong> from the start of the page to where the actual cell (record) data begins.</li>
+    </ul>
+  </li>
+  <li><strong>Record Headers and Payloads:</strong>
+    <ul>
+      <li><strong>Record Header:</strong> Specifies the number of columns, types, and sizes.</li>
+      <li><strong>Payload:</strong> Contains the actual data (e.g., row values).</li>
+    </ul>
+  </li>
+  <li><strong>Referencing Other Pages:</strong>
+    <ul>
+      <li><strong>Root Pages:</strong> The <code class="language-plaintext highlighter-rouge">sqlite_master</code> table points to root pages of other tables and indexes.</li>
+      <li><strong>Traversing B-Trees:</strong> For tables with multiple pages, SQLite traverses the B-Tree to locate specific records.</li>
+    </ul>
+  </li>
+</ol>
+
+<h3 id="how-does-it-locate-the-data">How does it locate the data.</h3>
+
+<p>Given the structured layout, here’s how SQLite efficiently locates any data segment:</p>
+
+<ul>
+  <li>Understand the <code class="language-plaintext highlighter-rouge">Page size</code>, <code class="language-plaintext highlighter-rouge">total pages</code> in the file from the database header</li>
+  <li>Identify the <code class="language-plaintext highlighter-rouge">Page Type</code>, B-Tree, Overflow etc. from <code class="language-plaintext highlighter-rouge">Page header</code></li>
+  <li>Use the <code class="language-plaintext highlighter-rouge">Cell Pointers</code> array to find where each record starts within the page</li>
+  <li>The Cell Pointer values are used to locate the start of the records</li>
+  <li>Use the same struct packing to decode the value, considering overflow pages</li>
+</ul>
+
+<p>Here’s a simplified diagram to visualize the process:</p>
+
+<pre><code class="language-txt">[ Database Header (0x00000000 - 0x00000063) ]
+                |
+                v
+        [ Page 1: sqlite_master ]
+                |
+                v
+    [ Root Page for 'users' Table (e.g., Page 5) ]
+                |
+                v
+    [ B-Tree Pages for 'users' Data ]
+                |
+                v
+        [ Individual Records ]
+</code></pre>
+
+<ol>
+  <li><strong>Schema Definition:</strong>
+    <ul>
+      <li>In the hex dump, the <code class="language-plaintext highlighter-rouge">CREATE TABLE users(...)</code> statement is found around offset <code class="language-plaintext highlighter-rouge">00000F98</code>. This is part of the <code class="language-plaintext highlighter-rouge">sqlite_master</code> table on <strong>Page 1</strong>.</li>
+      <li>The <code class="language-plaintext highlighter-rouge">sqlite_master</code> entry for <code class="language-plaintext highlighter-rouge">users</code> includes a <code class="language-plaintext highlighter-rouge">rootpage</code> value, indicating where the <code class="language-plaintext highlighter-rouge">users</code> table’s B-Tree starts.</li>
+    </ul>
+  </li>
+  <li><strong>Locating the <code class="language-plaintext highlighter-rouge">users</code> B-Tree:</strong>
+    <ul>
+      <li>Suppose the <code class="language-plaintext highlighter-rouge">rootpage</code> for <code class="language-plaintext highlighter-rouge">users</code> is <strong>Page 2</strong>.</li>
+      <li>SQLite calculates the byte offset for <strong>Page 2</strong>:<br />
+<code class="language-plaintext highlighter-rouge">Offset = (Page Number - 1) * Page Size</code><br />
+If Page Size is 1024 bytes:<br />
+<code class="language-plaintext highlighter-rouge">Offset = (2 - 1) * 1024 = 1024 bytes = 0x400</code></li>
+    </ul>
+  </li>
+  <li><strong>Accessing Page 2:</strong>
+    <ul>
+      <li>SQLite jumps to <code class="language-plaintext highlighter-rouge">0x0400</code> in the file.</li>
+      <li>Reads the <strong>page header</strong> to understand how many cells (records) are present and where each cell starts.</li>
+    </ul>
+  </li>
+  <li><strong>Reading Records:</strong>
+    <ul>
+      <li>For each cell pointer, SQLite jumps to the specified offset within Page 2.</li>
+      <li>Decodes the <strong>record header</strong> and <strong>payload</strong> to retrieve the actual row data (e.g., <code class="language-plaintext highlighter-rouge">id</code>, <code class="language-plaintext highlighter-rouge">email</code> fields).</li>
+    </ul>
+  </li>
+  <li><strong>Navigating Through Records:</strong>
+    <ul>
+      <li>If the table spans multiple pages, SQLite traverses the B-Tree structure, accessing additional pages as needed to retrieve all records.</li>
+    </ul>
+  </li>
+</ol>
+
+<h2 id="performance-101">Performance 101</h2>
+
+<p>The above has little to do with what we are trying to do. There are few common optimizations
+that can be done.</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>PRAGMA journal_mode=WAL;
+PRAGMA synchronous=NORMAL;
+PRAGMA temp_store=MEMORY;
+PRAGMA cache_size=-2000;
+PRAGMA busy_timeout=5000;
+PRAGMA mmap_size = 30000000000;
+PRAGMA journal_size_limit = 104857600;
+PRAGMA threads = 10
+PRAGMA analysis_limit=1000;
+</code></pre></div></div>
+
+<ul>
+  <li>Set the journal mode to WAL. This will allow multiple readers to read independently
+    <ul>
+      <li>however only one writer can write to the WAL file at a time, it does not block readers.</li>
+    </ul>
+  </li>
+  <li>The NORMAL mode means SQLite syncs the WAL file during checkpoints but doesn’t sync after every write operation.</li>
+  <li>Given the amount of available RAM these days, SQLite can store temporary tables and other temporary data (e.g., sorting, indexes) in memory rather than on disk.</li>
+  <li>Increase the database page cache size can certainly help reducing disk I/O</li>
+  <li>The WAL log size, if kept unchecked, can grow to large. So once a WAL log, exceeds a given size limit. SQL triggers a checkpoint merge.</li>
+  <li>Limits the size of the WAL journal file to 100 MB (104857600 bytes).</li>
+  <li>mmap is memory mapping, essentially loading the file/pages into the process’es virtual memory. This way it saves a lot of disk i/o.</li>
+  <li>busy timeout, is essetially to allow queries to timeout, rather than holding up the resources, waiting for locks etc.</li>
+</ul>
+
+<p>Another performance improvemen can be done with the use of internal analyis tables, which can be generated using a PRAGMA.</p>
+
+<blockquote>
+  <p>The ANALYZE command gathers statistics about tables and indices and stores the collected information in internal tables of the database where the query optimizer can access the information and use it to help make better query planning choices.</p>
+</blockquote>
+
+<p>More on <a href="https://www.sqlite.org/lang_analyze.html">Analyze, here</a> .</p>
+
+<p>By default we have <code class="language-plaintext highlighter-rouge">sqlite_stats1</code>, and there is <code class="language-plaintext highlighter-rouge">sqlite_stats4</code>, which uses more information. The suggested improvement says.</p>
+
+<ol>
+  <li>
+    <p>Applications that use long-lived database connections should run “PRAGMA optimize=0x10002;” when the connection is first opened, 
+and then also run “PRAGMA optimize;” periodically, perhaps once per day, or more if the database is evolving rapidly.</p>
+  </li>
+  <li>
+    <p>All applications should run “PRAGMA optimize;” after a schema change, especially after one or more CREATE INDEX statements.</p>
+  </li>
+</ol>
+
+<h2 id="db-management-tools">DB management tools</h2>
+
+
+      <hr>
+      <div class="row mb-5 mt-5">
+  <div class="col-md-6 d-flex align-items-end ">
+    <span>Thanks. <i>mind sharing?</i></span>
+  </div>
+
+  <!-- Right Column with Social Media Icons (on the right for larger screens, on bottom for smaller screens) -->
+  <div class="col-md-6 order-md-2 order-1 text-md-right text-center mt-3 mt-md-0">
+    <div>
+
+      <a
+          href="https://www.linkedin.com/sharing/share-offsite?url=ikouchiha47.github.io/2024/12/16/sqlite_supercharged.html"
+          onclick="window.open(this.href, 'pop-up', 'left=20,top=20,width=500,height=500,toolbar=1,resizable=0'); return false;"
+          class="d-inline-block mr-2"
+       >
+        <span class="fa-stack fa-lg" style="color: #0077b5;">
+          <i class="fas fa-square fa-stack-2x"></i>
+          <i class="fab fa-linkedin fa-stack-1x fa-inverse"></i>
+        </span>
+      </a>
+
+      <a
+          href="https://twitter.com/intent/tweet?text=Supercharge a platform backed by sqlite&url=ikouchiha47.github.io/2024/12/16/sqlite_supercharged.html"
+          onclick="window.open(this.href, 'pop-up', 'left=20,top=20,width=500,height=500,toolbar=1,resizable=0'); return false;"
+          class="d-inline-block mr-2">
+        <span class="fa-stack fa-lg" style="color: #1DA1F2;">
+          <i class="fas fa-square fa-stack-2x"></i>
+          <i class="fab fa-twitter fa-stack-1x fa-inverse"></i>
+        </span>
+      </a>
+
+      <a
+          href="http://www.reddit.com/submit?url=ikouchiha47.github.io/2024/12/16/sqlite_supercharged.html"
+          onclick="window.open(this.href, 'pop-up', 'left=20,top=20,width=500,height=500,toolbar=1,resizable=0'); return false;"
+          class="d-inline-block mr-2">
+        <span class="fa-stack fa-lg" style="color: #FF4500;">
+          <i class="fas fa-square fa-stack-2x"></i>
+          <i class="fab fa-reddit fa-stack-1x fa-inverse"></i>
+        </span>
+      </a>
+    </div>
+  </div>
+</div>
+
+<hr/>
+
+
+      <div class="clearfix">
+
+        
+        <a class="btn btn-primary float-left" href="/2024/11/07/pprof_pref.html" data-toggle="tooltip" data-placement="top" title="Bench & Perf">&larr; Previous<span class="d-none d-md-inline">
+            Post</span></a>
+        
+        
+        <a class="btn btn-primary float-right" href="/2025/10/02/media-search.html" data-toggle="tooltip" data-placement="top" title="Cinestar">Next<span class="d-none d-md-inline">
+            Post</span> &rarr;</a>
+        
+
+      </div>
+
+    </div>
+  </div>
+</div>
+
+
+  <!-- Footer -->
+
+<hr>
+
+<footer>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <ul class="list-inline text-center">
+          
+          <li class="list-inline-item">
+            <a href="mailto:amitava.dev@proton.me" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="far fa-envelope fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          
+          
+          <li class="list-inline-item">
+            <a href="https://www.linkedin.com/in/amitavaag" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-linkedin fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          <li class="list-inline-item">
+            <a href="https://github.com/ikouchiha47" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-github fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+        </ul>
+
+        <p class="copyright text-muted">
+          Build with: 
+          <a 
+            href="https://github.com/StartBootstrap/startbootstrap-clean-blog-jekyll"
+            class="text-gray"
+            target="_blank">startbootstrap-clean-blog-jekyll</a></p>
+      </div>
+    </div>
+  </div>
+</footer>
+
+
+  <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="/assets/vendor/blog/js/scripts.js"></script>
+
+<script src="/assets/scripts.js"></script>
+
+
+
+
+
+  <script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+
+    document.querySelectorAll('pre > code.language-mermaid').forEach((codeBlock) => {
+      codeBlock.parentElement.outerHTML = `<pre class="mermaid">${codeBlock.textContent}</pre>`;
+    });
+
+
+    mermaid.initialize({ startOnLoad: true, theme: 'forest' });
+</script>
+
+
+  
+
+</body>
+
+</html>

@@ -1,0 +1,340 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+  <title>
+    Go SSE fan-out baseline: 7.5M events/s, then it collapses - iko&#39;s logs
+    
+  </title>
+
+  <meta name="description" content="">
+  <meta property="og:description" content="">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Go SSE fan-out baseline: 7.5M events/s, then it...">
+  <meta property="og:url" content="https://ikouchiha47.github.io/millionrps/13-sse-fanout-baseline.html">
+
+  
+
+  <link href='https://fonts.googleapis.com/css?family=Lora:400,700,400italic,700italic' rel='stylesheet' type='text/css'>
+  <link href='https://fonts.googleapis.com/css?family=Open+Sans:300italic,400italic,600italic,700italic,800italic,400,300,600,700,800' rel='stylesheet' type='text/css'>
+
+  <!-- <script src="https://use.fontawesome.com/releases/v5.15.3/js/all.js" crossorigin="anonymous"></script> -->
+  <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.15.4/css/all.css" integrity="sha384-DyZ88mC6Up2uqS4h/KRgHuoeGwBcD4Ng9SiP4dIRy0EXTlnuz47vAwmeGwVChigm" crossorigin="anonymous"/>
+
+  <link rel="stylesheet" href="/assets/main.css">
+  <link rel="canonical" href="https://ikouchiha47.github.io/millionrps/13-sse-fanout-baseline.html">
+  <link rel="alternate" type="application/rss+xml" title="iko&#39;s logs" href="/feed.xml">
+
+  <meta name="google-site-verification" content="lWkg6gIxJgzEKX_5XnhcxCtPE9QknaimFWWos_dTvPM" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fira+Sans:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Inconsolata:wght@200..900&family=Jersey+25&family=Kanit:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Merriweather+Sans:ital,wght@0,300..800;1,300..800&family=Nanum+Gothic+Coding&family=Space+Grotesk:wght@300..700&family=Titillium+Web:ital,wght@0,200;0,300;0,400;0,600;0,700;0,900;1,200;1,300;1,400;1,600;1,700&display=swap" rel="stylesheet">
+
+</head>
+
+
+<body>
+
+  <!-- Navigation -->
+<nav class="navbar navbar-expand-lg navbar-light fixed-top" id="mainNav">
+  <div class="container">
+    <a class="navbar-brand" href="/">iko&#39;s logs</a>
+    <button class="navbar-toggler navbar-toggler-right" type="button" data-toggle="collapse" data-target="#navbarResponsive" aria-controls="navbarResponsive" aria-expanded="false" aria-label="Toggle navigation">
+      Menu
+      <i class="fa fa-bars"></i>
+    </button>
+    <div class="collapse navbar-collapse" id="navbarResponsive">
+      <ul class="navbar-nav ml-auto">
+        <li class="nav-item">
+          <a class="nav-link" href="/">Home</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/about">About</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/posts">Posts</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/contact">Contact</a>
+        </li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+
+  
+<header class="masthead">
+
+  <div class="overlay"></div>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <div class="post-heading">
+          <h1>Go SSE fan-out baseline: 7.5M events/s, then it collapses</h1>
+          
+          <h2 class="subheading">One write, 64K subscribers. Measuring the in-process fan-out ceiling with goroutines and buffered channels.</h2>
+          
+          <span class="meta">
+            July 12, 2026
+            
+            &mdash; <span class="journal-entry-status done">DONE</span>
+            
+          </span>
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="container space-grotesk">
+  <div class="row">
+    <div class="col-lg-8 col-md-10 mx-auto">
+
+      <!-- Breadcrumb -->
+      <nav aria-label="breadcrumb" style="margin-bottom: 1.5rem;">
+        <ol class="breadcrumb" style="background: transparent; padding: 0;">
+          <li class="breadcrumb-item"><a href="/millionrps/">Chasing 1 Million RPS</a></li>
+          <li class="breadcrumb-item active" aria-current="page">Go SSE fan-out baseline: 7.5M events/s, then it collapses</li>
+        </ol>
+      </nav>
+
+      
+      <div style="margin-bottom: 1.5rem;">
+        
+        <span class="journal-tag">SSE</span>
+        
+        <span class="journal-tag">fan-out</span>
+        
+        <span class="journal-tag">hub</span>
+        
+        <span class="journal-tag">goroutine</span>
+        
+        <span class="journal-tag">channel</span>
+        
+        <span class="journal-tag">in-process</span>
+        
+        <span class="journal-tag">likes</span>
+        
+        <span class="journal-tag">fiber</span>
+        
+      </div>
+      
+
+      <p>Source code: <a href="https://github.com/ikouchiha47/gothun">ikouchiha47/gothun</a> — <code class="language-plaintext highlighter-rouge">src/likes/</code></p>
+
+<h2 id="the-problem-is-different-now">the problem is different now</h2>
+
+<p>Chapters 1-12 chased raw RPS on a static JSON endpoint. The bottlenecks were all in the network path: IRQ affinity, NIC saturation, prefork, compression. The server did the same work every request.</p>
+
+<p>Fan-out is a different shape. One POST <code class="language-plaintext highlighter-rouge">/like/post_42</code> needs to reach every viewer currently watching <code class="language-plaintext highlighter-rouge">post_42</code>. If 10,000 viewers are watching, one write becomes 10,000 SSE events. The metric is no longer requests/second — it’s <strong>events delivered per second</strong>, and the ceiling is wherever the broadcast loop breaks.</p>
+
+<p>This is the likes system: users watch live streams, hit like, and the count updates in real time for everyone watching.</p>
+
+<h2 id="what-we-built">what we built</h2>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>POST /like/:postID
+  → increment counter (sharded atomic, LRU dedup)
+  → hub.Publish(postID, newCount)
+  → topic goroutine reads from broadcast channel
+  → iterates subscriber slice, sends to each sub.Ch
+  → ServeSSE drains sub.Ch → writes SSE event → flush
+</code></pre></div></div>
+
+<p>Each <code class="language-plaintext highlighter-rouge">postID</code> is a <strong>topic</strong>. Each topic has:</p>
+<ul>
+  <li>One buffered <code class="language-plaintext highlighter-rouge">broadcast</code> channel (64 slots)</li>
+  <li>One <code class="language-plaintext highlighter-rouge">run()</code> goroutine reading from it</li>
+  <li>A <code class="language-plaintext highlighter-rouge">[]*Subscriber</code> slice — one entry per open SSE connection</li>
+</ul>
+
+<div class="language-go highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">type</span> <span class="n">topic</span> <span class="k">struct</span> <span class="p">{</span>
+    <span class="n">broadcast</span> <span class="k">chan</span> <span class="kt">int64</span>
+    <span class="n">mu</span>        <span class="n">sync</span><span class="o">.</span><span class="n">RWMutex</span>
+    <span class="n">subs</span>      <span class="p">[]</span><span class="o">*</span><span class="n">Subscriber</span>
+<span class="p">}</span>
+
+<span class="k">func</span> <span class="p">(</span><span class="n">t</span> <span class="o">*</span><span class="n">topic</span><span class="p">)</span> <span class="n">run</span><span class="p">()</span> <span class="p">{</span>
+    <span class="k">for</span> <span class="n">val</span> <span class="o">:=</span> <span class="k">range</span> <span class="n">t</span><span class="o">.</span><span class="n">broadcast</span> <span class="p">{</span>
+        <span class="n">t</span><span class="o">.</span><span class="n">mu</span><span class="o">.</span><span class="n">RLock</span><span class="p">()</span>
+        <span class="n">targets</span> <span class="o">:=</span> <span class="n">t</span><span class="o">.</span><span class="n">subs</span>
+        <span class="n">t</span><span class="o">.</span><span class="n">mu</span><span class="o">.</span><span class="n">RUnlock</span><span class="p">()</span>
+        <span class="k">for</span> <span class="n">_</span><span class="p">,</span> <span class="n">sub</span> <span class="o">:=</span> <span class="k">range</span> <span class="n">targets</span> <span class="p">{</span>
+            <span class="k">select</span> <span class="p">{</span>
+            <span class="k">case</span> <span class="n">sub</span><span class="o">.</span><span class="n">Ch</span> <span class="o">&lt;-</span> <span class="n">val</span><span class="o">:</span>
+            <span class="k">case</span> <span class="o">&lt;-</span><span class="n">sub</span><span class="o">.</span><span class="n">Done</span><span class="o">:</span>
+            <span class="k">default</span><span class="o">:</span> <span class="c">// slow reader — drop, not block</span>
+            <span class="p">}</span>
+        <span class="p">}</span>
+    <span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div></div>
+
+<p><strong>Slow reader policy: drop, not block.</strong> A viewer with a slow connection cannot stall the broadcast loop for everyone else. Like counts are not a reliable stream — the client only needs the latest value, not every intermediate count.</p>
+
+<p>Each <code class="language-plaintext highlighter-rouge">Subscriber</code> is owned entirely by its <code class="language-plaintext highlighter-rouge">ServeSSE</code> goroutine — it creates the channels, reads from <code class="language-plaintext highlighter-rouge">Ch</code>, and closes <code class="language-plaintext highlighter-rouge">Done</code> when the connection ends. The hub only stores the reference. This avoids the classic “send on closed channel” panic: the hub never touches channel lifecycle.</p>
+
+<h2 id="setup">setup</h2>
+
+<ul>
+  <li><strong>Server:</strong> c6in.8xlarge (32 vCPU, 64GB, 50 Gbps) — single process, prefork disabled (write path and SSE hub must share memory)</li>
+  <li><strong>Writers:</strong> <code class="language-plaintext highlighter-rouge">like-writer</code> — 500 goroutines, 10 posts round-robin, fire-and-forget POST</li>
+  <li><strong>SSE clients:</strong> <code class="language-plaintext highlighter-rouge">sse-load-client</code> — split across 2× c8gn.large (Graviton4 arm64, 2 vCPU each). Each client machine is limited to ~32K outbound ports, so two clients cover 64K connections</li>
+  <li><strong>Delivery%:</strong> <code class="language-plaintext highlighter-rouge">events_received / (writes × subs_per_post) × 100</code> — measured client-side by comparing received SSE events against server’s <code class="language-plaintext highlighter-rouge">increments_total</code></li>
+</ul>
+
+<p>Ramp: 2K → 10K → 20K → 64K SSE connections, 30s measurement window per phase.</p>
+
+<h2 id="results">results</h2>
+
+<div class="bench-table-wrap">
+<table class="bench-table">
+<thead><tr><th>SSE Connections</th><th>Events/s</th><th>Delivery%</th><th>Write inc/s</th><th>Server RSS</th><th>FDs</th></tr></thead>
+<tbody>
+<tr><td>2,000</td><td>4,452,394</td><td>90.1%</td><td>24,700</td><td>626 MB</td><td>2,529</td></tr>
+<tr><td>10,000</td><td>6,682,850</td><td>56.6%</td><td>11,814</td><td>922 MB</td><td>10,529</td></tr>
+<tr><td class="highlight">20,000</td><td class="highlight">7,543,145</td><td>33.1%</td><td>11,406</td><td>1,325 MB</td><td>20,529</td></tr>
+<tr><td>64,000</td><td class="bottleneck">2,599,775</td><td class="bottleneck">5.0%</td><td>8,192</td><td>3,128 MB</td><td>64,527</td></tr>
+</tbody>
+</table>
+</div>
+
+<h2 id="what-this-means">what this means</h2>
+
+<p><strong>Events/s peaks at 20K connections (~7.5M/s) then collapses.</strong> At 20K connections across 10 posts, each topic has 2K subscribers. The <code class="language-plaintext highlighter-rouge">run()</code> goroutine can iterate 2K subscriber channels in well under 1ms — it keeps up. At 64K (6.4K subs/topic), iteration takes longer than the inter-event gap. The broadcast channel fills. Events back up. Delivery falls to 5%.</p>
+
+<p><strong>Write throughput collapses under SSE load.</strong> With no SSE readers, the write path peaks at ~80K inc/s. At 2K SSE connections it’s 24K/s. At 64K it’s 8K/s. The fan-out goroutines and the write goroutines are competing for CPU cores on the same non-prefork process. The OS scheduler doesn’t know that fan-out is less important than writes — it gives them equal time.</p>
+
+<p><strong>~47KB per SSE connection.</strong> <code class="language-plaintext highlighter-rouge">(3128 - 626) MB / 62K ≈ 40KB</code>. Each connection holds: a net/http goroutine (~8KB stack minimum), a <code class="language-plaintext highlighter-rouge">Subscriber</code> struct with two buffered channels, and TCP read/write buffers. This matches expectation.</p>
+
+<p><strong>Delivery% and events/s are different bottlenecks.</strong> Even at 20K connections where events/s peaks, delivery is only 33%. The 7.5M events/s figure means the fan-out loop is working hard — but a lot of those sends are dropping into the <code class="language-plaintext highlighter-rouge">default</code> case because subscriber channels are full. The subscriber channel (8 slots) fills when the SSE write can’t keep up with the broadcast rate.</p>
+
+<div class="journal-callout finding">
+<strong>Finding</strong>
+The in-process ceiling is CPU contention between the write path and the fan-out goroutines, not fan-out iteration speed. Sharding the fan-out loop is the obvious next step — but it only helps if that's the actual bottleneck.
+</div>
+
+<p>Next: shard each topic’s fan-out across N goroutines. If delivery% improves, iteration was the limit. If it doesn’t, it was CPU contention all along.</p>
+
+
+      <hr>
+
+      <!-- Prev / Next -->
+      
+      
+      
+
+      <div class="clearfix" style="margin-top: 2rem;">
+        
+          
+          
+
+          
+            
+            <a class="btn btn-primary float-left" href="/millionrps/07-irq-pinning-c8i-client.html">&larr; planned: IRQ pinning + matched hardware</a>
+          
+
+          
+            
+            <a class="btn btn-primary float-right" href="/millionrps/14-sharded-fanout.html">Sharding the SSE fan-out goroutine: same ceiling, different drop point &rarr;</a>
+          
+        
+      </div>
+
+      <div style="text-align: center; margin-top: 1rem;">
+        <a href="/millionrps/">&uarr; Back to Journal</a>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+
+  <!-- Footer -->
+
+<hr>
+
+<footer>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <ul class="list-inline text-center">
+          
+          <li class="list-inline-item">
+            <a href="mailto:amitava.dev@proton.me" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="far fa-envelope fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          
+          
+          <li class="list-inline-item">
+            <a href="https://www.linkedin.com/in/amitavaag" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-linkedin fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          <li class="list-inline-item">
+            <a href="https://github.com/ikouchiha47" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-github fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+        </ul>
+
+        <p class="copyright text-muted">
+          Build with: 
+          <a 
+            href="https://github.com/StartBootstrap/startbootstrap-clean-blog-jekyll"
+            class="text-gray"
+            target="_blank">startbootstrap-clean-blog-jekyll</a></p>
+      </div>
+    </div>
+  </div>
+</footer>
+
+
+  <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="/assets/vendor/blog/js/scripts.js"></script>
+
+<script src="/assets/scripts.js"></script>
+
+
+
+
+
+  <script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+
+    document.querySelectorAll('pre > code.language-mermaid').forEach((codeBlock) => {
+      codeBlock.parentElement.outerHTML = `<pre class="mermaid">${codeBlock.textContent}</pre>`;
+    });
+
+
+    mermaid.initialize({ startOnLoad: true, theme: 'forest' });
+</script>
+
+
+  
+
+</body>
+
+</html>

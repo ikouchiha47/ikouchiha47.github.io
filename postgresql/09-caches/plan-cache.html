@@ -1,0 +1,447 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+  <title>
+    Plan Cache - iko&#39;s logs
+    
+  </title>
+
+  <meta name="description" content="">
+  <meta property="og:description" content="">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Plan Cache">
+  <meta property="og:url" content="https://ikouchiha47.github.io/postgresql/09-caches/plan-cache.html">
+
+  
+
+  <link href='https://fonts.googleapis.com/css?family=Lora:400,700,400italic,700italic' rel='stylesheet' type='text/css'>
+  <link href='https://fonts.googleapis.com/css?family=Open+Sans:300italic,400italic,600italic,700italic,800italic,400,300,600,700,800' rel='stylesheet' type='text/css'>
+
+  <!-- <script src="https://use.fontawesome.com/releases/v5.15.3/js/all.js" crossorigin="anonymous"></script> -->
+  <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.15.4/css/all.css" integrity="sha384-DyZ88mC6Up2uqS4h/KRgHuoeGwBcD4Ng9SiP4dIRy0EXTlnuz47vAwmeGwVChigm" crossorigin="anonymous"/>
+
+  <link rel="stylesheet" href="/assets/main.css">
+  <link rel="canonical" href="https://ikouchiha47.github.io/postgresql/09-caches/plan-cache.html">
+  <link rel="alternate" type="application/rss+xml" title="iko&#39;s logs" href="/feed.xml">
+
+  <meta name="google-site-verification" content="lWkg6gIxJgzEKX_5XnhcxCtPE9QknaimFWWos_dTvPM" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fira+Sans:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Inconsolata:wght@200..900&family=Jersey+25&family=Kanit:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Merriweather+Sans:ital,wght@0,300..800;1,300..800&family=Nanum+Gothic+Coding&family=Space+Grotesk:wght@300..700&family=Titillium+Web:ital,wght@0,200;0,300;0,400;0,600;0,700;0,900;1,200;1,300;1,400;1,600;1,700&display=swap" rel="stylesheet">
+
+</head>
+
+
+<body>
+
+  <!-- Navigation -->
+<nav class="navbar navbar-expand-lg navbar-light fixed-top" id="mainNav">
+  <div class="container">
+    <a class="navbar-brand" href="/">iko&#39;s logs</a>
+    <button class="navbar-toggler navbar-toggler-right" type="button" data-toggle="collapse" data-target="#navbarResponsive" aria-controls="navbarResponsive" aria-expanded="false" aria-label="Toggle navigation">
+      Menu
+      <i class="fa fa-bars"></i>
+    </button>
+    <div class="collapse navbar-collapse" id="navbarResponsive">
+      <ul class="navbar-nav ml-auto">
+        <li class="nav-item">
+          <a class="nav-link" href="/">Home</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/about">About</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/posts">Posts</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/contact">Contact</a>
+        </li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+
+  <!-- Page Header -->
+
+<header class="masthead">
+
+  <div class="overlay"></div>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <div class="post-heading">
+          <h1>Plan Cache</h1>
+          
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="container space-grotesk">
+  <div class="row">
+    <div class="col-lg-8 col-md-10 mx-auto">
+
+      <!-- Breadcrumb -->
+      <nav aria-label="breadcrumb" style="margin-bottom: 1.5rem;">
+        <ol class="breadcrumb" style="background: transparent; padding: 0;">
+          
+            <li class="breadcrumb-item"><a href="/postgresql-internals/">PostgreSQL Internals Deep Dive</a></li>
+          
+          
+            
+              <li class="breadcrumb-item"><a href="/postgresql/09-caches/">Caches</a></li>
+            
+          
+          <li class="breadcrumb-item active" aria-current="page">Plan Cache</li>
+        </ol>
+      </nav>
+
+      <h1 id="plan-cache">Plan Cache</h1>
+
+<p>The <strong>plan cache</strong> stores parsed, analyzed, rewritten, and planned query trees so that prepared statements, PL/pgSQL functions, and other repeated queries avoid redundant work. Its most interesting responsibility is deciding when to use a <strong>generic plan</strong> (parameter-independent, reusable across executions) versus a <strong>custom plan</strong> (optimized for specific parameter values).</p>
+
+<h2 id="overview">Overview</h2>
+
+<p>The plan cache is organized around two core structs:</p>
+
+<ul>
+  <li>
+    <p><strong><code class="language-plaintext highlighter-rouge">CachedPlanSource</code></strong> – Represents a SQL query that may be executed multiple times. Holds the query text, the parse tree, the rewritten query tree, and metadata for invalidation tracking. Lives for the duration of the backend (once “saved”).</p>
+  </li>
+  <li>
+    <p><strong><code class="language-plaintext highlighter-rouge">CachedPlan</code></strong> – Represents an actual execution plan derived from a <code class="language-plaintext highlighter-rouge">CachedPlanSource</code>. May be generic or custom. Reference-counted and freed when no longer needed.</p>
+  </li>
+</ul>
+
+<p>The lifecycle is: parse once, rewrite once (until invalidated), plan once or many times (depending on generic vs. custom), execute many times.</p>
+
+<h2 id="key-source-files">Key Source Files</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>File</th>
+      <th>Role</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/utils/cache/plancache.c</code></td>
+      <td>Plan cache management, generic/custom decision, invalidation</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/utils/plancache.h</code></td>
+      <td><code class="language-plaintext highlighter-rouge">CachedPlanSource</code>, <code class="language-plaintext highlighter-rouge">CachedPlan</code>, <code class="language-plaintext highlighter-rouge">CachedExpression</code> structs</td>
+    </tr>
+  </tbody>
+</table>
+
+<h2 id="how-it-works">How It Works</h2>
+
+<h3 id="creating-and-saving-a-plan-source">Creating and Saving a Plan Source</h3>
+
+<p>When a <code class="language-plaintext highlighter-rouge">PREPARE</code> statement is executed (or PL/pgSQL compiles a query):</p>
+
+<ol>
+  <li><code class="language-plaintext highlighter-rouge">CreateCachedPlan()</code> allocates a <code class="language-plaintext highlighter-rouge">CachedPlanSource</code> with the raw parse tree and query text.</li>
+  <li><code class="language-plaintext highlighter-rouge">CompleteCachedPlan()</code> stores the analyzed-and-rewritten query list, the parameter types, and dependency information (relation OIDs and <code class="language-plaintext highlighter-rouge">PlanInvalItem</code>s).</li>
+  <li><code class="language-plaintext highlighter-rouge">SaveCachedPlan()</code> moves the source into permanent storage and links it into the <code class="language-plaintext highlighter-rouge">saved_plan_list</code>. Only saved plans receive sinval invalidation events.</li>
+</ol>
+
+<h3 id="getting-a-plan-getcachedplan">Getting a Plan: GetCachedPlan</h3>
+
+<p>The central function is <code class="language-plaintext highlighter-rouge">GetCachedPlan()</code>. Its logic:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>GetCachedPlan(plansource, boundParams, owner, queryEnv)
+  1. RevalidateCachedQuery()
+     - If plansource-&gt;is_valid is false (invalidated by DDL):
+       a. Re-analyze and rewrite from the raw parse tree
+       b. Update relationOids and invalItems
+       c. Set is_valid = true
+     - Also re-validate if search_path changed, or RLS context changed
+
+  2. choose_custom_plan(plansource, boundParams)
+     - Decides generic vs. custom (see below)
+
+  3. If generic plan chosen:
+     - CheckCachedPlan() -- verify the existing generic plan is still valid
+     - If valid, bump refcount and return it
+     - If invalid, rebuild via BuildCachedPlan(NULL params)
+
+  4. If custom plan chosen:
+     - BuildCachedPlan(boundParams) -- plan with specific parameter values
+     - Return the one-shot plan (will be freed after execution)
+</code></pre></div></div>
+
+<h3 id="generic-vs-custom-plan-decision">Generic vs. Custom Plan Decision</h3>
+
+<p>This is the plan cache’s most nuanced feature. The decision is in <code class="language-plaintext highlighter-rouge">choose_custom_plan()</code>:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="cm">/* Simplified logic from plancache.c */</span>
+<span class="k">static</span> <span class="n">bool</span>
+<span class="nf">choose_custom_plan</span><span class="p">(</span><span class="n">CachedPlanSource</span> <span class="o">*</span><span class="n">plansource</span><span class="p">,</span> <span class="n">ParamListInfo</span> <span class="n">boundParams</span><span class="p">)</span>
+<span class="p">{</span>
+    <span class="cm">/* GUC override */</span>
+    <span class="k">if</span> <span class="p">(</span><span class="n">plan_cache_mode</span> <span class="o">==</span> <span class="n">PLAN_CACHE_MODE_FORCE_GENERIC_PLAN</span><span class="p">)</span>
+        <span class="k">return</span> <span class="nb">false</span><span class="p">;</span>
+    <span class="k">if</span> <span class="p">(</span><span class="n">plan_cache_mode</span> <span class="o">==</span> <span class="n">PLAN_CACHE_MODE_FORCE_CUSTOM_PLAN</span><span class="p">)</span>
+        <span class="k">return</span> <span class="nb">true</span><span class="p">;</span>
+
+    <span class="cm">/* If no parameters, generic is always fine */</span>
+    <span class="k">if</span> <span class="p">(</span><span class="n">boundParams</span> <span class="o">==</span> <span class="nb">NULL</span><span class="p">)</span>
+        <span class="k">return</span> <span class="nb">false</span><span class="p">;</span>
+
+    <span class="cm">/* Use custom for the first 5 executions to gather cost data */</span>
+    <span class="k">if</span> <span class="p">(</span><span class="n">plansource</span><span class="o">-&gt;</span><span class="n">num_custom_plans</span> <span class="o">&lt;</span> <span class="mi">5</span><span class="p">)</span>
+        <span class="k">return</span> <span class="nb">true</span><span class="p">;</span>
+
+    <span class="cm">/* Compare average custom cost to generic cost */</span>
+    <span class="n">avg_custom_cost</span> <span class="o">=</span> <span class="n">plansource</span><span class="o">-&gt;</span><span class="n">total_custom_cost</span> <span class="o">/</span> <span class="n">plansource</span><span class="o">-&gt;</span><span class="n">num_custom_plans</span><span class="p">;</span>
+    <span class="k">if</span> <span class="p">(</span><span class="n">plansource</span><span class="o">-&gt;</span><span class="n">generic_cost</span> <span class="o">&lt;</span> <span class="n">avg_custom_cost</span> <span class="o">*</span> <span class="mi">1</span><span class="p">.</span><span class="mi">1</span><span class="p">)</span>
+        <span class="k">return</span> <span class="nb">false</span><span class="p">;</span>   <span class="cm">/* generic is close enough, use it */</span>
+
+    <span class="k">return</span> <span class="nb">true</span><span class="p">;</span>  <span class="cm">/* custom is significantly cheaper */</span>
+<span class="p">}</span>
+</code></pre></div></div>
+
+<p>The key insight: for the first 5 executions, PostgreSQL always uses custom plans to accumulate cost statistics. After that, it switches to the generic plan if the generic plan’s cost is within 10% of the average custom plan cost. This avoids the overhead of re-planning every execution when the generic plan is good enough.</p>
+
+<pre><code class="language-mermaid">graph TD
+    Start["GetCachedPlan()"] --&gt; GUC{"plan_cache_mode?"}
+    GUC --&gt;|force_generic| Generic["Use generic plan"]
+    GUC --&gt;|force_custom| Custom["Use custom plan"]
+    GUC --&gt;|auto| Params{"Has parameters?"}
+    Params --&gt;|No| Generic
+    Params --&gt;|Yes| Count{"num_custom_plans &lt; 5?"}
+    Count --&gt;|Yes| Custom
+    Count --&gt;|No| Cost{"generic_cost &lt; avg_custom * 1.1?"}
+    Cost --&gt;|Yes| Generic
+    Cost --&gt;|No| Custom
+
+    Generic --&gt; Return["Return CachedPlan"]
+    Custom --&gt; Return
+</code></pre>
+
+<p class="note">The <code class="language-plaintext highlighter-rouge">plan_cache_mode</code> GUC (<code class="language-plaintext highlighter-rouge">auto</code>, <code class="language-plaintext highlighter-rouge">force_generic_plan</code>, <code class="language-plaintext highlighter-rouge">force_custom_plan</code>) allows administrators to override the automatic decision. This is useful when parameter skew causes the automatic heuristic to make poor choices.</p>
+
+<h3 id="plan-invalidation">Plan Invalidation</h3>
+
+<p>The plan cache registers three kinds of callbacks with <code class="language-plaintext highlighter-rouge">inval.c</code>:</p>
+
+<ol>
+  <li>
+    <p><strong><code class="language-plaintext highlighter-rouge">PlanCacheRelCallback</code></strong> – Fired on relcache invalidation. Iterates all saved plan sources and marks any that depend on the invalidated relation’s OID as <code class="language-plaintext highlighter-rouge">is_valid = false</code>. Also invalidates the generic plan if present.</p>
+  </li>
+  <li>
+    <p><strong><code class="language-plaintext highlighter-rouge">PlanCacheObjectCallback</code></strong> – Fired on <code class="language-plaintext highlighter-rouge">PROCOID</code> or <code class="language-plaintext highlighter-rouge">TYPEOID</code> syscache invalidation. Matches against the <code class="language-plaintext highlighter-rouge">PlanInvalItem</code> lists in saved plans. This catches function drops, type changes, and domain constraint modifications.</p>
+  </li>
+  <li>
+    <p><strong><code class="language-plaintext highlighter-rouge">PlanCacheSysCallback</code></strong> – Fired on changes to <code class="language-plaintext highlighter-rouge">pg_namespace</code>, <code class="language-plaintext highlighter-rouge">pg_operator</code>, and similar broad catalogs. Invalidates <strong>all</strong> saved plans, since the impact is too diffuse to track per-plan.</p>
+  </li>
+</ol>
+
+<p>When a plan source is invalidated, the next call to <code class="language-plaintext highlighter-rouge">GetCachedPlan()</code> triggers <code class="language-plaintext highlighter-rouge">RevalidateCachedQuery()</code>, which re-analyzes and re-plans. If the underlying schema change makes the query invalid (e.g., a dropped column), the re-analysis throws an error.</p>
+
+<h3 id="oneshot-plans">Oneshot Plans</h3>
+
+<p>For ad-hoc queries that will execute exactly once, <code class="language-plaintext highlighter-rouge">CreateOneShotCachedPlan()</code> creates a lightweight plan source that skips data copying, invalidation tracking, and saving. The plan lives in the caller’s memory context and is freed when that context is destroyed. This avoids the overhead of the full plan cache machinery for <code class="language-plaintext highlighter-rouge">EXECUTE</code> of non-prepared queries.</p>
+
+<h3 id="cachedexpression">CachedExpression</h3>
+
+<p>For simple scalar expressions (e.g., column defaults, partition bound expressions), the plan cache provides <code class="language-plaintext highlighter-rouge">CachedExpression</code> – a minimal wrapper that tracks invalidation but does not store the original parse tree. If invalidated, the caller is responsible for rebuilding. This avoids the weight of a full <code class="language-plaintext highlighter-rouge">CachedPlanSource</code> for expressions that rarely change.</p>
+
+<h2 id="key-data-structures">Key Data Structures</h2>
+
+<h3 id="cachedplansource">CachedPlanSource</h3>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>CachedPlanSource
+  +-- raw_parse_tree        original parse tree (or NULL)
+  +-- analyzed_parse_tree   pre-analyzed tree (or NULL)
+  +-- query_string          SQL text
+  +-- query_list            rewritten query trees (List of Query)
+  +-- relationOids          OIDs of referenced relations
+  +-- invalItems            PlanInvalItem list (functions, types)
+  +-- search_path           search_path at parse time
+  +-- gplan                 cached generic CachedPlan (or NULL)
+  +-- is_valid              false if invalidated, needs revalidation
+  +-- is_saved              true if in saved_plan_list
+  +-- is_oneshot            true for oneshot plans
+  +-- generic_cost          cost of the generic plan
+  +-- total_custom_cost     accumulated cost of custom plans
+  +-- num_custom_plans      count for averaging
+  +-- num_generic_plans     count of generic plan uses
+  +-- generation            incremented on each replan
+</code></pre></div></div>
+
+<h3 id="cachedplan">CachedPlan</h3>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>CachedPlan
+  +-- stmt_list             list of PlannedStmt nodes
+  +-- is_valid              false if invalidated
+  +-- is_saved              in long-lived context?
+  +-- is_oneshot            oneshot plan?
+  +-- planRoleId            role the plan was created for
+  +-- dependsOnRole         is plan role-specific?
+  +-- saved_xmin            TransactionXmin at plan time
+  +-- generation            matches CachedPlanSource.generation
+  +-- refcount              live references
+  +-- context               MemoryContext holding this plan
+</code></pre></div></div>
+
+<h3 id="memory-layout">Memory Layout</h3>
+
+<pre><code class="language-mermaid">graph LR
+    subgraph CacheMemoryContext
+        CPS["CachedPlanSource&lt;br/&gt;+ query_string&lt;br/&gt;+ raw_parse_tree"]
+    end
+    subgraph QueryContext["query_context"]
+        QL["query_list&lt;br/&gt;+ relationOids&lt;br/&gt;+ invalItems"]
+    end
+    subgraph PlanContext["plan context"]
+        CP["CachedPlan&lt;br/&gt;+ stmt_list"]
+    end
+
+    CPS --&gt; QL
+    CPS --&gt; CP
+</code></pre>
+
+<p>The separation of <code class="language-plaintext highlighter-rouge">query_context</code> from the main context allows the rewritten query tree to be discarded and rebuilt without disturbing the plan source itself.</p>
+
+<h2 id="connections">Connections</h2>
+
+<ul>
+  <li><strong><a href="catalog-cache">Catalog Cache</a></strong> – Plan invalidation is triggered by catcache invalidation callbacks.</li>
+  <li><strong><a href="relation-cache">Relation Cache</a></strong> – Plans track <code class="language-plaintext highlighter-rouge">relationOids</code> and are invalidated when those relations change.</li>
+  <li><strong><a href="invalidation">Invalidation</a></strong> – The plan cache registers relcache and syscache callbacks via <code class="language-plaintext highlighter-rouge">CacheRegisterRelcacheCallback()</code> and <code class="language-plaintext highlighter-rouge">CacheRegisterSyscacheCallback()</code>.</li>
+  <li><strong>Chapter 7 (Optimizer)</strong> – <code class="language-plaintext highlighter-rouge">BuildCachedPlan()</code> calls the planner to generate execution plans.</li>
+  <li><strong>Chapter 8 (Executor)</strong> – The executor receives <code class="language-plaintext highlighter-rouge">PlannedStmt</code> nodes from the cached plan.</li>
+  <li><strong>Chapter 6 (Parsing)</strong> – Plan invalidation triggers re-parsing and re-analysis from the raw parse tree.</li>
+</ul>
+
+
+      <hr>
+
+      <!-- Prev / Next / Up navigation -->
+      
+      
+      
+
+      <div class="clearfix" style="margin-top: 2rem;">
+        
+          
+          
+
+          
+            
+            <a class="btn btn-primary float-left" href="/postgresql/09-caches/invalidation.html" title="Invalidation">&larr; Previous</a>
+          
+
+          
+            
+            <a class="btn btn-primary float-right" href="/postgresql/09-caches/relation-cache.html" title="Relation Cache">Next &rarr;</a>
+          
+        
+      </div>
+
+      
+      <div style="text-align: center; margin-top: 1rem;">
+        <a href="/postgresql-internals/">&uarr; Back to Table of Contents</a>
+      </div>
+      
+
+    </div>
+  </div>
+</div>
+
+
+  <!-- Footer -->
+
+<hr>
+
+<footer>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <ul class="list-inline text-center">
+          
+          <li class="list-inline-item">
+            <a href="mailto:amitava.dev@proton.me" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="far fa-envelope fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          
+          
+          <li class="list-inline-item">
+            <a href="https://www.linkedin.com/in/amitavaag" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-linkedin fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          <li class="list-inline-item">
+            <a href="https://github.com/ikouchiha47" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-github fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+        </ul>
+
+        <p class="copyright text-muted">
+          Build with: 
+          <a 
+            href="https://github.com/StartBootstrap/startbootstrap-clean-blog-jekyll"
+            class="text-gray"
+            target="_blank">startbootstrap-clean-blog-jekyll</a></p>
+      </div>
+    </div>
+  </div>
+</footer>
+
+
+  <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="/assets/vendor/blog/js/scripts.js"></script>
+
+<script src="/assets/scripts.js"></script>
+
+
+
+
+
+  <script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+
+    document.querySelectorAll('pre > code.language-mermaid').forEach((codeBlock) => {
+      codeBlock.parentElement.outerHTML = `<pre class="mermaid">${codeBlock.textContent}</pre>`;
+    });
+
+
+    mermaid.initialize({ startOnLoad: true, theme: 'forest' });
+</script>
+
+
+  
+
+</body>
+
+</html>

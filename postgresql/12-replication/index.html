@@ -1,0 +1,583 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+  <title>
+    Replication - iko&#39;s logs
+    
+  </title>
+
+  <meta name="description" content="">
+  <meta property="og:description" content="">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Replication">
+  <meta property="og:url" content="https://ikouchiha47.github.io/postgresql/12-replication/">
+
+  
+
+  <link href='https://fonts.googleapis.com/css?family=Lora:400,700,400italic,700italic' rel='stylesheet' type='text/css'>
+  <link href='https://fonts.googleapis.com/css?family=Open+Sans:300italic,400italic,600italic,700italic,800italic,400,300,600,700,800' rel='stylesheet' type='text/css'>
+
+  <!-- <script src="https://use.fontawesome.com/releases/v5.15.3/js/all.js" crossorigin="anonymous"></script> -->
+  <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.15.4/css/all.css" integrity="sha384-DyZ88mC6Up2uqS4h/KRgHuoeGwBcD4Ng9SiP4dIRy0EXTlnuz47vAwmeGwVChigm" crossorigin="anonymous"/>
+
+  <link rel="stylesheet" href="/assets/main.css">
+  <link rel="canonical" href="https://ikouchiha47.github.io/postgresql/12-replication/">
+  <link rel="alternate" type="application/rss+xml" title="iko&#39;s logs" href="/feed.xml">
+
+  <meta name="google-site-verification" content="lWkg6gIxJgzEKX_5XnhcxCtPE9QknaimFWWos_dTvPM" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fira+Sans:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Inconsolata:wght@200..900&family=Jersey+25&family=Kanit:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Merriweather+Sans:ital,wght@0,300..800;1,300..800&family=Nanum+Gothic+Coding&family=Space+Grotesk:wght@300..700&family=Titillium+Web:ital,wght@0,200;0,300;0,400;0,600;0,700;0,900;1,200;1,300;1,400;1,600;1,700&display=swap" rel="stylesheet">
+
+</head>
+
+
+<body>
+
+  <!-- Navigation -->
+<nav class="navbar navbar-expand-lg navbar-light fixed-top" id="mainNav">
+  <div class="container">
+    <a class="navbar-brand" href="/">iko&#39;s logs</a>
+    <button class="navbar-toggler navbar-toggler-right" type="button" data-toggle="collapse" data-target="#navbarResponsive" aria-controls="navbarResponsive" aria-expanded="false" aria-label="Toggle navigation">
+      Menu
+      <i class="fa fa-bars"></i>
+    </button>
+    <div class="collapse navbar-collapse" id="navbarResponsive">
+      <ul class="navbar-nav ml-auto">
+        <li class="nav-item">
+          <a class="nav-link" href="/">Home</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/about">About</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/posts">Posts</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/contact">Contact</a>
+        </li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+
+  <!-- Page Header -->
+
+<header class="masthead">
+
+  <div class="overlay"></div>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <div class="post-heading">
+          <h1>Replication</h1>
+          
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="container space-grotesk">
+  <div class="row">
+    <div class="col-lg-8 col-md-10 mx-auto">
+
+      <!-- Breadcrumb -->
+      <nav aria-label="breadcrumb" style="margin-bottom: 1.5rem;">
+        <ol class="breadcrumb" style="background: transparent; padding: 0;">
+          
+            <li class="breadcrumb-item"><a href="/postgresql-internals/">PostgreSQL Internals Deep Dive</a></li>
+          
+          
+          <li class="breadcrumb-item active" aria-current="page">Replication</li>
+        </ol>
+      </nav>
+
+      <h1 id="chapter-12-replication">Chapter 12: Replication</h1>
+
+<h2 id="summary">Summary</h2>
+
+<p>PostgreSQL replication enables high availability and horizontal read scaling by
+propagating changes from a primary server to one or more standbys. The system
+supports two fundamentally different modes: <strong>physical replication</strong>, which
+ships raw WAL bytes to produce byte-identical copies of the primary, and
+<strong>logical replication</strong>, which decodes WAL into a stream of logical change
+events that can be selectively applied. This chapter examines the internal
+machinery behind both approaches – from the walsender/walreceiver protocol
+and replication slots, through logical decoding and the reorder buffer, to
+synchronous commit and conflict resolution.</p>
+
+<hr />
+
+<h2 id="overview">Overview</h2>
+
+<p>Replication in PostgreSQL is built on top of the Write-Ahead Log (WAL). Every
+change that modifies data pages is first recorded in WAL, and replication
+exploits this by shipping those records to other servers. The two replication
+modes differ in <em>what</em> they ship and <em>how</em> they interpret it:</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>Aspect</th>
+      <th>Physical Replication</th>
+      <th>Logical Replication</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><strong>Unit of transfer</strong></td>
+      <td>Raw WAL bytes (page-level changes)</td>
+      <td>Decoded row-level change events</td>
+    </tr>
+    <tr>
+      <td><strong>Standby type</strong></td>
+      <td>Byte-identical hot standby</td>
+      <td>Independent server with own schema</td>
+    </tr>
+    <tr>
+      <td><strong>Use cases</strong></td>
+      <td>HA failover, read replicas</td>
+      <td>Selective table sync, cross-version upgrade, data integration</td>
+    </tr>
+    <tr>
+      <td><strong>WAL level required</strong></td>
+      <td><code class="language-plaintext highlighter-rouge">replica</code></td>
+      <td><code class="language-plaintext highlighter-rouge">logical</code></td>
+    </tr>
+    <tr>
+      <td><strong>Key processes</strong></td>
+      <td>walsender, walreceiver, startup</td>
+      <td>walsender, logical worker, apply worker</td>
+    </tr>
+  </tbody>
+</table>
+
+<h3 id="architectural-layers">Architectural Layers</h3>
+
+<p>The replication subsystem is organized into several cooperating layers:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>+---------------------------------------------------------------------+
+|                        Client Applications                          |
+|           (read queries on standby / subscriber queries)            |
++---------------------------------------------------------------------+
+           |                                        |
+           v                                        v
++------------------------+           +-----------------------------+
+|    Physical Standby    |           |     Logical Subscriber      |
+|  +------------------+  |           |  +----------------------+   |
+|  |  walreceiver     |  |           |  |  logical apply       |   |
+|  |  startup process |  |           |  |  worker              |   |
+|  |  (WAL replay)    |  |           |  |  (row-level apply)   |   |
+|  +------------------+  |           |  +----------------------+   |
++----------+-------------+           +-------------+---------------+
+           |                                       |
+           | Streaming Protocol                    | Streaming Protocol
+           | (physical WAL bytes)                  | (logical changes)
+           |                                       |
++----------+---------------------------------------+---------------+
+|                         Primary Server                           |
+|  +-----------------------------------------------------------+  |
+|  |                      walsender(s)                         |  |
+|  |  +------------------+      +---------------------------+  |  |
+|  |  | Physical sender  |      | Logical sender            |  |  |
+|  |  | (reads WAL from  |      | (decodes WAL via          |  |  |
+|  |  |  disk, streams)  |      |  logical decoding engine)  |  |  |
+|  |  +------------------+      +---------------------------+  |  |
+|  +-----------------------------------------------------------+  |
+|  +-----------------------------------------------------------+  |
+|  |                    Replication Slots                       |  |
+|  |  (track consumer progress, prevent WAL/row removal)       |  |
+|  +-----------------------------------------------------------+  |
+|  +-----------------------------------------------------------+  |
+|  |              WAL (pg_wal/)                                |  |
+|  +-----------------------------------------------------------+  |
++------------------------------------------------------------------+
+</code></pre></div></div>
+
+<h3 id="the-walsenderwalreceiver-protocol">The Walsender/Walreceiver Protocol</h3>
+
+<p>Both physical and logical replication share a common transport layer built on
+the libpq streaming protocol. A standby (or logical subscriber) connects to
+the primary using a <strong>replication connection</strong> – a special connection mode
+that speaks a small command language instead of SQL. The key commands are:</p>
+
+<ul>
+  <li><code class="language-plaintext highlighter-rouge">IDENTIFY_SYSTEM</code> – returns the system identifier, timeline, and current WAL position</li>
+  <li><code class="language-plaintext highlighter-rouge">CREATE_REPLICATION_SLOT</code> – creates a slot to track replication progress</li>
+  <li><code class="language-plaintext highlighter-rouge">START_REPLICATION</code> – begins WAL streaming from a given LSN</li>
+  <li><code class="language-plaintext highlighter-rouge">BASE_BACKUP</code> – initiates a physical base backup</li>
+</ul>
+
+<p>Once <code class="language-plaintext highlighter-rouge">START_REPLICATION</code> is issued, the walsender enters COPY mode and
+continuously sends WAL data messages. The receiver periodically sends status
+updates containing its write, flush, and apply positions.</p>
+
+<hr />
+
+<h2 id="key-source-files">Key Source Files</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>File</th>
+      <th>Purpose</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/replication/walsender.c</code></td>
+      <td>WAL sender process – serves both physical and logical streams</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/replication/walreceiver.c</code></td>
+      <td>WAL receiver process – runs on standby, writes received WAL to disk</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/replication/walreceiverfuncs.c</code></td>
+      <td>Shared memory interface for walreceiver status</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/replication/slot.c</code></td>
+      <td>Replication slot management (create, drop, persist, invalidate)</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/replication/syncrep.c</code></td>
+      <td>Synchronous replication – commit waiting and standby release</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/replication/logical/decode.c</code></td>
+      <td>Logical decoding – translates WAL records into change events</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/replication/logical/reorderbuffer.c</code></td>
+      <td>Reassembles transaction changes in commit order</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/replication/logical/snapbuild.c</code></td>
+      <td>Builds historic catalog snapshots for logical decoding</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/replication/logical/conflict.c</code></td>
+      <td>Conflict detection and logging for logical replication</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/replication/logical/worker.c</code></td>
+      <td>Logical replication apply worker</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/replication/logical/launcher.c</code></td>
+      <td>Logical replication launcher – manages apply workers</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/storage/ipc/standby.c</code></td>
+      <td>Hot standby conflict resolution</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/replication/walsender_private.h</code></td>
+      <td><code class="language-plaintext highlighter-rouge">WalSnd</code> and <code class="language-plaintext highlighter-rouge">WalSndCtlData</code> shared memory structures</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/replication/walreceiver.h</code></td>
+      <td><code class="language-plaintext highlighter-rouge">WalRcvData</code> shared memory structure and walreceiver states</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/replication/slot.h</code></td>
+      <td><code class="language-plaintext highlighter-rouge">ReplicationSlot</code> and <code class="language-plaintext highlighter-rouge">ReplicationSlotPersistentData</code> structs</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/replication/syncrep.h</code></td>
+      <td><code class="language-plaintext highlighter-rouge">SyncRepConfigData</code> and sync rep wait modes</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/replication/reorderbuffer.h</code></td>
+      <td><code class="language-plaintext highlighter-rouge">ReorderBuffer</code>, <code class="language-plaintext highlighter-rouge">ReorderBufferTXN</code>, <code class="language-plaintext highlighter-rouge">ReorderBufferChange</code></td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/replication/snapbuild.h</code></td>
+      <td><code class="language-plaintext highlighter-rouge">SnapBuild</code> state machine and snapshot builder interface</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/replication/conflict.h</code></td>
+      <td><code class="language-plaintext highlighter-rouge">ConflictType</code> enum and <code class="language-plaintext highlighter-rouge">ConflictTupleInfo</code></td>
+    </tr>
+  </tbody>
+</table>
+
+<hr />
+
+<h2 id="how-it-works-replication-lifecycle">How It Works: Replication Lifecycle</h2>
+
+<h3 id="1-setting-up-replication">1. Setting Up Replication</h3>
+
+<p>Physical replication begins with a base backup (<code class="language-plaintext highlighter-rouge">pg_basebackup</code>), which
+creates a copy of the entire data directory. The standby is configured with
+<code class="language-plaintext highlighter-rouge">primary_conninfo</code> pointing back to the primary. On startup, the standby’s
+startup process replays any locally available WAL, then signals the postmaster
+to launch a walreceiver to stream more WAL from the primary.</p>
+
+<p>Logical replication is configured through the SQL-level <code class="language-plaintext highlighter-rouge">CREATE PUBLICATION</code>
+and <code class="language-plaintext highlighter-rouge">CREATE SUBSCRIPTION</code> commands. The subscription launcher on the
+subscriber starts apply workers that connect to the primary’s walsender using
+logical replication slots.</p>
+
+<h3 id="2-steady-state-streaming">2. Steady-State Streaming</h3>
+
+<p>During normal operation, the walsender reads WAL from disk (physical) or
+decodes it through the logical decoding pipeline (logical) and streams it to
+the connected consumer. The consumer acknowledges progress, which the
+walsender records in the replication slot. This feedback loop serves three
+purposes:</p>
+
+<ol>
+  <li><strong>Progress tracking</strong> – allows resumption after disconnection</li>
+  <li><strong>WAL retention</strong> – prevents removal of WAL still needed by consumers</li>
+  <li><strong>Synchronous commit</strong> – enables the primary to wait for standby confirmation</li>
+</ol>
+
+<h3 id="3-replication-slots-as-the-coordination-mechanism">3. Replication Slots as the Coordination Mechanism</h3>
+
+<p>Replication slots are the central coordination mechanism. They are stored both
+in shared memory (for runtime efficiency) and on disk under <code class="language-plaintext highlighter-rouge">pg_replslot/</code>
+(for crash safety). Each slot tracks:</p>
+
+<ul>
+  <li><strong>restart_lsn</strong> – oldest WAL position the consumer might need</li>
+  <li><strong>confirmed_flush</strong> – latest position acknowledged by the consumer</li>
+  <li><strong>xmin / catalog_xmin</strong> – transaction ID horizons that prevent premature vacuuming</li>
+  <li><strong>invalidated</strong> – whether the slot has been invalidated (WAL removed, rows removed, etc.)</li>
+</ul>
+
+<hr />
+
+<h2 id="key-data-structures">Key Data Structures</h2>
+
+<h3 id="replicationslot-sloth">ReplicationSlot (slot.h)</h3>
+
+<p>The in-memory representation of a replication slot, protected by a per-slot
+spinlock and the global <code class="language-plaintext highlighter-rouge">ReplicationSlotControlLock</code>:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">typedef</span> <span class="k">struct</span> <span class="n">ReplicationSlot</span>
+<span class="p">{</span>
+    <span class="n">slock_t</span>     <span class="n">mutex</span><span class="p">;</span>
+    <span class="n">bool</span>        <span class="n">in_use</span><span class="p">;</span>
+    <span class="n">ProcNumber</span>  <span class="n">active_proc</span><span class="p">;</span>       <span class="cm">/* who is using this slot */</span>
+    <span class="n">bool</span>        <span class="n">just_dirtied</span><span class="p">;</span>
+    <span class="n">bool</span>        <span class="n">dirty</span><span class="p">;</span>
+
+    <span class="cm">/* Effective xmin/catalog_xmin (may lag behind persistent values) */</span>
+    <span class="n">TransactionId</span> <span class="n">effective_xmin</span><span class="p">;</span>
+    <span class="n">TransactionId</span> <span class="n">effective_catalog_xmin</span><span class="p">;</span>
+
+    <span class="cm">/* On-disk persistent state */</span>
+    <span class="n">ReplicationSlotPersistentData</span> <span class="n">data</span><span class="p">;</span>
+    <span class="cm">/* ... */</span>
+<span class="p">}</span> <span class="n">ReplicationSlot</span><span class="p">;</span>
+</code></pre></div></div>
+
+<h3 id="walsnd-walsender_privateh">WalSnd (walsender_private.h)</h3>
+
+<p>Per-walsender shared memory state, used for monitoring and synchronous
+replication coordination:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">typedef</span> <span class="k">struct</span> <span class="n">WalSnd</span>
+<span class="p">{</span>
+    <span class="n">pid_t</span>       <span class="n">pid</span><span class="p">;</span>
+    <span class="n">WalSndState</span> <span class="n">state</span><span class="p">;</span>             <span class="cm">/* STARTUP, CATCHUP, STREAMING, STOPPING */</span>
+    <span class="n">XLogRecPtr</span>  <span class="n">sentPtr</span><span class="p">;</span>           <span class="cm">/* WAL sent up to here */</span>
+    <span class="n">XLogRecPtr</span>  <span class="n">write</span><span class="p">;</span>             <span class="cm">/* standby has written up to here */</span>
+    <span class="n">XLogRecPtr</span>  <span class="n">flush</span><span class="p">;</span>             <span class="cm">/* standby has flushed up to here */</span>
+    <span class="n">XLogRecPtr</span>  <span class="n">apply</span><span class="p">;</span>             <span class="cm">/* standby has applied up to here */</span>
+    <span class="n">TimeOffset</span>  <span class="n">writeLag</span><span class="p">,</span> <span class="n">flushLag</span><span class="p">,</span> <span class="n">applyLag</span><span class="p">;</span>
+    <span class="kt">int</span>         <span class="n">sync_standby_priority</span><span class="p">;</span>
+    <span class="n">slock_t</span>     <span class="n">mutex</span><span class="p">;</span>
+    <span class="n">TimestampTz</span> <span class="n">replyTime</span><span class="p">;</span>
+    <span class="n">ReplicationKind</span> <span class="n">kind</span><span class="p">;</span>          <span class="cm">/* physical or logical */</span>
+<span class="p">}</span> <span class="n">WalSnd</span><span class="p">;</span>
+</code></pre></div></div>
+
+<hr />
+
+<h2 id="chapter-organization">Chapter Organization</h2>
+
+<p>This chapter is divided into four sections, each covering a major aspect of
+the replication subsystem:</p>
+
+<ol>
+  <li>
+    <p><strong><a href="streaming.html">Streaming Replication</a></strong> – Physical replication internals:
+the walsender/walreceiver architecture, the streaming protocol, and
+replication slots.</p>
+  </li>
+  <li>
+    <p><strong><a href="logical.html">Logical Replication</a></strong> – Logical decoding internals: the
+decode pipeline, the reorder buffer, snapshot building, and output plugins.</p>
+  </li>
+  <li>
+    <p><strong><a href="synchronous.html">Synchronous Replication</a></strong> – How PostgreSQL implements
+synchronous commit across standbys, including priority-based and quorum-based
+modes.</p>
+  </li>
+  <li>
+    <p><strong><a href="conflict-resolution.html">Conflict Resolution</a></strong> – How conflicts are
+detected and resolved in both hot standby (physical) and logical replication
+scenarios.</p>
+  </li>
+</ol>
+
+<hr />
+
+<h2 id="connections-to-other-chapters">Connections to Other Chapters</h2>
+
+<ul>
+  <li>
+    <p><strong><a href="../04-wal/">Chapter 4: WAL</a></strong> – Replication is built directly on the WAL
+infrastructure. Understanding WAL record format, LSNs, and the WAL writer is
+prerequisite to understanding replication.</p>
+  </li>
+  <li>
+    <p><strong><a href="../05-buffer-manager/">Chapter 5: Buffer Manager</a></strong> – Hot standby conflicts
+arise when WAL replay needs to modify buffers that are pinned by read queries.</p>
+  </li>
+  <li>
+    <p><strong><a href="../06-mvcc/">Chapter 6: MVCC and Snapshots</a></strong> – Logical decoding builds
+its own historic snapshots using the same visibility rules that MVCC uses for
+normal queries.</p>
+  </li>
+  <li>
+    <p><strong><a href="../08-transactions/">Chapter 8: Transactions</a></strong> – The reorder buffer
+reconstructs transaction boundaries from WAL, and synchronous replication
+hooks into the commit path.</p>
+  </li>
+  <li>
+    <p><strong><a href="../10-vacuum/">Chapter 10: VACUUM</a></strong> – Replication slots hold back xmin
+horizons, directly affecting when VACUUM can remove dead tuples.</p>
+  </li>
+</ul>
+
+
+      <hr>
+
+      <!-- Prev / Next / Up navigation -->
+      
+      
+      
+
+      <div class="clearfix" style="margin-top: 2rem;">
+        
+          
+          
+
+          
+            
+            <a class="btn btn-primary float-left" href="/postgresql/11-ipc/shared-memory.html" title="Shared Memory">&larr; Previous</a>
+          
+
+          
+            
+            <a class="btn btn-primary float-right" href="/postgresql/12-replication/conflict-resolution.html" title="Conflict Resolution">Next &rarr;</a>
+          
+        
+      </div>
+
+      
+      <div style="text-align: center; margin-top: 1rem;">
+        <a href="/postgresql-internals/">&uarr; Back to Table of Contents</a>
+      </div>
+      
+
+    </div>
+  </div>
+</div>
+
+
+  <!-- Footer -->
+
+<hr>
+
+<footer>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <ul class="list-inline text-center">
+          
+          <li class="list-inline-item">
+            <a href="mailto:amitava.dev@proton.me" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="far fa-envelope fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          
+          
+          <li class="list-inline-item">
+            <a href="https://www.linkedin.com/in/amitavaag" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-linkedin fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          <li class="list-inline-item">
+            <a href="https://github.com/ikouchiha47" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-github fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+        </ul>
+
+        <p class="copyright text-muted">
+          Build with: 
+          <a 
+            href="https://github.com/StartBootstrap/startbootstrap-clean-blog-jekyll"
+            class="text-gray"
+            target="_blank">startbootstrap-clean-blog-jekyll</a></p>
+      </div>
+    </div>
+  </div>
+</footer>
+
+
+  <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="/assets/vendor/blog/js/scripts.js"></script>
+
+<script src="/assets/scripts.js"></script>
+
+
+
+
+
+  <script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+
+    document.querySelectorAll('pre > code.language-mermaid').forEach((codeBlock) => {
+      codeBlock.parentElement.outerHTML = `<pre class="mermaid">${codeBlock.textContent}</pre>`;
+    });
+
+
+    mermaid.initialize({ startOnLoad: true, theme: 'forest' });
+</script>
+
+
+  
+
+</body>
+
+</html>

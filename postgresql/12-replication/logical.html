@@ -1,0 +1,815 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+  <title>
+    Logical Replication - iko&#39;s logs
+    
+  </title>
+
+  <meta name="description" content="">
+  <meta property="og:description" content="">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Logical Replication">
+  <meta property="og:url" content="https://ikouchiha47.github.io/postgresql/12-replication/logical.html">
+
+  
+
+  <link href='https://fonts.googleapis.com/css?family=Lora:400,700,400italic,700italic' rel='stylesheet' type='text/css'>
+  <link href='https://fonts.googleapis.com/css?family=Open+Sans:300italic,400italic,600italic,700italic,800italic,400,300,600,700,800' rel='stylesheet' type='text/css'>
+
+  <!-- <script src="https://use.fontawesome.com/releases/v5.15.3/js/all.js" crossorigin="anonymous"></script> -->
+  <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.15.4/css/all.css" integrity="sha384-DyZ88mC6Up2uqS4h/KRgHuoeGwBcD4Ng9SiP4dIRy0EXTlnuz47vAwmeGwVChigm" crossorigin="anonymous"/>
+
+  <link rel="stylesheet" href="/assets/main.css">
+  <link rel="canonical" href="https://ikouchiha47.github.io/postgresql/12-replication/logical.html">
+  <link rel="alternate" type="application/rss+xml" title="iko&#39;s logs" href="/feed.xml">
+
+  <meta name="google-site-verification" content="lWkg6gIxJgzEKX_5XnhcxCtPE9QknaimFWWos_dTvPM" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fira+Sans:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Inconsolata:wght@200..900&family=Jersey+25&family=Kanit:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Merriweather+Sans:ital,wght@0,300..800;1,300..800&family=Nanum+Gothic+Coding&family=Space+Grotesk:wght@300..700&family=Titillium+Web:ital,wght@0,200;0,300;0,400;0,600;0,700;0,900;1,200;1,300;1,400;1,600;1,700&display=swap" rel="stylesheet">
+
+</head>
+
+
+<body>
+
+  <!-- Navigation -->
+<nav class="navbar navbar-expand-lg navbar-light fixed-top" id="mainNav">
+  <div class="container">
+    <a class="navbar-brand" href="/">iko&#39;s logs</a>
+    <button class="navbar-toggler navbar-toggler-right" type="button" data-toggle="collapse" data-target="#navbarResponsive" aria-controls="navbarResponsive" aria-expanded="false" aria-label="Toggle navigation">
+      Menu
+      <i class="fa fa-bars"></i>
+    </button>
+    <div class="collapse navbar-collapse" id="navbarResponsive">
+      <ul class="navbar-nav ml-auto">
+        <li class="nav-item">
+          <a class="nav-link" href="/">Home</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/about">About</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/posts">Posts</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/contact">Contact</a>
+        </li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+
+  <!-- Page Header -->
+
+<header class="masthead">
+
+  <div class="overlay"></div>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <div class="post-heading">
+          <h1>Logical Replication</h1>
+          
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="container space-grotesk">
+  <div class="row">
+    <div class="col-lg-8 col-md-10 mx-auto">
+
+      <!-- Breadcrumb -->
+      <nav aria-label="breadcrumb" style="margin-bottom: 1.5rem;">
+        <ol class="breadcrumb" style="background: transparent; padding: 0;">
+          
+            <li class="breadcrumb-item"><a href="/postgresql-internals/">PostgreSQL Internals Deep Dive</a></li>
+          
+          
+            
+              <li class="breadcrumb-item"><a href="/postgresql/12-replication/">Replication</a></li>
+            
+          
+          <li class="breadcrumb-item active" aria-current="page">Logical Replication</li>
+        </ol>
+      </nav>
+
+      <h1 id="logical-replication">Logical Replication</h1>
+
+<h2 id="summary">Summary</h2>
+
+<p>Logical replication decodes the physical WAL stream into a sequence of
+row-level change events (inserts, updates, deletes, truncates) that can be
+selectively applied to a subscriber. The decoding pipeline has three core
+components: the <strong>WAL decoder</strong> (<code class="language-plaintext highlighter-rouge">decode.c</code>) which reads WAL records and
+classifies them, the <strong>reorder buffer</strong> (<code class="language-plaintext highlighter-rouge">reorderbuffer.c</code>) which reassembles
+individual changes into complete transactions in commit order, and the
+<strong>snapshot builder</strong> (<code class="language-plaintext highlighter-rouge">snapbuild.c</code>) which constructs historic catalog
+snapshots needed to interpret the data in WAL records. An <strong>output plugin</strong>
+transforms the decoded changes into a wire format for consumption.</p>
+
+<hr />
+
+<h2 id="overview">Overview</h2>
+
+<p>Physical replication ships raw WAL bytes, which means the consumer must be a
+byte-identical PostgreSQL instance running the same major version. Logical
+replication removes this constraint by interpreting the WAL and extracting
+the semantic meaning of each change. This enables:</p>
+
+<ul>
+  <li><strong>Selective replication</strong> – replicate specific tables, not the entire cluster</li>
+  <li><strong>Cross-version replication</strong> – different PostgreSQL major versions on publisher and subscriber</li>
+  <li><strong>Cross-platform replication</strong> – different architectures or operating systems</li>
+  <li><strong>Data integration</strong> – feed changes to non-PostgreSQL systems</li>
+</ul>
+
+<p>The cost is additional CPU on the publisher (to decode WAL) and the requirement
+for <code class="language-plaintext highlighter-rouge">wal_level = logical</code>, which causes PostgreSQL to write extra WAL records
+(notably <code class="language-plaintext highlighter-rouge">XLOG_HEAP2_NEW_CID</code> for catalog tuple modifications).</p>
+
+<h3 id="logical-decoding-pipeline">Logical Decoding Pipeline</h3>
+
+<pre><code class="language-mermaid">flowchart TD
+    WAL["WAL (pg_wal/)"] --&gt; XLogReader["XLogReader&lt;br/&gt;reads raw WAL records"]
+    XLogReader --&gt; Decode["decode.c&lt;br/&gt;classifies records:&lt;br/&gt;heap insert/update/delete,&lt;br/&gt;xact commit/abort"]
+    Decode --&gt; ReorderBuffer["reorderbuffer.c&lt;br/&gt;collects changes per txn,&lt;br/&gt;orders by commit LSN"]
+    Decode --&gt; SnapBuild["snapbuild.c&lt;br/&gt;builds historic catalog&lt;br/&gt;snapshots for decoding"]
+    SnapBuild -.-&gt;|catalog snapshots| ReorderBuffer
+    ReorderBuffer --&gt;|"on commit, in commit order"| OutputPlugin["Output Plugin&lt;br/&gt;(e.g. pgoutput)&lt;br/&gt;transforms to wire format"]
+    OutputPlugin --&gt; WalSender["walsender.c&lt;br/&gt;streams to subscriber"]
+    WalSender --&gt; ApplyWorker["Apply Worker (worker.c)&lt;br/&gt;applies changes as DML&lt;br/&gt;on subscriber"]
+</code></pre>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>   WAL (pg_wal/)
+       |
+       v
+ +------------------+
+ | XLogReader       |  Reads raw WAL records from disk
+ +------------------+
+       |
+       v
+ +------------------+
+ | decode.c         |  Classifies records (heap insert/update/delete,
+ |                  |  xact commit/abort, running_xacts, etc.)
+ +------------------+
+       |                    |
+       v                    v
+ +------------------+  +------------------+
+ | reorderbuffer.c  |  | snapbuild.c      |
+ | Collects changes |  | Builds historic  |
+ | per transaction, |  | catalog snapshots|
+ | orders by commit |  | for decoding     |
+ +------------------+  +------------------+
+       |
+       | (on commit, in commit order)
+       v
+ +------------------+
+ | Output Plugin    |  Transforms changes into wire format
+ | (e.g., pgoutput) |  (the built-in logical replication protocol)
+ +------------------+
+       |
+       v
+ +------------------+
+ | walsender.c      |  Streams encoded changes to subscriber
+ +------------------+
+       |
+       v
+ +------------------+
+ | Apply Worker     |  On subscriber: applies changes as DML
+ | (worker.c)       |
+ +------------------+
+</code></pre></div></div>
+
+<hr />
+
+<h2 id="key-source-files">Key Source Files</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>File</th>
+      <th>Purpose</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/replication/logical/decode.c</code></td>
+      <td>WAL record decoder – dispatches records to reorderbuffer and snapbuild</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/replication/logical/reorderbuffer.c</code></td>
+      <td>Collects changes per-transaction, reassembles in commit order</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/replication/logical/snapbuild.c</code></td>
+      <td>Builds historic catalog snapshots from WAL</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/replication/logical/logical.c</code></td>
+      <td><code class="language-plaintext highlighter-rouge">LogicalDecodingContext</code> setup and management</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/replication/logical/logicalfuncs.c</code></td>
+      <td>SQL-callable logical decoding functions</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/replication/logical/origin.c</code></td>
+      <td>Replication origin tracking (prevents circular replication)</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/replication/logical/worker.c</code></td>
+      <td>Apply worker on the subscriber side</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/replication/logical/launcher.c</code></td>
+      <td>Launches and manages apply workers</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/replication/logical/tablesync.c</code></td>
+      <td>Initial table synchronization for new subscriptions</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/replication/logical/proto.c</code></td>
+      <td>Logical replication wire protocol encoding/decoding</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/replication/pgoutput/</code></td>
+      <td>Built-in output plugin for logical replication</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/replication/reorderbuffer.h</code></td>
+      <td><code class="language-plaintext highlighter-rouge">ReorderBuffer</code>, <code class="language-plaintext highlighter-rouge">ReorderBufferTXN</code>, <code class="language-plaintext highlighter-rouge">ReorderBufferChange</code></td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/replication/snapbuild.h</code></td>
+      <td><code class="language-plaintext highlighter-rouge">SnapBuildState</code> enum, <code class="language-plaintext highlighter-rouge">SnapBuild</code> interface</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/replication/snapbuild_internal.h</code></td>
+      <td>Internal <code class="language-plaintext highlighter-rouge">SnapBuild</code> struct (serialization format)</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/replication/logical.h</code></td>
+      <td><code class="language-plaintext highlighter-rouge">LogicalDecodingContext</code></td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/replication/output_plugin.h</code></td>
+      <td>Output plugin callback interface</td>
+    </tr>
+  </tbody>
+</table>
+
+<hr />
+
+<h2 id="how-it-works">How It Works</h2>
+
+<h3 id="1-logical-decoding-context-setup">1. Logical Decoding Context Setup</h3>
+
+<p>When a logical walsender receives <code class="language-plaintext highlighter-rouge">START_REPLICATION SLOT s LOGICAL</code>, it
+creates a <code class="language-plaintext highlighter-rouge">LogicalDecodingContext</code> which ties together all the decoding
+components:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="nl">LogicalDecodingContext:</span>
+    <span class="n">reader</span>          <span class="o">-&gt;</span> <span class="n">XLogReaderState</span> <span class="p">(</span><span class="n">reads</span> <span class="n">WAL</span><span class="p">)</span>
+    <span class="n">slot</span>            <span class="o">-&gt;</span> <span class="n">ReplicationSlot</span> <span class="p">(</span><span class="n">tracks</span> <span class="n">progress</span><span class="p">)</span>
+    <span class="n">reorder</span>         <span class="o">-&gt;</span> <span class="n">ReorderBuffer</span> <span class="p">(</span><span class="n">transaction</span> <span class="n">reassembly</span><span class="p">)</span>
+    <span class="n">snapshot_builder</span> <span class="o">-&gt;</span> <span class="n">SnapBuild</span> <span class="p">(</span><span class="n">catalog</span> <span class="n">snapshots</span><span class="p">)</span>
+    <span class="n">output_plugin_options</span> <span class="o">-&gt;</span> <span class="n">plugin</span><span class="o">-</span><span class="n">specific</span> <span class="n">config</span>
+    <span class="n">callbacks</span><span class="o">:</span>
+        <span class="n">begin_cb</span><span class="p">,</span> <span class="n">change_cb</span><span class="p">,</span> <span class="n">commit_cb</span><span class="p">,</span>    <span class="cm">/* per-transaction hooks */</span>
+        <span class="n">truncate_cb</span><span class="p">,</span> <span class="n">message_cb</span><span class="p">,</span>
+        <span class="n">stream_start_cb</span><span class="p">,</span> <span class="n">stream_stop_cb</span><span class="p">,</span>   <span class="cm">/* streaming large txns */</span>
+        <span class="n">stream_change_cb</span><span class="p">,</span> <span class="n">stream_commit_cb</span>
+</code></pre></div></div>
+
+<h3 id="2-the-decode-pass-decodec">2. The Decode Pass (decode.c)</h3>
+
+<p>The decoder reads WAL records via <code class="language-plaintext highlighter-rouge">XLogReadRecord()</code> and dispatches them
+based on resource manager ID. The main entry point is
+<code class="language-plaintext highlighter-rouge">LogicalDecodingProcessRecord()</code>:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>LogicalDecodingProcessRecord(ctx, record):
+    switch (record-&gt;xl_rmid):
+        case RM_HEAP_ID:
+            switch (record-&gt;xl_info):
+                case XLOG_HEAP_INSERT:
+                    DecodeInsert(ctx, buf)
+                        -&gt; ReorderBufferQueueChange(INSERT, ...)
+                case XLOG_HEAP_UPDATE:
+                    DecodeUpdate(ctx, buf)
+                        -&gt; ReorderBufferQueueChange(UPDATE, ...)
+                case XLOG_HEAP_DELETE:
+                    DecodeDelete(ctx, buf)
+                        -&gt; ReorderBufferQueueChange(DELETE, ...)
+
+        case RM_HEAP2_ID:
+            case XLOG_HEAP2_MULTI_INSERT:
+                DecodeMultiInsert(ctx, buf)
+            case XLOG_HEAP2_NEW_CID:
+                // catalog tuple cmin/cmax tracking
+                -&gt; SnapBuildProcessNewCid()
+                -&gt; ReorderBufferAddNewTupleCids()
+
+        case RM_XACT_ID:
+            case XLOG_XACT_COMMIT:
+                DecodeCommit(ctx, buf)
+                    -&gt; SnapBuildCommitTxn()     // update snapshot state
+                    -&gt; ReorderBufferCommit()     // trigger output
+            case XLOG_XACT_ABORT:
+                DecodeAbort(ctx, buf)
+                    -&gt; ReorderBufferAbort()      // discard changes
+
+        case RM_STANDBY_ID:
+            case XLOG_RUNNING_XACTS:
+                -&gt; SnapBuildProcessRunningXacts()  // advance snapshot state
+</code></pre></div></div>
+
+<p>A critical filtering step occurs early: <code class="language-plaintext highlighter-rouge">DecodeTXNNeedSkip()</code> checks whether
+a change should be skipped based on its database OID (logical decoding is
+database-specific) and replication origin (to avoid replicating changes that
+were themselves replicated from elsewhere).</p>
+
+<h3 id="3-the-reorder-buffer-reorderbufferc">3. The Reorder Buffer (reorderbuffer.c)</h3>
+
+<p>WAL records are written in LSN order, which interleaves changes from
+concurrent transactions. The reorder buffer’s job is to collect all changes
+belonging to each transaction and emit them as complete units at commit time.</p>
+
+<h4 id="transaction-tracking">Transaction Tracking</h4>
+
+<p>Each in-flight transaction is tracked by a <code class="language-plaintext highlighter-rouge">ReorderBufferTXN</code>:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">typedef</span> <span class="k">struct</span> <span class="n">ReorderBufferTXN</span>
+<span class="p">{</span>
+    <span class="n">TransactionId</span> <span class="n">xid</span><span class="p">;</span>
+    <span class="n">dlist_head</span>  <span class="n">changes</span><span class="p">;</span>           <span class="cm">/* list of ReorderBufferChange */</span>
+    <span class="n">dlist_head</span>  <span class="n">subtxns</span><span class="p">;</span>           <span class="cm">/* child subtransactions */</span>
+    <span class="k">struct</span> <span class="n">ReorderBufferTXN</span> <span class="o">*</span><span class="n">toptxn</span><span class="p">;</span> <span class="cm">/* parent, if subtransaction */</span>
+
+    <span class="n">XLogRecPtr</span>  <span class="n">first_lsn</span><span class="p">;</span>        <span class="cm">/* LSN of first change */</span>
+    <span class="n">XLogRecPtr</span>  <span class="n">end_lsn</span><span class="p">;</span>          <span class="cm">/* LSN of commit/abort record */</span>
+    <span class="n">XLogRecPtr</span>  <span class="n">final_lsn</span><span class="p">;</span>        <span class="cm">/* commit record's LSN */</span>
+
+    <span class="n">Size</span>        <span class="n">size</span><span class="p">;</span>             <span class="cm">/* memory consumed by this txn */</span>
+    <span class="n">bool</span>        <span class="n">has_catalog_changes</span><span class="p">;</span>
+    <span class="cm">/* ... */</span>
+<span class="p">}</span> <span class="n">ReorderBufferTXN</span><span class="p">;</span>
+</code></pre></div></div>
+
+<p>Changes are queued with <code class="language-plaintext highlighter-rouge">ReorderBufferQueueChange()</code>, which creates a
+<code class="language-plaintext highlighter-rouge">ReorderBufferChange</code> and appends it to the transaction’s change list.</p>
+
+<h4 id="memory-management-and-spilling">Memory Management and Spilling</h4>
+
+<p>The reorder buffer tracks total memory consumption across all buffered
+transactions. When <code class="language-plaintext highlighter-rouge">logical_decoding_work_mem</code> is exceeded, the largest
+transaction (found via a max-heap keyed by transaction size) is <strong>spilled
+to disk</strong> under <code class="language-plaintext highlighter-rouge">pg_logical/snapshots/</code>:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>Memory tracking:
+    ReorderBuffer-&gt;size          (total across all txns)
+    ReorderBufferTXN-&gt;size       (per transaction)
+
+When ReorderBuffer-&gt;size &gt; logical_decoding_work_mem:
+    pick txn with largest -&gt;size (via max-heap)
+    ReorderBufferSerializeTXN(txn):
+        write changes to pg_logical/snapshots/&lt;xid&gt;-&lt;lsn&gt;.snap
+        free the in-memory changes
+        txn-&gt;serialized = true
+
+At commit time, if txn-&gt;serialized:
+    ReorderBufferRestoreChanges():
+        read changes back from disk in chunks
+</code></pre></div></div>
+
+<h4 id="commit-time-replay">Commit-Time Replay</h4>
+
+<p>When a commit record is decoded, <code class="language-plaintext highlighter-rouge">ReorderBufferCommit()</code> reconstructs the
+complete transaction. For transactions with subtransactions, it builds a
+binary heap (pairing heap) indexed by each subtransaction’s current LSN,
+then iterates in LSN order:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>ReorderBufferCommit(rb, xid, commit_lsn):
+    txn = lookup transaction by xid
+
+    // Reparent any subtransactions
+    ReorderBufferAssignChild(txn, ...)
+
+    // Build iteration state
+    // (binary heap of subtxn streams, ordered by LSN)
+    ReorderBufferIterTXNInit(txn):
+        for each subtxn:
+            add to heap with key = first change LSN
+
+    // Set up historic snapshot
+    SetupHistoricSnapshot(snapshot)
+
+    // Invoke output plugin callbacks
+    begin_cb(txn)
+    while (change = ReorderBufferIterTXNNext()):
+        switch (change-&gt;action):
+            INSERT/UPDATE/DELETE:
+                change_cb(relation, change)
+            TRUNCATE:
+                truncate_cb(relations, change)
+    commit_cb(txn, commit_lsn)
+
+    TeardownHistoricSnapshot()
+</code></pre></div></div>
+
+<h4 id="toast-reassembly">TOAST Reassembly</h4>
+
+<p>Out-of-line (TOASTed) column values are stored as separate chunks in the WAL.
+The reorder buffer collects these chunks and reassembles them before passing
+the complete tuple to the output plugin. The toast data is tracked per-relation
+and per-tuple in <code class="language-plaintext highlighter-rouge">ReorderBufferToastHash</code>.</p>
+
+<h3 id="4-the-snapshot-builder-snapbuildc">4. The Snapshot Builder (snapbuild.c)</h3>
+
+<p>Logical decoding must interpret heap tuples in WAL, which requires knowing
+the catalog schema at the time each change was made. The snapshot builder
+constructs <strong>historic catalog snapshots</strong> by tracking transaction commit/abort
+from the WAL stream.</p>
+
+<h4 id="state-machine">State Machine</h4>
+
+<p>The snapshot builder progresses through four states:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>    +-------+
+    | START |  Cannot decode anything yet
+    +-------+
+        |
+        | xl_running_xacts record found
+        | (establishes initial xmin horizon)
+        v
+    +---------------------+
+    | BUILDING_SNAPSHOT   |  Tracking commits, but snapshot
+    +---------------------+  not yet usable
+        |
+        | All transactions from the first
+        | xl_running_xacts have finished
+        v
+    +---------------------+
+    | FULL_SNAPSHOT       |  Can decode catalog contents for
+    +---------------------+  transactions starting now
+        |
+        | All transactions from the second
+        | xl_running_xacts have finished
+        v
+    +---------------------+
+    | CONSISTENT          |  Fully operational, can decode
+    +---------------------+  all transactions
+</code></pre></div></div>
+
+<p>The transition through these states requires seeing at least two
+<code class="language-plaintext highlighter-rouge">xl_running_xacts</code> records (written periodically by the checkpointer) and
+waiting for all transactions listed in each to complete.</p>
+
+<p><strong>Shortcut</strong>: If an <code class="language-plaintext highlighter-rouge">xl_running_xacts</code> record lists zero running transactions,
+the builder can jump directly to <code class="language-plaintext highlighter-rouge">CONSISTENT</code>.</p>
+
+<h4 id="how-snapshots-are-built">How Snapshots Are Built</h4>
+
+<p>Unlike normal MVCC snapshots that list all running transaction IDs, the
+snapshot builder takes an inverted approach. It tracks which transactions
+between <code class="language-plaintext highlighter-rouge">[xmin, xmax)</code> have <strong>committed catalog-modifying transactions</strong>:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="nl">SnapBuild:</span>
+    <span class="n">TransactionId</span> <span class="n">xmin</span><span class="p">;</span>            <span class="cm">/* oldest interesting xid */</span>
+    <span class="n">TransactionId</span> <span class="n">xmax</span><span class="p">;</span>            <span class="cm">/* newest interesting xid + 1 */</span>
+    <span class="n">TransactionId</span> <span class="o">*</span><span class="n">committed_xids</span><span class="p">;</span> <span class="cm">/* catalog-modifying txns that committed */</span>
+    <span class="kt">int</span>           <span class="n">committed_count</span><span class="p">;</span>
+</code></pre></div></div>
+
+<p>Everything not in the committed list is treated as aborted or in-progress.
+This works because logical decoding only needs catalog visibility (to look
+up table schemas), and catalog modifications are relatively rare.</p>
+
+<h4 id="cid-tracking">CID Tracking</h4>
+
+<p>A subtle problem: mixed DDL/DML transactions may modify catalog tuples with
+command IDs (cmin/cmax) that are not recorded in normal WAL. PostgreSQL solves
+this by writing <code class="language-plaintext highlighter-rouge">XLOG_HEAP2_NEW_CID</code> records for every catalog modification.
+The snapshot builder passes these to the reorder buffer via
+<code class="language-plaintext highlighter-rouge">ReorderBufferAddNewTupleCids()</code>, which maintains a ctid-to-(cmin,cmax) mapping
+used during visibility checks.</p>
+
+<h4 id="serialization">Serialization</h4>
+
+<p>The snapshot builder periodically serializes its state to
+<code class="language-plaintext highlighter-rouge">pg_logical/snapshots/&lt;lsn&gt;.snap</code> at consistency points. This allows logical
+decoding to resume from a serialized snapshot after a restart without replaying
+all WAL from the beginning.</p>
+
+<h3 id="5-output-plugins">5. Output Plugins</h3>
+
+<p>Output plugins define how decoded changes are formatted. They register
+callbacks that the reorder buffer invokes:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="nl">OutputPluginCallbacks:</span>
+    <span class="n">startup_cb</span>          <span class="cm">/* plugin initialization */</span>
+    <span class="n">begin_cb</span>            <span class="cm">/* transaction begin */</span>
+    <span class="n">change_cb</span>           <span class="cm">/* row change (insert/update/delete) */</span>
+    <span class="n">truncate_cb</span>         <span class="cm">/* table truncate */</span>
+    <span class="n">commit_cb</span>           <span class="cm">/* transaction commit */</span>
+    <span class="n">message_cb</span>          <span class="cm">/* logical decoding message */</span>
+    <span class="n">filter_by_origin_cb</span> <span class="cm">/* origin-based filtering */</span>
+    <span class="n">stream_start_cb</span>     <span class="cm">/* streaming mode: begin chunk */</span>
+    <span class="n">stream_stop_cb</span>      <span class="cm">/* streaming mode: end chunk */</span>
+    <span class="n">stream_change_cb</span>    <span class="cm">/* streaming mode: row change */</span>
+    <span class="n">stream_commit_cb</span>    <span class="cm">/* streaming mode: final commit */</span>
+</code></pre></div></div>
+
+<p>The built-in <code class="language-plaintext highlighter-rouge">pgoutput</code> plugin (in <code class="language-plaintext highlighter-rouge">src/backend/replication/pgoutput/</code>)
+implements the logical replication wire protocol used between publisher and
+subscriber. Third-party plugins (e.g., <code class="language-plaintext highlighter-rouge">wal2json</code>, <code class="language-plaintext highlighter-rouge">test_decoding</code>) can
+provide alternative output formats.</p>
+
+<h3 id="6-the-apply-worker-workerc">6. The Apply Worker (worker.c)</h3>
+
+<p>On the subscriber side, the logical replication launcher (<code class="language-plaintext highlighter-rouge">launcher.c</code>)
+starts an apply worker for each active subscription. The apply worker:</p>
+
+<ol>
+  <li>Connects to the publisher using a logical replication slot</li>
+  <li>Receives decoded changes via the pgoutput protocol</li>
+  <li>Applies them as DML operations on the subscriber</li>
+  <li>Tracks progress using replication origins (<code class="language-plaintext highlighter-rouge">pg_replication_origins</code>)</li>
+</ol>
+
+<p>The apply worker maps publisher table OIDs to local subscriber tables using
+the publication/subscription metadata. It handles initial table
+synchronization (via <code class="language-plaintext highlighter-rouge">tablesync.c</code>) and ongoing change application.</p>
+
+<hr />
+
+<h2 id="key-data-structures">Key Data Structures</h2>
+
+<h3 id="reorderbufferchange-reorderbufferh">ReorderBufferChange (reorderbuffer.h)</h3>
+
+<p>A single decoded change event:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">typedef</span> <span class="k">struct</span> <span class="n">ReorderBufferChange</span>
+<span class="p">{</span>
+    <span class="n">XLogRecPtr</span>  <span class="n">lsn</span><span class="p">;</span>
+    <span class="n">ReorderBufferChangeType</span> <span class="n">action</span><span class="p">;</span>  <span class="cm">/* INSERT, UPDATE, DELETE, TRUNCATE, ... */</span>
+    <span class="k">struct</span> <span class="n">ReorderBufferTXN</span> <span class="o">*</span><span class="n">txn</span><span class="p">;</span>
+    <span class="n">ReplOriginId</span> <span class="n">origin_id</span><span class="p">;</span>
+
+    <span class="k">union</span>
+    <span class="p">{</span>
+        <span class="k">struct</span>  <span class="cm">/* INSERT, UPDATE, DELETE */</span>
+        <span class="p">{</span>
+            <span class="n">RelFileLocator</span> <span class="n">rlocator</span><span class="p">;</span>
+            <span class="n">bool</span>        <span class="n">clear_toast_afterwards</span><span class="p">;</span>
+            <span class="n">HeapTuple</span>   <span class="n">newtuple</span><span class="p">;</span>       <span class="cm">/* new row (INSERT, UPDATE) */</span>
+            <span class="n">HeapTuple</span>   <span class="n">oldtuple</span><span class="p">;</span>       <span class="cm">/* old row (UPDATE, DELETE with REPLICA IDENTITY) */</span>
+        <span class="p">}</span> <span class="n">tp</span><span class="p">;</span>
+
+        <span class="k">struct</span>  <span class="cm">/* TRUNCATE */</span>
+        <span class="p">{</span>
+            <span class="n">Size</span>        <span class="n">nrelids</span><span class="p">;</span>
+            <span class="n">Oid</span>        <span class="o">*</span><span class="n">relids</span><span class="p">;</span>
+            <span class="cm">/* ... */</span>
+        <span class="p">}</span> <span class="n">truncate</span><span class="p">;</span>
+
+        <span class="k">struct</span>  <span class="cm">/* MESSAGE */</span>
+        <span class="p">{</span>
+            <span class="kt">char</span>       <span class="o">*</span><span class="n">prefix</span><span class="p">;</span>
+            <span class="n">Size</span>        <span class="n">message_size</span><span class="p">;</span>
+            <span class="kt">char</span>       <span class="o">*</span><span class="n">message</span><span class="p">;</span>
+            <span class="n">bool</span>        <span class="n">transactional</span><span class="p">;</span>
+        <span class="p">}</span> <span class="n">msg</span><span class="p">;</span>
+
+        <span class="cm">/* INTERNAL types for snapshots, command IDs, etc. */</span>
+        <span class="cm">/* ... */</span>
+    <span class="p">}</span> <span class="n">data</span><span class="p">;</span>
+<span class="p">}</span> <span class="n">ReorderBufferChange</span><span class="p">;</span>
+</code></pre></div></div>
+
+<h3 id="reorderbuffer-reorderbufferc-internal">ReorderBuffer (reorderbuffer.c, internal)</h3>
+
+<p>The top-level reorder buffer state:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">typedef</span> <span class="k">struct</span> <span class="n">ReorderBuffer</span>
+<span class="p">{</span>
+    <span class="n">HTAB</span>       <span class="o">*</span><span class="n">by_txn</span><span class="p">;</span>              <span class="cm">/* hash: xid -&gt; ReorderBufferTXN */</span>
+    <span class="n">dlist_head</span>  <span class="n">toplevel_by_lsn</span><span class="p">;</span>     <span class="cm">/* toplevel txns ordered by first_lsn */</span>
+
+    <span class="cm">/* Memory tracking */</span>
+    <span class="n">Size</span>        <span class="n">size</span><span class="p">;</span>                <span class="cm">/* total memory used */</span>
+    <span class="n">binaryheap</span> <span class="o">*</span><span class="n">txn_heap</span><span class="p">;</span>            <span class="cm">/* max-heap by txn size (for spilling) */</span>
+
+    <span class="cm">/* Output plugin callbacks */</span>
+    <span class="n">ReorderBufferBeginCB</span> <span class="n">begin</span><span class="p">;</span>
+    <span class="n">ReorderBufferCommitCB</span> <span class="n">commit</span><span class="p">;</span>
+    <span class="n">ReorderBufferChangeCB</span> <span class="n">change</span><span class="p">;</span>
+    <span class="n">ReorderBufferTruncateCB</span> <span class="n">truncate</span><span class="p">;</span>
+    <span class="cm">/* ... */</span>
+
+    <span class="cm">/* Memory contexts */</span>
+    <span class="n">MemoryContext</span> <span class="n">context</span><span class="p">;</span>
+    <span class="n">MemoryContext</span> <span class="n">txn_context</span><span class="p">;</span>       <span class="cm">/* SlabContext for ReorderBufferTXN */</span>
+    <span class="n">MemoryContext</span> <span class="n">change_context</span><span class="p">;</span>    <span class="cm">/* SlabContext for ReorderBufferChange */</span>
+<span class="p">}</span> <span class="n">ReorderBuffer</span><span class="p">;</span>
+</code></pre></div></div>
+
+<h3 id="snapbuildstate-snapbuildh">SnapBuildState (snapbuild.h)</h3>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">typedef</span> <span class="k">enum</span>
+<span class="p">{</span>
+    <span class="n">SNAPBUILD_START</span> <span class="o">=</span> <span class="o">-</span><span class="mi">1</span><span class="p">,</span>             <span class="cm">/* initial, cannot decode */</span>
+    <span class="n">SNAPBUILD_BUILDING_SNAPSHOT</span> <span class="o">=</span> <span class="mi">0</span><span class="p">,</span>  <span class="cm">/* collecting commits */</span>
+    <span class="n">SNAPBUILD_FULL_SNAPSHOT</span> <span class="o">=</span> <span class="mi">1</span><span class="p">,</span>      <span class="cm">/* can decode new txns */</span>
+    <span class="n">SNAPBUILD_CONSISTENT</span> <span class="o">=</span> <span class="mi">2</span><span class="p">,</span>         <span class="cm">/* fully operational */</span>
+<span class="p">}</span> <span class="n">SnapBuildState</span><span class="p">;</span>
+</code></pre></div></div>
+
+<hr />
+
+<h2 id="streaming-large-transactions">Streaming Large Transactions</h2>
+
+<p>By default, the reorder buffer accumulates all changes for a transaction
+before invoking the output plugin at commit time. For very large transactions,
+this can cause excessive memory usage or disk spilling.</p>
+
+<p>PostgreSQL supports <strong>streaming mode</strong> where in-progress transaction changes
+are sent to the subscriber before the transaction commits. The output plugin’s
+<code class="language-plaintext highlighter-rouge">stream_*</code> callbacks handle these partial sends. On the subscriber, the apply
+worker buffers streamed changes and applies them only when the final commit
+arrives.</p>
+
+<p>The streaming threshold is controlled by <code class="language-plaintext highlighter-rouge">logical_decoding_work_mem</code>. When a
+single transaction exceeds this limit and the output plugin supports
+streaming, changes are streamed incrementally rather than spilled to disk.</p>
+
+<hr />
+
+<h2 id="replication-origins-originc">Replication Origins (origin.c)</h2>
+
+<p>Replication origins track where replicated data came from, enabling:</p>
+
+<ul>
+  <li><strong>Cycle detection</strong> – changes tagged with a foreign origin are not
+re-replicated, preventing infinite loops in multi-master setups</li>
+  <li><strong>Progress tracking</strong> – the subscriber records its position per origin,
+enabling efficient restart after disconnection</li>
+</ul>
+
+<p>Each origin is identified by a <code class="language-plaintext highlighter-rouge">ReplOriginId</code> (a small integer) mapped to a
+human-readable name. The apply worker sets the session’s replication origin
+before applying changes, which tags all resulting WAL records with that
+origin ID.</p>
+
+<hr />
+
+<h2 id="connections-to-other-sections">Connections to Other Sections</h2>
+
+<ul>
+  <li>
+    <p><strong><a href="streaming.html">Streaming Replication</a></strong> – Logical walsenders use the
+same <code class="language-plaintext highlighter-rouge">WalSnd</code> shared memory slots and streaming protocol as physical
+walsenders. Replication slots are shared infrastructure.</p>
+  </li>
+  <li>
+    <p><strong><a href="synchronous.html">Synchronous Replication</a></strong> – Logical replication
+slots participate in synchronous commit. The <code class="language-plaintext highlighter-rouge">WalSnd-&gt;flush</code> position
+for a logical walsender reflects the subscriber’s confirmed receipt.</p>
+  </li>
+  <li>
+    <p><strong><a href="conflict-resolution.html">Conflict Resolution</a></strong> – Logical replication
+can encounter row-level conflicts (duplicate keys, missing rows) that
+require detection and resolution on the subscriber.</p>
+  </li>
+</ul>
+
+
+      <hr>
+
+      <!-- Prev / Next / Up navigation -->
+      
+      
+      
+
+      <div class="clearfix" style="margin-top: 2rem;">
+        
+          
+          
+
+          
+            
+            <a class="btn btn-primary float-left" href="/postgresql/12-replication/conflict-resolution.html" title="Conflict Resolution">&larr; Previous</a>
+          
+
+          
+            
+            <a class="btn btn-primary float-right" href="/postgresql/12-replication/streaming.html" title="Streaming Replication">Next &rarr;</a>
+          
+        
+      </div>
+
+      
+      <div style="text-align: center; margin-top: 1rem;">
+        <a href="/postgresql-internals/">&uarr; Back to Table of Contents</a>
+      </div>
+      
+
+    </div>
+  </div>
+</div>
+
+
+  <!-- Footer -->
+
+<hr>
+
+<footer>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <ul class="list-inline text-center">
+          
+          <li class="list-inline-item">
+            <a href="mailto:amitava.dev@proton.me" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="far fa-envelope fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          
+          
+          <li class="list-inline-item">
+            <a href="https://www.linkedin.com/in/amitavaag" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-linkedin fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          <li class="list-inline-item">
+            <a href="https://github.com/ikouchiha47" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-github fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+        </ul>
+
+        <p class="copyright text-muted">
+          Build with: 
+          <a 
+            href="https://github.com/StartBootstrap/startbootstrap-clean-blog-jekyll"
+            class="text-gray"
+            target="_blank">startbootstrap-clean-blog-jekyll</a></p>
+      </div>
+    </div>
+  </div>
+</footer>
+
+
+  <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="/assets/vendor/blog/js/scripts.js"></script>
+
+<script src="/assets/scripts.js"></script>
+
+
+
+
+
+  <script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+
+    document.querySelectorAll('pre > code.language-mermaid').forEach((codeBlock) => {
+      codeBlock.parentElement.outerHTML = `<pre class="mermaid">${codeBlock.textContent}</pre>`;
+    });
+
+
+    mermaid.initialize({ startOnLoad: true, theme: 'forest' });
+</script>
+
+
+  
+
+</body>
+
+</html>

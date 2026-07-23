@@ -1,0 +1,658 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+  <title>
+    Synchronous Replication - iko&#39;s logs
+    
+  </title>
+
+  <meta name="description" content="">
+  <meta property="og:description" content="">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Synchronous Replication">
+  <meta property="og:url" content="https://ikouchiha47.github.io/postgresql/12-replication/synchronous.html">
+
+  
+
+  <link href='https://fonts.googleapis.com/css?family=Lora:400,700,400italic,700italic' rel='stylesheet' type='text/css'>
+  <link href='https://fonts.googleapis.com/css?family=Open+Sans:300italic,400italic,600italic,700italic,800italic,400,300,600,700,800' rel='stylesheet' type='text/css'>
+
+  <!-- <script src="https://use.fontawesome.com/releases/v5.15.3/js/all.js" crossorigin="anonymous"></script> -->
+  <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.15.4/css/all.css" integrity="sha384-DyZ88mC6Up2uqS4h/KRgHuoeGwBcD4Ng9SiP4dIRy0EXTlnuz47vAwmeGwVChigm" crossorigin="anonymous"/>
+
+  <link rel="stylesheet" href="/assets/main.css">
+  <link rel="canonical" href="https://ikouchiha47.github.io/postgresql/12-replication/synchronous.html">
+  <link rel="alternate" type="application/rss+xml" title="iko&#39;s logs" href="/feed.xml">
+
+  <meta name="google-site-verification" content="lWkg6gIxJgzEKX_5XnhcxCtPE9QknaimFWWos_dTvPM" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fira+Sans:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Inconsolata:wght@200..900&family=Jersey+25&family=Kanit:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Merriweather+Sans:ital,wght@0,300..800;1,300..800&family=Nanum+Gothic+Coding&family=Space+Grotesk:wght@300..700&family=Titillium+Web:ital,wght@0,200;0,300;0,400;0,600;0,700;0,900;1,200;1,300;1,400;1,600;1,700&display=swap" rel="stylesheet">
+
+</head>
+
+
+<body>
+
+  <!-- Navigation -->
+<nav class="navbar navbar-expand-lg navbar-light fixed-top" id="mainNav">
+  <div class="container">
+    <a class="navbar-brand" href="/">iko&#39;s logs</a>
+    <button class="navbar-toggler navbar-toggler-right" type="button" data-toggle="collapse" data-target="#navbarResponsive" aria-controls="navbarResponsive" aria-expanded="false" aria-label="Toggle navigation">
+      Menu
+      <i class="fa fa-bars"></i>
+    </button>
+    <div class="collapse navbar-collapse" id="navbarResponsive">
+      <ul class="navbar-nav ml-auto">
+        <li class="nav-item">
+          <a class="nav-link" href="/">Home</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/about">About</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/posts">Posts</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/contact">Contact</a>
+        </li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+
+  <!-- Page Header -->
+
+<header class="masthead">
+
+  <div class="overlay"></div>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <div class="post-heading">
+          <h1>Synchronous Replication</h1>
+          
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="container space-grotesk">
+  <div class="row">
+    <div class="col-lg-8 col-md-10 mx-auto">
+
+      <!-- Breadcrumb -->
+      <nav aria-label="breadcrumb" style="margin-bottom: 1.5rem;">
+        <ol class="breadcrumb" style="background: transparent; padding: 0;">
+          
+            <li class="breadcrumb-item"><a href="/postgresql-internals/">PostgreSQL Internals Deep Dive</a></li>
+          
+          
+            
+              <li class="breadcrumb-item"><a href="/postgresql/12-replication/">Replication</a></li>
+            
+          
+          <li class="breadcrumb-item active" aria-current="page">Synchronous Replication</li>
+        </ol>
+      </nav>
+
+      <h1 id="synchronous-replication">Synchronous Replication</h1>
+
+<h2 id="summary">Summary</h2>
+
+<p>Synchronous replication makes a committing transaction on the primary wait
+until one or more standbys have confirmed receipt (or replay) of the
+transaction’s WAL. PostgreSQL supports two selection methods: <strong>priority-based</strong>
+(FIRST), where the N highest-priority standbys must confirm, and
+<strong>quorum-based</strong> (ANY), where any N standbys from a candidate list suffice.
+The wait can be configured at three durability levels: write, flush, or apply.
+All synchronous commit logic executes on the primary; standbys are completely
+unaware of their synchronous role.</p>
+
+<hr />
+
+<h2 id="overview">Overview</h2>
+
+<p>Asynchronous replication (the default) allows the primary to commit
+transactions without waiting for any standby. This gives the best performance
+but means that if the primary crashes, recently committed transactions may
+not yet exist on any standby – a window of potential data loss.</p>
+
+<p>Synchronous replication closes this window by requiring the primary to wait
+for standby confirmation before acknowledging a commit to the client. The
+design in PostgreSQL has several notable properties:</p>
+
+<ol>
+  <li><strong>Primary-side logic only</strong> – the standbys do not know which transactions
+are synchronous. They simply stream WAL and report progress as usual.</li>
+  <li><strong>Configurable durability</strong> – the <code class="language-plaintext highlighter-rouge">synchronous_commit</code> GUC controls
+whether to wait for write, flush, or apply on the standby.</li>
+  <li><strong>No per-transaction coordination</strong> – there are no round-trip messages for
+individual transactions. The primary infers commit confirmation from the
+standby’s reported LSN positions.</li>
+  <li><strong>Ordered wait queue</strong> – waiting backends are organized in an LSN-ordered
+queue for efficient release.</li>
+</ol>
+
+<hr />
+
+<h2 id="key-source-files">Key Source Files</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>File</th>
+      <th>Purpose</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/replication/syncrep.c</code></td>
+      <td>Core synchronous replication logic: waiting, releasing, standby selection</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/replication/syncrep_gram.y</code></td>
+      <td>Grammar for parsing <code class="language-plaintext highlighter-rouge">synchronous_standby_names</code></td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/replication/syncrep_scanner.l</code></td>
+      <td>Lexer for <code class="language-plaintext highlighter-rouge">synchronous_standby_names</code></td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/replication/syncrep.h</code></td>
+      <td><code class="language-plaintext highlighter-rouge">SyncRepConfigData</code>, wait modes, standby data structures</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/replication/walsender_private.h</code></td>
+      <td><code class="language-plaintext highlighter-rouge">WalSndCtlData</code> with <code class="language-plaintext highlighter-rouge">SyncRepQueue</code> arrays</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/replication/walsender.c</code></td>
+      <td>Walsender calls <code class="language-plaintext highlighter-rouge">SyncRepReleaseWaiters()</code> on feedback</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/access/transam/xact.c</code></td>
+      <td>Commit path calls <code class="language-plaintext highlighter-rouge">SyncRepWaitForLSN()</code></td>
+    </tr>
+  </tbody>
+</table>
+
+<hr />
+
+<h2 id="how-it-works">How It Works</h2>
+
+<h3 id="1-configuration">1. Configuration</h3>
+
+<p>Synchronous replication is controlled by two GUC parameters:</p>
+
+<p><strong><code class="language-plaintext highlighter-rouge">synchronous_standby_names</code></strong> specifies which standbys to wait for and how:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code># Priority-based: wait for 2 standbys, preferring s1, then s2, then s3
+synchronous_standby_names = 'FIRST 2 (s1, s2, s3)'
+
+# Quorum-based: wait for any 2 of the 3 standbys
+synchronous_standby_names = 'ANY 2 (s1, s2, s3)'
+
+# Legacy syntax (equivalent to FIRST 1)
+synchronous_standby_names = 's1'
+</code></pre></div></div>
+
+<p><strong><code class="language-plaintext highlighter-rouge">synchronous_commit</code></strong> controls the durability level:</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>Value</th>
+      <th>Behavior</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">off</code></td>
+      <td>No wait at all (async even locally)</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">local</code></td>
+      <td>Wait for local WAL flush only</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">remote_write</code></td>
+      <td>Wait for standby to write WAL to OS cache</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">on</code> (default)</td>
+      <td>Wait for standby to flush WAL to disk</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">remote_apply</code></td>
+      <td>Wait for standby to replay WAL</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>The parsed configuration is stored in a <code class="language-plaintext highlighter-rouge">SyncRepConfigData</code> structure:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">typedef</span> <span class="k">struct</span> <span class="n">SyncRepConfigData</span>
+<span class="p">{</span>
+    <span class="kt">int</span>     <span class="n">config_size</span><span class="p">;</span>       <span class="cm">/* total struct size */</span>
+    <span class="kt">int</span>     <span class="n">num_sync</span><span class="p">;</span>          <span class="cm">/* number of required confirmations */</span>
+    <span class="n">uint8</span>   <span class="n">syncrep_method</span><span class="p">;</span>    <span class="cm">/* SYNC_REP_PRIORITY or SYNC_REP_QUORUM */</span>
+    <span class="kt">int</span>     <span class="n">nmembers</span><span class="p">;</span>          <span class="cm">/* number of named standbys */</span>
+    <span class="kt">char</span>    <span class="n">member_names</span><span class="p">[</span><span class="n">FLEXIBLE_ARRAY_MEMBER</span><span class="p">];</span> <span class="cm">/* concatenated names */</span>
+<span class="p">}</span> <span class="n">SyncRepConfigData</span><span class="p">;</span>
+</code></pre></div></div>
+
+<h3 id="2-the-commit-wait-path">2. The Commit Wait Path</h3>
+
+<p>When a transaction commits and <code class="language-plaintext highlighter-rouge">synchronous_commit</code> requires standby
+confirmation, the commit path calls <code class="language-plaintext highlighter-rouge">SyncRepWaitForLSN()</code>:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>Backend commit path (xact.c):
+    RecordTransactionCommit():
+        XLogFlush(commitLsn)    // flush WAL locally
+
+    SyncRepWaitForLSN(commitLsn, true):
+        if !SyncRepRequested():
+            return              // fast path: no sync rep configured
+
+        // Determine wait mode from synchronous_commit setting
+        mode = SyncRepWaitMode  // WRITE, FLUSH, or APPLY
+
+        // Insert into ordered wait queue
+        SyncRepQueueInsert(mode):
+            // Insert into SyncRepQueue[mode], ordered by LSN
+            // (walk from tail, most new commits go near the end)
+            proc-&gt;waitLSN = commitLsn
+            proc-&gt;syncRepState = SYNC_REP_WAITING
+
+        // Wait loop
+        while proc-&gt;syncRepState == SYNC_REP_WAITING:
+            WaitLatch(MyLatch, timeout)
+
+            // Check for cancellation
+            if interrupted:
+                SyncRepCancelWait()
+                ereport(ERROR)
+
+        // Released by walsender
+        Assert(proc-&gt;syncRepState == SYNC_REP_WAIT_COMPLETE)
+</code></pre></div></div>
+
+<p>The wait queue is a doubly-linked list (<code class="language-plaintext highlighter-rouge">dlist_head</code>) stored in
+<code class="language-plaintext highlighter-rouge">WalSndCtl-&gt;SyncRepQueue[mode]</code>. There are three independent queues, one for
+each wait mode (write, flush, apply).</p>
+
+<h3 id="3-the-release-path">3. The Release Path</h3>
+
+<p>When a walsender receives a status update from a standby, it calls
+<code class="language-plaintext highlighter-rouge">SyncRepReleaseWaiters()</code> to check whether any waiting backends can be
+released:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>Walsender receives standby feedback:
+    ProcessStandbyReplyMessage():
+        update WalSnd-&gt;write, flush, apply
+
+    SyncRepReleaseWaiters():
+        if !SyncStandbysDefined():
+            return
+
+        // Get aggregate sync positions based on method
+        if method == SYNC_REP_PRIORITY:
+            SyncRepGetOldestSyncRecPtr(&amp;write, &amp;flush, &amp;apply):
+                // Among the top-N priority standbys,
+                // find the OLDEST (minimum) position
+                // This is the bottleneck: all N must have reached this LSN
+
+        else: // SYNC_REP_QUORUM
+            SyncRepGetNthLatestSyncRecPtr(&amp;write, &amp;flush, &amp;apply, N):
+                // Among all candidate standbys,
+                // find the Nth-latest position
+                // This means at least N standbys have reached this LSN
+
+        // Release waiters whose LSN has been satisfied
+        for each mode in [WRITE, FLUSH, APPLY]:
+            if aggregated_lsn[mode] &gt; WalSndCtl-&gt;lsn[mode]:
+                SyncRepWakeQueue(false, mode):
+                    walk SyncRepQueue[mode] from head
+                    for each waiter where waitLSN &lt;= aggregated_lsn:
+                        waiter-&gt;syncRepState = SYNC_REP_WAIT_COMPLETE
+                        SetLatch(waiter-&gt;latch)
+                WalSndCtl-&gt;lsn[mode] = aggregated_lsn[mode]
+</code></pre></div></div>
+
+<h3 id="4-priority-based-selection-first-n">4. Priority-Based Selection (FIRST N)</h3>
+
+<p>With <code class="language-plaintext highlighter-rouge">FIRST N (s1, s2, s3)</code>, PostgreSQL assigns priorities to standbys based
+on their position in the list. The synchronous standbys are the N
+highest-priority connected standbys that are currently streaming.</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>Example: FIRST 2 (s1, s2, s3)
+
+s1 (priority 1) -- connected, streaming  --&gt; sync standby
+s2 (priority 2) -- connected, streaming  --&gt; sync standby
+s3 (priority 3) -- connected, streaming  --&gt; potential (takes over if s1 or s2 disconnects)
+
+Aggregate position = MIN(s1.flush, s2.flush)
+    (both s1 AND s2 must have flushed to this LSN)
+</code></pre></div></div>
+
+<p>The implementation sorts candidate standbys by priority and takes the minimum
+position among the top N:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">static</span> <span class="kt">void</span>
+<span class="nf">SyncRepGetOldestSyncRecPtr</span><span class="p">(</span><span class="n">XLogRecPtr</span> <span class="o">*</span><span class="n">writePtr</span><span class="p">,</span> <span class="n">XLogRecPtr</span> <span class="o">*</span><span class="n">flushPtr</span><span class="p">,</span>
+                           <span class="n">XLogRecPtr</span> <span class="o">*</span><span class="n">applyPtr</span><span class="p">,</span>
+                           <span class="n">SyncRepStandbyData</span> <span class="o">*</span><span class="n">sync_standbys</span><span class="p">,</span> <span class="kt">int</span> <span class="n">num_standbys</span><span class="p">)</span>
+<span class="p">{</span>
+    <span class="cm">/* sync_standbys is pre-sorted by priority, limited to top N */</span>
+    <span class="k">for</span> <span class="p">(</span><span class="n">i</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span> <span class="n">i</span> <span class="o">&lt;</span> <span class="n">num_standbys</span><span class="p">;</span> <span class="n">i</span><span class="o">++</span><span class="p">)</span>
+    <span class="p">{</span>
+        <span class="o">*</span><span class="n">writePtr</span> <span class="o">=</span> <span class="n">Min</span><span class="p">(</span><span class="o">*</span><span class="n">writePtr</span><span class="p">,</span> <span class="n">sync_standbys</span><span class="p">[</span><span class="n">i</span><span class="p">].</span><span class="n">write</span><span class="p">);</span>
+        <span class="o">*</span><span class="n">flushPtr</span> <span class="o">=</span> <span class="n">Min</span><span class="p">(</span><span class="o">*</span><span class="n">flushPtr</span><span class="p">,</span> <span class="n">sync_standbys</span><span class="p">[</span><span class="n">i</span><span class="p">].</span><span class="n">flush</span><span class="p">);</span>
+        <span class="o">*</span><span class="n">applyPtr</span> <span class="o">=</span> <span class="n">Min</span><span class="p">(</span><span class="o">*</span><span class="n">applyPtr</span><span class="p">,</span> <span class="n">sync_standbys</span><span class="p">[</span><span class="n">i</span><span class="p">].</span><span class="n">apply</span><span class="p">);</span>
+    <span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div></div>
+
+<h3 id="5-quorum-based-selection-any-n">5. Quorum-Based Selection (ANY N)</h3>
+
+<p>With <code class="language-plaintext highlighter-rouge">ANY N (s1, s2, s3)</code>, any N standbys from the list suffice. There is no
+priority ordering – all listed standbys are equal candidates.</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>Example: ANY 2 (s1, s2, s3)
+
+s1 flush = 0/3000000
+s2 flush = 0/3500000
+s3 flush = 0/3200000
+
+Sort by flush descending: s2, s3, s1
+Nth latest (2nd) = s3.flush = 0/3200000
+
+At least 2 standbys (s2 and s3) have flushed to 0/3200000.
+Waiters with commitLSN &lt;= 0/3200000 can be released.
+</code></pre></div></div>
+
+<p>The implementation finds the Nth-largest position among all candidates:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">static</span> <span class="kt">void</span>
+<span class="nf">SyncRepGetNthLatestSyncRecPtr</span><span class="p">(</span><span class="n">XLogRecPtr</span> <span class="o">*</span><span class="n">writePtr</span><span class="p">,</span> <span class="p">...)</span>
+<span class="p">{</span>
+    <span class="cm">/* Sort candidates by position (descending) */</span>
+    <span class="cm">/* Return the Nth entry -- at least N standbys are at or beyond this point */</span>
+    <span class="o">*</span><span class="n">writePtr</span> <span class="o">=</span> <span class="n">sync_standbys</span><span class="p">[</span><span class="n">nth</span> <span class="o">-</span> <span class="mi">1</span><span class="p">].</span><span class="n">write</span><span class="p">;</span>
+    <span class="o">*</span><span class="n">flushPtr</span> <span class="o">=</span> <span class="n">sync_standbys</span><span class="p">[</span><span class="n">nth</span> <span class="o">-</span> <span class="mi">1</span><span class="p">].</span><span class="n">flush</span><span class="p">;</span>
+    <span class="o">*</span><span class="n">applyPtr</span> <span class="o">=</span> <span class="n">sync_standbys</span><span class="p">[</span><span class="n">nth</span> <span class="o">-</span> <span class="mi">1</span><span class="p">].</span><span class="n">apply</span><span class="p">;</span>
+<span class="p">}</span>
+</code></pre></div></div>
+
+<hr />
+
+<h2 id="key-data-structures">Key Data Structures</h2>
+
+<h3 id="syncrepstandbydata-syncreph">SyncRepStandbyData (syncrep.h)</h3>
+
+<p>Used to collect candidate synchronous standby information:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">typedef</span> <span class="k">struct</span> <span class="n">SyncRepStandbyData</span>
+<span class="p">{</span>
+    <span class="n">pid_t</span>       <span class="n">pid</span><span class="p">;</span>
+    <span class="n">XLogRecPtr</span>  <span class="n">write</span><span class="p">;</span>
+    <span class="n">XLogRecPtr</span>  <span class="n">flush</span><span class="p">;</span>
+    <span class="n">XLogRecPtr</span>  <span class="n">apply</span><span class="p">;</span>
+    <span class="kt">int</span>         <span class="n">sync_standby_priority</span><span class="p">;</span>  <span class="cm">/* 0 if not in sync list */</span>
+    <span class="kt">int</span>         <span class="n">walsnd_index</span><span class="p">;</span>
+    <span class="n">bool</span>        <span class="n">is_me</span><span class="p">;</span>
+<span class="p">}</span> <span class="n">SyncRepStandbyData</span><span class="p">;</span>
+</code></pre></div></div>
+
+<h3 id="wait-state-in-pgproc">Wait State in PGPROC</h3>
+
+<p>Each backend’s synchronous replication state is stored in its <code class="language-plaintext highlighter-rouge">PGPROC</code> entry:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="cm">/* In PGPROC (proc.h) */</span>
+<span class="k">struct</span> <span class="n">PGPROC</span>
+<span class="p">{</span>
+    <span class="cm">/* ... */</span>
+    <span class="n">XLogRecPtr</span>  <span class="n">waitLSN</span><span class="p">;</span>          <span class="cm">/* LSN this backend is waiting for */</span>
+    <span class="kt">int</span>         <span class="n">syncRepState</span><span class="p">;</span>     <span class="cm">/* NOT_WAITING, WAITING, or WAIT_COMPLETE */</span>
+    <span class="n">dlist_node</span>  <span class="n">syncRepLinks</span><span class="p">;</span>     <span class="cm">/* links in SyncRepQueue */</span>
+    <span class="cm">/* ... */</span>
+<span class="p">};</span>
+</code></pre></div></div>
+
+<h3 id="the-three-wait-queues">The Three Wait Queues</h3>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>WalSndCtl-&gt;SyncRepQueue[3]:
+
+  [SYNC_REP_WAIT_WRITE]   ──&gt; proc_A(LSN=100) ──&gt; proc_B(LSN=200) ──&gt; ...
+  [SYNC_REP_WAIT_FLUSH]   ──&gt; proc_C(LSN=150) ──&gt; proc_D(LSN=300) ──&gt; ...
+  [SYNC_REP_WAIT_APPLY]   ──&gt; proc_E(LSN=120) ──&gt; ...
+
+WalSndCtl-&gt;lsn[3]:
+  [WRITE] = 180    (all waiters with LSN &lt;= 180 have been released)
+  [FLUSH] = 140    (all waiters with LSN &lt;= 140 have been released)
+  [APPLY] = 100    (all waiters with LSN &lt;= 100 have been released)
+</code></pre></div></div>
+
+<hr />
+
+<h2 id="synchronous-commit-flow-diagram">Synchronous Commit Flow Diagram</h2>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>Client                  Primary Backend            Walsender              Standby
+  |                          |                         |                      |
+  |-- COMMIT --------------&gt;|                         |                      |
+  |                          |                         |                      |
+  |                  XLogInsert(commit record)         |                      |
+  |                  XLogFlush(commitLsn)              |                      |
+  |                          |                         |                      |
+  |                  SyncRepWaitForLSN(commitLsn)      |                      |
+  |                  [insert into SyncRepQueue]        |                      |
+  |                  [sleep on latch]                  |                      |
+  |                          |                         |                      |
+  |                          |          WAL data -----&gt;| ---- WAL data ------&gt;|
+  |                          |                         |                      |
+  |                          |                         |&lt;-- status: flush=LSN |
+  |                          |                         |                      |
+  |                          |  SyncRepReleaseWaiters()|                      |
+  |                          |  [compute aggregate LSN]|                      |
+  |                          |  [walk queue, release]  |                      |
+  |                          |                         |                      |
+  |                  [latch set, wake up]              |                      |
+  |                  syncRepState = WAIT_COMPLETE      |                      |
+  |                          |                         |                      |
+  |&lt;-- COMMIT OK ------------|                         |                      |
+  |                          |                         |                      |
+</code></pre></div></div>
+
+<hr />
+
+<h2 id="edge-cases-and-failure-modes">Edge Cases and Failure Modes</h2>
+
+<h3 id="all-sync-standbys-disconnect">All Sync Standbys Disconnect</h3>
+
+<p>If all synchronous standbys disconnect, waiting backends remain blocked
+indefinitely. This is by design: PostgreSQL guarantees that if
+<code class="language-plaintext highlighter-rouge">synchronous_commit = on</code> and a commit is acknowledged, the data exists on
+the required number of standbys. The administrator must either reconnect a
+standby or change <code class="language-plaintext highlighter-rouge">synchronous_standby_names</code> to empty (which releases all
+waiters immediately).</p>
+
+<h3 id="standby-promotion-during-sync-wait">Standby Promotion During Sync Wait</h3>
+
+<p>If a backend is waiting for sync rep confirmation and the standby is promoted
+(making it a new primary), the waiting backend will remain blocked until
+either the wait is cancelled or the configuration is changed.</p>
+
+<h3 id="per-transaction-override">Per-Transaction Override</h3>
+
+<p><code class="language-plaintext highlighter-rouge">synchronous_commit</code> is a session-level GUC that can be changed per
+transaction:</p>
+
+<div class="language-sql highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">SET</span> <span class="k">LOCAL</span> <span class="n">synchronous_commit</span> <span class="o">=</span> <span class="s1">'local'</span><span class="p">;</span>
+<span class="c1">-- This transaction will not wait for standby confirmation</span>
+</code></pre></div></div>
+
+<p>This allows mixing synchronous and asynchronous transactions based on their
+durability requirements.</p>
+
+<h3 id="performance-impact">Performance Impact</h3>
+
+<p>Synchronous replication adds network round-trip latency to every commit. The
+impact depends on:</p>
+<ul>
+  <li>Network latency between primary and standby</li>
+  <li><code class="language-plaintext highlighter-rouge">synchronous_commit</code> level (write &lt; flush &lt; apply)</li>
+  <li>Number of required confirmations (more = slower, bounded by slowest)</li>
+  <li>Whether FIRST or ANY is used (ANY is more resilient to slow standbys)</li>
+</ul>
+
+<hr />
+
+<h2 id="connections-to-other-sections">Connections to Other Sections</h2>
+
+<ul>
+  <li>
+    <p><strong><a href="streaming.html">Streaming Replication</a></strong> – The walsender/walreceiver
+feedback loop provides the LSN positions that drive synchronous commit
+decisions. The <code class="language-plaintext highlighter-rouge">WalSnd-&gt;write/flush/apply</code> fields are the direct inputs.</p>
+  </li>
+  <li>
+    <p><strong><a href="logical.html">Logical Replication</a></strong> – Logical replication subscribers
+can participate in synchronous replication. The subscriber’s apply worker
+reports its position through the same walsender feedback mechanism.</p>
+  </li>
+  <li>
+    <p><strong><a href="conflict-resolution.html">Conflict Resolution</a></strong> – With
+<code class="language-plaintext highlighter-rouge">synchronous_commit = remote_apply</code>, the primary knows that committed data
+has been applied on the standby, which strengthens read-after-write
+consistency guarantees for applications that read from standbys.</p>
+  </li>
+</ul>
+
+
+      <hr>
+
+      <!-- Prev / Next / Up navigation -->
+      
+      
+      
+
+      <div class="clearfix" style="margin-top: 2rem;">
+        
+          
+          
+
+          
+            
+            <a class="btn btn-primary float-left" href="/postgresql/12-replication/streaming.html" title="Streaming Replication">&larr; Previous</a>
+          
+
+          
+            
+            <a class="btn btn-primary float-right" href="/postgresql/13-statistics/" title="Statistics & Monitoring">Next &rarr;</a>
+          
+        
+      </div>
+
+      
+      <div style="text-align: center; margin-top: 1rem;">
+        <a href="/postgresql-internals/">&uarr; Back to Table of Contents</a>
+      </div>
+      
+
+    </div>
+  </div>
+</div>
+
+
+  <!-- Footer -->
+
+<hr>
+
+<footer>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <ul class="list-inline text-center">
+          
+          <li class="list-inline-item">
+            <a href="mailto:amitava.dev@proton.me" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="far fa-envelope fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          
+          
+          <li class="list-inline-item">
+            <a href="https://www.linkedin.com/in/amitavaag" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-linkedin fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          <li class="list-inline-item">
+            <a href="https://github.com/ikouchiha47" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-github fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+        </ul>
+
+        <p class="copyright text-muted">
+          Build with: 
+          <a 
+            href="https://github.com/StartBootstrap/startbootstrap-clean-blog-jekyll"
+            class="text-gray"
+            target="_blank">startbootstrap-clean-blog-jekyll</a></p>
+      </div>
+    </div>
+  </div>
+</footer>
+
+
+  <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="/assets/vendor/blog/js/scripts.js"></script>
+
+<script src="/assets/scripts.js"></script>
+
+
+
+
+
+  <script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+
+    document.querySelectorAll('pre > code.language-mermaid').forEach((codeBlock) => {
+      codeBlock.parentElement.outerHTML = `<pre class="mermaid">${codeBlock.textContent}</pre>`;
+    });
+
+
+    mermaid.initialize({ startOnLoad: true, theme: 'forest' });
+</script>
+
+
+  
+
+</body>
+
+</html>

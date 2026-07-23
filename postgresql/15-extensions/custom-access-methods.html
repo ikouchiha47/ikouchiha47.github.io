@@ -1,0 +1,652 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+  <title>
+    Custom Access Methods - iko&#39;s logs
+    
+  </title>
+
+  <meta name="description" content="">
+  <meta property="og:description" content="">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Custom Access Methods">
+  <meta property="og:url" content="https://ikouchiha47.github.io/postgresql/15-extensions/custom-access-methods.html">
+
+  
+
+  <link href='https://fonts.googleapis.com/css?family=Lora:400,700,400italic,700italic' rel='stylesheet' type='text/css'>
+  <link href='https://fonts.googleapis.com/css?family=Open+Sans:300italic,400italic,600italic,700italic,800italic,400,300,600,700,800' rel='stylesheet' type='text/css'>
+
+  <!-- <script src="https://use.fontawesome.com/releases/v5.15.3/js/all.js" crossorigin="anonymous"></script> -->
+  <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.15.4/css/all.css" integrity="sha384-DyZ88mC6Up2uqS4h/KRgHuoeGwBcD4Ng9SiP4dIRy0EXTlnuz47vAwmeGwVChigm" crossorigin="anonymous"/>
+
+  <link rel="stylesheet" href="/assets/main.css">
+  <link rel="canonical" href="https://ikouchiha47.github.io/postgresql/15-extensions/custom-access-methods.html">
+  <link rel="alternate" type="application/rss+xml" title="iko&#39;s logs" href="/feed.xml">
+
+  <meta name="google-site-verification" content="lWkg6gIxJgzEKX_5XnhcxCtPE9QknaimFWWos_dTvPM" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fira+Sans:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Inconsolata:wght@200..900&family=Jersey+25&family=Kanit:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Merriweather+Sans:ital,wght@0,300..800;1,300..800&family=Nanum+Gothic+Coding&family=Space+Grotesk:wght@300..700&family=Titillium+Web:ital,wght@0,200;0,300;0,400;0,600;0,700;0,900;1,200;1,300;1,400;1,600;1,700&display=swap" rel="stylesheet">
+
+</head>
+
+
+<body>
+
+  <!-- Navigation -->
+<nav class="navbar navbar-expand-lg navbar-light fixed-top" id="mainNav">
+  <div class="container">
+    <a class="navbar-brand" href="/">iko&#39;s logs</a>
+    <button class="navbar-toggler navbar-toggler-right" type="button" data-toggle="collapse" data-target="#navbarResponsive" aria-controls="navbarResponsive" aria-expanded="false" aria-label="Toggle navigation">
+      Menu
+      <i class="fa fa-bars"></i>
+    </button>
+    <div class="collapse navbar-collapse" id="navbarResponsive">
+      <ul class="navbar-nav ml-auto">
+        <li class="nav-item">
+          <a class="nav-link" href="/">Home</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/about">About</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/posts">Posts</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/contact">Contact</a>
+        </li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+
+  <!-- Page Header -->
+
+<header class="masthead">
+
+  <div class="overlay"></div>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <div class="post-heading">
+          <h1>Custom Access Methods</h1>
+          
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="container space-grotesk">
+  <div class="row">
+    <div class="col-lg-8 col-md-10 mx-auto">
+
+      <!-- Breadcrumb -->
+      <nav aria-label="breadcrumb" style="margin-bottom: 1.5rem;">
+        <ol class="breadcrumb" style="background: transparent; padding: 0;">
+          
+            <li class="breadcrumb-item"><a href="/postgresql-internals/">PostgreSQL Internals Deep Dive</a></li>
+          
+          
+            
+              <li class="breadcrumb-item"><a href="/postgresql/15-extensions/">Extensions</a></li>
+            
+          
+          <li class="breadcrumb-item active" aria-current="page">Custom Access Methods</li>
+        </ol>
+      </nav>
+
+      <h1 id="custom-access-methods-table-am-and-index-am-apis">Custom Access Methods: Table AM and Index AM APIs</h1>
+
+<blockquote>
+  <p><em>PostgreSQL’s access method layer is a contract: the executor promises to call a defined set of callbacks in a defined order, and the access method promises to return tuples through a defined interface. The heap is just the default implementation of that contract – extensions can provide entirely different storage engines.</em></p>
+</blockquote>
+
+<h2 id="overview">Overview</h2>
+
+<p>PostgreSQL separates the executor from the physical storage layer through two callback-based APIs: the <strong>Table Access Method</strong> (Table AM) for tuple storage and the <strong>Index Access Method</strong> (Index AM) for index structures. Each API is defined as a C struct of function pointers that an access method handler function returns. The executor never directly manipulates pages or tuples – it always goes through these callback interfaces.</p>
+
+<p>The Table AM API (<code class="language-plaintext highlighter-rouge">TableAmRoutine</code>) was introduced in PostgreSQL 12, replacing the hard-coded heap assumptions that were previously wired throughout the executor. The Index AM API (<code class="language-plaintext highlighter-rouge">IndexAmRoutine</code>) has existed since PostgreSQL 9.6, enabling custom index types to be added as extensions.</p>
+
+<p>Both APIs follow the same pattern: a handler function registered in the <code class="language-plaintext highlighter-rouge">pg_am</code> catalog returns a pointer to a statically allocated routine struct. The executor caches this pointer in the relation descriptor (<code class="language-plaintext highlighter-rouge">rd_tableam</code> or <code class="language-plaintext highlighter-rouge">rd_amroutine</code>) and calls the function pointers throughout query execution.</p>
+
+<h2 id="key-source-files">Key Source Files</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>File</th>
+      <th>Purpose</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/access/tableam.h</code></td>
+      <td><code class="language-plaintext highlighter-rouge">TableAmRoutine</code> struct definition and all <code class="language-plaintext highlighter-rouge">table_*</code> wrapper functions</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/access/amapi.h</code></td>
+      <td><code class="language-plaintext highlighter-rouge">IndexAmRoutine</code> struct definition and index AM callback typedefs</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/access/heap/heapam_handler.c</code></td>
+      <td>Heap’s implementation of <code class="language-plaintext highlighter-rouge">TableAmRoutine</code></td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/access/nbtree/nbtree.c</code></td>
+      <td>B-tree’s implementation of <code class="language-plaintext highlighter-rouge">IndexAmRoutine</code></td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/access/index/amapi.c</code></td>
+      <td><code class="language-plaintext highlighter-rouge">GetIndexAmRoutine</code>, <code class="language-plaintext highlighter-rouge">GetIndexAmRoutineByAmId</code></td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/access/table/tableamapi.c</code></td>
+      <td><code class="language-plaintext highlighter-rouge">GetTableAmRoutine</code></td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/commands/amcmds.c</code></td>
+      <td><code class="language-plaintext highlighter-rouge">CREATE ACCESS METHOD</code> command processing</td>
+    </tr>
+  </tbody>
+</table>
+
+<h2 id="how-it-works">How It Works</h2>
+
+<h3 id="registration">Registration</h3>
+
+<p>An access method is registered by creating an entry in <code class="language-plaintext highlighter-rouge">pg_am</code> with a handler function:</p>
+
+<div class="language-sql highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">CREATE</span> <span class="k">ACCESS</span> <span class="k">METHOD</span> <span class="n">myam</span> <span class="k">TYPE</span> <span class="k">TABLE</span> <span class="k">HANDLER</span> <span class="n">myam_handler</span><span class="p">;</span>
+<span class="c1">-- or</span>
+<span class="k">CREATE</span> <span class="k">ACCESS</span> <span class="k">METHOD</span> <span class="n">myidx</span> <span class="k">TYPE</span> <span class="k">INDEX</span> <span class="k">HANDLER</span> <span class="n">myidx_handler</span><span class="p">;</span>
+</code></pre></div></div>
+
+<p>The handler function returns a pointer to the routine struct:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="n">PG_FUNCTION_INFO_V1</span><span class="p">(</span><span class="n">myam_handler</span><span class="p">);</span>
+<span class="n">Datum</span>
+<span class="nf">myam_handler</span><span class="p">(</span><span class="n">PG_FUNCTION_ARGS</span><span class="p">)</span>
+<span class="p">{</span>
+    <span class="n">TableAmRoutine</span> <span class="o">*</span><span class="n">amroutine</span> <span class="o">=</span> <span class="n">makeNode</span><span class="p">(</span><span class="n">TableAmRoutine</span><span class="p">);</span>
+
+    <span class="n">amroutine</span><span class="o">-&gt;</span><span class="n">slot_callbacks</span> <span class="o">=</span> <span class="n">myam_slot_callbacks</span><span class="p">;</span>
+    <span class="n">amroutine</span><span class="o">-&gt;</span><span class="n">scan_begin</span> <span class="o">=</span> <span class="n">myam_scan_begin</span><span class="p">;</span>
+    <span class="n">amroutine</span><span class="o">-&gt;</span><span class="n">scan_end</span> <span class="o">=</span> <span class="n">myam_scan_end</span><span class="p">;</span>
+    <span class="n">amroutine</span><span class="o">-&gt;</span><span class="n">scan_getnextslot</span> <span class="o">=</span> <span class="n">myam_scan_getnextslot</span><span class="p">;</span>
+    <span class="cm">/* ... fill in all required callbacks ... */</span>
+
+    <span class="n">PG_RETURN_POINTER</span><span class="p">(</span><span class="n">amroutine</span><span class="p">);</span>
+<span class="p">}</span>
+</code></pre></div></div>
+
+<h3 id="table-am-api">Table AM API</h3>
+
+<p>The <code class="language-plaintext highlighter-rouge">TableAmRoutine</code> struct contains approximately 40 callback function pointers organized into six categories:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>TableAmRoutine
+ |
+ +-- Slot Callbacks
+ |    +-- slot_callbacks          : return TupleTableSlotOps for this AM
+ |
+ +-- Table Scan Callbacks
+ |    +-- scan_begin              : start a sequential scan
+ |    +-- scan_end                : end a scan
+ |    +-- scan_rescan             : restart a scan
+ |    +-- scan_getnextslot        : fetch next tuple into a slot
+ |    +-- scan_set_tidrange       : set TID range for range scans (optional)
+ |    +-- scan_getnextslot_tidrange : fetch next tuple in TID range (optional)
+ |
+ +-- Parallel Scan Callbacks
+ |    +-- parallelscan_estimate   : shared memory size for parallel scan
+ |    +-- parallelscan_initialize : set up parallel scan descriptor
+ |    +-- parallelscan_reinitialize : reset parallel scan
+ |
+ +-- Index Scan Callbacks
+ |    +-- index_fetch_begin       : prepare for index-driven tuple fetches
+ |    +-- index_fetch_reset       : release cross-fetch resources
+ |    +-- index_fetch_end         : end index fetch
+ |    +-- index_fetch_tuple       : fetch tuple by TID from index scan
+ |
+ +-- Tuple Manipulation Callbacks
+ |    +-- tuple_fetch_row_version : fetch specific tuple version by TID
+ |    +-- tuple_tid_valid         : validate a TID
+ |    +-- tuple_get_latest_tid    : follow update chain to latest version
+ |    +-- tuple_satisfies_snapshot: visibility check
+ |    +-- index_delete_tuples     : bulk delete check for index cleanup
+ |    +-- tuple_insert            : insert a single tuple
+ |    +-- tuple_insert_speculative: speculative insert (ON CONFLICT)
+ |    +-- tuple_complete_speculative: confirm/abort speculative insert
+ |    +-- multi_insert            : bulk insert
+ |    +-- tuple_delete            : delete by TID
+ |    +-- tuple_update            : update by TID
+ |    +-- tuple_lock              : lock a tuple (SELECT FOR UPDATE)
+ |    +-- finish_bulk_insert      : finalize bulk operations (optional)
+ |
+ +-- DDL Callbacks
+ |    +-- relation_set_new_filelocator : create new storage
+ |    +-- relation_nontransactional_truncate : truncate storage
+ |    +-- relation_copy_data      : copy storage (tablespace change)
+ |    +-- relation_copy_for_cluster : CLUSTER / VACUUM FULL
+ |    +-- relation_vacuum         : VACUUM
+ |    +-- scan_analyze_next_block : ANALYZE block sampling
+ |    +-- scan_analyze_next_tuple : ANALYZE tuple sampling
+ |    +-- index_build_range_scan  : scan table for index build
+ |    +-- index_validate_scan     : concurrent index build validation
+ |
+ +-- Miscellaneous Callbacks
+ |    +-- relation_size           : return size in bytes
+ |    +-- relation_needs_toast_table : does AM need TOAST?
+ |    +-- relation_toast_am       : which AM for the TOAST table?
+ |    +-- relation_fetch_toast_slice : detoast a value
+ |    +-- relation_estimate_size  : planner size estimation
+ |
+ +-- Executor Callbacks
+      +-- scan_bitmap_next_tuple  : bitmap scan support (optional)
+      +-- scan_sample_next_block  : TABLESAMPLE block selection
+      +-- scan_sample_next_tuple  : TABLESAMPLE tuple selection
+</code></pre></div></div>
+
+<h4 id="the-scan-lifecycle">The Scan Lifecycle</h4>
+
+<p>The most common code path through the Table AM is a sequential scan:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>table_beginscan(rel, snapshot, nkeys, keys)
+  |
+  +--&gt; rel-&gt;rd_tableam-&gt;scan_begin(rel, snapshot, nkeys, keys, NULL, flags)
+  |    Returns: TableScanDesc (AM-specific, typically embedded in larger struct)
+  |
+  v
+table_scan_getnextslot(scan, ForwardScanDirection, slot)  [called in a loop]
+  |
+  +--&gt; scan-&gt;rs_rd-&gt;rd_tableam-&gt;scan_getnextslot(scan, direction, slot)
+  |    Returns: true if tuple found, false if scan complete
+  |    Side effect: fills slot with tuple data
+  |
+  v
+table_endscan(scan)
+  |
+  +--&gt; scan-&gt;rs_rd-&gt;rd_tableam-&gt;scan_end(scan)
+</code></pre></div></div>
+
+<h4 id="tm_result-the-dml-return-code">TM_Result: The DML Return Code</h4>
+
+<p>All DML callbacks (<code class="language-plaintext highlighter-rouge">tuple_delete</code>, <code class="language-plaintext highlighter-rouge">tuple_update</code>, <code class="language-plaintext highlighter-rouge">tuple_lock</code>) return a <code class="language-plaintext highlighter-rouge">TM_Result</code> enum that tells the executor what happened:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">typedef</span> <span class="k">enum</span> <span class="n">TM_Result</span>
+<span class="p">{</span>
+    <span class="n">TM_Ok</span><span class="p">,</span>              <span class="cm">/* Operation succeeded */</span>
+    <span class="n">TM_Invisible</span><span class="p">,</span>       <span class="cm">/* Tuple not visible to this snapshot */</span>
+    <span class="n">TM_SelfModified</span><span class="p">,</span>    <span class="cm">/* Modified by current transaction */</span>
+    <span class="n">TM_Updated</span><span class="p">,</span>         <span class="cm">/* Modified by another transaction */</span>
+    <span class="n">TM_Deleted</span><span class="p">,</span>         <span class="cm">/* Deleted by another transaction */</span>
+    <span class="n">TM_BeingModified</span><span class="p">,</span>   <span class="cm">/* Concurrent modification in progress */</span>
+    <span class="n">TM_WouldBlock</span><span class="p">,</span>      <span class="cm">/* Lock would block (SKIP LOCKED) */</span>
+<span class="p">}</span> <span class="n">TM_Result</span><span class="p">;</span>
+</code></pre></div></div>
+
+<p>The executor uses these codes to implement retry loops for concurrent updates and the <code class="language-plaintext highlighter-rouge">ON CONFLICT</code> protocol.</p>
+
+<h3 id="index-am-api">Index AM API</h3>
+
+<p>The <code class="language-plaintext highlighter-rouge">IndexAmRoutine</code> struct defines the contract for index access methods. It contains both boolean capability flags and function pointer callbacks:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>IndexAmRoutine
+ |
+ +-- Capability Flags
+ |    +-- amstrategies      : number of operator strategies (0 = variable)
+ |    +-- amsupport          : number of support functions
+ |    +-- amcanorder         : can return tuples in index order?
+ |    +-- amcanorderbyop     : ORDER BY operator result?
+ |    +-- amcanbackward      : backward scan support?
+ |    +-- amcanunique        : UNIQUE constraint support?
+ |    +-- amcanmulticol      : multi-column indexes?
+ |    +-- amsearcharray       : ScalarArrayOpExpr handling?
+ |    +-- amsearchnulls      : IS NULL / IS NOT NULL?
+ |    +-- amclusterable      : CLUSTER support?
+ |    +-- ampredlocks        : predicate lock support?
+ |    +-- amcanparallel      : parallel scan?
+ |    +-- amcaninclude       : INCLUDE columns?
+ |    +-- amsummarizing      : block-level granularity (like BRIN)?
+ |
+ +-- Index Build Callbacks
+ |    +-- ambuild            : build index from scratch
+ |    +-- ambuildempty       : build empty index (for WAL replay)
+ |    +-- aminsert           : insert single index entry
+ |    +-- aminsertcleanup    : post-insert cleanup (optional)
+ |
+ +-- Index Maintenance
+ |    +-- ambulkdelete       : bulk delete during VACUUM
+ |    +-- amvacuumcleanup    : post-VACUUM cleanup
+ |
+ +-- Index Scan Callbacks
+ |    +-- ambeginscan        : prepare for index scan
+ |    +-- amrescan           : (re)start scan with new keys
+ |    +-- amgettuple         : get next matching TID (optional)
+ |    +-- amgetbitmap        : get all matching TIDs as bitmap (optional)
+ |    +-- amendscan          : end index scan
+ |    +-- ammarkpos          : mark current position (optional)
+ |    +-- amrestrpos         : restore marked position (optional)
+ |
+ +-- Cost Estimation
+ |    +-- amcostestimate     : provide cost estimates to planner
+ |    +-- amgettreeheight    : estimate tree height (optional)
+ |
+ +-- Metadata
+ |    +-- amcanreturn        : can index return data directly? (optional)
+ |    +-- amoptions          : parse reloptions
+ |    +-- amproperty         : report AM/index properties (optional)
+ |    +-- amvalidate         : validate opclass definition
+ |    +-- amadjustmembers    : validate opfamily changes (optional)
+ |
+ +-- Parallel Scan
+ |    +-- amestimateparallelscan : DSM size estimate (optional)
+ |    +-- aminitparallelscan    : initialize parallel scan (optional)
+ |    +-- amparallelrescan      : restart parallel scan (optional)
+ |
+ +-- Strategy Translation
+      +-- amtranslatestrategy  : AM strategy to CompareType (optional)
+      +-- amtranslatecmptype   : CompareType to AM strategy (optional)
+</code></pre></div></div>
+
+<h4 id="the-index-scan-lifecycle">The Index Scan Lifecycle</h4>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>ambeginscan(indexRelation, nkeys, norderbys)
+  |
+  +--&gt; Returns: IndexScanDesc
+  |
+  v
+amrescan(scan, keys, nkeys, orderbys, norderbys)
+  |
+  +--&gt; Initializes scan with search keys
+  |
+  v
+amgettuple(scan, ForwardScanDirection)  [called in a loop]
+  |
+  +--&gt; Returns: true if found, with scan-&gt;xs_heaptid set
+  |    The executor then calls table AM to fetch the actual tuple
+  |
+  v
+amendscan(scan)
+</code></pre></div></div>
+
+<p>For bitmap scans, <code class="language-plaintext highlighter-rouge">amgetbitmap</code> is called instead of <code class="language-plaintext highlighter-rouge">amgettuple</code>. It fills a <code class="language-plaintext highlighter-rouge">TIDBitmap</code> with all matching TIDs at once, which the executor then uses to drive a bitmap heap scan.</p>
+
+<h3 id="how-the-executor-connects-table-am-and-index-am">How the Executor Connects Table AM and Index AM</h3>
+
+<p>During an index scan, the executor coordinates both APIs:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>IndexScan executor node
+  |
+  +-- index_beginscan()     --&gt; IndexAmRoutine-&gt;ambeginscan()
+  +-- index_rescan()        --&gt; IndexAmRoutine-&gt;amrescan()
+  |
+  +-- Loop:
+  |    index_getnext_tid()  --&gt; IndexAmRoutine-&gt;amgettuple()
+  |      |                       returns TID
+  |      v
+  |    index_fetch_tuple()  --&gt; TableAmRoutine-&gt;index_fetch_tuple()
+  |      |                       returns tuple in slot
+  |      v
+  |    Return slot to parent node
+  |
+  +-- index_endscan()       --&gt; IndexAmRoutine-&gt;amendscan()
+</code></pre></div></div>
+
+<h2 id="key-data-structures">Key Data Structures</h2>
+
+<h3 id="tablescandesc">TableScanDesc</h3>
+
+<p>The base scan descriptor returned by <code class="language-plaintext highlighter-rouge">scan_begin</code>. Access methods embed this in a larger struct:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>TableScanDescData
+ +-- rs_rd           : Relation (the table being scanned)
+ +-- rs_snapshot     : Snapshot (visibility rules)
+ +-- rs_nkeys        : int (number of scan keys)
+ +-- rs_key          : ScanKey (array of scan keys)
+ +-- rs_flags        : uint32 (SO_TYPE_* | SO_ALLOW_*)
+ +-- rs_parallel     : ParallelTableScanDesc (NULL if not parallel)
+</code></pre></div></div>
+
+<p>The heap AM embeds this as the first field of <code class="language-plaintext highlighter-rouge">HeapScanDescData</code>, which adds heap-specific state like the current buffer, page, and line pointer offset.</p>
+
+<h3 id="indexscandesc">IndexScanDesc</h3>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>IndexScanDescData
+ +-- heapRelation     : Relation
+ +-- indexRelation     : Relation
+ +-- xs_snapshot       : Snapshot
+ +-- numberOfKeys      : int
+ +-- keyData           : ScanKey
+ +-- xs_heaptid        : ItemPointerData (current result TID)
+ +-- xs_itup           : IndexTuple (current index tuple)
+ +-- xs_want_itup      : bool (index-only scan?)
+ +-- opaque            : void* (AM-private state)
+</code></pre></div></div>
+
+<h2 id="implementing-a-custom-table-am-required-vs-optional-callbacks">Implementing a Custom Table AM: Required vs Optional Callbacks</h2>
+
+<p>Not all callbacks in <code class="language-plaintext highlighter-rouge">TableAmRoutine</code> are required. The <code class="language-plaintext highlighter-rouge">GetTableAmRoutine</code> function validates that mandatory callbacks are filled in:</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>Callback</th>
+      <th>Required?</th>
+      <th>Notes</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">slot_callbacks</code></td>
+      <td>Yes</td>
+      <td>Must return appropriate <code class="language-plaintext highlighter-rouge">TupleTableSlotOps</code></td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">scan_begin</code> / <code class="language-plaintext highlighter-rouge">scan_end</code> / <code class="language-plaintext highlighter-rouge">scan_rescan</code> / <code class="language-plaintext highlighter-rouge">scan_getnextslot</code></td>
+      <td>Yes</td>
+      <td>Core scan functionality</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">index_fetch_begin</code> / <code class="language-plaintext highlighter-rouge">index_fetch_end</code> / <code class="language-plaintext highlighter-rouge">index_fetch_tuple</code></td>
+      <td>Yes</td>
+      <td>Index scan support</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">tuple_insert</code> / <code class="language-plaintext highlighter-rouge">tuple_delete</code> / <code class="language-plaintext highlighter-rouge">tuple_update</code></td>
+      <td>Yes</td>
+      <td>DML support</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">tuple_lock</code></td>
+      <td>Yes</td>
+      <td><code class="language-plaintext highlighter-rouge">SELECT FOR UPDATE</code></td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">relation_set_new_filelocator</code></td>
+      <td>Yes</td>
+      <td>DDL (CREATE TABLE)</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">relation_vacuum</code></td>
+      <td>Yes</td>
+      <td>VACUUM support</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">scan_bitmap_next_tuple</code></td>
+      <td>No</td>
+      <td>Only needed for bitmap scan support</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">finish_bulk_insert</code></td>
+      <td>No</td>
+      <td>Only needed if bulk insert state requires finalization</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">scan_set_tidrange</code> / <code class="language-plaintext highlighter-rouge">scan_getnextslot_tidrange</code></td>
+      <td>No</td>
+      <td>Both or neither must be provided</td>
+    </tr>
+  </tbody>
+</table>
+
+<h2 id="connections-to-other-chapters">Connections to Other Chapters</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>Chapter</th>
+      <th>Connection</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><a href="../02-access-methods/">Chapter 2: Access Methods</a></td>
+      <td>The built-in B-tree, hash, GiST, GIN, BRIN, and heap all implement these same APIs</td>
+    </tr>
+    <tr>
+      <td><a href="../01-storage/">Chapter 1: Storage</a></td>
+      <td>Table AMs manage physical storage through the buffer manager and storage manager interfaces</td>
+    </tr>
+    <tr>
+      <td><a href="../08-executor/">Chapter 8: Executor</a></td>
+      <td>The executor drives all access through <code class="language-plaintext highlighter-rouge">table_*</code> and <code class="language-plaintext highlighter-rouge">index_*</code> wrapper functions that dispatch to AM callbacks</td>
+    </tr>
+    <tr>
+      <td><a href="../07-query-optimizer/">Chapter 7: Query Optimizer</a></td>
+      <td>The planner calls <code class="language-plaintext highlighter-rouge">amcostestimate</code> and checks capability flags to decide which scan strategies are available</td>
+    </tr>
+    <tr>
+      <td><a href="../03-transactions/">Chapter 3: Transactions</a></td>
+      <td><code class="language-plaintext highlighter-rouge">TM_Result</code> codes drive the executor’s concurrency control behavior for updates and locks</td>
+    </tr>
+  </tbody>
+</table>
+
+
+      <hr>
+
+      <!-- Prev / Next / Up navigation -->
+      
+      
+      
+
+      <div class="clearfix" style="margin-top: 2rem;">
+        
+          
+          
+
+          
+            
+            <a class="btn btn-primary float-left" href="/postgresql/15-extensions/background-workers.html" title="Background Workers">&larr; Previous</a>
+          
+
+          
+            
+            <a class="btn btn-primary float-right" href="/postgresql/15-extensions/fdw.html" title="Foreign Data Wrappers">Next &rarr;</a>
+          
+        
+      </div>
+
+      
+      <div style="text-align: center; margin-top: 1rem;">
+        <a href="/postgresql-internals/">&uarr; Back to Table of Contents</a>
+      </div>
+      
+
+    </div>
+  </div>
+</div>
+
+
+  <!-- Footer -->
+
+<hr>
+
+<footer>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <ul class="list-inline text-center">
+          
+          <li class="list-inline-item">
+            <a href="mailto:amitava.dev@proton.me" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="far fa-envelope fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          
+          
+          <li class="list-inline-item">
+            <a href="https://www.linkedin.com/in/amitavaag" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-linkedin fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          <li class="list-inline-item">
+            <a href="https://github.com/ikouchiha47" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-github fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+        </ul>
+
+        <p class="copyright text-muted">
+          Build with: 
+          <a 
+            href="https://github.com/StartBootstrap/startbootstrap-clean-blog-jekyll"
+            class="text-gray"
+            target="_blank">startbootstrap-clean-blog-jekyll</a></p>
+      </div>
+    </div>
+  </div>
+</footer>
+
+
+  <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="/assets/vendor/blog/js/scripts.js"></script>
+
+<script src="/assets/scripts.js"></script>
+
+
+
+
+
+  <script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+
+    document.querySelectorAll('pre > code.language-mermaid').forEach((codeBlock) => {
+      codeBlock.parentElement.outerHTML = `<pre class="mermaid">${codeBlock.textContent}</pre>`;
+    });
+
+
+    mermaid.initialize({ startOnLoad: true, theme: 'forest' });
+</script>
+
+
+  
+
+</body>
+
+</html>

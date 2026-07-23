@@ -1,0 +1,392 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+  <title>
+    linux confirms it: SO_REUSEPORT actually works - iko&#39;s logs
+    
+  </title>
+
+  <meta name="description" content="">
+  <meta property="og:description" content="">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="linux confirms it: SO_REUSEPORT actually works">
+  <meta property="og:url" content="https://ikouchiha47.github.io/millionrps/02-linux-prefork.html">
+
+  
+
+  <link href='https://fonts.googleapis.com/css?family=Lora:400,700,400italic,700italic' rel='stylesheet' type='text/css'>
+  <link href='https://fonts.googleapis.com/css?family=Open+Sans:300italic,400italic,600italic,700italic,800italic,400,300,600,700,800' rel='stylesheet' type='text/css'>
+
+  <!-- <script src="https://use.fontawesome.com/releases/v5.15.3/js/all.js" crossorigin="anonymous"></script> -->
+  <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.15.4/css/all.css" integrity="sha384-DyZ88mC6Up2uqS4h/KRgHuoeGwBcD4Ng9SiP4dIRy0EXTlnuz47vAwmeGwVChigm" crossorigin="anonymous"/>
+
+  <link rel="stylesheet" href="/assets/main.css">
+  <link rel="canonical" href="https://ikouchiha47.github.io/millionrps/02-linux-prefork.html">
+  <link rel="alternate" type="application/rss+xml" title="iko&#39;s logs" href="/feed.xml">
+
+  <meta name="google-site-verification" content="lWkg6gIxJgzEKX_5XnhcxCtPE9QknaimFWWos_dTvPM" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fira+Sans:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Inconsolata:wght@200..900&family=Jersey+25&family=Kanit:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Merriweather+Sans:ital,wght@0,300..800;1,300..800&family=Nanum+Gothic+Coding&family=Space+Grotesk:wght@300..700&family=Titillium+Web:ital,wght@0,200;0,300;0,400;0,600;0,700;0,900;1,200;1,300;1,400;1,600;1,700&display=swap" rel="stylesheet">
+
+</head>
+
+
+<body>
+
+  <!-- Navigation -->
+<nav class="navbar navbar-expand-lg navbar-light fixed-top" id="mainNav">
+  <div class="container">
+    <a class="navbar-brand" href="/">iko&#39;s logs</a>
+    <button class="navbar-toggler navbar-toggler-right" type="button" data-toggle="collapse" data-target="#navbarResponsive" aria-controls="navbarResponsive" aria-expanded="false" aria-label="Toggle navigation">
+      Menu
+      <i class="fa fa-bars"></i>
+    </button>
+    <div class="collapse navbar-collapse" id="navbarResponsive">
+      <ul class="navbar-nav ml-auto">
+        <li class="nav-item">
+          <a class="nav-link" href="/">Home</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/about">About</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/posts">Posts</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/contact">Contact</a>
+        </li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+
+  
+<header class="masthead">
+
+  <div class="overlay"></div>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <div class="post-heading">
+          <h1>linux confirms it: SO_REUSEPORT actually works</h1>
+          
+          <h2 class="subheading">c6i.2xlarge, cross-machine, P99 drops from 22ms to 1.4ms</h2>
+          
+          <span class="meta">
+            June 01, 2026
+            
+            &mdash; <span class="journal-entry-status done">DONE</span>
+            
+          </span>
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="container space-grotesk">
+  <div class="row">
+    <div class="col-lg-8 col-md-10 mx-auto">
+
+      <!-- Breadcrumb -->
+      <nav aria-label="breadcrumb" style="margin-bottom: 1.5rem;">
+        <ol class="breadcrumb" style="background: transparent; padding: 0;">
+          <li class="breadcrumb-item"><a href="/millionrps/">Chasing 1 Million RPS</a></li>
+          <li class="breadcrumb-item active" aria-current="page">linux confirms it: SO_REUSEPORT actually works</li>
+        </ol>
+      </nav>
+
+      
+      <div style="margin-bottom: 1.5rem;">
+        
+        <span class="journal-tag">linux</span>
+        
+        <span class="journal-tag">aws</span>
+        
+        <span class="journal-tag">c6i</span>
+        
+        <span class="journal-tag">SO_REUSEPORT</span>
+        
+        <span class="journal-tag">prefork</span>
+        
+        <span class="journal-tag">vegeta</span>
+        
+        <span class="journal-tag">terraform</span>
+        
+      </div>
+      
+
+      <h2 id="setup">setup</h2>
+
+<p>Two <code class="language-plaintext highlighter-rouge">c6i.2xlarge</code> (8 vCPU Intel Ice Lake, 16GB RAM, 12.5 Gbps NIC) in the same subnet (<code class="language-plaintext highlighter-rouge">ap-south-2c</code>). Provisioned via Terraform.</p>
+
+<p>Server kernel tuning applied via <code class="language-plaintext highlighter-rouge">user_data</code> on boot:</p>
+
+<div class="language-bash highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="c"># /etc/sysctl.conf</span>
+net.core.somaxconn<span class="o">=</span>65535
+net.core.netdev_max_backlog<span class="o">=</span>65535
+net.ipv4.tcp_max_syn_backlog<span class="o">=</span>65535
+net.ipv4.ip_local_port_range<span class="o">=</span>1024 65535
+net.ipv4.tcp_tw_reuse<span class="o">=</span>1
+net.ipv4.tcp_fin_timeout<span class="o">=</span>15
+</code></pre></div></div>
+
+<div class="language-bash highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="c"># file descriptor limit</span>
+<span class="nb">echo</span> <span class="s1">'* soft nofile 1048576'</span> <span class="o">&gt;&gt;</span> /etc/security/limits.conf
+<span class="nb">echo</span> <span class="s1">'* hard nofile 1048576'</span> <span class="o">&gt;&gt;</span> /etc/security/limits.conf
+</code></pre></div></div>
+
+<p>Server: fiber v3, <code class="language-plaintext highlighter-rouge">EnablePrefork: true</code> → 8 child workers.</p>
+
+<p>Client tool: vegeta v12.11.1.</p>
+
+<div class="language-bash highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="c"># vegeta targets file (60% /read, 40% /list)</span>
+GET http://SERVER_INTERNAL_IP:8083/read
+GET http://SERVER_INTERNAL_IP:8083/read
+GET http://SERVER_INTERNAL_IP:8083/read
+GET http://SERVER_INTERNAL_IP:8083/read
+GET http://SERVER_INTERNAL_IP:8083/read
+GET http://SERVER_INTERNAL_IP:8083/read
+GET http://SERVER_INTERNAL_IP:8083/list
+GET http://SERVER_INTERNAL_IP:8083/list
+GET http://SERVER_INTERNAL_IP:8083/list
+GET http://SERVER_INTERNAL_IP:8083/list
+
+<span class="c"># attack</span>
+vegeta attack <span class="se">\</span>
+  <span class="nt">-rate</span><span class="o">=</span>100000 <span class="se">\</span>
+  <span class="nt">-duration</span><span class="o">=</span>30s <span class="se">\</span>
+  <span class="nt">-targets</span><span class="o">=</span>targets.txt <span class="se">\</span>
+  <span class="nt">-workers</span><span class="o">=</span>100 <span class="se">\</span>
+  <span class="nt">-max-workers</span><span class="o">=</span>500 <span class="se">\</span>
+  | <span class="nb">tee</span> <span class="o">&gt;(</span>vegeta report <span class="nt">-type</span><span class="o">=</span>json <span class="o">&gt;</span> results.json<span class="o">)</span> <span class="se">\</span>
+  | vegeta report
+</code></pre></div></div>
+
+<p>Note: binary <code class="language-plaintext highlighter-rouge">.bin</code> files written to <code class="language-plaintext highlighter-rouge">/tmp</code> and deleted after each run to avoid filling disk. At 1M RPS target × 30s = 30M result entries = ~3GB per binary.</p>
+
+<h2 id="so_reuseport-confirmed-working">SO_REUSEPORT confirmed working</h2>
+
+<p>On macOS: all 10 workers at 0% CPU, parent handling everything.</p>
+
+<p>On Linux: <strong>all 8 workers showing activity</strong>. Connections distributed by the kernel.</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code># htop during benchmark — Linux (fiber prefork, 8 workers)
+PID    CPU%
+15876  14.1%  ← parent
+15878   0.0%  ← worker (on macOS, all workers look like this)
+...
+
+# Linux: workers are actually active
+PID    CPU%
+worker1  12.5%
+worker2  12.5%
+worker3  18.8%
+...all 8 workers 6-19% CPU
+</code></pre></div></div>
+
+<div class="bench-table-wrap">
+<table class="bench-table">
+  <thead><tr><th>Platform</th><th>Active workers</th><th>P50</th><th>P99</th><th>Avg RPS</th></tr></thead>
+  <tbody>
+    <tr><td>macOS (prefork)</td><td class="bottleneck">1 of 10</td><td>5.5ms</td><td>22ms</td><td>~13k</td></tr>
+    <tr><td class="highlight">Linux (prefork)</td><td class="highlight">8 of 8</td><td class="highlight">0.24ms</td><td class="highlight">1.4ms</td><td>~8.4k</td></tr>
+  </tbody>
+</table>
+</div>
+
+<p>Same payload (48KB avg), different latency. The macOS 22ms P99 was 10 goroutines serialized through one process. Linux has genuine parallelism.</p>
+
+<h2 id="actual-vegeta-results-48kb-mixed-workload-c6ixlarge-client">actual vegeta results (48KB mixed workload, c6i.xlarge client)</h2>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code># from fiber-linux/metrics.csv
+target_rps, actual_rps, p50_ms, p90_ms, p95_ms, p99_ms
+100000,      8271,       0.2422, 0.4285, 0.5961, 1.4332
+200000,      8481,       0.2412, 0.4208, 0.5728, 1.4389
+500000,      8448,       0.2398, 0.4248, 0.5792, 1.4274
+1000000,     8350,       0.2416, 0.4202, 0.5696, 1.3683
+1500000,     8257,       0.2419, 0.4274, 0.5893, 1.4615
+</code></pre></div></div>
+
+<p>Flat at ~8.4k RPS regardless of target (100k through 1.5M). The server never saturates — the ceiling is the <strong>client NIC</strong>:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>8,400 RPS × 48KB avg response = 403 MB/s = 3.2 Gbps
+c6i.xlarge NIC capacity: 4.7 Gbps
+→ 68% of client NIC saturated
+</code></pre></div></div>
+
+<h2 id="read-only--removing-the-bandwidth-bottleneck">/read only — removing the bandwidth bottleneck</h2>
+
+<p>Switching to <code class="language-plaintext highlighter-rouge">/read</code> only (~4KB response, single product):</p>
+
+<div class="language-bash highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="nb">echo</span> <span class="s2">"GET http://SERVER_INTERNAL_IP:8083/read"</span> | <span class="se">\</span>
+  vegeta attack <span class="nt">-rate</span><span class="o">=</span>500000 <span class="nt">-duration</span><span class="o">=</span>30s <span class="nt">-workers</span><span class="o">=</span>500 | <span class="se">\</span>
+  vegeta report
+</code></pre></div></div>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>Requests/sec: 49,092
+Mean response: 4,522 bytes
+P50: 0.25ms   P99: 3.6ms
+Throughput: ~213 MB/s
+</code></pre></div></div>
+
+<p>3.7× more RPS. Server CPU avg: <strong>3% across all 8 cores</strong>. The server has huge headroom.</p>
+
+<p>The c6i.2xlarge (second run, both machines upgraded) with 48KB:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code># from fiber-prefork/metrics.csv (c6i.2xlarge client)
+actual_rps: 10,982 - 14,945 (varies by target)
+p50_ms: 4.9 - 8.6
+p99_ms: 20 - 23ms
+</code></pre></div></div>
+
+<p>Higher than c6i.xlarge client because 12.5 Gbps &gt; 4.7 Gbps NIC. Still client-bound.</p>
+
+<div class="journal-callout finding">
+  <strong>Finding</strong>
+  At 49k RPS on /read, server CPU is 3% avg. The rate-controlled vegeta benchmark measures the client's bandwidth ceiling, not the server's compute ceiling. Cross-machine benchmarks need the client to be at least as fast as the server you're testing.
+</div>
+
+<h2 id="what-we-learned-about-the-benchmark-tool">what we learned about the benchmark tool</h2>
+
+<p>vegeta sends one request per worker slot and waits for the response — classic request/response. This is rate-controlled and measures latency distributions accurately.</p>
+
+<p>There’s a different mode of operation: <strong>HTTP pipelining</strong> — sending N requests on the same TCP connection before waiting for responses. With <code class="language-plaintext highlighter-rouge">autocannon --pipelining 100</code> and 1000 connections, you have <strong>100,000 requests in flight simultaneously</strong>. That’s a throughput test — the latency numbers are bulk averages across the pipeline, not individual request latency.</p>
+
+<p>These are different measurements. vegeta at 100k target = 100k requests per second with clean latency histograms. autocannon at pipelining 100 = maximum throughput with the server never idle.</p>
+
+<h2 id="what-needs-to-be-seen-next">what needs to be seen next</h2>
+
+<p>The server is barely loaded. To find its actual ceiling:</p>
+
+<ol>
+  <li>A client that can generate more requests than the server can handle — currently the client saturates first</li>
+  <li>autocannon with pipelining to push raw throughput</li>
+  <li>A bigger server (more cores) — c8i.32xlarge with 128 vCPU and 50 Gbps NIC</li>
+</ol>
+
+
+      <hr>
+
+      <!-- Prev / Next -->
+      
+      
+      
+
+      <div class="clearfix" style="margin-top: 2rem;">
+        
+          
+          
+
+          
+            
+            <a class="btn btn-primary float-left" href="/millionrps/01-baseline-macos.html">&larr; baseline: mac mini, localhost, three servers</a>
+          
+
+          
+            
+            <a class="btn btn-primary float-right" href="/millionrps/03-c8i-rps-rfs.html">128 cores, NIC queues, RPS and RFS &rarr;</a>
+          
+        
+      </div>
+
+      <div style="text-align: center; margin-top: 1rem;">
+        <a href="/millionrps/">&uarr; Back to Journal</a>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+
+  <!-- Footer -->
+
+<hr>
+
+<footer>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <ul class="list-inline text-center">
+          
+          <li class="list-inline-item">
+            <a href="mailto:amitava.dev@proton.me" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="far fa-envelope fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          
+          
+          <li class="list-inline-item">
+            <a href="https://www.linkedin.com/in/amitavaag" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-linkedin fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          <li class="list-inline-item">
+            <a href="https://github.com/ikouchiha47" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-github fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+        </ul>
+
+        <p class="copyright text-muted">
+          Build with: 
+          <a 
+            href="https://github.com/StartBootstrap/startbootstrap-clean-blog-jekyll"
+            class="text-gray"
+            target="_blank">startbootstrap-clean-blog-jekyll</a></p>
+      </div>
+    </div>
+  </div>
+</footer>
+
+
+  <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="/assets/vendor/blog/js/scripts.js"></script>
+
+<script src="/assets/scripts.js"></script>
+
+
+
+
+
+  <script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+
+    document.querySelectorAll('pre > code.language-mermaid').forEach((codeBlock) => {
+      codeBlock.parentElement.outerHTML = `<pre class="mermaid">${codeBlock.textContent}</pre>`;
+    });
+
+
+    mermaid.initialize({ startOnLoad: true, theme: 'forest' });
+</script>
+
+
+  
+
+</body>
+
+</html>

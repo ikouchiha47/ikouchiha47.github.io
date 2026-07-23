@@ -1,0 +1,382 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+  <title>
+    RUNE Epilogue: Read the Datasheet - iko&#39;s logs
+    
+  </title>
+
+  <meta name="description" content="On reading datasheets, analysing real data before writing code, and why the best engineers I know do exactly this while interview prep teaches the opposite.">
+  <meta property="og:description" content="On reading datasheets, analysing real data before writing code, and why the best engineers I know do exactly this while interview prep teaches the opposite.">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="RUNE Epilogue: Read the Datasheet">
+  <meta property="og:url" content="https://ikouchiha47.github.io/rune/09-epilogue.html">
+
+  
+
+  <link href='https://fonts.googleapis.com/css?family=Lora:400,700,400italic,700italic' rel='stylesheet' type='text/css'>
+  <link href='https://fonts.googleapis.com/css?family=Open+Sans:300italic,400italic,600italic,700italic,800italic,400,300,600,700,800' rel='stylesheet' type='text/css'>
+
+  <!-- <script src="https://use.fontawesome.com/releases/v5.15.3/js/all.js" crossorigin="anonymous"></script> -->
+  <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.15.4/css/all.css" integrity="sha384-DyZ88mC6Up2uqS4h/KRgHuoeGwBcD4Ng9SiP4dIRy0EXTlnuz47vAwmeGwVChigm" crossorigin="anonymous"/>
+
+  <link rel="stylesheet" href="/assets/main.css">
+  <link rel="canonical" href="https://ikouchiha47.github.io/rune/09-epilogue.html">
+  <link rel="alternate" type="application/rss+xml" title="iko&#39;s logs" href="/feed.xml">
+
+  <meta name="google-site-verification" content="lWkg6gIxJgzEKX_5XnhcxCtPE9QknaimFWWos_dTvPM" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fira+Sans:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Inconsolata:wght@200..900&family=Jersey+25&family=Kanit:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Merriweather+Sans:ital,wght@0,300..800;1,300..800&family=Nanum+Gothic+Coding&family=Space+Grotesk:wght@300..700&family=Titillium+Web:ital,wght@0,200;0,300;0,400;0,600;0,700;0,900;1,200;1,300;1,400;1,600;1,700&display=swap" rel="stylesheet">
+
+</head>
+
+
+<body>
+
+  <!-- Navigation -->
+<nav class="navbar navbar-expand-lg navbar-light fixed-top" id="mainNav">
+  <div class="container">
+    <a class="navbar-brand" href="/">iko&#39;s logs</a>
+    <button class="navbar-toggler navbar-toggler-right" type="button" data-toggle="collapse" data-target="#navbarResponsive" aria-controls="navbarResponsive" aria-expanded="false" aria-label="Toggle navigation">
+      Menu
+      <i class="fa fa-bars"></i>
+    </button>
+    <div class="collapse navbar-collapse" id="navbarResponsive">
+      <ul class="navbar-nav ml-auto">
+        <li class="nav-item">
+          <a class="nav-link" href="/">Home</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/about">About</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/posts">Posts</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/contact">Contact</a>
+        </li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+
+  <!-- Page Header -->
+
+<header class="masthead" style="background: #0a0a0a">
+
+  <div class="overlay"></div>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <div class="post-heading">
+          <h1>RUNE Epilogue: Read the Datasheet</h1>
+          
+          <h2 class="subheading">How every fix in this project came from reading documentation, not throwing components</h2>
+          
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="container space-grotesk">
+  <div class="row">
+    <div class="col-lg-8 col-md-10 mx-auto">
+
+      <!-- Breadcrumb -->
+      <nav aria-label="breadcrumb" style="margin-bottom: 1.5rem;">
+        <ol class="breadcrumb" style="background: transparent; padding: 0;">
+          
+            <li class="breadcrumb-item"><a href="/rune/">RUNE</a></li>
+          
+          
+          <li class="breadcrumb-item active" aria-current="page">RUNE Epilogue: Read the Datasheet</li>
+        </ol>
+      </nav>
+
+      <p><img src="/assets/rune/img/IMG_20260429_174628015.jpg" alt="The device that got debugged, not replaced" style="max-width:100%;height:auto;display:block;margin:0 auto 1.5rem;" /></p>
+
+<p>Every meaningful fix in this project came from reading something first.</p>
+
+<p>Not Googling “BNO085 not working” and hoping someone had the same problem. Reading the SH-2 Reference Manual. Reading the SparkFun library source. Reading the LSM6DS3 zero-rate offset specification. Reading the datasheet section on MASR. Every time something broke in a way that wasn’t immediately obvious, the answer was in a document that existed before the problem did.</p>
+
+<p>This is not a remarkable approach. It is, somehow, increasingly uncommon.</p>
+
+<hr />
+
+<h2 id="significant-motion--what-it-actually-is">Significant Motion — what it actually is</h2>
+
+<p>The BNO085 ships with a set of sensor reports. You don’t get just raw IMU data — you get the output of a sensor hub running Bosch SH-2 firmware, and that firmware has opinions about what you probably want.</p>
+
+<p>From the <a href="https://www.ceva-ip.com/wp-content/uploads/2019/10/SH-2-Reference-Manual.pdf">SH-2 Reference Manual (CEVA/Bosch)</a>:</p>
+
+<blockquote>
+  <p><strong>Significant Motion</strong> — Reports when the device has experienced significant motion since the last time it was stationary. Designed for use as a wake source. Once triggered, it does not repeat until the device returns to rest.</p>
+</blockquote>
+
+<p>That last sentence matters. It’s a one-shot detector. It fires once, then arms again when the device is still. It does not continuously report motion. If you treat it like a continuous sensor and poll it looking for ongoing movement, you will always see silence.</p>
+
+<p>The SparkFun library exposes this as <code class="language-plaintext highlighter-rouge">SH2_SIGNIFICANT_MOTION</code> but wraps it via <code class="language-plaintext highlighter-rouge">imu.enableReport()</code> which hardcodes <code class="language-plaintext highlighter-rouge">wakeupEnabled=false</code>. That field — buried in <code class="language-plaintext highlighter-rouge">sh2_SensorConfig_t</code> — is what tells the BNO085 to assert the INT pin on a wake event while the hub is sleeping. Without it, the detector runs internally but never surfaces to you. The fix required going past the library wrapper to the raw SH-2 config:</p>
+
+<div class="language-cpp highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="n">sh2_SensorConfig_t</span> <span class="n">cfg</span> <span class="o">=</span> <span class="p">{};</span>
+<span class="n">cfg</span><span class="p">.</span><span class="n">reportInterval_us</span> <span class="o">=</span> <span class="n">SHAKE_WAKE_INTERVAL_US</span><span class="p">;</span>  <span class="c1">// 0.5 Hz or 5 Hz</span>
+<span class="n">cfg</span><span class="p">.</span><span class="n">wakeupEnabled</span> <span class="o">=</span> <span class="nb">true</span><span class="p">;</span>                         <span class="c1">// THIS is what makes it a wake source</span>
+<span class="kt">int</span> <span class="n">status</span> <span class="o">=</span> <span class="n">sh2_setSensorConfig</span><span class="p">(</span><span class="n">SH2_SHAKE_DETECTOR</span><span class="p">,</span> <span class="o">&amp;</span><span class="n">cfg</span><span class="p">);</span>
+</code></pre></div></div>
+
+<p>This is not in the Arduino example code. It is on page 47 of the SH-2 reference manual.</p>
+
+<hr />
+
+<h2 id="what-reports-the-bno085-actually-provides">What reports the BNO085 actually provides</h2>
+
+<p>The BNO085 is not one sensor. It is a sensor hub that runs multiple virtual sensors simultaneously, each with its own report rate and behaviour. From the <a href="https://www.ceva-ip.com/wp-content/uploads/2019/10/BNO080_085-Datasheet.pdf">BNO085 datasheet</a> and SH-2 reference:</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>Report ID</th>
+      <th>What it gives you</th>
+      <th>Used in RUNE</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">ROTATION_VECTOR</code></td>
+      <td>Fused quaternion (accel+gyro+mag, 9DOF) — stable yaw</td>
+      <td>Gesture baseline, calibration</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">GYROSCOPE_CALIBRATED</code></td>
+      <td>Bias-corrected angular velocity (rad/s)</td>
+      <td>Gesture FSM input</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">LINEAR_ACCELERATION</code></td>
+      <td>Acceleration with gravity removed</td>
+      <td>Shake detection</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">STABILITY_CLASSIFIER</code></td>
+      <td>On-table / stationary / stable / in-motion</td>
+      <td>Calibration window, sleep trigger</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">SHAKE_DETECTOR</code></td>
+      <td>One-shot shake event, configurable as wake source</td>
+      <td>Sleep/wake</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">TAP_DETECTOR</code></td>
+      <td>Single and double tap events</td>
+      <td><code class="language-plaintext highlighter-rouge">tap</code> gesture</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">STEP_COUNTER</code></td>
+      <td>Cumulative step count</td>
+      <td>Unused (wearable experiment)</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>Each of these has a <code class="language-plaintext highlighter-rouge">reportInterval_us</code> — how often the hub sends updates. Setting it to 0 stops the report. This is how you “disable” a sensor in the SH-2 protocol: <code class="language-plaintext highlighter-rouge">imu.enableReport(SENSOR_REPORTID_X, 0)</code>. There is no separate disable call. This is also in the SH-2 reference manual, not the library README.</p>
+
+<p>The Stability Classifier is what made calibration possible. It outputs:</p>
+<ul>
+  <li><code class="language-plaintext highlighter-rouge">1</code> — on a table (flat, high-confidence rest)</li>
+  <li><code class="language-plaintext highlighter-rouge">2</code> — stationary (some motion, possibly handheld)</li>
+  <li><code class="language-plaintext highlighter-rouge">3</code> — <strong>stable</strong> (sensor confident in current orientation — ideal for calibration)</li>
+  <li><code class="language-plaintext highlighter-rouge">4+</code> — in motion</li>
+</ul>
+
+<p>The calibration fix in <a href="/rune/05-calibration">Part 5</a> collected samples preferentially when <code class="language-plaintext highlighter-rouge">stab=3</code>. That classification comes from this report. It’s not something we computed — the BNO085 computes it internally, continuously, as part of its fusion pipeline. We just had to read the manual to know it existed.</p>
+
+<hr />
+
+<h2 id="the-seeed-studio-and-sparkfun-example-code">The Seeed Studio and SparkFun example code</h2>
+
+<p>Both vendors ship example sketches. They are useful for verifying that the hardware is connected and the library initialises. They are not useful for understanding what the hardware can actually do.</p>
+
+<p>The <a href="https://github.com/sparkfun/SparkFun_BNO08x_Arduino_Library">SparkFun BNO08x Arduino library</a> ships examples for rotation vector, accelerometer, gyroscope. The sleep/wake example is incomplete — it demonstrates entering sleep but doesn’t show the correct wake sequence. The Significant Motion example doesn’t set <code class="language-plaintext highlighter-rouge">wakeupEnabled</code>. These are not bugs in the library; they are demos, not production code.</p>
+
+<p>The <a href="https://wiki.seeedstudio.com/XIAO_BLE/">Seeed Studio XIAO nRF52840 docs</a> cover the board well. They do not cover what happens when the LSM6DS3 onboard IMU has ±10°/s zero-rate offset and you try to use it for yaw detection. That information is in the <a href="https://www.st.com/resource/en/datasheet/lsm6ds3.pdf">LSM6DS3 datasheet (ST)</a>, Table 3, “Zero-rate level” row: <code class="language-plaintext highlighter-rouge">±10 mdps/digit</code> at 1kHz ODR, meaning ~10°/s worst case. Four seconds of gyro integration at that rate = 40° of phantom yaw. The gesture threshold was 15°. The math explains the serial log.</p>
+
+<p>Every refactor in this project was preceded by reading something. The gyro FSM rewrite came after reading the SH-2 gyroscope report documentation and understanding that the bias-corrected output was already temperature-compensated — which meant the jerk gate threshold could be set tighter than it could for a raw gyro. The calibration window fix came after reading the MASR section of the BNO085 datasheet and understanding that “still” = throttled sample rate. The sleep fix came after reading the SH-2 transport specification section on hub sleep states.</p>
+
+<p>Reading the datasheet before writing the fix is not a virtue. It is just the fastest path.</p>
+
+<hr />
+
+<h2 id="on-data-before-constants">On data before constants</h2>
+
+<p>The gesture thresholds in this firmware are not made up. Every tunable constant — <code class="language-plaintext highlighter-rouge">JERK_ONSET_THRESHOLD = 8.0 rad/s²</code>, <code class="language-plaintext highlighter-rouge">INTEGRAL_THRESHOLD = 0.25 rad</code>, <code class="language-plaintext highlighter-rouge">ZUPT_GYRO_THRESHOLD = 0.03 rad/s</code> — was derived from actual session recordings.</p>
+
+<p>The <code class="language-plaintext highlighter-rouge">tools/</code> directory has <code class="language-plaintext highlighter-rouge">analyze_firmware_log.py</code>. The firmware was run in raw mode, session JSONL files were recorded, and the gyro signal was plotted for clean pronation sweeps vs idle drift. The 8 rad/s² threshold sits cleanly above the noise floor and below the onset spike of any deliberate gesture. The 0.03 rad/s ZUPT threshold was measured as the maximum residual gyro reading during confirmed stillness, with bias correction applied.</p>
+
+<p>You cannot pick those numbers from first principles. You measure them from your specific sensor on your specific wrist in your specific orientation. The CLAUDE.md says it directly:</p>
+
+<blockquote>
+  <p>“If a constant or threshold is not validated against real-world data, it is not production ready. Guard it, disable it by default, document why it’s unvalidated.”</p>
+</blockquote>
+
+<p>This is the only honest approach to sensor thresholds. Everything else is superstition in code.</p>
+
+<hr />
+
+<h2 id="on-system-design-interviews">On system design interviews</h2>
+
+<p>There is a genre of engineering interview where you are asked to design Twitter, or Uber, or a URL shortener, and the correct answer involves drawing boxes — load balancer, application server, Redis, message queue, sharded database — in about 45 minutes.</p>
+
+<p>I have given these interviews. I have passed these interviews. I have watched people who are very good at this interview style struggle when a real system behaves unexpectedly, because the real system doesn’t care about your box diagram. It has a race condition in a third-party library that deadlocks sensor enables. It has a zero-rate offset that accumulates faster than your rebase timer. It has a firmware that silently drops events when you call it from the wrong thread context.</p>
+
+<p>The skills that make those interviews tractable — pattern matching to known architectures, fluency with distributed systems vocabulary, comfort with whiteboard hand-waving — are genuinely useful skills. They are not the same skills as reading an error and knowing where to look. They are not the same as pulling up a datasheet and finding the relevant register. They are not the same as writing a test that fails before you write the fix.</p>
+
+<p>I am not claiming this project is hard. It is a wrist-worn remote control for a television. The chips are commodity hardware. The protocols are documented. The library source is on GitHub.</p>
+
+<p>What I am saying is that most of the time I have spent debugging was spent reading, and most of the time I have saved was saved by reading before coding. That pattern has been more consistently useful across more contexts — embedded firmware, distributed systems, database internals, compiler toolchains — than any amount of architectural vocabulary.</p>
+
+<p>The boxes are fine. Know what’s inside them.</p>
+
+<hr />
+
+<h2 id="what-was-read-for-this-project">What was read for this project</h2>
+
+<p>In rough chronological order:</p>
+
+<ul>
+  <li><a href="https://wiki.seeedstudio.com/XIAO_BLE/">Seeed Studio XIAO nRF52840 Sense wiki</a> — board pinout, BLE setup, flash procedure</li>
+  <li>LSM6DS3TR-C datasheet (STMicroelectronics) — search “LSM6DS3TR-C” on st.com, Table 3, zero-rate level ±10 mdps/digit. This is what confirmed 6DOF yaw was a dead end.</li>
+  <li><a href="https://www.ceva-ip.com/wp-content/uploads/2019/10/BNO080_085-Datasheet.pdf">BNO085 datasheet (CEVA/Bosch)</a> — report IDs, MASR behaviour, power modes, tap detector configuration</li>
+  <li><a href="https://www.ceva-ip.com/wp-content/uploads/2019/10/SH-2-Reference-Manual.pdf">SH-2 Reference Manual</a> — full sensor report list, <code class="language-plaintext highlighter-rouge">sh2_SensorConfig_t</code> fields, hub sleep/wake architecture, transport behaviour during sleep. This is the document that fixed the wakeup bug.</li>
+  <li><a href="https://github.com/sparkfun/SparkFun_BNO08x_Arduino_Library">SparkFun BNO08x library source</a> — specifically <code class="language-plaintext highlighter-rouge">hal_wait_for_int()</code> in the I2C HAL. This is where the INT pin race condition was found.</li>
+  <li><a href="https://github.com/tronikos/androidtvremote2">androidtvremote2 Python library</a> — Polo pairing protocol, protobuf message format, port assignments. This is the source the Kotlin implementation follows.</li>
+  <li><a href="https://infocenter.nordicsemi.com/pdf/nRF52840_PS_v1.1.pdf">Nordic nRF52840 Product Specification</a> — deep sleep current (~2µA), WFE instruction, interrupt wakeup behaviour</li>
+  <li><a href="https://www.audiolabs-erlangen.de/resources/MIR/FMP/C3/C3S2_DTWbasic.html">Audiolabs DTW tutorial</a>, <a href="https://3dvar.com/Benbasat2002An.pdf">Benbasat 2002</a>, <a href="http://depts.washington.edu/acelab/proj/dollar/index.html">$1 recognizer</a> — gesture recognition research for RUNE-III</li>
+</ul>
+
+<p>Every fix has a corresponding document. The document existed before the bug. That is always true. The question is whether you read it.</p>
+
+
+      <hr>
+
+      <!-- Prev / Next / Up navigation -->
+      
+      
+      
+
+      <div class="clearfix" style="margin-top: 2rem;">
+        
+          
+          
+
+          
+            
+            <a class="btn btn-primary float-left" href="/rune/08-gesture-symbols.html" title="Research on RUNE-III: Recognising Symbols in the Air">&larr; Previous</a>
+          
+
+          
+        
+      </div>
+
+      
+      <div style="text-align: center; margin-top: 1rem;">
+        <a href="/rune/">&uarr; Back to Table of Contents</a>
+      </div>
+      
+
+    </div>
+  </div>
+</div>
+
+
+  <!-- Footer -->
+
+<hr>
+
+<footer>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <ul class="list-inline text-center">
+          
+          <li class="list-inline-item">
+            <a href="mailto:amitava.dev@proton.me" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="far fa-envelope fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          
+          
+          <li class="list-inline-item">
+            <a href="https://www.linkedin.com/in/amitavaag" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-linkedin fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          <li class="list-inline-item">
+            <a href="https://github.com/ikouchiha47" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-github fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+        </ul>
+
+        <p class="copyright text-muted">
+          Build with: 
+          <a 
+            href="https://github.com/StartBootstrap/startbootstrap-clean-blog-jekyll"
+            class="text-gray"
+            target="_blank">startbootstrap-clean-blog-jekyll</a></p>
+      </div>
+    </div>
+  </div>
+</footer>
+
+
+  <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="/assets/vendor/blog/js/scripts.js"></script>
+
+<script src="/assets/scripts.js"></script>
+
+
+
+
+
+  <script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+
+    document.querySelectorAll('pre > code.language-mermaid').forEach((codeBlock) => {
+      codeBlock.parentElement.outerHTML = `<pre class="mermaid">${codeBlock.textContent}</pre>`;
+    });
+
+
+    mermaid.initialize({ startOnLoad: true, theme: 'forest' });
+</script>
+
+
+  
+
+</body>
+
+</html>

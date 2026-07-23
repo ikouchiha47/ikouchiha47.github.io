@@ -1,0 +1,602 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+  <title>
+    Dynamic Shared Areas - iko&#39;s logs
+    
+  </title>
+
+  <meta name="description" content="">
+  <meta property="og:description" content="">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Dynamic Shared Areas">
+  <meta property="og:url" content="https://ikouchiha47.github.io/postgresql/10-memory/dsa.html">
+
+  
+
+  <link href='https://fonts.googleapis.com/css?family=Lora:400,700,400italic,700italic' rel='stylesheet' type='text/css'>
+  <link href='https://fonts.googleapis.com/css?family=Open+Sans:300italic,400italic,600italic,700italic,800italic,400,300,600,700,800' rel='stylesheet' type='text/css'>
+
+  <!-- <script src="https://use.fontawesome.com/releases/v5.15.3/js/all.js" crossorigin="anonymous"></script> -->
+  <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.15.4/css/all.css" integrity="sha384-DyZ88mC6Up2uqS4h/KRgHuoeGwBcD4Ng9SiP4dIRy0EXTlnuz47vAwmeGwVChigm" crossorigin="anonymous"/>
+
+  <link rel="stylesheet" href="/assets/main.css">
+  <link rel="canonical" href="https://ikouchiha47.github.io/postgresql/10-memory/dsa.html">
+  <link rel="alternate" type="application/rss+xml" title="iko&#39;s logs" href="/feed.xml">
+
+  <meta name="google-site-verification" content="lWkg6gIxJgzEKX_5XnhcxCtPE9QknaimFWWos_dTvPM" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fira+Sans:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Inconsolata:wght@200..900&family=Jersey+25&family=Kanit:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Merriweather+Sans:ital,wght@0,300..800;1,300..800&family=Nanum+Gothic+Coding&family=Space+Grotesk:wght@300..700&family=Titillium+Web:ital,wght@0,200;0,300;0,400;0,600;0,700;0,900;1,200;1,300;1,400;1,600;1,700&display=swap" rel="stylesheet">
+
+</head>
+
+
+<body>
+
+  <!-- Navigation -->
+<nav class="navbar navbar-expand-lg navbar-light fixed-top" id="mainNav">
+  <div class="container">
+    <a class="navbar-brand" href="/">iko&#39;s logs</a>
+    <button class="navbar-toggler navbar-toggler-right" type="button" data-toggle="collapse" data-target="#navbarResponsive" aria-controls="navbarResponsive" aria-expanded="false" aria-label="Toggle navigation">
+      Menu
+      <i class="fa fa-bars"></i>
+    </button>
+    <div class="collapse navbar-collapse" id="navbarResponsive">
+      <ul class="navbar-nav ml-auto">
+        <li class="nav-item">
+          <a class="nav-link" href="/">Home</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/about">About</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/posts">Posts</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/contact">Contact</a>
+        </li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+
+  <!-- Page Header -->
+
+<header class="masthead">
+
+  <div class="overlay"></div>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <div class="post-heading">
+          <h1>Dynamic Shared Areas</h1>
+          
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="container space-grotesk">
+  <div class="row">
+    <div class="col-lg-8 col-md-10 mx-auto">
+
+      <!-- Breadcrumb -->
+      <nav aria-label="breadcrumb" style="margin-bottom: 1.5rem;">
+        <ol class="breadcrumb" style="background: transparent; padding: 0;">
+          
+            <li class="breadcrumb-item"><a href="/postgresql-internals/">PostgreSQL Internals Deep Dive</a></li>
+          
+          
+            
+              <li class="breadcrumb-item"><a href="/postgresql/10-memory/">Memory Management</a></li>
+            
+          
+          <li class="breadcrumb-item active" aria-current="page">Dynamic Shared Areas</li>
+        </ol>
+      </nav>
+
+      <h1 id="dynamic-shared-areas-dsa">Dynamic Shared Areas (DSA)</h1>
+
+<blockquote>
+  <p><em>DSA gives parallel query workers a shared heap allocator built on top of dynamically attached DSM segments, using fat pointers that encode both a segment index and an offset so that allocations can be shared across processes with different virtual address mappings.</em></p>
+</blockquote>
+
+<h2 id="summary">Summary</h2>
+
+<p>Process-local memory contexts cannot be shared between parallel workers because each
+backend has its own address space. The <strong>Dynamic Shared Area (DSA)</strong> system solves this
+by providing <code class="language-plaintext highlighter-rouge">dsa_allocate()</code> and <code class="language-plaintext highlighter-rouge">dsa_free()</code> — a malloc-like interface that operates
+on shared memory backed by one or more DSM (Dynamic Shared Memory) segments.</p>
+
+<p>DSA returns <code class="language-plaintext highlighter-rouge">dsa_pointer</code> values rather than raw pointers. A <code class="language-plaintext highlighter-rouge">dsa_pointer</code> encodes a
+segment index and an offset, making it valid across all backends attached to the same
+area. To dereference a <code class="language-plaintext highlighter-rouge">dsa_pointer</code>, a backend calls <code class="language-plaintext highlighter-rouge">dsa_get_address()</code>, which maps
+the segment into its local address space if needed and returns a local pointer.</p>
+
+<p>Internally, DSA uses a two-tier allocation scheme: large requests (above 8 KB) get
+consecutive pages from a free page manager; small requests are served from <strong>superblocks</strong>
+that are divided into fixed-size objects managed with per-size-class <strong>span</strong> freelists.
+This design is similar to classic slab allocators such as tcmalloc.</p>
+
+<h2 id="overview">Overview</h2>
+
+<h3 id="why-not-just-use-shared-buffers">Why Not Just Use Shared Buffers?</h3>
+
+<p>PostgreSQL’s shared buffer pool is a fixed-size, pre-allocated array of 8 KB pages
+designed for caching relation data. It cannot dynamically grow, and its granularity is
+wrong for arbitrary-sized allocations. Parallel hash joins need to share hash tables,
+tuple stores, and sort runs — structures that vary in size and don’t map neatly onto
+fixed-size buffer pages.</p>
+
+<p>DSM segments provide dynamically allocated shared memory, but they are coarse-grained:
+each segment is a single contiguous region. DSA adds fine-grained allocation within
+and across multiple DSM segments, automatically creating new segments as needed and
+reclaiming empty ones.</p>
+
+<h3 id="the-dsa_pointer">The dsa_pointer</h3>
+
+<p>On a 64-bit system, a <code class="language-plaintext highlighter-rouge">dsa_pointer</code> is a <code class="language-plaintext highlighter-rouge">uint64</code> with this layout:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code> 63          40  39                            0
++-------------+-------------------------------+
+| segment idx |          offset               |
+|  (24 bits)  |         (40 bits)             |
++-------------+-------------------------------+
+</code></pre></div></div>
+
+<ul>
+  <li><strong>DSA_OFFSET_WIDTH = 40</strong>: allows up to 1 TB per segment.</li>
+  <li><strong>Remaining bits</strong>: allow up to 1024 segments (capped by <code class="language-plaintext highlighter-rouge">DSA_MAX_SEGMENTS</code>).</li>
+  <li><strong>InvalidDsaPointer</strong> is defined as 0.</li>
+</ul>
+
+<p>On 32-bit systems, <code class="language-plaintext highlighter-rouge">dsa_pointer</code> is a <code class="language-plaintext highlighter-rouge">uint32</code> with 27 offset bits (128 MB per segment,
+32 segments max).</p>
+
+<p>This encoding means a <code class="language-plaintext highlighter-rouge">dsa_pointer</code> is meaningful only within the context of a specific
+<code class="language-plaintext highlighter-rouge">dsa_area</code>. Two different areas could use the same numeric pointer to refer to
+completely different memory.</p>
+
+<h2 id="key-source-files">Key Source Files</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>File</th>
+      <th>Role</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/utils/dsa.h</code></td>
+      <td>Public API: <code class="language-plaintext highlighter-rouge">dsa_pointer</code>, <code class="language-plaintext highlighter-rouge">dsa_allocate</code>, <code class="language-plaintext highlighter-rouge">dsa_free</code>, <code class="language-plaintext highlighter-rouge">dsa_get_address</code></td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/utils/mmgr/dsa.c</code></td>
+      <td>Full implementation: area control, segments, spans, pools, size classes</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/utils/freepage.h</code></td>
+      <td>Free page manager used within each DSM segment</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/utils/mmgr/freepage.c</code></td>
+      <td>Free page manager implementation (buddy-system style)</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/storage/dsm.h</code></td>
+      <td>Dynamic shared memory segment API (underlying transport)</td>
+    </tr>
+  </tbody>
+</table>
+
+<h2 id="how-it-works">How It Works</h2>
+
+<h3 id="creating-and-attaching">Creating and Attaching</h3>
+
+<p>A leader backend creates a DSA area:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="n">dsa_area</span> <span class="o">*</span><span class="n">area</span> <span class="o">=</span> <span class="n">dsa_create</span><span class="p">(</span><span class="n">lwlock_tranche_id</span><span class="p">);</span>
+<span class="n">dsa_handle</span> <span class="n">handle</span> <span class="o">=</span> <span class="n">dsa_get_handle</span><span class="p">(</span><span class="n">area</span><span class="p">);</span>
+<span class="cm">/* Share 'handle' with workers via shared memory or DSM */</span>
+</code></pre></div></div>
+
+<p>Workers attach using the handle:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="n">dsa_area</span> <span class="o">*</span><span class="n">area</span> <span class="o">=</span> <span class="n">dsa_attach</span><span class="p">(</span><span class="n">handle</span><span class="p">);</span>
+<span class="n">dsa_pin_mapping</span><span class="p">(</span><span class="n">area</span><span class="p">);</span>  <span class="cm">/* keep segments mapped for session lifetime */</span>
+</code></pre></div></div>
+
+<p>The <code class="language-plaintext highlighter-rouge">dsa_create</code> macro calls <code class="language-plaintext highlighter-rouge">dsa_create_ext</code> with default initial and maximum segment
+sizes (1 MB initial, up to 1 TB max). The first DSM segment is created immediately and
+holds the <code class="language-plaintext highlighter-rouge">dsa_area_control</code> structure at its beginning.</p>
+
+<h3 id="segment-management">Segment Management</h3>
+
+<p>DSA manages an array of up to <code class="language-plaintext highlighter-rouge">DSA_MAX_SEGMENTS</code> (1024) DSM segments. Segments grow
+geometrically: after creating <code class="language-plaintext highlighter-rouge">DSA_NUM_SEGMENTS_AT_EACH_SIZE</code> (2) segments of a given
+size, the next segment is twice as large, up to <code class="language-plaintext highlighter-rouge">max_segment_size</code>.</p>
+
+<p>Each segment is divided into 4 KB pages. A <code class="language-plaintext highlighter-rouge">FreePageManager</code> within each segment
+tracks free page runs using a buddy-system algorithm. Segments are binned by their
+largest contiguous free run so that allocation can quickly find a segment with enough
+space.</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>dsa_area_control (in segment 0)
++-- segment_handles[0..1023]     (DSM handles for each segment)
++-- segment_bins[0..15]          (lists of segments by free run size)
++-- pools[0..35]                 (one pool per size class)
++-- lock                         (LWLock for segment-level operations)
+</code></pre></div></div>
+
+<pre><code class="language-mermaid">graph LR
+    subgraph "DSA Area (Shared Across Workers)"
+        Ctrl["dsa_area_control\n(in Segment 0)"]
+        Seg0["DSM Segment 0\n(pages + FreePageMgr)"]
+        Seg1["DSM Segment 1\n(pages + FreePageMgr)"]
+        Seg2["DSM Segment 2\n(pages + FreePageMgr)"]
+        Ctrl --&gt; Seg0
+        Ctrl --&gt; Seg1
+        Ctrl --&gt; Seg2
+    end
+
+    W0["Worker 0\ndsa_area (local)\nsegment_maps[]"] -- "dsa_get_address()" --&gt; Seg0
+    W0 -- "dsa_get_address()" --&gt; Seg1
+    W1["Worker 1\ndsa_area (local)\nsegment_maps[]"] -- "dsa_get_address()" --&gt; Seg0
+    W1 -- "dsa_get_address()" --&gt; Seg2
+    Leader["Leader\ndsa_area (local)\nsegment_maps[]"] -- "dsa_get_address()" --&gt; Seg0
+    Leader -- "dsa_get_address()" --&gt; Seg1
+    Leader -- "dsa_get_address()" --&gt; Seg2
+</code></pre>
+
+<h3 id="small-object-allocation">Small Object Allocation</h3>
+
+<p>Small allocations (up to 8 KB) use size-class pools. There are 36 size classes:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">static</span> <span class="k">const</span> <span class="n">uint16</span> <span class="n">dsa_size_classes</span><span class="p">[]</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="k">sizeof</span><span class="p">(</span><span class="n">dsa_area_span</span><span class="p">),</span> <span class="mi">0</span><span class="p">,</span>   <span class="cm">/* special: span-of-spans, large spans */</span>
+    <span class="mi">8</span><span class="p">,</span> <span class="mi">16</span><span class="p">,</span> <span class="mi">24</span><span class="p">,</span> <span class="mi">32</span><span class="p">,</span> <span class="mi">40</span><span class="p">,</span> <span class="mi">48</span><span class="p">,</span> <span class="mi">56</span><span class="p">,</span> <span class="mi">64</span><span class="p">,</span>           <span class="cm">/* 8-byte spacing */</span>
+    <span class="mi">80</span><span class="p">,</span> <span class="mi">96</span><span class="p">,</span> <span class="mi">112</span><span class="p">,</span> <span class="mi">128</span><span class="p">,</span>                          <span class="cm">/* 16-byte spacing */</span>
+    <span class="mi">160</span><span class="p">,</span> <span class="mi">192</span><span class="p">,</span> <span class="mi">224</span><span class="p">,</span> <span class="mi">256</span><span class="p">,</span>                        <span class="cm">/* 32-byte spacing */</span>
+    <span class="mi">320</span><span class="p">,</span> <span class="mi">384</span><span class="p">,</span> <span class="mi">448</span><span class="p">,</span> <span class="mi">512</span><span class="p">,</span>                        <span class="cm">/* 64-byte spacing */</span>
+    <span class="mi">640</span><span class="p">,</span> <span class="mi">768</span><span class="p">,</span> <span class="mi">896</span><span class="p">,</span> <span class="mi">1024</span><span class="p">,</span>                       <span class="cm">/* 128-byte spacing */</span>
+    <span class="mi">1280</span><span class="p">,</span> <span class="mi">1560</span><span class="p">,</span> <span class="mi">1816</span><span class="p">,</span> <span class="mi">2048</span><span class="p">,</span>                    <span class="cm">/* ~256-byte spacing */</span>
+    <span class="mi">2616</span><span class="p">,</span> <span class="mi">3120</span><span class="p">,</span> <span class="mi">3640</span><span class="p">,</span> <span class="mi">4096</span><span class="p">,</span>                    <span class="cm">/* ~512-byte spacing */</span>
+    <span class="mi">5456</span><span class="p">,</span> <span class="mi">6552</span><span class="p">,</span> <span class="mi">7280</span><span class="p">,</span> <span class="mi">8192</span>                     <span class="cm">/* ~1024-byte spacing */</span>
+<span class="p">};</span>
+</code></pre></div></div>
+
+<p>Each pool has an <code class="language-plaintext highlighter-rouge">LWLock</code> and maintains linked lists of <strong>spans</strong> (superblocks) grouped
+by fullness class (4 classes, roughly quartiles).</p>
+
+<p><strong>Allocation flow for a small object (e.g., 100 bytes):</strong></p>
+
+<ol>
+  <li>Round 100 up to 8-byte boundary: 104. Look up <code class="language-plaintext highlighter-rouge">dsa_size_class_map[104/8]</code> to find
+size class index (e.g., class 11 = 112 bytes).</li>
+  <li>Acquire <code class="language-plaintext highlighter-rouge">pools[11].lock</code>.</li>
+  <li>Find the active span (fullness class 1, head of list).</li>
+  <li>Pop an object from the span’s freelist (<code class="language-plaintext highlighter-rouge">firstfree</code> index).</li>
+  <li>If the span is exhausted, try to initialize more objects from uninitialised space
+(<code class="language-plaintext highlighter-rouge">ninitialized &lt; nmax</code>).</li>
+  <li>If no span has space, allocate a new 16-page (64 KB) superblock from the free page
+manager and initialize a new span.</li>
+  <li>Release pool lock, return <code class="language-plaintext highlighter-rouge">dsa_pointer</code>.</li>
+</ol>
+
+<h3 id="large-object-allocation">Large Object Allocation</h3>
+
+<p>Requests larger than 8 KB bypass the pool system:</p>
+
+<ol>
+  <li>Acquire the area-level lock.</li>
+  <li>Calculate the number of pages needed.</li>
+  <li>Find the best segment (smallest segment with a large enough free run).</li>
+  <li>If no segment has space, create a new DSM segment.</li>
+  <li>Allocate consecutive pages from the segment’s <code class="language-plaintext highlighter-rouge">FreePageManager</code>.</li>
+  <li>Record the span in the page map so <code class="language-plaintext highlighter-rouge">dsa_free</code> can find it.</li>
+  <li>Release area lock, return <code class="language-plaintext highlighter-rouge">dsa_pointer</code>.</li>
+</ol>
+
+<h3 id="the-span-structure">The Span Structure</h3>
+
+<p>Every allocation — small or large — is tracked by a <code class="language-plaintext highlighter-rouge">dsa_area_span</code>:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">typedef</span> <span class="k">struct</span>
+<span class="p">{</span>
+    <span class="n">dsa_pointer</span> <span class="n">pool</span><span class="p">;</span>           <span class="cm">/* owning pool */</span>
+    <span class="n">dsa_pointer</span> <span class="n">prevspan</span><span class="p">;</span>       <span class="cm">/* doubly-linked within fullness class */</span>
+    <span class="n">dsa_pointer</span> <span class="n">nextspan</span><span class="p">;</span>
+    <span class="n">dsa_pointer</span> <span class="n">start</span><span class="p">;</span>          <span class="cm">/* start of the superblock's data area */</span>
+    <span class="kt">size_t</span>      <span class="n">npages</span><span class="p">;</span>         <span class="cm">/* pages in this superblock */</span>
+    <span class="n">uint16</span>      <span class="n">size_class</span><span class="p">;</span>     <span class="cm">/* which size class */</span>
+    <span class="n">uint16</span>      <span class="n">ninitialized</span><span class="p">;</span>   <span class="cm">/* objects carved out so far */</span>
+    <span class="n">uint16</span>      <span class="n">nallocatable</span><span class="p">;</span>   <span class="cm">/* currently free objects */</span>
+    <span class="n">uint16</span>      <span class="n">firstfree</span><span class="p">;</span>      <span class="cm">/* head of per-span freelist */</span>
+    <span class="n">uint16</span>      <span class="n">nmax</span><span class="p">;</span>           <span class="cm">/* max objects that fit */</span>
+    <span class="n">uint16</span>      <span class="n">fclass</span><span class="p">;</span>         <span class="cm">/* current fullness class (0-3) */</span>
+<span class="p">}</span> <span class="n">dsa_area_span</span><span class="p">;</span>
+</code></pre></div></div>
+
+<p>Spans themselves must be allocated from shared memory. To avoid a chicken-and-egg
+problem, span objects for “span-of-spans” blocks are stored <strong>inline</strong> at the beginning
+of a single-page block (size class <code class="language-plaintext highlighter-rouge">DSA_SCLASS_BLOCK_OF_SPANS</code>).</p>
+
+<h3 id="freeing-memory">Freeing Memory</h3>
+
+<p><code class="language-plaintext highlighter-rouge">dsa_free(area, dp)</code>:</p>
+
+<ol>
+  <li>Convert <code class="language-plaintext highlighter-rouge">dp</code> to a local address.</li>
+  <li>Look up the page map to find the span.</li>
+  <li>If small object: push onto span’s freelist, update fullness class.</li>
+  <li>If the span becomes completely empty, return its pages to the free page manager
+and destroy the span.</li>
+  <li>If large object: return pages directly to the free page manager.</li>
+  <li>If an entire segment becomes empty, detach and free it.</li>
+</ol>
+
+<h3 id="pinning-and-lifetime">Pinning and Lifetime</h3>
+
+<ul>
+  <li><strong><code class="language-plaintext highlighter-rouge">dsa_pin(area)</code></strong>: Increments a reference count so the area persists beyond the
+creating backend’s lifetime. Used when the area must survive until the last attached
+backend detaches.</li>
+  <li><strong><code class="language-plaintext highlighter-rouge">dsa_pin_mapping(area)</code></strong>: Keeps DSM segment mappings alive for the session. Without
+this, mappings are owned by a <code class="language-plaintext highlighter-rouge">ResourceOwner</code> and would be released at transaction end.</li>
+  <li><strong><code class="language-plaintext highlighter-rouge">dsa_detach(area)</code></strong>: Detaches the backend from the area. If the area is pinned,
+it survives for other backends; otherwise, refcount hits zero and segments are freed.</li>
+</ul>
+
+<h2 id="key-data-structures">Key Data Structures</h2>
+
+<h3 id="dsa_area_control-shared-memory">dsa_area_control (shared memory)</h3>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>+----------------------------------+
+| dsa_segment_header               |  (magic, usable_pages, size, bin linkage)
++----------------------------------+
+| dsa_handle  handle               |
+| dsm_handle  segment_handles[1024]|  (one per possible segment)
+| dsa_segment_index segment_bins[16]| (segments binned by free run size)
+| dsa_area_pool pools[36]          |  (one LWLock + 4 span lists per size class)
+| size_t total_segment_size        |
+| size_t max_total_segment_size    |
+| LWLock lock                      |  (area-wide lock)
++----------------------------------+
+</code></pre></div></div>
+
+<h3 id="dsa_area-per-backend-local-memory">dsa_area (per-backend, local memory)</h3>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">struct</span> <span class="n">dsa_area</span>
+<span class="p">{</span>
+    <span class="n">dsa_area_control</span> <span class="o">*</span><span class="n">control</span><span class="p">;</span>              <span class="cm">/* points into shared memory */</span>
+    <span class="n">ResourceOwner</span>     <span class="n">resowner</span><span class="p">;</span>             <span class="cm">/* tracks DSM segment lifetimes */</span>
+    <span class="n">dsa_segment_map</span>   <span class="n">segment_maps</span><span class="p">[</span><span class="mi">1024</span><span class="p">];</span>   <span class="cm">/* per-backend mapping cache */</span>
+    <span class="n">dsa_segment_index</span> <span class="n">high_segment_index</span><span class="p">;</span>   <span class="cm">/* highest segment ever mapped */</span>
+    <span class="kt">size_t</span>            <span class="n">freed_segment_counter</span><span class="p">;</span><span class="cm">/* detect segment frees */</span>
+<span class="p">};</span>
+</code></pre></div></div>
+
+<h3 id="segment-internal-layout">Segment Internal Layout</h3>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>+---------------------------+  &lt;- mapped_address
+| dsa_segment_header        |
++---------------------------+
+| FreePageManager state     |
++---------------------------+
+| Page map (dsa_pointer[])  |  one entry per page
++---------------------------+
+| Page 0                    |  4 KB
+| Page 1                    |
+| ...                       |
+| Page N                    |
++---------------------------+
+</code></pre></div></div>
+
+<h2 id="diagrams">Diagrams</h2>
+
+<h3 id="dsa-allocation-small-object">DSA Allocation: Small Object</h3>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>dsa_allocate(area, 100)
+    |
+    v
+size_class = dsa_size_class_map[ceil(100/8)] --&gt; class 11 (112 bytes)
+    |
+    v
+LWLock Acquire: pools[11].lock
+    |
+    v
+Find active span (fullness class 1, head of list)
+    |
+    +-- span.nallocatable &gt; 0?
+    |       |
+    |      YES --&gt; pop from span freelist, return dsa_pointer
+    |       |
+    |      NO --&gt; span.ninitialized &lt; span.nmax?
+    |                |
+    |               YES --&gt; carve new object, increment ninitialized
+    |                |
+    |               NO --&gt; try next span or allocate new superblock
+    |                        |
+    |                        v
+    |                   LWLock Acquire: area lock
+    |                   Allocate 16 pages from FreePageManager
+    |                   Create new span
+    |                   LWLock Release: area lock
+    v
+LWLock Release: pools[11].lock
+Return dsa_pointer = (segment_index &lt;&lt; 40) | offset
+</code></pre></div></div>
+
+<h3 id="dsa-pointer-resolution">DSA Pointer Resolution</h3>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>dsa_get_address(area, dp)
+    |
+    v
+segment_index = dp &gt;&gt; DSA_OFFSET_WIDTH
+offset = dp &amp; DSA_OFFSET_BITMASK
+    |
+    v
+segment_map = &amp;area-&gt;segment_maps[segment_index]
+    |
+    v
+segment_map-&gt;mapped_address != NULL?
+   /          \
+  YES          NO
+  |             |
+  v             v
+  ptr =      dsm_attach(control-&gt;segment_handles[segment_index])
+  mapped +   map into local address space
+  offset     store in segment_maps[segment_index]
+  |             |
+  v             v
+return ptr   return mapped + offset
+</code></pre></div></div>
+
+<h2 id="connections">Connections</h2>
+
+<ul>
+  <li><strong>Parallel Query:</strong> Parallel hash joins (<code class="language-plaintext highlighter-rouge">nodeHashjoin.c</code>) create a DSA area in the
+leader and share the handle with workers. The shared hash table, batch files, and
+tuple stores are all allocated from this area.</li>
+  <li><strong>Parallel Sort:</strong> <code class="language-plaintext highlighter-rouge">tuplesort.c</code> uses DSA for sharing sort runs between workers.</li>
+  <li><strong>Resource Owners</strong> (<a href="resource-owners.md">resource-owners.md</a>): DSM segments backing
+a DSA area are tracked by the creating backend’s resource owner. If the transaction
+aborts, the segments are automatically released. <code class="language-plaintext highlighter-rouge">dsa_pin_mapping()</code> detaches from
+the resource owner for session-lifetime usage.</li>
+  <li><strong>Memory Contexts</strong> (<a href="memory-contexts.md">memory-contexts.md</a>): DSA is complementary
+to memory contexts. Contexts manage process-local memory; DSA manages cross-process
+shared memory. They serve different needs and are never interchangeable.</li>
+  <li><strong>DSM (Dynamic Shared Memory):</strong> DSA is built on top of <code class="language-plaintext highlighter-rouge">dsm.c</code>. Each DSA segment is
+a DSM segment. DSA adds the allocation layer (free page manager, size classes, spans)
+that DSM does not provide.</li>
+</ul>
+
+
+      <hr>
+
+      <!-- Prev / Next / Up navigation -->
+      
+      
+      
+
+      <div class="clearfix" style="margin-top: 2rem;">
+        
+          
+          
+
+          
+            
+            <a class="btn btn-primary float-left" href="/postgresql/10-memory/" title="Memory Management">&larr; Previous</a>
+          
+
+          
+            
+            <a class="btn btn-primary float-right" href="/postgresql/10-memory/memory-contexts.html" title="Memory Contexts">Next &rarr;</a>
+          
+        
+      </div>
+
+      
+      <div style="text-align: center; margin-top: 1rem;">
+        <a href="/postgresql-internals/">&uarr; Back to Table of Contents</a>
+      </div>
+      
+
+    </div>
+  </div>
+</div>
+
+
+  <!-- Footer -->
+
+<hr>
+
+<footer>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <ul class="list-inline text-center">
+          
+          <li class="list-inline-item">
+            <a href="mailto:amitava.dev@proton.me" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="far fa-envelope fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          
+          
+          <li class="list-inline-item">
+            <a href="https://www.linkedin.com/in/amitavaag" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-linkedin fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          <li class="list-inline-item">
+            <a href="https://github.com/ikouchiha47" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-github fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+        </ul>
+
+        <p class="copyright text-muted">
+          Build with: 
+          <a 
+            href="https://github.com/StartBootstrap/startbootstrap-clean-blog-jekyll"
+            class="text-gray"
+            target="_blank">startbootstrap-clean-blog-jekyll</a></p>
+      </div>
+    </div>
+  </div>
+</footer>
+
+
+  <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="/assets/vendor/blog/js/scripts.js"></script>
+
+<script src="/assets/scripts.js"></script>
+
+
+
+
+
+  <script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+
+    document.querySelectorAll('pre > code.language-mermaid').forEach((codeBlock) => {
+      codeBlock.parentElement.outerHTML = `<pre class="mermaid">${codeBlock.textContent}</pre>`;
+    });
+
+
+    mermaid.initialize({ startOnLoad: true, theme: 'forest' });
+</script>
+
+
+  
+
+</body>
+
+</html>

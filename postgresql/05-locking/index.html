@@ -1,0 +1,480 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+  <title>
+    Locking - iko&#39;s logs
+    
+  </title>
+
+  <meta name="description" content="">
+  <meta property="og:description" content="">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Locking">
+  <meta property="og:url" content="https://ikouchiha47.github.io/postgresql/05-locking/">
+
+  
+
+  <link href='https://fonts.googleapis.com/css?family=Lora:400,700,400italic,700italic' rel='stylesheet' type='text/css'>
+  <link href='https://fonts.googleapis.com/css?family=Open+Sans:300italic,400italic,600italic,700italic,800italic,400,300,600,700,800' rel='stylesheet' type='text/css'>
+
+  <!-- <script src="https://use.fontawesome.com/releases/v5.15.3/js/all.js" crossorigin="anonymous"></script> -->
+  <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.15.4/css/all.css" integrity="sha384-DyZ88mC6Up2uqS4h/KRgHuoeGwBcD4Ng9SiP4dIRy0EXTlnuz47vAwmeGwVChigm" crossorigin="anonymous"/>
+
+  <link rel="stylesheet" href="/assets/main.css">
+  <link rel="canonical" href="https://ikouchiha47.github.io/postgresql/05-locking/">
+  <link rel="alternate" type="application/rss+xml" title="iko&#39;s logs" href="/feed.xml">
+
+  <meta name="google-site-verification" content="lWkg6gIxJgzEKX_5XnhcxCtPE9QknaimFWWos_dTvPM" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fira+Sans:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Inconsolata:wght@200..900&family=Jersey+25&family=Kanit:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Merriweather+Sans:ital,wght@0,300..800;1,300..800&family=Nanum+Gothic+Coding&family=Space+Grotesk:wght@300..700&family=Titillium+Web:ital,wght@0,200;0,300;0,400;0,600;0,700;0,900;1,200;1,300;1,400;1,600;1,700&display=swap" rel="stylesheet">
+
+</head>
+
+
+<body>
+
+  <!-- Navigation -->
+<nav class="navbar navbar-expand-lg navbar-light fixed-top" id="mainNav">
+  <div class="container">
+    <a class="navbar-brand" href="/">iko&#39;s logs</a>
+    <button class="navbar-toggler navbar-toggler-right" type="button" data-toggle="collapse" data-target="#navbarResponsive" aria-controls="navbarResponsive" aria-expanded="false" aria-label="Toggle navigation">
+      Menu
+      <i class="fa fa-bars"></i>
+    </button>
+    <div class="collapse navbar-collapse" id="navbarResponsive">
+      <ul class="navbar-nav ml-auto">
+        <li class="nav-item">
+          <a class="nav-link" href="/">Home</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/about">About</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/posts">Posts</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/contact">Contact</a>
+        </li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+
+  <!-- Page Header -->
+
+<header class="masthead">
+
+  <div class="overlay"></div>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <div class="post-heading">
+          <h1>Locking</h1>
+          
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="container space-grotesk">
+  <div class="row">
+    <div class="col-lg-8 col-md-10 mx-auto">
+
+      <!-- Breadcrumb -->
+      <nav aria-label="breadcrumb" style="margin-bottom: 1.5rem;">
+        <ol class="breadcrumb" style="background: transparent; padding: 0;">
+          
+            <li class="breadcrumb-item"><a href="/postgresql-internals/">PostgreSQL Internals Deep Dive</a></li>
+          
+          
+          <li class="breadcrumb-item active" aria-current="page">Locking</li>
+        </ol>
+      </nav>
+
+      <h1 id="concurrency-control">Concurrency Control</h1>
+
+<p>PostgreSQL uses a layered locking architecture to coordinate concurrent access
+to shared resources. Four distinct lock types form a hierarchy, each built on
+top of the one below it and each trading off overhead for richer semantics.</p>
+
+<h2 id="overview">Overview</h2>
+
+<p>Concurrent access in PostgreSQL must solve two fundamental problems:</p>
+
+<ol>
+  <li>
+    <p><strong>Mutual exclusion</strong> – protecting shared-memory data structures (buffer
+headers, hash tables, WAL buffers) from corruption when multiple backends
+read and write them simultaneously.</p>
+  </li>
+  <li>
+    <p><strong>Transactional isolation</strong> – preventing user-visible anomalies such as
+dirty reads, lost updates, and serialization failures across SQL
+statements.</p>
+  </li>
+</ol>
+
+<p>PostgreSQL addresses these problems through four lock types, arranged from
+lightest to heaviest:</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>Lock Type</th>
+      <th>Typical Hold Time</th>
+      <th>Deadlock Detection</th>
+      <th>Auto-Release on Error</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Spinlock</td>
+      <td>Nanoseconds (tens of instructions)</td>
+      <td>No</td>
+      <td>No</td>
+    </tr>
+    <tr>
+      <td>LWLock (Lightweight Lock)</td>
+      <td>Microseconds to milliseconds</td>
+      <td>No</td>
+      <td>Yes (on <code class="language-plaintext highlighter-rouge">elog</code> recovery)</td>
+    </tr>
+    <tr>
+      <td>Heavyweight Lock</td>
+      <td>Milliseconds to hours</td>
+      <td>Yes</td>
+      <td>Yes (at transaction end)</td>
+    </tr>
+    <tr>
+      <td>Predicate Lock (SIRead)</td>
+      <td>Transaction lifetime and beyond</td>
+      <td>Via SSI conflict detection</td>
+      <td>Yes (when safe)</td>
+    </tr>
+  </tbody>
+</table>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>+--------------------------------------------------------------+
+|                     SQL Statement                            |
+|  (SELECT, INSERT, UPDATE, DELETE, ALTER TABLE, LOCK TABLE)   |
++-------------------------------+------------------------------+
+                                |
+                                v
++--------------------------------------------------------------+
+|              Heavyweight Locks  (lock.c, lmgr.c)            |
+|  8 lock modes, conflict matrix, deadlock detection,         |
+|  fast-path optimization, advisory locks                      |
++-------------------------------+------------------------------+
+                                |
+                                v
++--------------------------------------------------------------+
+|              Lightweight Locks  (lwlock.c)                   |
+|  Shared / Exclusive modes, atomic state variable,           |
+|  OS-level sleep on contention, tranche-based organization    |
++-------------------------------+------------------------------+
+                                |
+                                v
++--------------------------------------------------------------+
+|              Spinlocks  (s_lock.c, s_lock.h)                |
+|  Hardware TAS instruction, busy-wait with backoff,          |
+|  ~1 minute timeout then PANIC                                |
++-------------------------------+------------------------------+
+                                |
+                                v
++--------------------------------------------------------------+
+|              Hardware Atomics  (atomics.h)                   |
+|  CAS, fetch-and-add, memory barriers                         |
++--------------------------------------------------------------+
+
+        Predicate Locks (predicate.c) operate alongside
+        heavyweight locks but use entirely separate structures
+        (SERIALIZABLEXACT, PREDICATELOCK, PREDICATELOCKTARGET).
+</code></pre></div></div>
+
+<h2 id="the-lock-hierarchy-in-practice">The Lock Hierarchy in Practice</h2>
+
+<p>A single <code class="language-plaintext highlighter-rouge">SELECT * FROM orders WHERE id = 42</code> touches multiple layers:</p>
+
+<ol>
+  <li>
+    <p><strong>Heavyweight lock</strong>: <code class="language-plaintext highlighter-rouge">AccessShareLock</code> on the <code class="language-plaintext highlighter-rouge">orders</code> relation (often
+recorded via fast-path to avoid lock-manager contention).</p>
+  </li>
+  <li>
+    <p><strong>LWLock</strong>: Shared lock on the buffer mapping partition LWLock to look up
+the page in the buffer pool, then a pin and shared content lock on the
+buffer itself.</p>
+  </li>
+  <li>
+    <p><strong>Spinlock</strong>: Briefly held inside LWLock acquisition to perform atomic
+state transitions when the fast atomic path cannot succeed.</p>
+  </li>
+  <li>
+    <p><strong>Predicate lock</strong> (if running at <code class="language-plaintext highlighter-rouge">SERIALIZABLE</code>): An SIRead lock on the
+tuple or page, used later by the SSI machinery to detect rw-conflicts.</p>
+  </li>
+</ol>
+
+<h2 id="key-source-files">Key Source Files</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>File</th>
+      <th>Purpose</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/storage/lmgr/s_lock.c</code></td>
+      <td>Spinlock wait loop with exponential backoff</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/storage/s_lock.h</code></td>
+      <td>Platform-specific TAS implementations</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/storage/lmgr/lwlock.c</code></td>
+      <td>Lightweight lock acquire/release with atomic state</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/storage/lwlock.h</code></td>
+      <td>LWLock struct, mode enum, tranche IDs</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/storage/lmgr/lock.c</code></td>
+      <td>Heavyweight lock manager: hash tables, conflict checks, fast-path</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/storage/lock.h</code></td>
+      <td>LOCK, PROCLOCK, LOCALLOCK structs; LOCKTAG types</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/storage/lockdefs.h</code></td>
+      <td>Lock mode constants (AccessShareLock through AccessExclusiveLock)</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/storage/lmgr/deadlock.c</code></td>
+      <td>Wait-for graph construction and cycle detection</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/storage/lmgr/predicate.c</code></td>
+      <td>SIRead predicate locks for SSI</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/storage/lmgr/lmgr.c</code></td>
+      <td>High-level lock wrapper functions called by executor</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/storage/lmgr/proc.c</code></td>
+      <td>PGPROC sleep/wakeup, wait queue management</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/storage/lmgr/README</code></td>
+      <td>Authoritative design document for the lock manager</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/storage/lmgr/README-SSI</code></td>
+      <td>Design document for predicate locking and SSI</td>
+    </tr>
+  </tbody>
+</table>
+
+<h2 id="design-principles">Design Principles</h2>
+
+<p><strong>Interrupts are deferred while holding spinlocks or LWLocks.</strong> Query cancels
+and <code class="language-plaintext highlighter-rouge">die()</code> signals are held off until all such locks are released. This
+prevents a backend from being killed mid-update of a shared data structure,
+which would leave it in an inconsistent state. Heavyweight locks do not impose
+this restriction – a backend can be interrupted while waiting for a
+heavyweight lock.</p>
+
+<p><strong>No deadlock detection for spinlocks or LWLocks.</strong> The code relies on
+disciplined lock ordering and short hold times to prevent deadlocks at these
+levels. Heavyweight locks provide full deadlock detection because user
+transactions can request locks in arbitrary order.</p>
+
+<p><strong>Partitioned shared-memory hash tables.</strong> Both the heavyweight lock manager
+and the predicate lock manager partition their hash tables (16 partitions
+each) to reduce contention on the LWLocks that protect them.</p>
+
+<p><strong>Fast-path optimization.</strong> The most common heavyweight locks (weak relation
+locks like <code class="language-plaintext highlighter-rouge">AccessShareLock</code>) bypass the shared hash table entirely, recording
+the lock in a per-backend array inside the PGPROC structure. This eliminates
+the lock-manager partition LWLock as a bottleneck for read-heavy workloads.</p>
+
+<h2 id="chapters">Chapters</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>Chapter</th>
+      <th>Topic</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><a href="spinlocks">Spinlocks</a></td>
+      <td>Hardware TAS, busy-wait with backoff, platform portability</td>
+    </tr>
+    <tr>
+      <td><a href="lwlocks">Lightweight Locks</a></td>
+      <td>Shared/exclusive modes, atomic state, wait queues</td>
+    </tr>
+    <tr>
+      <td><a href="heavyweight-locks">Heavyweight Locks</a></td>
+      <td>Lock modes, conflict matrix, fast-path, partitioning</td>
+    </tr>
+    <tr>
+      <td><a href="deadlock-detection">Deadlock Detection</a></td>
+      <td>Wait-for graph, soft/hard edges, queue rearrangement</td>
+    </tr>
+    <tr>
+      <td><a href="predicate-locks">Predicate Locks</a></td>
+      <td>SIRead locks, rw-conflict detection, SSI</td>
+    </tr>
+  </tbody>
+</table>
+
+<h2 id="connections">Connections</h2>
+
+<ul>
+  <li><strong>Buffer Manager</strong> (Chapter 01): Every buffer access acquires LWLocks for
+the buffer mapping hash and per-buffer content locks.</li>
+  <li><strong>WAL</strong> (Chapter 04): WAL insertion acquires the <code class="language-plaintext highlighter-rouge">WALInsertLock</code> tranche
+(an array of LWLocks) to allow concurrent insertions.</li>
+  <li><strong>Transactions</strong> (Chapter 03): Heavyweight locks are released at transaction
+commit/abort. The <code class="language-plaintext highlighter-rouge">PGPROC</code> structure ties a backend’s lock state to its
+transaction lifecycle.</li>
+  <li><strong>MVCC</strong>: Predicate locks exist precisely because MVCC’s snapshot isolation
+is not sufficient for true serializability; SSI bridges the gap.</li>
+</ul>
+
+
+      <hr>
+
+      <!-- Prev / Next / Up navigation -->
+      
+      
+      
+
+      <div class="clearfix" style="margin-top: 2rem;">
+        
+          
+          
+
+          
+            
+            <a class="btn btn-primary float-left" href="/postgresql/04-wal/wal-internals.html" title="WAL Internals">&larr; Previous</a>
+          
+
+          
+            
+            <a class="btn btn-primary float-right" href="/postgresql/05-locking/deadlock-detection.html" title="Deadlock Detection">Next &rarr;</a>
+          
+        
+      </div>
+
+      
+      <div style="text-align: center; margin-top: 1rem;">
+        <a href="/postgresql-internals/">&uarr; Back to Table of Contents</a>
+      </div>
+      
+
+    </div>
+  </div>
+</div>
+
+
+  <!-- Footer -->
+
+<hr>
+
+<footer>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <ul class="list-inline text-center">
+          
+          <li class="list-inline-item">
+            <a href="mailto:amitava.dev@proton.me" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="far fa-envelope fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          
+          
+          <li class="list-inline-item">
+            <a href="https://www.linkedin.com/in/amitavaag" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-linkedin fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          <li class="list-inline-item">
+            <a href="https://github.com/ikouchiha47" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-github fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+        </ul>
+
+        <p class="copyright text-muted">
+          Build with: 
+          <a 
+            href="https://github.com/StartBootstrap/startbootstrap-clean-blog-jekyll"
+            class="text-gray"
+            target="_blank">startbootstrap-clean-blog-jekyll</a></p>
+      </div>
+    </div>
+  </div>
+</footer>
+
+
+  <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="/assets/vendor/blog/js/scripts.js"></script>
+
+<script src="/assets/scripts.js"></script>
+
+
+
+
+
+  <script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+
+    document.querySelectorAll('pre > code.language-mermaid').forEach((codeBlock) => {
+      codeBlock.parentElement.outerHTML = `<pre class="mermaid">${codeBlock.textContent}</pre>`;
+    });
+
+
+    mermaid.initialize({ startOnLoad: true, theme: 'forest' });
+</script>
+
+
+  
+
+</body>
+
+</html>

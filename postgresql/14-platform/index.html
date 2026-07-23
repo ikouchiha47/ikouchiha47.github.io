@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+  <title>
+    Platform Layer - iko&#39;s logs
+    
+  </title>
+
+  <meta name="description" content="">
+  <meta property="og:description" content="">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Platform Layer">
+  <meta property="og:url" content="https://ikouchiha47.github.io/postgresql/14-platform/">
+
+  
+
+  <link href='https://fonts.googleapis.com/css?family=Lora:400,700,400italic,700italic' rel='stylesheet' type='text/css'>
+  <link href='https://fonts.googleapis.com/css?family=Open+Sans:300italic,400italic,600italic,700italic,800italic,400,300,600,700,800' rel='stylesheet' type='text/css'>
+
+  <!-- <script src="https://use.fontawesome.com/releases/v5.15.3/js/all.js" crossorigin="anonymous"></script> -->
+  <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.15.4/css/all.css" integrity="sha384-DyZ88mC6Up2uqS4h/KRgHuoeGwBcD4Ng9SiP4dIRy0EXTlnuz47vAwmeGwVChigm" crossorigin="anonymous"/>
+
+  <link rel="stylesheet" href="/assets/main.css">
+  <link rel="canonical" href="https://ikouchiha47.github.io/postgresql/14-platform/">
+  <link rel="alternate" type="application/rss+xml" title="iko&#39;s logs" href="/feed.xml">
+
+  <meta name="google-site-verification" content="lWkg6gIxJgzEKX_5XnhcxCtPE9QknaimFWWos_dTvPM" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fira+Sans:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Inconsolata:wght@200..900&family=Jersey+25&family=Kanit:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Merriweather+Sans:ital,wght@0,300..800;1,300..800&family=Nanum+Gothic+Coding&family=Space+Grotesk:wght@300..700&family=Titillium+Web:ital,wght@0,200;0,300;0,400;0,600;0,700;0,900;1,200;1,300;1,400;1,600;1,700&display=swap" rel="stylesheet">
+
+</head>
+
+
+<body>
+
+  <!-- Navigation -->
+<nav class="navbar navbar-expand-lg navbar-light fixed-top" id="mainNav">
+  <div class="container">
+    <a class="navbar-brand" href="/">iko&#39;s logs</a>
+    <button class="navbar-toggler navbar-toggler-right" type="button" data-toggle="collapse" data-target="#navbarResponsive" aria-controls="navbarResponsive" aria-expanded="false" aria-label="Toggle navigation">
+      Menu
+      <i class="fa fa-bars"></i>
+    </button>
+    <div class="collapse navbar-collapse" id="navbarResponsive">
+      <ul class="navbar-nav ml-auto">
+        <li class="nav-item">
+          <a class="nav-link" href="/">Home</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/about">About</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/posts">Posts</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/contact">Contact</a>
+        </li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+
+  <!-- Page Header -->
+
+<header class="masthead">
+
+  <div class="overlay"></div>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <div class="post-heading">
+          <h1>Platform Layer</h1>
+          
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="container space-grotesk">
+  <div class="row">
+    <div class="col-lg-8 col-md-10 mx-auto">
+
+      <!-- Breadcrumb -->
+      <nav aria-label="breadcrumb" style="margin-bottom: 1.5rem;">
+        <ol class="breadcrumb" style="background: transparent; padding: 0;">
+          
+            <li class="breadcrumb-item"><a href="/postgresql-internals/">PostgreSQL Internals Deep Dive</a></li>
+          
+          
+          <li class="breadcrumb-item active" aria-current="page">Platform Layer</li>
+        </ol>
+      </nav>
+
+      <h1 id="chapter-14-platform-layer--os-and-hardware-optimizations">Chapter 14: Platform Layer – OS and Hardware Optimizations</h1>
+
+<p>PostgreSQL runs on a remarkable range of hardware and operating systems: x86-64
+and ARM64 servers, 32-bit embedded boards, Linux, FreeBSD, macOS, Windows, and
+even Solaris. The <strong>platform layer</strong> is the set of abstractions that lets the
+rest of the codebase remain blissfully unaware of which CPU instruction set is
+generating its CRC checksums, which kernel interface is dispatching its
+asynchronous I/O, or whether a “semaphore” is really a POSIX semaphore, a
+SysV semaphore, or a Win32 Event object.</p>
+
+<h2 id="summary">Summary</h2>
+
+<p>This chapter dissects the four pillars of PostgreSQL’s platform abstraction:</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>Pillar</th>
+      <th>What it hides</th>
+      <th>Key benefit</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><strong>Atomic operations</strong></td>
+      <td>CPU memory ordering, compare-and-swap instruction sets</td>
+      <td>Lock-free shared-memory algorithms</td>
+    </tr>
+    <tr>
+      <td><strong>SIMD / CRC / NUMA</strong></td>
+      <td>SSE4.2, AVX-512, ARMv8 CRC, NEON, POPCNT, libnuma</td>
+      <td>Hardware-accelerated data integrity and search</td>
+    </tr>
+    <tr>
+      <td><strong>I/O backends</strong></td>
+      <td>io_uring, worker-based AIO, synchronous fallback</td>
+      <td>Asynchronous storage without OS lock-in</td>
+    </tr>
+    <tr>
+      <td><strong>Portability shims</strong></td>
+      <td>Win32 vs POSIX signals, semaphore flavors, VFD layer</td>
+      <td>Single codebase across all supported OSes</td>
+    </tr>
+  </tbody>
+</table>
+
+<h2 id="architecture-at-a-glance">Architecture at a Glance</h2>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>+-----------------------------------------------------------------------+
+|                        PostgreSQL Backend Code                        |
++-----------------------------------------------------------------------+
+        |                |                |                |
+        v                v                v                v
++---------------+ +-------------+ +---------------+ +----------------+
+| Atomic Ops    | | SIMD / CRC  | | AIO Subsystem | | Portability    |
+| pg_atomic_*   | | Vector8/32  | | PgAioHandle   | | VFD, signals,  |
+| barriers      | | pg_crc32c   | | IoMethodOps   | | semaphores     |
++---------------+ +-------------+ +---------------+ +----------------+
+        |                |                |                |
+        v                v                v                v
++-----------------------------------------------------------------------+
+|  arch-x86.h    SSE4.2/NEON    io_uring/worker   win32_port.h         |
+|  arch-arm.h    pg_popcount    method_sync.c      posix_sema.c        |
+|  arch-ppc.h    pg_numa.c                         sysv_sema.c         |
+|  generic-gcc.h                                   fd.c (VFD cache)    |
++-----------------------------------------------------------------------+
+        |                |                |                |
+        v                v                v                v
++-----------------------------------------------------------------------+
+|                     Operating System / Hardware                        |
+|  x86-64 TSO    ARM64 weakly-ordered    Linux io_uring    Win32 API   |
++-----------------------------------------------------------------------+
+</code></pre></div></div>
+
+<h2 id="why-a-platform-layer-matters">Why a Platform Layer Matters</h2>
+
+<p><strong>Performance.</strong> A single CRC-32C computation over an 8 KB page takes roughly
+30 ns with hardware-accelerated SSE4.2 instructions versus 1200 ns with the
+software slicing-by-8 fallback – a 40x difference. Multiplied across every WAL
+record and every page checksum verification, the platform layer’s ability to
+dispatch to the fastest available instruction set is a measurable factor in
+overall throughput.</p>
+
+<p><strong>Correctness.</strong> On x86-64 (a TSO architecture), a store followed by a load to
+a different address can be reordered by the CPU. On ARM64 (weakly ordered),
+almost any pair of memory operations can be reordered. The atomics layer
+translates PostgreSQL’s memory-ordering requirements into the minimal set of
+barriers each architecture actually needs, preventing subtle concurrency bugs
+without paying for unnecessary fence instructions.</p>
+
+<p><strong>Portability.</strong> PostgreSQL’s process model depends heavily on <code class="language-plaintext highlighter-rouge">fork()</code>, shared
+memory, and POSIX signals – none of which exist natively on Windows. The
+portability shims in <code class="language-plaintext highlighter-rouge">src/port/</code> and <code class="language-plaintext highlighter-rouge">src/include/port/</code> paper over these
+differences so that the rest of the code can use a single API.</p>
+
+<h2 id="key-source-directories">Key Source Directories</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>Path</th>
+      <th>Purpose</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/port/atomics/</code></td>
+      <td>Architecture-specific atomic operation headers</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/port/</code></td>
+      <td>Platform detection headers, SIMD, CRC, NUMA</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/port/</code></td>
+      <td>Portable C implementations (CRC, popcount, NUMA, etc.)</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/port/</code></td>
+      <td>Semaphore and shared-memory backends</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/storage/aio/</code></td>
+      <td>Asynchronous I/O subsystem</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/storage/file/fd.c</code></td>
+      <td>Virtual File Descriptor (VFD) cache</td>
+    </tr>
+  </tbody>
+</table>
+
+<h2 id="reading-order">Reading Order</h2>
+
+<ol>
+  <li><a href="atomics">Atomic Operations and Memory Barriers</a> – the foundation everything else builds on</li>
+  <li><a href="simd-and-crc">SIMD, CRC, and Hardware Acceleration</a> – data-path optimizations</li>
+  <li><a href="io-backends">I/O Backends</a> – the new AIO subsystem</li>
+  <li><a href="portability">Portability and OS Abstraction</a> – Win32, semaphores, and the VFD layer</li>
+</ol>
+
+<h2 id="connections-to-other-chapters">Connections to Other Chapters</h2>
+
+<ul>
+  <li><strong>Chapter 4 (Buffer Manager):</strong> Buffer pin operations use <code class="language-plaintext highlighter-rouge">pg_atomic_fetch_add_u32</code> for lock-free reference counting. The AIO subsystem’s read stream helper feeds directly into buffer pool reads.</li>
+  <li><strong>Chapter 5 (WAL):</strong> CRC-32C checksums protect every WAL record. AIO enables asynchronous WAL flushes with <code class="language-plaintext highlighter-rouge">O_DIRECT + O_DSYNC</code> for reduced latency.</li>
+  <li><strong>Chapter 6 (Lock Manager):</strong> Lightweight locks depend on atomic compare-and-swap. Spin locks use the <code class="language-plaintext highlighter-rouge">PAUSE</code> instruction on x86 via <code class="language-plaintext highlighter-rouge">pg_spin_delay()</code>.</li>
+  <li><strong>Chapter 9 (Query Execution):</strong> SIMD <code class="language-plaintext highlighter-rouge">Vector8</code> / <code class="language-plaintext highlighter-rouge">Vector32</code> operations accelerate text scanning and visibility-map checks in sequential scans.</li>
+  <li><strong>Chapter 12 (Shared Memory):</strong> NUMA-aware shared buffer allocation uses <code class="language-plaintext highlighter-rouge">pg_numa_query_pages()</code> to verify memory placement across NUMA nodes.</li>
+</ul>
+
+
+      <hr>
+
+      <!-- Prev / Next / Up navigation -->
+      
+      
+      
+
+      <div class="clearfix" style="margin-top: 2rem;">
+        
+          
+          
+
+          
+            
+            <a class="btn btn-primary float-left" href="/postgresql/13-statistics/pg-statistic.html" title="pg_statistic and Single-Column Statistics">&larr; Previous</a>
+          
+
+          
+            
+            <a class="btn btn-primary float-right" href="/postgresql/14-platform/atomics.html" title="Atomic Operations and Memory Barriers">Next &rarr;</a>
+          
+        
+      </div>
+
+      
+      <div style="text-align: center; margin-top: 1rem;">
+        <a href="/postgresql-internals/">&uarr; Back to Table of Contents</a>
+      </div>
+      
+
+    </div>
+  </div>
+</div>
+
+
+  <!-- Footer -->
+
+<hr>
+
+<footer>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <ul class="list-inline text-center">
+          
+          <li class="list-inline-item">
+            <a href="mailto:amitava.dev@proton.me" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="far fa-envelope fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          
+          
+          <li class="list-inline-item">
+            <a href="https://www.linkedin.com/in/amitavaag" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-linkedin fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          <li class="list-inline-item">
+            <a href="https://github.com/ikouchiha47" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-github fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+        </ul>
+
+        <p class="copyright text-muted">
+          Build with: 
+          <a 
+            href="https://github.com/StartBootstrap/startbootstrap-clean-blog-jekyll"
+            class="text-gray"
+            target="_blank">startbootstrap-clean-blog-jekyll</a></p>
+      </div>
+    </div>
+  </div>
+</footer>
+
+
+  <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="/assets/vendor/blog/js/scripts.js"></script>
+
+<script src="/assets/scripts.js"></script>
+
+
+
+
+
+  <script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+
+    document.querySelectorAll('pre > code.language-mermaid').forEach((codeBlock) => {
+      codeBlock.parentElement.outerHTML = `<pre class="mermaid">${codeBlock.textContent}</pre>`;
+    });
+
+
+    mermaid.initialize({ startOnLoad: true, theme: 'forest' });
+</script>
+
+
+  
+
+</body>
+
+</html>

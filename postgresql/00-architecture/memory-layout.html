@@ -1,0 +1,649 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+  <title>
+    Memory Layout - iko&#39;s logs
+    
+  </title>
+
+  <meta name="description" content="">
+  <meta property="og:description" content="">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Memory Layout">
+  <meta property="og:url" content="https://ikouchiha47.github.io/postgresql/00-architecture/memory-layout.html">
+
+  
+
+  <link href='https://fonts.googleapis.com/css?family=Lora:400,700,400italic,700italic' rel='stylesheet' type='text/css'>
+  <link href='https://fonts.googleapis.com/css?family=Open+Sans:300italic,400italic,600italic,700italic,800italic,400,300,600,700,800' rel='stylesheet' type='text/css'>
+
+  <!-- <script src="https://use.fontawesome.com/releases/v5.15.3/js/all.js" crossorigin="anonymous"></script> -->
+  <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.15.4/css/all.css" integrity="sha384-DyZ88mC6Up2uqS4h/KRgHuoeGwBcD4Ng9SiP4dIRy0EXTlnuz47vAwmeGwVChigm" crossorigin="anonymous"/>
+
+  <link rel="stylesheet" href="/assets/main.css">
+  <link rel="canonical" href="https://ikouchiha47.github.io/postgresql/00-architecture/memory-layout.html">
+  <link rel="alternate" type="application/rss+xml" title="iko&#39;s logs" href="/feed.xml">
+
+  <meta name="google-site-verification" content="lWkg6gIxJgzEKX_5XnhcxCtPE9QknaimFWWos_dTvPM" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fira+Sans:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Inconsolata:wght@200..900&family=Jersey+25&family=Kanit:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Merriweather+Sans:ital,wght@0,300..800;1,300..800&family=Nanum+Gothic+Coding&family=Space+Grotesk:wght@300..700&family=Titillium+Web:ital,wght@0,200;0,300;0,400;0,600;0,700;0,900;1,200;1,300;1,400;1,600;1,700&display=swap" rel="stylesheet">
+
+</head>
+
+
+<body>
+
+  <!-- Navigation -->
+<nav class="navbar navbar-expand-lg navbar-light fixed-top" id="mainNav">
+  <div class="container">
+    <a class="navbar-brand" href="/">iko&#39;s logs</a>
+    <button class="navbar-toggler navbar-toggler-right" type="button" data-toggle="collapse" data-target="#navbarResponsive" aria-controls="navbarResponsive" aria-expanded="false" aria-label="Toggle navigation">
+      Menu
+      <i class="fa fa-bars"></i>
+    </button>
+    <div class="collapse navbar-collapse" id="navbarResponsive">
+      <ul class="navbar-nav ml-auto">
+        <li class="nav-item">
+          <a class="nav-link" href="/">Home</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/about">About</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/posts">Posts</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/contact">Contact</a>
+        </li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+
+  <!-- Page Header -->
+
+<header class="masthead">
+
+  <div class="overlay"></div>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <div class="post-heading">
+          <h1>Memory Layout</h1>
+          
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="container space-grotesk">
+  <div class="row">
+    <div class="col-lg-8 col-md-10 mx-auto">
+
+      <!-- Breadcrumb -->
+      <nav aria-label="breadcrumb" style="margin-bottom: 1.5rem;">
+        <ol class="breadcrumb" style="background: transparent; padding: 0;">
+          
+            <li class="breadcrumb-item"><a href="/postgresql-internals/">PostgreSQL Internals Deep Dive</a></li>
+          
+          
+            
+              <li class="breadcrumb-item"><a href="/postgresql/00-architecture/">Architecture</a></li>
+            
+          
+          <li class="breadcrumb-item active" aria-current="page">Memory Layout</li>
+        </ol>
+      </nav>
+
+      <h1 id="memory-layout">Memory Layout</h1>
+
+<blockquote>
+  <p><em>PostgreSQL divides memory into two worlds: shared memory that all processes can see, and private memory managed by a tree of contexts that make manual memory management almost as safe as garbage collection.</em></p>
+</blockquote>
+
+<h2 id="overview">Overview</h2>
+
+<p>Every PostgreSQL cluster has exactly one region of <strong>shared memory</strong>, created by the
+postmaster at startup and inherited by all child processes via <code class="language-plaintext highlighter-rouge">fork()</code>. This region
+holds the buffer pool (<code class="language-plaintext highlighter-rouge">shared_buffers</code>), WAL buffers, the lock table, the <code class="language-plaintext highlighter-rouge">PGPROC</code>
+array, and dozens of other structures that require cross-process coordination. Shared
+memory is allocated once and never grows; its total size is determined at startup from
+GUC parameters.</p>
+
+<p>Each backend process also has its own <strong>private (local) memory</strong>. This includes the
+plan cache, catalog cache, sort/hash memory (<code class="language-plaintext highlighter-rouge">work_mem</code>), and all the transient
+allocations made during query processing. Local memory is managed through PostgreSQL’s
+<strong>memory context</strong> system — a hierarchical allocator where every allocation belongs to
+a named context, and freeing a context automatically frees all of its children and their
+allocations. This eliminates the most common class of memory leaks: forgetting to free
+intermediate results.</p>
+
+<p>The memory context system is the single most important abstraction to understand before
+reading any PostgreSQL backend code. Nearly every function allocates into “the current
+context,” and the lifecycle of that context determines when the memory is freed. A
+per-query context is reset after each query. A per-transaction context survives until
+commit or abort. A cache context lives for the entire backend session.</p>
+
+<h2 id="key-source-files">Key Source Files</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>File</th>
+      <th>Purpose</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/utils/mmgr/mcxt.c</code></td>
+      <td>Core memory context operations: create, reset, delete, palloc, pfree</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/utils/mmgr/aset.c</code></td>
+      <td><code class="language-plaintext highlighter-rouge">AllocSet</code> — the default general-purpose allocator</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/utils/mmgr/generation.c</code></td>
+      <td><code class="language-plaintext highlighter-rouge">Generation</code> context — optimized for allocate-many-then-free-all patterns</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/utils/mmgr/slab.c</code></td>
+      <td><code class="language-plaintext highlighter-rouge">Slab</code> context — fixed-size chunk allocator</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/utils/mmgr/bump.c</code></td>
+      <td><code class="language-plaintext highlighter-rouge">Bump</code> context — append-only, no individual free</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/nodes/memnodes.h</code></td>
+      <td><code class="language-plaintext highlighter-rouge">MemoryContextData</code> and <code class="language-plaintext highlighter-rouge">MemoryContextMethods</code> struct definitions</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/utils/memutils.h</code></td>
+      <td>Public API: <code class="language-plaintext highlighter-rouge">AllocSetContextCreate</code>, standard context globals</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/utils/palloc.h</code></td>
+      <td><code class="language-plaintext highlighter-rouge">palloc()</code>, <code class="language-plaintext highlighter-rouge">pfree()</code>, <code class="language-plaintext highlighter-rouge">MemoryContext</code> typedef</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/storage/shmem.h</code></td>
+      <td>Shared memory allocator: <code class="language-plaintext highlighter-rouge">ShmemAlloc</code>, <code class="language-plaintext highlighter-rouge">ShmemInitStruct</code></td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/storage/ipc/ipci.c</code></td>
+      <td><code class="language-plaintext highlighter-rouge">CreateSharedMemoryAndSemaphores()</code> — orchestrates shared memory setup</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/storage/ipc/shmem.c</code></td>
+      <td>Shared memory allocator implementation</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/utils/mmgr/portalmem.c</code></td>
+      <td>Portal memory management</td>
+    </tr>
+  </tbody>
+</table>
+
+<h2 id="how-it-works">How It Works</h2>
+
+<h3 id="high-level">High Level</h3>
+
+<pre><code class="language-mermaid">graph LR
+    subgraph "Shared Memory (one per cluster)"
+        SB["shared_buffers&lt;br/&gt;(Buffer Pool)"]
+        WAL["WAL Buffers"]
+        LT["Lock Table"]
+        PA["ProcArray&lt;br/&gt;(PGPROC slots)"]
+        CLOG["CLOG Buffers"]
+        OTHER["...subtrans, multixact,&lt;br/&gt;notify, stats, etc."]
+    end
+
+    subgraph "Backend Local Memory (one per process)"
+        TMC["TopMemoryContext"]
+        CMC["CacheMemoryContext&lt;br/&gt;(catalog cache, relcache)"]
+        MCX["MessageContext&lt;br/&gt;(current client message)"]
+        TXN["TopTransactionContext"]
+        QRY["per-query contexts&lt;br/&gt;(parse, plan, execute)"]
+        WM["work_mem&lt;br/&gt;(sort, hash)"]
+    end
+
+    SB --- PA
+    TMC --&gt; CMC
+    TMC --&gt; MCX
+    TMC --&gt; TXN
+    TXN --&gt; QRY
+</code></pre>
+
+<h3 id="deep-dive-shared-memory">Deep Dive: Shared Memory</h3>
+
+<p>Shared memory is created in <code class="language-plaintext highlighter-rouge">CreateSharedMemoryAndSemaphores()</code> (<code class="language-plaintext highlighter-rouge">src/backend/storage/ipc/ipci.c</code>).
+The postmaster calculates the total size needed, requests it from the OS via <code class="language-plaintext highlighter-rouge">shmget()</code>
+or <code class="language-plaintext highlighter-rouge">mmap()</code>, and then initializes each subsystem’s region by calling its <code class="language-plaintext highlighter-rouge">ShmemInit</code>
+function. The layout is roughly:</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>Region</th>
+      <th>Sized By</th>
+      <th>Typical Size</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Buffer pool</td>
+      <td><code class="language-plaintext highlighter-rouge">shared_buffers</code></td>
+      <td>128 MB – 32 GB+</td>
+    </tr>
+    <tr>
+      <td>Buffer descriptors</td>
+      <td><code class="language-plaintext highlighter-rouge">NBuffers * sizeof(BufferDesc)</code></td>
+      <td>~64 bytes per buffer</td>
+    </tr>
+    <tr>
+      <td>WAL buffers</td>
+      <td><code class="language-plaintext highlighter-rouge">wal_buffers</code></td>
+      <td>16 MB default</td>
+    </tr>
+    <tr>
+      <td>PGPROC array</td>
+      <td><code class="language-plaintext highlighter-rouge">max_connections + autovacuum_max_workers + aux</code></td>
+      <td>~1 KB per slot</td>
+    </tr>
+    <tr>
+      <td>Lock table</td>
+      <td><code class="language-plaintext highlighter-rouge">max_locks_per_transaction * max_connections</code></td>
+      <td>varies</td>
+    </tr>
+    <tr>
+      <td>CLOG buffers</td>
+      <td>fixed</td>
+      <td>small</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>Shared memory uses a simple bump allocator (<code class="language-plaintext highlighter-rouge">ShmemAlloc</code>). There is no shared-memory
+<code class="language-plaintext highlighter-rouge">free()</code> — structures are allocated once at startup and live for the lifetime of the
+cluster. The shared memory index (<code class="language-plaintext highlighter-rouge">ShmemInitHash</code> with key <code class="language-plaintext highlighter-rouge">"ShmemIndex"</code>) is a hash
+table that maps string names to their locations, allowing subsystems to find each other.</p>
+
+<h3 id="deep-dive-memory-contexts">Deep Dive: Memory Contexts</h3>
+
+<h4 id="the-context-tree">The Context Tree</h4>
+
+<p>Every backend maintains a tree of memory contexts rooted at <code class="language-plaintext highlighter-rouge">TopMemoryContext</code>. The
+standard top-level contexts (declared in <code class="language-plaintext highlighter-rouge">src/include/utils/memutils.h</code>) are:</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>Context</th>
+      <th>Lifetime</th>
+      <th>Typical Contents</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">TopMemoryContext</code></td>
+      <td>Backend lifetime</td>
+      <td>Root of the tree; holds long-lived data</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">PostmasterContext</code></td>
+      <td>Postmaster only</td>
+      <td>Freed after fork in backends</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">CacheMemoryContext</code></td>
+      <td>Backend lifetime</td>
+      <td>System catalog cache, relation cache</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">MessageContext</code></td>
+      <td>One client message</td>
+      <td>Raw query string from the network</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">TopTransactionContext</code></td>
+      <td>One transaction</td>
+      <td>Transaction-scoped allocations</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">CurTransactionContext</code></td>
+      <td>One subtransaction</td>
+      <td>Subtransaction-scoped allocations</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">ErrorContext</code></td>
+      <td>Backend lifetime</td>
+      <td>Pre-allocated for out-of-memory error recovery</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">PortalContext</code></td>
+      <td>Transient</td>
+      <td>Active portal’s memory</td>
+    </tr>
+  </tbody>
+</table>
+
+<h4 id="the-four-allocator-implementations">The Four Allocator Implementations</h4>
+
+<p>Memory contexts are an abstract interface. The concrete implementations are:</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>Type</th>
+      <th>Node Tag</th>
+      <th>Best For</th>
+      <th>Strategy</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><strong>AllocSet</strong></td>
+      <td><code class="language-plaintext highlighter-rouge">T_AllocSetContext</code></td>
+      <td>General purpose</td>
+      <td>Power-of-two free lists, blocks double in size</td>
+    </tr>
+    <tr>
+      <td><strong>Slab</strong></td>
+      <td><code class="language-plaintext highlighter-rouge">T_SlabContext</code></td>
+      <td>Fixed-size objects</td>
+      <td>Chunks are all the same size; O(1) alloc/free</td>
+    </tr>
+    <tr>
+      <td><strong>Generation</strong></td>
+      <td><code class="language-plaintext highlighter-rouge">T_GenerationContext</code></td>
+      <td>Bulk alloc then bulk free</td>
+      <td>No per-chunk free list; whole blocks freed at once</td>
+    </tr>
+    <tr>
+      <td><strong>Bump</strong></td>
+      <td><code class="language-plaintext highlighter-rouge">T_BumpContext</code></td>
+      <td>Append-only workloads</td>
+      <td>No individual free at all; fastest allocator</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>The default is <code class="language-plaintext highlighter-rouge">AllocSet</code>. You create one with:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="n">MemoryContext</span> <span class="n">ctx</span> <span class="o">=</span> <span class="n">AllocSetContextCreate</span><span class="p">(</span>
+    <span class="n">TopMemoryContext</span><span class="p">,</span>        <span class="cm">/* parent */</span>
+    <span class="s">"MyContext"</span><span class="p">,</span>             <span class="cm">/* name (must be a string literal) */</span>
+    <span class="n">ALLOCSET_DEFAULT_SIZES</span>   <span class="cm">/* minSize=0, initSize=8KB, maxSize=8MB */</span>
+<span class="p">);</span>
+</code></pre></div></div>
+
+<h4 id="how-palloc-works">How palloc Works</h4>
+
+<p><code class="language-plaintext highlighter-rouge">palloc(size)</code> allocates <code class="language-plaintext highlighter-rouge">size</code> bytes in <code class="language-plaintext highlighter-rouge">CurrentMemoryContext</code>. Under the hood:</p>
+
+<ol>
+  <li>It calls <code class="language-plaintext highlighter-rouge">context-&gt;methods-&gt;alloc(context, size, 0)</code>, which dispatches to the
+concrete allocator (e.g., <code class="language-plaintext highlighter-rouge">AllocSetAlloc</code>).</li>
+  <li><code class="language-plaintext highlighter-rouge">AllocSetAlloc</code> checks its free list for a chunk of the right size class. If none
+is available, it allocates from the current block. If the current block is full,
+it allocates a new block (doubling in size up to <code class="language-plaintext highlighter-rouge">maxBlockSize</code>).</li>
+  <li>Each chunk has a small header that points back to its owning context, enabling
+<code class="language-plaintext highlighter-rouge">pfree()</code> and <code class="language-plaintext highlighter-rouge">GetMemoryChunkContext()</code> to work without the caller passing the
+context explicitly.</li>
+</ol>
+
+<h4 id="context-reset-vs-delete">Context Reset vs Delete</h4>
+
+<ul>
+  <li><code class="language-plaintext highlighter-rouge">MemoryContextReset(ctx)</code> frees all allocations within the context but keeps the
+context node itself alive (and keeps one empty block for future allocations). This is
+the common fast path — used after every query to clean up transient memory.</li>
+  <li><code class="language-plaintext highlighter-rouge">MemoryContextDelete(ctx)</code> frees everything including the context node itself, and
+recursively deletes all children.</li>
+</ul>
+
+<h2 id="key-data-structures">Key Data Structures</h2>
+
+<h3 id="memorycontextdata-srcincludenodesmemnodesh117">MemoryContextData (<code class="language-plaintext highlighter-rouge">src/include/nodes/memnodes.h:117</code>)</h3>
+
+<p>The base “class” for all memory contexts.</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">typedef</span> <span class="k">struct</span> <span class="n">MemoryContextData</span>
+<span class="p">{</span>
+    <span class="n">NodeTag</span>     <span class="n">type</span><span class="p">;</span>            <span class="cm">/* T_AllocSetContext, T_SlabContext, etc. */</span>
+    <span class="n">bool</span>        <span class="n">isReset</span><span class="p">;</span>         <span class="cm">/* true if no allocations since last reset */</span>
+    <span class="n">bool</span>        <span class="n">allowInCritSection</span><span class="p">;</span> <span class="cm">/* allow palloc in critical sections */</span>
+    <span class="n">Size</span>        <span class="n">mem_allocated</span><span class="p">;</span>   <span class="cm">/* total bytes allocated for this context */</span>
+    <span class="k">const</span> <span class="n">MemoryContextMethods</span> <span class="o">*</span><span class="n">methods</span><span class="p">;</span> <span class="cm">/* virtual function table */</span>
+    <span class="n">MemoryContext</span> <span class="n">parent</span><span class="p">;</span>        <span class="cm">/* NULL if this is TopMemoryContext */</span>
+    <span class="n">MemoryContext</span> <span class="n">firstchild</span><span class="p">;</span>    <span class="cm">/* head of child linked list */</span>
+    <span class="n">MemoryContext</span> <span class="n">prevchild</span><span class="p">;</span>     <span class="cm">/* sibling link (previous) */</span>
+    <span class="n">MemoryContext</span> <span class="n">nextchild</span><span class="p">;</span>     <span class="cm">/* sibling link (next) */</span>
+    <span class="k">const</span> <span class="kt">char</span> <span class="o">*</span><span class="n">name</span><span class="p">;</span>            <span class="cm">/* context name (constant string) */</span>
+    <span class="k">const</span> <span class="kt">char</span> <span class="o">*</span><span class="n">ident</span><span class="p">;</span>           <span class="cm">/* optional additional identifier */</span>
+    <span class="n">MemoryContextCallback</span> <span class="o">*</span><span class="n">reset_cbs</span><span class="p">;</span> <span class="cm">/* callbacks invoked on reset/delete */</span>
+<span class="p">}</span> <span class="n">MemoryContextData</span><span class="p">;</span>
+</code></pre></div></div>
+
+<ul>
+  <li>The <code class="language-plaintext highlighter-rouge">parent</code>/<code class="language-plaintext highlighter-rouge">firstchild</code>/<code class="language-plaintext highlighter-rouge">prevchild</code>/<code class="language-plaintext highlighter-rouge">nextchild</code> links form a tree. Deleting a
+context recursively deletes all descendants.</li>
+  <li><code class="language-plaintext highlighter-rouge">methods</code> is a virtual function table — this is how PostgreSQL achieves polymorphism
+in C. Each allocator type provides its own <code class="language-plaintext highlighter-rouge">alloc</code>, <code class="language-plaintext highlighter-rouge">free_p</code>, <code class="language-plaintext highlighter-rouge">realloc</code>, <code class="language-plaintext highlighter-rouge">reset</code>,
+<code class="language-plaintext highlighter-rouge">delete_context</code>, and <code class="language-plaintext highlighter-rouge">stats</code> functions.</li>
+</ul>
+
+<h3 id="memorycontextmethods-srcincludenodesmemnodesh58">MemoryContextMethods (<code class="language-plaintext highlighter-rouge">src/include/nodes/memnodes.h:58</code>)</h3>
+
+<p>The vtable that each allocator implements.</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">typedef</span> <span class="k">struct</span> <span class="n">MemoryContextMethods</span>
+<span class="p">{</span>
+    <span class="kt">void</span>   <span class="o">*</span><span class="p">(</span><span class="o">*</span><span class="n">alloc</span><span class="p">)(</span><span class="n">MemoryContext</span> <span class="n">context</span><span class="p">,</span> <span class="n">Size</span> <span class="n">size</span><span class="p">,</span> <span class="kt">int</span> <span class="n">flags</span><span class="p">);</span>
+    <span class="kt">void</span>    <span class="p">(</span><span class="o">*</span><span class="n">free_p</span><span class="p">)(</span><span class="kt">void</span> <span class="o">*</span><span class="n">pointer</span><span class="p">);</span>
+    <span class="kt">void</span>   <span class="o">*</span><span class="p">(</span><span class="o">*</span><span class="n">realloc</span><span class="p">)(</span><span class="kt">void</span> <span class="o">*</span><span class="n">pointer</span><span class="p">,</span> <span class="n">Size</span> <span class="n">size</span><span class="p">,</span> <span class="kt">int</span> <span class="n">flags</span><span class="p">);</span>
+    <span class="kt">void</span>    <span class="p">(</span><span class="o">*</span><span class="n">reset</span><span class="p">)(</span><span class="n">MemoryContext</span> <span class="n">context</span><span class="p">);</span>
+    <span class="kt">void</span>    <span class="p">(</span><span class="o">*</span><span class="n">delete_context</span><span class="p">)(</span><span class="n">MemoryContext</span> <span class="n">context</span><span class="p">);</span>
+    <span class="n">MemoryContext</span> <span class="p">(</span><span class="o">*</span><span class="n">get_chunk_context</span><span class="p">)(</span><span class="kt">void</span> <span class="o">*</span><span class="n">pointer</span><span class="p">);</span>
+    <span class="n">Size</span>    <span class="p">(</span><span class="o">*</span><span class="n">get_chunk_space</span><span class="p">)(</span><span class="kt">void</span> <span class="o">*</span><span class="n">pointer</span><span class="p">);</span>
+    <span class="n">bool</span>    <span class="p">(</span><span class="o">*</span><span class="n">is_empty</span><span class="p">)(</span><span class="n">MemoryContext</span> <span class="n">context</span><span class="p">);</span>
+    <span class="kt">void</span>    <span class="p">(</span><span class="o">*</span><span class="n">stats</span><span class="p">)(</span><span class="n">MemoryContext</span> <span class="n">context</span><span class="p">,</span> <span class="n">MemoryStatsPrintFunc</span> <span class="n">printfunc</span><span class="p">,</span>
+                     <span class="kt">void</span> <span class="o">*</span><span class="n">passthru</span><span class="p">,</span> <span class="n">MemoryContextCounters</span> <span class="o">*</span><span class="n">totals</span><span class="p">,</span>
+                     <span class="n">bool</span> <span class="n">print_to_stderr</span><span class="p">);</span>
+<span class="p">}</span> <span class="n">MemoryContextMethods</span><span class="p">;</span>
+</code></pre></div></div>
+
+<h3 id="shmemindexent-srcincludestorageshmemh55">ShmemIndexEnt (<code class="language-plaintext highlighter-rouge">src/include/storage/shmem.h:55</code>)</h3>
+
+<p>An entry in the shared memory index hash table.</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">typedef</span> <span class="k">struct</span>
+<span class="p">{</span>
+    <span class="kt">char</span>    <span class="n">key</span><span class="p">[</span><span class="n">SHMEM_INDEX_KEYSIZE</span><span class="p">];</span> <span class="cm">/* string name (up to 48 bytes) */</span>
+    <span class="kt">void</span>   <span class="o">*</span><span class="n">location</span><span class="p">;</span>                 <span class="cm">/* pointer into shared memory */</span>
+    <span class="n">Size</span>    <span class="n">size</span><span class="p">;</span>                      <span class="cm">/* requested size */</span>
+    <span class="n">Size</span>    <span class="n">allocated_size</span><span class="p">;</span>            <span class="cm">/* actual allocated size (aligned) */</span>
+<span class="p">}</span> <span class="n">ShmemIndexEnt</span><span class="p">;</span>
+</code></pre></div></div>
+
+<h2 id="memory-context-tree-diagram">Memory Context Tree Diagram</h2>
+
+<pre><code class="language-mermaid">graph TD
+    TOP["TopMemoryContext&lt;br/&gt;(backend lifetime)"]
+    ERR["ErrorContext&lt;br/&gt;(pre-allocated 8KB)"]
+    CACHE["CacheMemoryContext&lt;br/&gt;(catalog + relcache)"]
+    MSG["MessageContext&lt;br/&gt;(reset per message)"]
+    TTXN["TopTransactionContext"]
+    CTXN["CurTransactionContext"]
+    PORTAL["PortalContext"]
+    EXEC["ExecutorState"]
+    PLAN["PlannerContext"]
+    EXPR["ExprContext&lt;br/&gt;(reset per tuple)"]
+
+    TOP --&gt; ERR
+    TOP --&gt; CACHE
+    TOP --&gt; MSG
+    TOP --&gt; TTXN
+    TTXN --&gt; CTXN
+    TTXN --&gt; PORTAL
+    PORTAL --&gt; EXEC
+    EXEC --&gt; PLAN
+    EXEC --&gt; EXPR
+</code></pre>
+
+<p>The key insight is the <strong>nesting of lifetimes</strong>. <code class="language-plaintext highlighter-rouge">ExprContext</code> is reset after every
+tuple. <code class="language-plaintext highlighter-rouge">ExecutorState</code> is destroyed after the query finishes. <code class="language-plaintext highlighter-rouge">TopTransactionContext</code> is
+destroyed at commit/abort. This layering means PostgreSQL rarely needs explicit <code class="language-plaintext highlighter-rouge">pfree()</code>
+calls — most memory is cleaned up automatically when its containing context is reset.</p>
+
+<h2 id="connections">Connections</h2>
+
+<p><strong>Depends on:</strong></p>
+<ul>
+  <li>OS shared memory primitives (<code class="language-plaintext highlighter-rouge">shmget</code>/<code class="language-plaintext highlighter-rouge">mmap</code>)</li>
+  <li>OS process model (shared memory is inherited via <code class="language-plaintext highlighter-rouge">fork()</code>)</li>
+</ul>
+
+<p><strong>Used by:</strong></p>
+<ul>
+  <li>Every subsystem in PostgreSQL allocates via <code class="language-plaintext highlighter-rouge">palloc</code> / memory contexts</li>
+  <li>The buffer manager lives entirely in shared memory</li>
+  <li>The lock manager lives entirely in shared memory</li>
+</ul>
+
+<p><strong>See also:</strong></p>
+<ul>
+  <li><a href="process-model">Process Model</a> — shared memory is created by the postmaster and
+inherited by backends</li>
+  <li><a href="query-lifecycle">Query Lifecycle</a> — each query phase uses different memory contexts</li>
+</ul>
+
+
+      <hr>
+
+      <!-- Prev / Next / Up navigation -->
+      
+      
+      
+
+      <div class="clearfix" style="margin-top: 2rem;">
+        
+          
+          
+
+          
+            
+            <a class="btn btn-primary float-left" href="/postgresql/00-architecture/" title="Architecture">&larr; Previous</a>
+          
+
+          
+            
+            <a class="btn btn-primary float-right" href="/postgresql/00-architecture/process-model.html" title="Process Model">Next &rarr;</a>
+          
+        
+      </div>
+
+      
+      <div style="text-align: center; margin-top: 1rem;">
+        <a href="/postgresql-internals/">&uarr; Back to Table of Contents</a>
+      </div>
+      
+
+    </div>
+  </div>
+</div>
+
+
+  <!-- Footer -->
+
+<hr>
+
+<footer>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <ul class="list-inline text-center">
+          
+          <li class="list-inline-item">
+            <a href="mailto:amitava.dev@proton.me" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="far fa-envelope fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          
+          
+          <li class="list-inline-item">
+            <a href="https://www.linkedin.com/in/amitavaag" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-linkedin fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          <li class="list-inline-item">
+            <a href="https://github.com/ikouchiha47" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-github fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+        </ul>
+
+        <p class="copyright text-muted">
+          Build with: 
+          <a 
+            href="https://github.com/StartBootstrap/startbootstrap-clean-blog-jekyll"
+            class="text-gray"
+            target="_blank">startbootstrap-clean-blog-jekyll</a></p>
+      </div>
+    </div>
+  </div>
+</footer>
+
+
+  <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="/assets/vendor/blog/js/scripts.js"></script>
+
+<script src="/assets/scripts.js"></script>
+
+
+
+
+
+  <script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+
+    document.querySelectorAll('pre > code.language-mermaid').forEach((codeBlock) => {
+      codeBlock.parentElement.outerHTML = `<pre class="mermaid">${codeBlock.textContent}</pre>`;
+    });
+
+
+    mermaid.initialize({ startOnLoad: true, theme: 'forest' });
+</script>
+
+
+  
+
+</body>
+
+</html>

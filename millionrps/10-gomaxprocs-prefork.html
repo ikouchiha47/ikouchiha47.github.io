@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+  <title>
+    GOMAXPROCS sets fiber&#39;s worker count, not the thread count - iko&#39;s logs
+    
+  </title>
+
+  <meta name="description" content="">
+  <meta property="og:description" content="">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="GOMAXPROCS sets fiber&#39;s worker count, not the t...">
+  <meta property="og:url" content="https://ikouchiha47.github.io/millionrps/10-gomaxprocs-prefork.html">
+
+  
+
+  <link href='https://fonts.googleapis.com/css?family=Lora:400,700,400italic,700italic' rel='stylesheet' type='text/css'>
+  <link href='https://fonts.googleapis.com/css?family=Open+Sans:300italic,400italic,600italic,700italic,800italic,400,300,600,700,800' rel='stylesheet' type='text/css'>
+
+  <!-- <script src="https://use.fontawesome.com/releases/v5.15.3/js/all.js" crossorigin="anonymous"></script> -->
+  <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.15.4/css/all.css" integrity="sha384-DyZ88mC6Up2uqS4h/KRgHuoeGwBcD4Ng9SiP4dIRy0EXTlnuz47vAwmeGwVChigm" crossorigin="anonymous"/>
+
+  <link rel="stylesheet" href="/assets/main.css">
+  <link rel="canonical" href="https://ikouchiha47.github.io/millionrps/10-gomaxprocs-prefork.html">
+  <link rel="alternate" type="application/rss+xml" title="iko&#39;s logs" href="/feed.xml">
+
+  <meta name="google-site-verification" content="lWkg6gIxJgzEKX_5XnhcxCtPE9QknaimFWWos_dTvPM" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fira+Sans:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Inconsolata:wght@200..900&family=Jersey+25&family=Kanit:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Merriweather+Sans:ital,wght@0,300..800;1,300..800&family=Nanum+Gothic+Coding&family=Space+Grotesk:wght@300..700&family=Titillium+Web:ital,wght@0,200;0,300;0,400;0,600;0,700;0,900;1,200;1,300;1,400;1,600;1,700&display=swap" rel="stylesheet">
+
+</head>
+
+
+<body>
+
+  <!-- Navigation -->
+<nav class="navbar navbar-expand-lg navbar-light fixed-top" id="mainNav">
+  <div class="container">
+    <a class="navbar-brand" href="/">iko&#39;s logs</a>
+    <button class="navbar-toggler navbar-toggler-right" type="button" data-toggle="collapse" data-target="#navbarResponsive" aria-controls="navbarResponsive" aria-expanded="false" aria-label="Toggle navigation">
+      Menu
+      <i class="fa fa-bars"></i>
+    </button>
+    <div class="collapse navbar-collapse" id="navbarResponsive">
+      <ul class="navbar-nav ml-auto">
+        <li class="nav-item">
+          <a class="nav-link" href="/">Home</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/about">About</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/posts">Posts</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/contact">Contact</a>
+        </li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+
+  
+<header class="masthead">
+
+  <div class="overlay"></div>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <div class="post-heading">
+          <h1>GOMAXPROCS sets fiber's worker count, not the thread count</h1>
+          
+          <h2 class="subheading">129 workers became 2. I assumed I broke the fork loop. The source says I asked for 1 worker.</h2>
+          
+          <span class="meta">
+            June 10, 2026
+            
+            &mdash; <span class="journal-entry-status done">DONE</span>
+            
+          </span>
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="container space-grotesk">
+  <div class="row">
+    <div class="col-lg-8 col-md-10 mx-auto">
+
+      <!-- Breadcrumb -->
+      <nav aria-label="breadcrumb" style="margin-bottom: 1.5rem;">
+        <ol class="breadcrumb" style="background: transparent; padding: 0;">
+          <li class="breadcrumb-item"><a href="/millionrps/">Chasing 1 Million RPS</a></li>
+          <li class="breadcrumb-item active" aria-current="page">GOMAXPROCS sets fiber's worker count, not the thread count</li>
+        </ol>
+      </nav>
+
+      
+      <div style="margin-bottom: 1.5rem;">
+        
+        <span class="journal-tag">GOMAXPROCS</span>
+        
+        <span class="journal-tag">prefork</span>
+        
+        <span class="journal-tag">threads</span>
+        
+        <span class="journal-tag">fiber</span>
+        
+        <span class="journal-tag">source</span>
+        
+      </div>
+      
+
+      <h2 id="why-we-tried-this">why we tried this</h2>
+
+<p>Each prefork worker on c8i.32xlarge runs ~15 OS threads under load (<a href="../09-profiling-gofakeit-mutex/">entry 09</a>). 128 workers × 15 threads = ~1,900 OS threads on 128 cores. The hypothesis: that’s overhead, and setting <code class="language-plaintext highlighter-rouge">GOMAXPROCS=1</code> per worker would cut each worker to ~1 thread, reduce kernel scheduling, improve L1/L2 locality. This is how PM2-cluster and Node.js workers run — one event loop per process.</p>
+
+<p>The hypothesis was built on a wrong mental model. Two of them, actually.</p>
+
+<h2 id="setup">setup</h2>
+
+<div class="language-bash highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="c"># run 1 — prefork, GOMAXPROCS inherits the machine (128 on c8i)</span>
+<span class="nb">nohup</span> ./fiber_server <span class="o">&gt;</span> /tmp/fiber.log 2&gt;&amp;1 &amp;
+<span class="nb">sleep </span>4
+<span class="nb">echo</span> <span class="s2">"processes: </span><span class="si">$(</span>pgrep <span class="nt">-c</span> fiber_server<span class="si">)</span><span class="s2">"</span>
+
+<span class="c"># run 2 — prefork, GOMAXPROCS=1</span>
+<span class="nv">GOMAXPROCS</span><span class="o">=</span>1 <span class="nb">nohup</span> ./fiber_server <span class="o">&gt;</span> /tmp/fiber_gmp1.log 2&gt;&amp;1 &amp;
+<span class="nb">sleep </span>4
+<span class="nb">echo</span> <span class="s2">"processes: </span><span class="si">$(</span>pgrep <span class="nt">-c</span> fiber_server<span class="si">)</span><span class="s2">"</span>
+
+<span class="c"># benchmark — same for both, c8i client</span>
+<span class="k">for </span>CONN <span class="k">in </span>100 500 1000 2000 5000 10000<span class="p">;</span> <span class="k">do
+  </span>autocannon <span class="nt">-c</span> <span class="nv">$CONN</span> <span class="nt">--pipelining</span> 1 <span class="nt">-w</span> 120 <span class="nt">-d</span> 20 <span class="se">\</span>
+    <span class="nt">--json</span> <span class="s2">"http://SERVER_INTERNAL_IP:8083/read"</span>
+  <span class="nb">sleep </span>3
+<span class="k">done</span>
+</code></pre></div></div>
+
+<h2 id="results">results</h2>
+
+<div class="bench-table-wrap">
+<table class="bench-table">
+  <thead>
+    <tr><th>connections</th><th>GOMAXPROCS=128 RPS</th><th>GOMAXPROCS=1 RPS</th><th>p50 (128 / 1)</th><th>p99 (128 / 1)</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>100</td><td class="highlight">555,642</td><td class="bottleneck">110,627</td><td>&lt;1ms / 1ms</td><td>&lt;1ms / 2ms</td></tr>
+    <tr><td>500</td><td class="highlight">1,304,986</td><td class="bottleneck">105,005</td><td>&lt;1ms / 4ms</td><td>&lt;1ms / 5ms</td></tr>
+    <tr><td>1,000</td><td class="highlight">1,319,936</td><td class="bottleneck">104,205</td><td>&lt;1ms / 9ms</td><td>1ms / 10ms</td></tr>
+    <tr><td>2,000</td><td class="highlight">1,326,029</td><td class="bottleneck">97,088</td><td>1ms / 20ms</td><td>3ms / 22ms</td></tr>
+    <tr><td>5,000</td><td class="highlight">1,320,653</td><td class="bottleneck">90,659</td><td>3ms / 55ms</td><td>6ms / 63ms</td></tr>
+    <tr><td>10,000</td><td class="highlight">1,333,453</td><td class="bottleneck">87,856</td><td>6ms / 115ms</td><td>17ms / 138ms</td></tr>
+  </tbody>
+</table>
+</div>
+
+<p>Process count:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>GOMAXPROCS=128 : 129 processes  (1 master + 128 workers)
+GOMAXPROCS=1   :   2 processes  (1 master +   1 worker)
+</code></pre></div></div>
+
+<p><strong>GOMAXPROCS=1 produced one worker, not 128 broken ones.</strong> My first instinct was that the fork loop crashed. It didn’t. I had to read the source to see I asked for exactly this.</p>
+
+<h2 id="what-the-source-actually-says">what the source actually says</h2>
+
+<p><code class="language-plaintext highlighter-rouge">fiber/v3.1.0/prefork.go</code>:</p>
+
+<div class="language-go highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="c">// 👶 child process 👶</span>
+<span class="k">if</span> <span class="n">IsChild</span><span class="p">()</span> <span class="p">{</span>
+    <span class="c">// use 1 cpu core per child process</span>
+    <span class="n">runtime</span><span class="o">.</span><span class="n">GOMAXPROCS</span><span class="p">(</span><span class="m">1</span><span class="p">)</span>        <span class="c">// every child resets itself to 1</span>
+    <span class="o">...</span>
+    <span class="k">return</span> <span class="n">app</span><span class="o">.</span><span class="n">server</span><span class="o">.</span><span class="n">Serve</span><span class="p">(</span><span class="n">ln</span><span class="p">)</span>  <span class="c">// SO_REUSEPORT listener</span>
+<span class="p">}</span>
+
+<span class="c">// 👮 master process 👮</span>
+<span class="n">maxProcs</span> <span class="o">:=</span> <span class="n">runtime</span><span class="o">.</span><span class="n">GOMAXPROCS</span><span class="p">(</span><span class="m">0</span><span class="p">)</span>   <span class="c">// master reads the env value</span>
+<span class="k">for</span> <span class="k">range</span> <span class="n">maxProcs</span> <span class="p">{</span>                 <span class="c">// spawns exactly that many children</span>
+    <span class="n">cmd</span> <span class="o">:=</span> <span class="n">exec</span><span class="o">.</span><span class="n">Command</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">Args</span><span class="p">[</span><span class="m">0</span><span class="p">],</span> <span class="n">os</span><span class="o">.</span><span class="n">Args</span><span class="p">[</span><span class="m">1</span><span class="o">:</span><span class="p">]</span><span class="o">...</span><span class="p">)</span>
+    <span class="o">...</span>
+<span class="p">}</span>
+</code></pre></div></div>
+
+<p>Two facts, both the opposite of what I assumed:</p>
+
+<p><strong>1. The master spawns <code class="language-plaintext highlighter-rouge">runtime.GOMAXPROCS(0)</code> children.</strong> Not <code class="language-plaintext highlighter-rouge">runtime.NumCPU()</code>. The env <code class="language-plaintext highlighter-rouge">GOMAXPROCS</code> directly sets the worker count. 128 → 128 workers, 32 → 32 workers, 1 → 1 worker. The “2 processes” was 1 master + 1 worker. Working as written.</p>
+
+<p><strong>2. Every child overrides to <code class="language-plaintext highlighter-rouge">runtime.GOMAXPROCS(1)</code>.</strong> The comment says it outright: <em>use 1 cpu core per child process</em>. So my entire premise — “cut each worker from GOMAXPROCS=128 down to 1” — was nonsense. The workers were already GOMAXPROCS=1. The env var never touched their internal scheduling. It only ever controlled how many of them exist.</p>
+
+<h2 id="then-why-15-threads-per-worker-if-gomaxprocs1">then why ~15 threads per worker, if GOMAXPROCS=1?</h2>
+
+<p>Because GOMAXPROCS caps the number of goroutines running Go code simultaneously (the P count), not the number of OS threads (M count). A GOMAXPROCS=1 process still spawns threads:</p>
+
+<ul>
+  <li>1 thread running Go code at a time (the single P)</li>
+  <li>one M per goroutine currently blocked inside a <code class="language-plaintext highlighter-rouge">read</code>/<code class="language-plaintext highlighter-rouge">write</code> syscall — these detach from the P and sit in the kernel</li>
+  <li>fixed runtime threads: sysmon, GC workers, finalizer</li>
+</ul>
+
+<p>A network server constantly has goroutines mid-syscall, so the M pool sits around 10-15 even though only one runs Go at any instant. The thread count is the syscall-concurrency floor, not a GOMAXPROCS knob. You can’t tune it down with the env var, and the GOMAXPROCS=1 experiment never could have — the workers were always there.</p>
+
+<h2 id="why-1-worker--110k-rps">why 1 worker = 110k RPS</h2>
+
+<p>One worker, GOMAXPROCS=1, one P. One goroutine runs Go code at a time. At 100 connections it manages 110k RPS; at 10k connections it degrades to 88k as the single P thrashes between more goroutines. This is the same single-threaded ceiling autocannon hits as a client. 128 workers at 1.33M is just this number × the workers that actually exist.</p>
+
+<div class="journal-callout warning">
+  <strong>The mistake</strong>
+  I reasoned about fiber's threading model from the outside — counted threads, assumed GOMAXPROCS controlled them, predicted a tuning win. Every step was wrong, and the benchmark "confirming" a problem (2 workers, low RPS) reinforced the wrong story. The source settled it in four lines. Read the source before theorising about what a library does internally.
+</div>
+
+<div class="journal-callout finding">
+  <strong>Finding</strong>
+  Fiber v3 prefork: master spawns <code>runtime.GOMAXPROCS(0)</code> workers, each worker runs <code>runtime.GOMAXPROCS(1)</code>. The env <code>GOMAXPROCS</code> is a worker-count dial. Its default (NumCPU) gives one worker per core, which is correct — SO_REUSEPORT distributes connections across them. Don't set it to 1.
+</div>
+
+<div class="journal-callout next">
+  <strong>Next</strong>
+  If GOMAXPROCS only changes worker count, does 32 workers vs 128 workers change /read throughput? And does the per-worker thread count actually depend on anything? Measured against the real ceiling — the NIC — in <a href="../11-threads-gomaxprocs-pipelining/">entry 11</a>.
+</div>
+
+
+      <hr>
+
+      <!-- Prev / Next -->
+      
+      
+      
+
+      <div class="clearfix" style="margin-top: 2rem;">
+        
+          
+          
+
+          
+            
+            <a class="btn btn-primary float-left" href="/millionrps/09-profiling-gofakeit-mutex.html">&larr; 403 seconds of waste, per 60 seconds of work</a>
+          
+
+          
+            
+            <a class="btn btn-primary float-right" href="/millionrps/11-threads-gomaxprocs-pipelining.html">Three things that don't move /read past the NIC &rarr;</a>
+          
+        
+      </div>
+
+      <div style="text-align: center; margin-top: 1rem;">
+        <a href="/millionrps/">&uarr; Back to Journal</a>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+
+  <!-- Footer -->
+
+<hr>
+
+<footer>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <ul class="list-inline text-center">
+          
+          <li class="list-inline-item">
+            <a href="mailto:amitava.dev@proton.me" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="far fa-envelope fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          
+          
+          <li class="list-inline-item">
+            <a href="https://www.linkedin.com/in/amitavaag" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-linkedin fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          <li class="list-inline-item">
+            <a href="https://github.com/ikouchiha47" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-github fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+        </ul>
+
+        <p class="copyright text-muted">
+          Build with: 
+          <a 
+            href="https://github.com/StartBootstrap/startbootstrap-clean-blog-jekyll"
+            class="text-gray"
+            target="_blank">startbootstrap-clean-blog-jekyll</a></p>
+      </div>
+    </div>
+  </div>
+</footer>
+
+
+  <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="/assets/vendor/blog/js/scripts.js"></script>
+
+<script src="/assets/scripts.js"></script>
+
+
+
+
+
+  <script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+
+    document.querySelectorAll('pre > code.language-mermaid').forEach((codeBlock) => {
+      codeBlock.parentElement.outerHTML = `<pre class="mermaid">${codeBlock.textContent}</pre>`;
+    });
+
+
+    mermaid.initialize({ startOnLoad: true, theme: 'forest' });
+</script>
+
+
+  
+
+</body>
+
+</html>

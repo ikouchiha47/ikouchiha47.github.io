@@ -1,0 +1,382 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+  <title>
+    Sharding the SSE fan-out goroutine: same ceiling, different drop point - iko&#39;s logs
+    
+  </title>
+
+  <meta name="description" content="">
+  <meta property="og:description" content="">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Sharding the SSE fan-out goroutine: same ceilin...">
+  <meta property="og:url" content="https://ikouchiha47.github.io/millionrps/14-sharded-fanout.html">
+
+  
+
+  <link href='https://fonts.googleapis.com/css?family=Lora:400,700,400italic,700italic' rel='stylesheet' type='text/css'>
+  <link href='https://fonts.googleapis.com/css?family=Open+Sans:300italic,400italic,600italic,700italic,800italic,400,300,600,700,800' rel='stylesheet' type='text/css'>
+
+  <!-- <script src="https://use.fontawesome.com/releases/v5.15.3/js/all.js" crossorigin="anonymous"></script> -->
+  <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.15.4/css/all.css" integrity="sha384-DyZ88mC6Up2uqS4h/KRgHuoeGwBcD4Ng9SiP4dIRy0EXTlnuz47vAwmeGwVChigm" crossorigin="anonymous"/>
+
+  <link rel="stylesheet" href="/assets/main.css">
+  <link rel="canonical" href="https://ikouchiha47.github.io/millionrps/14-sharded-fanout.html">
+  <link rel="alternate" type="application/rss+xml" title="iko&#39;s logs" href="/feed.xml">
+
+  <meta name="google-site-verification" content="lWkg6gIxJgzEKX_5XnhcxCtPE9QknaimFWWos_dTvPM" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fira+Sans:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Inconsolata:wght@200..900&family=Jersey+25&family=Kanit:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Merriweather+Sans:ital,wght@0,300..800;1,300..800&family=Nanum+Gothic+Coding&family=Space+Grotesk:wght@300..700&family=Titillium+Web:ital,wght@0,200;0,300;0,400;0,600;0,700;0,900;1,200;1,300;1,400;1,600;1,700&display=swap" rel="stylesheet">
+
+</head>
+
+
+<body>
+
+  <!-- Navigation -->
+<nav class="navbar navbar-expand-lg navbar-light fixed-top" id="mainNav">
+  <div class="container">
+    <a class="navbar-brand" href="/">iko&#39;s logs</a>
+    <button class="navbar-toggler navbar-toggler-right" type="button" data-toggle="collapse" data-target="#navbarResponsive" aria-controls="navbarResponsive" aria-expanded="false" aria-label="Toggle navigation">
+      Menu
+      <i class="fa fa-bars"></i>
+    </button>
+    <div class="collapse navbar-collapse" id="navbarResponsive">
+      <ul class="navbar-nav ml-auto">
+        <li class="nav-item">
+          <a class="nav-link" href="/">Home</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/about">About</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/posts">Posts</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/contact">Contact</a>
+        </li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+
+  
+<header class="masthead">
+
+  <div class="overlay"></div>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <div class="post-heading">
+          <h1>Sharding the SSE fan-out goroutine: same ceiling, different drop point</h1>
+          
+          <h2 class="subheading">8 parallel shard goroutines per topic instead of 1. The events/s ceiling didn't move. Here's why.</h2>
+          
+          <span class="meta">
+            July 15, 2026
+            
+            &mdash; <span class="journal-entry-status done">DONE</span>
+            
+          </span>
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="container space-grotesk">
+  <div class="row">
+    <div class="col-lg-8 col-md-10 mx-auto">
+
+      <!-- Breadcrumb -->
+      <nav aria-label="breadcrumb" style="margin-bottom: 1.5rem;">
+        <ol class="breadcrumb" style="background: transparent; padding: 0;">
+          <li class="breadcrumb-item"><a href="/millionrps/">Chasing 1 Million RPS</a></li>
+          <li class="breadcrumb-item active" aria-current="page">Sharding the SSE fan-out goroutine: same ceiling, different drop point</li>
+        </ol>
+      </nav>
+
+      
+      <div style="margin-bottom: 1.5rem;">
+        
+        <span class="journal-tag">SSE</span>
+        
+        <span class="journal-tag">fan-out</span>
+        
+        <span class="journal-tag">sharding</span>
+        
+        <span class="journal-tag">goroutine</span>
+        
+        <span class="journal-tag">channel</span>
+        
+        <span class="journal-tag">coordinator</span>
+        
+        <span class="journal-tag">unsafe.Pointer</span>
+        
+      </div>
+      
+
+      <p>Source code: <a href="https://github.com/ikouchiha47/gothun">ikouchiha47/gothun</a> — <code class="language-plaintext highlighter-rouge">src/likes/</code></p>
+
+<h2 id="the-hypothesis">the hypothesis</h2>
+
+<p>Entry 13 ended with a question: is the single <code class="language-plaintext highlighter-rouge">run()</code> goroutine iterating subscribers sequentially the bottleneck, or is it CPU contention?</p>
+
+<p>The ceiling at 20K SSE connections was ~7.5M events/s with 33% delivery. At 64K it collapsed to 5%. If the <code class="language-plaintext highlighter-rouge">run()</code> goroutine was spending most of its time in the iteration loop and couldn’t keep up with the broadcast rate, parallelising that loop across N goroutines should move the ceiling. If it was CPU — if the OS scheduler was just starving the fan-out goroutines because write goroutines were consuming cores — then sharding would do nothing.</p>
+
+<p>The only way to know was to build the sharded version and run the same benchmark.</p>
+
+<h2 id="what-changed">what changed</h2>
+
+<p>The single <code class="language-plaintext highlighter-rouge">run()</code> goroutine becomes a coordinator that fans out to N shard goroutines. Each shard owns a contiguous slice of subscribers and drains its own buffered channel.</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>broadcast channel
+      ↓
+coordinator goroutine (one per topic)
+      ↓  ↓  ↓  ↓  (N sends to N shard channels, buffered 128)
+shard[0] shard[1] ... shard[N-1]
+goroutine goroutine    goroutine
+owns 1/N  owns 1/N     owns 1/N
+of subs   of subs      of subs
+</code></pre></div></div>
+
+<p><code class="language-plaintext highlighter-rouge">numShards = runtime.NumCPU() / 4</code> — 8 on the 32-core server.</p>
+
+<p>Shard assignment for a subscriber:</p>
+
+<div class="language-go highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="n">idx</span> <span class="o">:=</span> <span class="kt">int</span><span class="p">(</span><span class="kt">uintptr</span><span class="p">(</span><span class="n">unsafe</span><span class="o">.</span><span class="n">Pointer</span><span class="p">(</span><span class="n">sub</span><span class="p">))</span> <span class="o">%</span> <span class="kt">uintptr</span><span class="p">(</span><span class="n">n</span><span class="p">))</span>
+</code></pre></div></div>
+
+<p>Stable for the lifetime of the subscriber (pointer doesn’t move after allocation), zero allocation, and requires no extra field on the <code class="language-plaintext highlighter-rouge">Subscriber</code> struct. The <code class="language-plaintext highlighter-rouge">unsafe.Pointer</code> cast is just arithmetic — we’re treating the address as a number to get a deterministic bucket.</p>
+
+<p>The coordinator loop:</p>
+
+<div class="language-go highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">func</span> <span class="p">(</span><span class="n">t</span> <span class="o">*</span><span class="n">topic</span><span class="p">)</span> <span class="n">run</span><span class="p">()</span> <span class="p">{</span>
+    <span class="k">for</span> <span class="n">val</span> <span class="o">:=</span> <span class="k">range</span> <span class="n">t</span><span class="o">.</span><span class="n">broadcast</span> <span class="p">{</span>
+        <span class="n">t</span><span class="o">.</span><span class="n">mu</span><span class="o">.</span><span class="n">RLock</span><span class="p">()</span>
+        <span class="n">shards</span> <span class="o">:=</span> <span class="n">t</span><span class="o">.</span><span class="n">shards</span>
+        <span class="n">t</span><span class="o">.</span><span class="n">mu</span><span class="o">.</span><span class="n">RUnlock</span><span class="p">()</span>
+        <span class="k">for</span> <span class="n">_</span><span class="p">,</span> <span class="n">sh</span> <span class="o">:=</span> <span class="k">range</span> <span class="n">shards</span> <span class="p">{</span>
+            <span class="k">select</span> <span class="p">{</span>
+            <span class="k">case</span> <span class="n">sh</span><span class="o">.</span><span class="n">ch</span> <span class="o">&lt;-</span> <span class="n">val</span><span class="o">:</span>
+            <span class="k">default</span><span class="o">:</span> <span class="c">// shard channel full — drop for all subs in this shard</span>
+            <span class="p">}</span>
+        <span class="p">}</span>
+    <span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div></div>
+
+<p>Each shard goroutine:</p>
+
+<div class="language-go highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">func</span> <span class="p">(</span><span class="n">s</span> <span class="o">*</span><span class="n">shard</span><span class="p">)</span> <span class="n">run</span><span class="p">()</span> <span class="p">{</span>
+    <span class="k">for</span> <span class="n">val</span> <span class="o">:=</span> <span class="k">range</span> <span class="n">s</span><span class="o">.</span><span class="n">ch</span> <span class="p">{</span>
+        <span class="k">for</span> <span class="n">_</span><span class="p">,</span> <span class="n">sub</span> <span class="o">:=</span> <span class="k">range</span> <span class="n">s</span><span class="o">.</span><span class="n">subs</span> <span class="p">{</span>
+            <span class="k">select</span> <span class="p">{</span>
+            <span class="k">case</span> <span class="n">sub</span><span class="o">.</span><span class="n">Ch</span> <span class="o">&lt;-</span> <span class="n">val</span><span class="o">:</span>
+            <span class="k">case</span> <span class="o">&lt;-</span><span class="n">sub</span><span class="o">.</span><span class="n">Done</span><span class="o">:</span>
+            <span class="k">default</span><span class="o">:</span>
+            <span class="p">}</span>
+        <span class="p">}</span>
+    <span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div></div>
+
+<p>Same drop policy as before — slow reader loses the event. The difference is that 8 goroutines are now iterating subscriber slices in parallel instead of one.</p>
+
+<p>The coordinator does N channel sends per event. At 8 shards, that’s 8 non-blocking sends into buffered channels. Microseconds. Not a bottleneck.</p>
+
+<h2 id="results">results</h2>
+
+<p>Machine: c6in.8xlarge (32 vCPU, 50 Gbps) | Clients: 2× c8gn.large (Graviton4 arm64)
+Writers: 500 goroutines, 10 posts round-robin. Delivery% = events_received / (writes × subs_per_post) × 100.</p>
+
+<div class="bench-table-wrap">
+<table class="bench-table">
+<thead><tr><th>SSE Connections</th><th>Events/s</th><th>Delivery%</th><th>Write inc/s</th><th>Server RSS</th><th>FDs</th></tr></thead>
+<tbody>
+<tr><td>2,000</td><td>4,452,394</td><td>90.1%</td><td>24,700</td><td>626 MB</td><td>2,529</td></tr>
+<tr><td>10,000</td><td>6,682,850</td><td>56.6%</td><td>11,814</td><td>922 MB</td><td>10,529</td></tr>
+<tr><td class="highlight">20,000</td><td class="highlight">7,543,145</td><td>33.1%</td><td>11,406</td><td>1,325 MB</td><td>20,529</td></tr>
+<tr><td>64,000</td><td class="bottleneck">2,599,775</td><td class="bottleneck">5.0%</td><td>8,192</td><td>3,128 MB</td><td>64,527</td></tr>
+</tbody>
+</table>
+</div>
+
+<p>Comparison against Checkpoint 4 (single goroutine):</p>
+
+<div class="bench-table-wrap">
+<table class="bench-table">
+<thead><tr><th>SSE Connections</th><th>Events/s (single)</th><th>Events/s (sharded)</th><th>Delta</th></tr></thead>
+<tbody>
+<tr><td>2,000</td><td>4,877,998</td><td>4,452,394</td><td>-8.7%</td></tr>
+<tr><td>10,000</td><td>6,410,218</td><td>6,682,850</td><td>+4.3%</td></tr>
+<tr><td class="highlight">20,000</td><td class="highlight">7,449,766</td><td class="highlight">7,543,145</td><td>+1.3%</td></tr>
+<tr><td>64,000</td><td class="bottleneck">2,862,760</td><td class="bottleneck">2,599,775</td><td>-9.2%</td></tr>
+</tbody>
+</table>
+</div>
+
+<h2 id="what-this-means">what this means</h2>
+
+<p><strong>The ceiling didn’t move.</strong> ~7.5M events/s at 20K connections, whether you use 1 goroutine or 8. The delta across all four connection levels is within noise — +4% at 10K, -9% at 64K. There’s no signal here. The hypothesis was wrong.</p>
+
+<p><strong>The coordinator→shard channel is the new drop point.</strong> At 64K connections, each shard owns ~8K subscribers. When the broadcast rate is high, the shard goroutines can’t drain their channels fast enough — iterating 8K subscribers takes longer than the inter-event gap. The coordinator hits the <code class="language-plaintext highlighter-rouge">default</code> case on <code class="language-plaintext highlighter-rouge">sh.ch &lt;- val</code> and drops the event for the entire shard. With 8 shards, one full shard channel silently discards all events for 8K subscribers. This is actually worse in terms of fairness than the single-goroutine model, where drops were per-subscriber.</p>
+
+<p>The shardBuf of 128 is just a number. Make it bigger and you defer the drop; you don’t eliminate it. The shard goroutines are still CPU-bound.</p>
+
+<p><strong>Write throughput degrades identically.</strong> With no SSE readers: ~80K inc/s. At 64K SSE connections: ~8K inc/s. This is the same curve as Checkpoint 4. The write goroutines and fan-out goroutines share the same OS process. The scheduler splits cores between them without knowing that writes are on the critical path. More fan-out goroutines (8× more) means 8× more goroutines competing for the same cores — if anything, sharding adds scheduler overhead.</p>
+
+<div class="journal-callout finding">
+<strong>Finding</strong>
+Sharding the fan-out loop is not the bottleneck. The in-process ceiling is CPU competition between the write path and the fan-out goroutines. Both are on the same OS process. The OS scheduler has no knowledge of their relative priority, and adding more goroutines makes this worse, not better. The iteration speed of a single goroutine over N subscribers is not the limiting factor — it's how many CPU cycles the process gets in total.
+</div>
+
+<h2 id="what-we-learned-about-the-drop-point">what we learned about the drop point</h2>
+
+<p>There are two places events can be dropped in the sharded design:</p>
+
+<ol>
+  <li><strong>Coordinator → shard channel</strong> (<code class="language-plaintext highlighter-rouge">shardBuf=128</code>): drops the event for every subscriber in that shard — bulk loss</li>
+  <li><strong>Shard goroutine → subscriber channel</strong> (<code class="language-plaintext highlighter-rouge">sub.Ch</code>, 8 slots): drops for one slow subscriber only</li>
+</ol>
+
+<p>The single-goroutine design had only drop point 2. Sharding introduced drop point 1, which is coarser. Under high load, most drops happen at point 1, which explains why delivery% at 64K is similar (5%) despite the different architecture — the shard channels fill just as the broadcast channel did before.</p>
+
+<h2 id="whats-next">what’s next</h2>
+
+<p>The conclusion from two checkpoints is consistent: in-process fan-out on a single non-prefork process has a CPU ceiling around 7.5M events/s. You cannot cross it by changing how you iterate subscribers inside that process.</p>
+
+<p>The correct boundary is between the write path and the fan-out path. They need separate CPU budgets. That means either:</p>
+
+<ul>
+  <li><strong>Separate processes</strong>: prefork-style, where fan-out happens in workers that don’t share the write goroutine pool</li>
+  <li><strong>Message passing across process boundary</strong>: fan-out over a Unix socket or shared memory ring, so the write path is never scheduled on the same core as fan-out</li>
+</ul>
+
+<p>Phase 2 is separate processes. That’s the next checkpoint.</p>
+
+
+      <hr>
+
+      <!-- Prev / Next -->
+      
+      
+      
+
+      <div class="clearfix" style="margin-top: 2rem;">
+        
+          
+          
+
+          
+            
+            <a class="btn btn-primary float-left" href="/millionrps/13-sse-fanout-baseline.html">&larr; Go SSE fan-out baseline: 7.5M events/s, then it collapses</a>
+          
+
+          
+            
+            <a class="btn btn-primary float-right" href="/millionrps/15-direct-routed-fanout.html">Direct-routed SSE fan-out: process separation regressed 60%, aggregation is the fix &rarr;</a>
+          
+        
+      </div>
+
+      <div style="text-align: center; margin-top: 1rem;">
+        <a href="/millionrps/">&uarr; Back to Journal</a>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+
+  <!-- Footer -->
+
+<hr>
+
+<footer>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <ul class="list-inline text-center">
+          
+          <li class="list-inline-item">
+            <a href="mailto:amitava.dev@proton.me" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="far fa-envelope fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          
+          
+          <li class="list-inline-item">
+            <a href="https://www.linkedin.com/in/amitavaag" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-linkedin fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          <li class="list-inline-item">
+            <a href="https://github.com/ikouchiha47" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-github fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+        </ul>
+
+        <p class="copyright text-muted">
+          Build with: 
+          <a 
+            href="https://github.com/StartBootstrap/startbootstrap-clean-blog-jekyll"
+            class="text-gray"
+            target="_blank">startbootstrap-clean-blog-jekyll</a></p>
+      </div>
+    </div>
+  </div>
+</footer>
+
+
+  <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="/assets/vendor/blog/js/scripts.js"></script>
+
+<script src="/assets/scripts.js"></script>
+
+
+
+
+
+  <script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+
+    document.querySelectorAll('pre > code.language-mermaid').forEach((codeBlock) => {
+      codeBlock.parentElement.outerHTML = `<pre class="mermaid">${codeBlock.textContent}</pre>`;
+    });
+
+
+    mermaid.initialize({ startOnLoad: true, theme: 'forest' });
+</script>
+
+
+  
+
+</body>
+
+</html>

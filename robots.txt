@@ -1,0 +1,7 @@
+User-Agent: *
+Disallow: /feed.xml
+Disallow: /about/
+Disallow: /two-cents/
+Disallow: /tmp/
+Disallow: /resume/
+

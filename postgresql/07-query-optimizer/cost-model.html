@@ -1,0 +1,681 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+  <title>
+    Cost Model - iko&#39;s logs
+    
+  </title>
+
+  <meta name="description" content="">
+  <meta property="og:description" content="">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Cost Model">
+  <meta property="og:url" content="https://ikouchiha47.github.io/postgresql/07-query-optimizer/cost-model.html">
+
+  
+
+  <link href='https://fonts.googleapis.com/css?family=Lora:400,700,400italic,700italic' rel='stylesheet' type='text/css'>
+  <link href='https://fonts.googleapis.com/css?family=Open+Sans:300italic,400italic,600italic,700italic,800italic,400,300,600,700,800' rel='stylesheet' type='text/css'>
+
+  <!-- <script src="https://use.fontawesome.com/releases/v5.15.3/js/all.js" crossorigin="anonymous"></script> -->
+  <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.15.4/css/all.css" integrity="sha384-DyZ88mC6Up2uqS4h/KRgHuoeGwBcD4Ng9SiP4dIRy0EXTlnuz47vAwmeGwVChigm" crossorigin="anonymous"/>
+
+  <link rel="stylesheet" href="/assets/main.css">
+  <link rel="canonical" href="https://ikouchiha47.github.io/postgresql/07-query-optimizer/cost-model.html">
+  <link rel="alternate" type="application/rss+xml" title="iko&#39;s logs" href="/feed.xml">
+
+  <meta name="google-site-verification" content="lWkg6gIxJgzEKX_5XnhcxCtPE9QknaimFWWos_dTvPM" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fira+Sans:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Inconsolata:wght@200..900&family=Jersey+25&family=Kanit:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Merriweather+Sans:ital,wght@0,300..800;1,300..800&family=Nanum+Gothic+Coding&family=Space+Grotesk:wght@300..700&family=Titillium+Web:ital,wght@0,200;0,300;0,400;0,600;0,700;0,900;1,200;1,300;1,400;1,600;1,700&display=swap" rel="stylesheet">
+
+</head>
+
+
+<body>
+
+  <!-- Navigation -->
+<nav class="navbar navbar-expand-lg navbar-light fixed-top" id="mainNav">
+  <div class="container">
+    <a class="navbar-brand" href="/">iko&#39;s logs</a>
+    <button class="navbar-toggler navbar-toggler-right" type="button" data-toggle="collapse" data-target="#navbarResponsive" aria-controls="navbarResponsive" aria-expanded="false" aria-label="Toggle navigation">
+      Menu
+      <i class="fa fa-bars"></i>
+    </button>
+    <div class="collapse navbar-collapse" id="navbarResponsive">
+      <ul class="navbar-nav ml-auto">
+        <li class="nav-item">
+          <a class="nav-link" href="/">Home</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/about">About</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/posts">Posts</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/contact">Contact</a>
+        </li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+
+  <!-- Page Header -->
+
+<header class="masthead">
+
+  <div class="overlay"></div>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <div class="post-heading">
+          <h1>Cost Model</h1>
+          
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="container space-grotesk">
+  <div class="row">
+    <div class="col-lg-8 col-md-10 mx-auto">
+
+      <!-- Breadcrumb -->
+      <nav aria-label="breadcrumb" style="margin-bottom: 1.5rem;">
+        <ol class="breadcrumb" style="background: transparent; padding: 0;">
+          
+            <li class="breadcrumb-item"><a href="/postgresql-internals/">PostgreSQL Internals Deep Dive</a></li>
+          
+          
+            
+              <li class="breadcrumb-item"><a href="/postgresql/07-query-optimizer/">Query Optimizer</a></li>
+            
+          
+          <li class="breadcrumb-item active" aria-current="page">Cost Model</li>
+        </ol>
+      </nav>
+
+      <h1 id="cost-model">Cost Model</h1>
+
+<p>PostgreSQL’s cost model assigns a numeric cost estimate to every Path. The optimizer compares these costs to choose the cheapest execution strategy. The cost model is implemented primarily in <code class="language-plaintext highlighter-rouge">costsize.c</code> and uses selectivity estimates from <code class="language-plaintext highlighter-rouge">clausesel.c</code> and the <code class="language-plaintext highlighter-rouge">pg_statistic</code> catalog. Understanding the cost model is essential for interpreting <code class="language-plaintext highlighter-rouge">EXPLAIN</code> output and diagnosing plan quality issues.</p>
+
+<hr />
+
+<h2 id="summary">Summary</h2>
+
+<p>Every Path carries two cost numbers:</p>
+<ul>
+  <li><strong>startup_cost</strong> – cost expended before the first tuple can be returned.</li>
+  <li><strong>total_cost</strong> – total cost to return all tuples.</li>
+</ul>
+
+<p>Costs are measured in abstract units calibrated by seven GUC parameters: <code class="language-plaintext highlighter-rouge">seq_page_cost</code>, <code class="language-plaintext highlighter-rouge">random_page_cost</code>, <code class="language-plaintext highlighter-rouge">cpu_tuple_cost</code>, <code class="language-plaintext highlighter-rouge">cpu_index_tuple_cost</code>, <code class="language-plaintext highlighter-rouge">cpu_operator_cost</code>, <code class="language-plaintext highlighter-rouge">parallel_tuple_cost</code>, and <code class="language-plaintext highlighter-rouge">parallel_setup_cost</code>. The cost of a plan is the sum of I/O costs (page fetches) and CPU costs (tuple processing and operator evaluation).</p>
+
+<pre><code class="language-mermaid">flowchart TD
+    STATS["pg_statistic&lt;br/&gt;(ANALYZE data)&lt;br/&gt;MCV, histogram,&lt;br/&gt;correlation, NDV"]
+    SELFUNCS["Selectivity Functions&lt;br/&gt;(selfuncs.c)&lt;br/&gt;eqsel, scalarineqsel, etc."]
+    CLAUSESEL["clausesel.c&lt;br/&gt;clauselist_selectivity()&lt;br/&gt;AND: multiply&lt;br/&gt;OR: S1+S2-S1*S2"]
+    COSTSIZE["costsize.c&lt;br/&gt;cost_seqscan()&lt;br/&gt;cost_index()&lt;br/&gt;cost_nestloop()&lt;br/&gt;cost_hashjoin()"]
+    GUCS["GUC Parameters&lt;br/&gt;seq_page_cost = 1.0&lt;br/&gt;random_page_cost = 4.0&lt;br/&gt;cpu_tuple_cost = 0.01"]
+    PATH["Path Node&lt;br/&gt;startup_cost&lt;br/&gt;total_cost&lt;br/&gt;rows"]
+
+    STATS --&gt; SELFUNCS
+    SELFUNCS --&gt;|"selectivity&lt;br/&gt;per clause"| CLAUSESEL
+    CLAUSESEL --&gt;|"combined&lt;br/&gt;selectivity"| COSTSIZE
+    GUCS --&gt; COSTSIZE
+    COSTSIZE --&gt; PATH
+
+    style STATS fill:#e6f3ff,stroke:#333
+    style SELFUNCS fill:#fff3e6,stroke:#333
+    style CLAUSESEL fill:#fff3e6,stroke:#333
+    style COSTSIZE fill:#ffe6e6,stroke:#333
+    style PATH fill:#e6ffe6,stroke:#333
+    style GUCS fill:#f0f0f0,stroke:#333
+</code></pre>
+
+<hr />
+
+<h2 id="key-source-files">Key Source Files</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>File</th>
+      <th>Purpose</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/optimizer/path/costsize.c</code></td>
+      <td>All cost functions: <code class="language-plaintext highlighter-rouge">cost_seqscan()</code>, <code class="language-plaintext highlighter-rouge">cost_index()</code>, <code class="language-plaintext highlighter-rouge">cost_nestloop()</code>, etc.</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/optimizer/path/clausesel.c</code></td>
+      <td><code class="language-plaintext highlighter-rouge">clauselist_selectivity()</code> – combine selectivities of multiple clauses</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/utils/adt/selfuncs.c</code></td>
+      <td>Per-operator selectivity functions (<code class="language-plaintext highlighter-rouge">eqsel</code>, <code class="language-plaintext highlighter-rouge">neqsel</code>, <code class="language-plaintext highlighter-rouge">scalarineqsel</code>, etc.)</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/utils/adt/array_selfuncs.c</code></td>
+      <td>Selectivity for array operators</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/optimizer/util/plancat.c</code></td>
+      <td><code class="language-plaintext highlighter-rouge">get_relation_info()</code>, <code class="language-plaintext highlighter-rouge">estimate_rel_size()</code></td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/nodes/pathnodes.h</code></td>
+      <td><code class="language-plaintext highlighter-rouge">QualCost</code>, <code class="language-plaintext highlighter-rouge">AggClauseCosts</code></td>
+    </tr>
+  </tbody>
+</table>
+
+<hr />
+
+<h2 id="how-it-works">How It Works</h2>
+
+<h3 id="the-cost-parameters">The Cost Parameters</h3>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="cm">/* From costsize.c -- these are the fundamental cost units */</span>
+<span class="kt">double</span>  <span class="n">seq_page_cost</span>    <span class="o">=</span> <span class="n">DEFAULT_SEQ_PAGE_COST</span><span class="p">;</span>       <span class="cm">/* 1.0 */</span>
+<span class="kt">double</span>  <span class="n">random_page_cost</span> <span class="o">=</span> <span class="n">DEFAULT_RANDOM_PAGE_COST</span><span class="p">;</span>     <span class="cm">/* 4.0 */</span>
+<span class="kt">double</span>  <span class="n">cpu_tuple_cost</span>   <span class="o">=</span> <span class="n">DEFAULT_CPU_TUPLE_COST</span><span class="p">;</span>       <span class="cm">/* 0.01 */</span>
+<span class="kt">double</span>  <span class="n">cpu_index_tuple_cost</span> <span class="o">=</span> <span class="n">DEFAULT_CPU_INDEX_TUPLE_COST</span><span class="p">;</span> <span class="cm">/* 0.005 */</span>
+<span class="kt">double</span>  <span class="n">cpu_operator_cost</span> <span class="o">=</span> <span class="n">DEFAULT_CPU_OPERATOR_COST</span><span class="p">;</span>   <span class="cm">/* 0.0025 */</span>
+<span class="kt">double</span>  <span class="n">parallel_tuple_cost</span> <span class="o">=</span> <span class="n">DEFAULT_PARALLEL_TUPLE_COST</span><span class="p">;</span> <span class="cm">/* 0.1 */</span>
+<span class="kt">double</span>  <span class="n">parallel_setup_cost</span> <span class="o">=</span> <span class="n">DEFAULT_PARALLEL_SETUP_COST</span><span class="p">;</span> <span class="cm">/* 1000.0 */</span>
+<span class="kt">int</span>     <span class="n">effective_cache_size</span> <span class="o">=</span> <span class="n">DEFAULT_EFFECTIVE_CACHE_SIZE</span><span class="p">;</span> <span class="cm">/* 4GB in pages */</span>
+</code></pre></div></div>
+
+<p>The ratio <code class="language-plaintext highlighter-rouge">random_page_cost / seq_page_cost</code> (default 4:1) is the most critical tuning knob. For fully-cached databases, setting both to 1.0 is appropriate. For spinning disks, the default ratio or higher is correct.</p>
+
+<h3 id="cost-formulas">Cost Formulas</h3>
+
+<h4 id="sequential-scan-cost_seqscan">Sequential Scan (cost_seqscan)</h4>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>startup_cost = 0
+run_cost     = seq_page_cost * pages
+             + cpu_tuple_cost * tuples
+             + qual_cost.per_tuple * tuples
+total_cost   = startup_cost + run_cost
+</code></pre></div></div>
+
+<p>Every tuple is fetched and every tuple has the WHERE clause evaluated against it.</p>
+
+<h4 id="index-scan-cost_index">Index Scan (cost_index)</h4>
+
+<p>The index scan cost is more complex because it involves both index page fetches and heap page fetches:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>-- Index access cost (from amcostestimate callback):
+indexStartupCost, indexTotalCost, indexSelectivity, indexCorrelation
+
+-- Heap page fetches:
+-- Mackert-Lohman formula estimates the number of heap pages visited
+-- based on selectivity and index correlation
+pages_fetched = index_pages_fetched(tuples_fetched, pages, index_pages,
+                                     root_loop_count)
+
+-- If correlation is high (clustered data), sequential I/O dominates:
+-- If correlation is low (random data), random I/O dominates:
+min_IO_cost = seq_page_cost * pages_fetched   -- best case
+max_IO_cost = random_page_cost * pages_fetched -- worst case
+
+-- Actual cost is interpolated based on correlation^2:
+csquared = indexCorrelation * indexCorrelation
+IO_cost  = max_IO_cost + csquared * (min_IO_cost - max_IO_cost)
+
+total_cost = indexStartupCost + IO_cost
+           + cpu_index_tuple_cost * tuples_fetched
+           + cpu_tuple_cost * tuples_fetched
+           + qual_cost.per_tuple * tuples_fetched
+</code></pre></div></div>
+
+<p>The <strong>index correlation</strong> (from <code class="language-plaintext highlighter-rouge">pg_statistic.stanumbers1</code> for the <code class="language-plaintext highlighter-rouge">STATISTIC_KIND_CORRELATION</code> slot) measures how well the physical row order matches the index order. A correlation near +/-1.0 means the index scan produces nearly sequential I/O. A correlation near 0 means random I/O.</p>
+
+<h4 id="bitmap-scan-cost_bitmap_heap_scan">Bitmap Scan (cost_bitmap_heap_scan)</h4>
+
+<p>A bitmap scan first builds a bitmap of all matching TIDs from one or more index scans, sorts them by physical location, then fetches heap pages in order:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>-- Convert selectivity to expected pages via Mackert-Lohman
+pages_fetched = estimate from selectivity
+-- Pages are fetched in physical order, so cost is closer to sequential:
+cost_per_page = seq_page_cost + (random_page_cost - seq_page_cost)
+                * (1.0 - sqrt(pages_fetched / total_pages))
+</code></pre></div></div>
+
+<p>Bitmap scans are cheaper than plain index scans when selectivity is moderate (not too selective, not too broad) because they convert random I/O into mostly-sequential I/O.</p>
+
+<h4 id="nested-loop-cost_nestloop">Nested Loop (cost_nestloop)</h4>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>startup_cost = outer.startup_cost + inner.startup_cost
+run_cost     = outer.run_cost
+             + outer.rows * inner.run_cost      -- rescan inner for each outer row
+             + cpu_tuple_cost * output_rows
+             + join_qual_cost * (outer.rows * inner.rows)
+</code></pre></div></div>
+
+<p>For parameterized inner paths, <code class="language-plaintext highlighter-rouge">inner.run_cost</code> is the cost per invocation (typically much less than a full scan).</p>
+
+<h4 id="hash-join-cost_hashjoin">Hash Join (cost_hashjoin)</h4>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>startup_cost = inner.total_cost               -- must build entire hash table first
+             + hash_table_build_cost
+run_cost     = outer.total_cost
+             + outer.rows * hash_probe_cost
+             + cpu_tuple_cost * output_rows
+</code></pre></div></div>
+
+<p>Hash join has high startup cost (hashing all inner rows) but low per-probe cost. If the hash table does not fit in <code class="language-plaintext highlighter-rouge">work_mem</code>, it spills to batches on disk, adding I/O cost.</p>
+
+<h4 id="merge-join-cost_mergejoin">Merge Join (cost_mergejoin)</h4>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>startup_cost = sort_outer_cost + sort_inner_cost  -- if sorts needed
+             + inner.startup_cost
+run_cost     = merge_run_cost                     -- single pass over both inputs
+             + cpu_tuple_cost * output_rows
+</code></pre></div></div>
+
+<p>Merge join is efficient when both inputs are already sorted (e.g., from index scans) – the sort costs become zero.</p>
+
+<h3 id="the-disabled-nodes-mechanism">The Disabled-Nodes Mechanism</h3>
+
+<p>When a GUC like <code class="language-plaintext highlighter-rouge">enable_seqscan = false</code> is set, the optimizer does not remove sequential scan paths entirely (that could cause plan failure). Instead, it marks the path with <code class="language-plaintext highlighter-rouge">disabled_nodes = 1</code>. The <code class="language-plaintext highlighter-rouge">add_path()</code> comparator treats disabled nodes as the highest-priority cost component: a path with more disabled nodes is always considered worse than one with fewer, regardless of the numeric cost.</p>
+
+<hr />
+
+<h2 id="selectivity-estimation">Selectivity Estimation</h2>
+
+<p>Selectivity is the fraction of rows that pass a given predicate. It ranges from 0.0 (no rows) to 1.0 (all rows). Accurate selectivity estimates are critical because they determine the estimated row counts at every level of the plan tree, which in turn drive join-order and join-method decisions.</p>
+
+<h3 id="per-operator-selectivity-functions">Per-Operator Selectivity Functions</h3>
+
+<p>Each operator has a <code class="language-plaintext highlighter-rouge">selectivity estimator function</code> registered in <code class="language-plaintext highlighter-rouge">pg_operator.oprrest</code> (for restrictions) and <code class="language-plaintext highlighter-rouge">pg_operator.oprjoin</code> (for joins):</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>Function</th>
+      <th>Used For</th>
+      <th>Approach</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">eqsel</code></td>
+      <td><code class="language-plaintext highlighter-rouge">=</code></td>
+      <td>Use MCV list or NDV (n_distinct)</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">neqsel</code></td>
+      <td><code class="language-plaintext highlighter-rouge">&lt;&gt;</code></td>
+      <td><code class="language-plaintext highlighter-rouge">1.0 - eqsel</code></td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">scalarineqsel</code></td>
+      <td><code class="language-plaintext highlighter-rouge">&lt;</code>, <code class="language-plaintext highlighter-rouge">&gt;</code>, <code class="language-plaintext highlighter-rouge">&lt;=</code>, <code class="language-plaintext highlighter-rouge">&gt;=</code></td>
+      <td>Use histogram boundaries</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">matchingsel</code></td>
+      <td><code class="language-plaintext highlighter-rouge">LIKE</code>, <code class="language-plaintext highlighter-rouge">~</code></td>
+      <td>Use histogram prefix matching</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">arraycontsel</code></td>
+      <td><code class="language-plaintext highlighter-rouge">@&gt;</code>, <code class="language-plaintext highlighter-rouge">&lt;@</code></td>
+      <td>Array-specific estimation</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">eqjoinsel</code></td>
+      <td><code class="language-plaintext highlighter-rouge">=</code> (join)</td>
+      <td>Use NDV from both sides</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">neqjoinsel</code></td>
+      <td><code class="language-plaintext highlighter-rouge">&lt;&gt;</code> (join)</td>
+      <td><code class="language-plaintext highlighter-rouge">1.0 - eqjoinsel</code></td>
+    </tr>
+  </tbody>
+</table>
+
+<h3 id="statistics-used">Statistics Used</h3>
+
+<p>The selectivity functions read from <code class="language-plaintext highlighter-rouge">pg_statistic</code> (populated by <code class="language-plaintext highlighter-rouge">ANALYZE</code>):</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>Statistic Kind</th>
+      <th>Content</th>
+      <th>Used By</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">STATISTIC_KIND_MCV</code></td>
+      <td>Most Common Values + their frequencies</td>
+      <td><code class="language-plaintext highlighter-rouge">eqsel</code>, <code class="language-plaintext highlighter-rouge">eqjoinsel</code></td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">STATISTIC_KIND_HISTOGRAM</code></td>
+      <td>Equi-depth histogram boundaries</td>
+      <td><code class="language-plaintext highlighter-rouge">scalarineqsel</code></td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">STATISTIC_KIND_CORRELATION</code></td>
+      <td>Physical-to-logical ordering correlation</td>
+      <td><code class="language-plaintext highlighter-rouge">cost_index</code></td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">STATISTIC_KIND_NDISTINCT</code></td>
+      <td>Number of distinct values</td>
+      <td><code class="language-plaintext highlighter-rouge">eqsel</code>, <code class="language-plaintext highlighter-rouge">eqjoinsel</code></td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">STATISTIC_KIND_MCELEM</code></td>
+      <td>Most Common Elements (for arrays)</td>
+      <td><code class="language-plaintext highlighter-rouge">arraycontsel</code></td>
+    </tr>
+  </tbody>
+</table>
+
+<h3 id="combining-selectivities-clauseselc">Combining Selectivities (clausesel.c)</h3>
+
+<p><code class="language-plaintext highlighter-rouge">clauselist_selectivity()</code> combines the selectivities of multiple clauses:</p>
+
+<p><strong>AND combination (independence assumption):</strong></p>
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>sel(A AND B) = sel(A) * sel(B)
+</code></pre></div></div>
+
+<p><strong>OR combination:</strong></p>
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>sel(A OR B) = sel(A) + sel(B) - sel(A) * sel(B)
+</code></pre></div></div>
+
+<p>The independence assumption is known to produce poor estimates for correlated columns. Extended statistics (<code class="language-plaintext highlighter-rouge">CREATE STATISTICS</code>) with <code class="language-plaintext highlighter-rouge">dependencies</code> or <code class="language-plaintext highlighter-rouge">mcv</code> types address this by recording cross-column correlations.</p>
+
+<h3 id="row-count-estimation">Row Count Estimation</h3>
+
+<p>The estimated output rows for a relation is:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>rows = baserel_tuples * selectivity_of_all_restrictions
+</code></pre></div></div>
+
+<p>For a join:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>rows = outer_rows * inner_rows * join_selectivity * filter_selectivity
+</code></pre></div></div>
+
+<p>The result is clamped to be at least 1 (the optimizer never estimates zero rows for a non-provably-empty relation, to avoid divide-by-zero issues downstream).</p>
+
+<hr />
+
+<h2 id="key-data-structures">Key Data Structures</h2>
+
+<h3 id="qualcost">QualCost</h3>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">typedef</span> <span class="k">struct</span> <span class="n">QualCost</span>
+<span class="p">{</span>
+    <span class="n">Cost</span>    <span class="n">startup</span><span class="p">;</span>    <span class="cm">/* one-time cost */</span>
+    <span class="n">Cost</span>    <span class="n">per_tuple</span><span class="p">;</span>  <span class="cm">/* per-evaluation cost */</span>
+<span class="p">}</span> <span class="n">QualCost</span><span class="p">;</span>
+</code></pre></div></div>
+
+<p><code class="language-plaintext highlighter-rouge">cost_qual_eval()</code> computes the cost of evaluating a list of qual clauses by summing the <code class="language-plaintext highlighter-rouge">cpu_operator_cost</code> for each operator/function call.</p>
+
+<h3 id="parampathinfo">ParamPathInfo</h3>
+
+<p>Tracks the parameterization of a path:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">typedef</span> <span class="k">struct</span> <span class="n">ParamPathInfo</span>
+<span class="p">{</span>
+    <span class="n">Relids</span>  <span class="n">ppi_req_outer</span><span class="p">;</span>  <span class="cm">/* rels supplying parameters */</span>
+    <span class="kt">double</span>  <span class="n">ppi_rows</span><span class="p">;</span>       <span class="cm">/* estimated rows for this parameterization */</span>
+    <span class="n">List</span>   <span class="o">*</span><span class="n">ppi_clauses</span><span class="p">;</span>    <span class="cm">/* join clauses applied as inner index quals */</span>
+<span class="p">}</span> <span class="n">ParamPathInfo</span><span class="p">;</span>
+</code></pre></div></div>
+
+<hr />
+
+<h2 id="diagram-cost-estimation-flow">Diagram: Cost Estimation Flow</h2>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>+--------------------------+
+|  pg_statistic            |  ANALYZE-collected stats:
+|  +-- stanumbers (MCV)    |  frequencies, histograms,
+|  +-- stavalues (MCV)     |  correlation, NDV
+|  +-- stakind/stanumbers  |
+|      (histogram,corr)    |
++----------+---------------+
+           |
+           v
++--------------------------+
+|  Selectivity Functions   |  eqsel(), scalarineqsel(), etc.
+|  (selfuncs.c)            |
++----------+---------------+
+           |  selectivity per clause
+           v
++--------------------------+
+|  clausesel.c             |  clauselist_selectivity()
+|  Combine with AND/OR     |  Multiply for AND, S1+S2-S1*S2 for OR
++----------+---------------+
+           |  combined selectivity
+           v
++--------------------------+
+|  costsize.c              |  cost_seqscan(), cost_index(),
+|  Apply cost formulas     |  cost_nestloop(), cost_hashjoin(), etc.
+|  using selectivity +     |
+|  GUC parameters          |
++----------+---------------+
+           |  startup_cost, total_cost, rows
+           v
+        Path node
+</code></pre></div></div>
+
+<hr />
+
+<h2 id="practical-implications">Practical Implications</h2>
+
+<h3 id="when-the-cost-model-goes-wrong">When the Cost Model Goes Wrong</h3>
+
+<ol>
+  <li>
+    <p><strong>Stale statistics.</strong> If <code class="language-plaintext highlighter-rouge">ANALYZE</code> hasn’t been run recently, <code class="language-plaintext highlighter-rouge">pg_statistic</code> data is outdated. The optimizer may drastically underestimate row counts, choosing nested loops when hash joins would be orders of magnitude faster.</p>
+  </li>
+  <li>
+    <p><strong>Correlated columns.</strong> <code class="language-plaintext highlighter-rouge">WHERE city = 'NYC' AND state = 'NY'</code> – the optimizer multiplies the selectivities independently, underestimating the result (most NYC rows have state = NY). Extended statistics help.</p>
+  </li>
+  <li>
+    <p><strong>Wrong random_page_cost.</strong> On SSDs, <code class="language-plaintext highlighter-rouge">random_page_cost</code> should be close to <code class="language-plaintext highlighter-rouge">seq_page_cost</code> (e.g., 1.1). The default of 4.0 biases the optimizer away from index scans that would actually be fast on SSD.</p>
+  </li>
+  <li>
+    <p><strong>Parameterized path underuse.</strong> If the optimizer underestimates the outer row count, it may choose a hash join when a nested-loop-with-inner-index would be better.</p>
+  </li>
+</ol>
+
+<h3 id="reading-explain-output">Reading EXPLAIN Output</h3>
+
+<div class="language-sql highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">EXPLAIN</span> <span class="k">SELECT</span> <span class="o">*</span> <span class="k">FROM</span> <span class="n">t1</span> <span class="k">JOIN</span> <span class="n">t2</span> <span class="k">ON</span> <span class="n">t1</span><span class="p">.</span><span class="n">x</span> <span class="o">=</span> <span class="n">t2</span><span class="p">.</span><span class="n">y</span> <span class="k">WHERE</span> <span class="n">t1</span><span class="p">.</span><span class="n">z</span> <span class="o">&gt;</span> <span class="mi">100</span><span class="p">;</span>
+</code></pre></div></div>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>Hash Join  (cost=35.50..192.75 rows=450 width=32)
+  Hash Cond: (t2.y = t1.x)
+  -&gt;  Seq Scan on t2  (cost=0.00..145.00 rows=10000 width=16)
+  -&gt;  Hash  (cost=28.50..28.50 rows=450 width=16)
+        -&gt;  Seq Scan on t1  (cost=0.00..28.50 rows=450 width=16)
+              Filter: (z &gt; 100)
+</code></pre></div></div>
+
+<ul>
+  <li><code class="language-plaintext highlighter-rouge">cost=35.50..192.75</code> means startup_cost=35.50, total_cost=192.75.</li>
+  <li><code class="language-plaintext highlighter-rouge">rows=450</code> is the estimated output cardinality.</li>
+  <li>The Hash node’s cost (28.50..28.50) shows that startup equals total – all rows must be hashed before any output.</li>
+</ul>
+
+<hr />
+
+<h2 id="connections">Connections</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>Subsystem</th>
+      <th>Relationship</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><a href="path-generation">Path Generation</a></td>
+      <td>Every path creation call invokes a cost function</td>
+    </tr>
+    <tr>
+      <td><a href="join-ordering">Join Ordering</a></td>
+      <td>Uses cost comparisons to prune the search space via add_path()</td>
+    </tr>
+    <tr>
+      <td><a href="../13-statistics/">Statistics</a></td>
+      <td>pg_statistic provides the raw data for selectivity estimation</td>
+    </tr>
+    <tr>
+      <td><a href="../02-access-methods/">Access Methods</a></td>
+      <td>Index AMs provide amcostestimate callbacks for custom cost models</td>
+    </tr>
+    <tr>
+      <td><a href="../08-executor/">Executor</a></td>
+      <td>The actual runtime behavior should match cost model assumptions</td>
+    </tr>
+    <tr>
+      <td><a href="../09-caches/">Caches</a></td>
+      <td>effective_cache_size affects index scan cost estimates</td>
+    </tr>
+  </tbody>
+</table>
+
+
+      <hr>
+
+      <!-- Prev / Next / Up navigation -->
+      
+      
+      
+
+      <div class="clearfix" style="margin-top: 2rem;">
+        
+          
+          
+
+          
+            
+            <a class="btn btn-primary float-left" href="/postgresql/07-query-optimizer/" title="Query Optimizer">&larr; Previous</a>
+          
+
+          
+            
+            <a class="btn btn-primary float-right" href="/postgresql/07-query-optimizer/geqo.html" title="GEQO">Next &rarr;</a>
+          
+        
+      </div>
+
+      
+      <div style="text-align: center; margin-top: 1rem;">
+        <a href="/postgresql-internals/">&uarr; Back to Table of Contents</a>
+      </div>
+      
+
+    </div>
+  </div>
+</div>
+
+
+  <!-- Footer -->
+
+<hr>
+
+<footer>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <ul class="list-inline text-center">
+          
+          <li class="list-inline-item">
+            <a href="mailto:amitava.dev@proton.me" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="far fa-envelope fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          
+          
+          <li class="list-inline-item">
+            <a href="https://www.linkedin.com/in/amitavaag" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-linkedin fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          <li class="list-inline-item">
+            <a href="https://github.com/ikouchiha47" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-github fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+        </ul>
+
+        <p class="copyright text-muted">
+          Build with: 
+          <a 
+            href="https://github.com/StartBootstrap/startbootstrap-clean-blog-jekyll"
+            class="text-gray"
+            target="_blank">startbootstrap-clean-blog-jekyll</a></p>
+      </div>
+    </div>
+  </div>
+</footer>
+
+
+  <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="/assets/vendor/blog/js/scripts.js"></script>
+
+<script src="/assets/scripts.js"></script>
+
+
+
+
+
+  <script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+
+    document.querySelectorAll('pre > code.language-mermaid').forEach((codeBlock) => {
+      codeBlock.parentElement.outerHTML = `<pre class="mermaid">${codeBlock.textContent}</pre>`;
+    });
+
+
+    mermaid.initialize({ startOnLoad: true, theme: 'forest' });
+</script>
+
+
+  
+
+</body>
+
+</html>

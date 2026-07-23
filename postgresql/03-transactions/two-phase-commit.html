@@ -1,0 +1,477 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+  <title>
+    Two-Phase Commit - iko&#39;s logs
+    
+  </title>
+
+  <meta name="description" content="">
+  <meta property="og:description" content="">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Two-Phase Commit">
+  <meta property="og:url" content="https://ikouchiha47.github.io/postgresql/03-transactions/two-phase-commit.html">
+
+  
+
+  <link href='https://fonts.googleapis.com/css?family=Lora:400,700,400italic,700italic' rel='stylesheet' type='text/css'>
+  <link href='https://fonts.googleapis.com/css?family=Open+Sans:300italic,400italic,600italic,700italic,800italic,400,300,600,700,800' rel='stylesheet' type='text/css'>
+
+  <!-- <script src="https://use.fontawesome.com/releases/v5.15.3/js/all.js" crossorigin="anonymous"></script> -->
+  <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.15.4/css/all.css" integrity="sha384-DyZ88mC6Up2uqS4h/KRgHuoeGwBcD4Ng9SiP4dIRy0EXTlnuz47vAwmeGwVChigm" crossorigin="anonymous"/>
+
+  <link rel="stylesheet" href="/assets/main.css">
+  <link rel="canonical" href="https://ikouchiha47.github.io/postgresql/03-transactions/two-phase-commit.html">
+  <link rel="alternate" type="application/rss+xml" title="iko&#39;s logs" href="/feed.xml">
+
+  <meta name="google-site-verification" content="lWkg6gIxJgzEKX_5XnhcxCtPE9QknaimFWWos_dTvPM" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fira+Sans:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Inconsolata:wght@200..900&family=Jersey+25&family=Kanit:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Merriweather+Sans:ital,wght@0,300..800;1,300..800&family=Nanum+Gothic+Coding&family=Space+Grotesk:wght@300..700&family=Titillium+Web:ital,wght@0,200;0,300;0,400;0,600;0,700;0,900;1,200;1,300;1,400;1,600;1,700&display=swap" rel="stylesheet">
+
+</head>
+
+
+<body>
+
+  <!-- Navigation -->
+<nav class="navbar navbar-expand-lg navbar-light fixed-top" id="mainNav">
+  <div class="container">
+    <a class="navbar-brand" href="/">iko&#39;s logs</a>
+    <button class="navbar-toggler navbar-toggler-right" type="button" data-toggle="collapse" data-target="#navbarResponsive" aria-controls="navbarResponsive" aria-expanded="false" aria-label="Toggle navigation">
+      Menu
+      <i class="fa fa-bars"></i>
+    </button>
+    <div class="collapse navbar-collapse" id="navbarResponsive">
+      <ul class="navbar-nav ml-auto">
+        <li class="nav-item">
+          <a class="nav-link" href="/">Home</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/about">About</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/posts">Posts</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/contact">Contact</a>
+        </li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+
+  <!-- Page Header -->
+
+<header class="masthead">
+
+  <div class="overlay"></div>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <div class="post-heading">
+          <h1>Two-Phase Commit</h1>
+          
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="container space-grotesk">
+  <div class="row">
+    <div class="col-lg-8 col-md-10 mx-auto">
+
+      <!-- Breadcrumb -->
+      <nav aria-label="breadcrumb" style="margin-bottom: 1.5rem;">
+        <ol class="breadcrumb" style="background: transparent; padding: 0;">
+          
+            <li class="breadcrumb-item"><a href="/postgresql-internals/">PostgreSQL Internals Deep Dive</a></li>
+          
+          
+            
+              <li class="breadcrumb-item"><a href="/postgresql/03-transactions/">Transactions & MVCC</a></li>
+            
+          
+          <li class="breadcrumb-item active" aria-current="page">Two-Phase Commit</li>
+        </ol>
+      </nav>
+
+      <h1 id="two-phase-commit">Two-Phase Commit</h1>
+
+<p>PostgreSQL supports the SQL-standard two-phase commit protocol through <code class="language-plaintext highlighter-rouge">PREPARE TRANSACTION</code> and <code class="language-plaintext highlighter-rouge">COMMIT PREPARED</code> / <code class="language-plaintext highlighter-rouge">ROLLBACK PREPARED</code>. This allows a transaction to be durably prepared (surviving crashes) and then committed or rolled back in a separate session – a building block for distributed transactions coordinated by an external transaction manager.</p>
+
+<h2 id="key-source-files">Key Source Files</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>File</th>
+      <th>Purpose</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/access/transam/twophase.c</code></td>
+      <td>Core two-phase commit implementation</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/access/twophase.h</code></td>
+      <td>GlobalTransaction, API</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/access/twophase_rmgr.h</code></td>
+      <td>Callbacks for resource managers</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/access/transam/xact.c</code></td>
+      <td>PrepareTransaction(), integration with xact lifecycle</td>
+    </tr>
+  </tbody>
+</table>
+
+<h2 id="overview">Overview</h2>
+
+<p>Normal transactions have a simple lifecycle: BEGIN, do work, COMMIT (flush WAL, set CLOG). Two-phase commit splits this into two durable steps:</p>
+
+<ol>
+  <li>
+    <p><strong>PREPARE</strong>: All work is complete. Locks are held. The transaction state is serialized to a WAL record and a state file on disk. The originating backend disconnects from the transaction.</p>
+  </li>
+  <li>
+    <p><strong>COMMIT PREPARED</strong> (or ROLLBACK PREPARED): A different session (or the same one after reconnecting) finalizes the transaction.</p>
+  </li>
+</ol>
+
+<p>Between PREPARE and COMMIT PREPARED, the transaction holds all its locks, is visible in <code class="language-plaintext highlighter-rouge">pg_prepared_xacts</code>, and survives server crashes. This is fundamentally different from a normal uncommitted transaction, which is rolled back on crash.</p>
+
+<pre><code class="language-mermaid">sequenceDiagram
+    participant App as Application
+    participant PG1 as Backend 1
+    participant PG2 as Backend 2
+    participant WAL as WAL
+    participant Disk as pg_twophase/
+
+    App-&gt;&gt;PG1: BEGIN
+    App-&gt;&gt;PG1: INSERT / UPDATE ...
+    App-&gt;&gt;PG1: PREPARE TRANSACTION 'gid_123'
+    PG1-&gt;&gt;WAL: Write prepare WAL record
+    PG1-&gt;&gt;Disk: Write state file
+    PG1-&gt;&gt;PG1: Release backend, keep locks via dummy PGPROC
+    Note over PG1: Backend 1 is now free
+
+    App-&gt;&gt;PG2: COMMIT PREPARED 'gid_123'
+    PG2-&gt;&gt;WAL: Write commit-prepared WAL record
+    PG2-&gt;&gt;Disk: Remove state file
+    PG2-&gt;&gt;PG2: Release locks, set CLOG to COMMITTED
+</code></pre>
+
+<h2 id="globaltransactiondata">GlobalTransactionData</h2>
+
+<p>Each prepared transaction is represented by a <code class="language-plaintext highlighter-rouge">GlobalTransactionData</code> struct (opaque outside <code class="language-plaintext highlighter-rouge">twophase.c</code>):</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">typedef</span> <span class="k">struct</span> <span class="n">GlobalTransactionData</span>
+<span class="p">{</span>
+    <span class="n">GlobalTransaction</span> <span class="n">next</span><span class="p">;</span>        <span class="cm">/* list link */</span>
+    <span class="kt">int</span>         <span class="n">pgprocno</span><span class="p">;</span>          <span class="cm">/* dummy PGPROC index */</span>
+    <span class="n">TimestampTz</span> <span class="n">prepared_at</span><span class="p">;</span>       <span class="cm">/* time of PREPARE */</span>
+    <span class="n">XLogRecPtr</span>  <span class="n">prepare_start_lsn</span><span class="p">;</span> <span class="cm">/* WAL position of prepare record */</span>
+    <span class="n">XLogRecPtr</span>  <span class="n">prepare_end_lsn</span><span class="p">;</span>
+    <span class="n">Oid</span>         <span class="n">owner</span><span class="p">;</span>             <span class="cm">/* user who prepared */</span>
+    <span class="n">Oid</span>         <span class="n">databaseId</span><span class="p">;</span>
+    <span class="n">FullTransactionId</span> <span class="n">fxid</span><span class="p">;</span>
+    <span class="kt">char</span>        <span class="n">gid</span><span class="p">[</span><span class="n">GIDSIZE</span><span class="p">];</span>      <span class="cm">/* the global transaction identifier */</span>
+<span class="p">}</span> <span class="n">GlobalTransactionData</span><span class="p">;</span>
+</code></pre></div></div>
+
+<h2 id="the-dummy-pgproc">The Dummy PGPROC</h2>
+
+<p>When a transaction is prepared, it releases its backend’s PGPROC but acquires a <strong>dummy PGPROC</strong> from a reserved pool. This dummy PGPROC:</p>
+
+<ul>
+  <li>Has <code class="language-plaintext highlighter-rouge">pid = 0</code> (distinguishing it from real backends)</li>
+  <li>Appears in ProcArray, so the prepared transaction’s XID is visible to snapshots</li>
+  <li>Holds all the transaction’s locks</li>
+  <li>Has <code class="language-plaintext highlighter-rouge">xid</code> set to the prepared transaction’s XID, so <code class="language-plaintext highlighter-rouge">TransactionIdIsInProgress()</code> returns true</li>
+</ul>
+
+<p>The reserved pool is sized by <code class="language-plaintext highlighter-rouge">max_prepared_transactions</code> (default 0, meaning prepared transactions are disabled).</p>
+
+<h2 id="prepare-transaction-internals">PREPARE TRANSACTION Internals</h2>
+
+<p><code class="language-plaintext highlighter-rouge">PrepareTransaction()</code> in <code class="language-plaintext highlighter-rouge">xact.c</code> performs these steps:</p>
+
+<ol>
+  <li><strong>Validate</strong>: Transaction must have an XID, must not be in a subtransaction, must not hold temporary objects</li>
+  <li><strong>Serialize state</strong>: Collect all resource manager state (locks, relation refs, predicate locks) into a buffer</li>
+  <li><strong>Write WAL</strong>: The prepare record contains the full serialized state</li>
+  <li><strong>Write state file</strong>: Redundant copy in <code class="language-plaintext highlighter-rouge">pg_twophase/</code> for faster access during recovery (the file is named by the XID in hex)</li>
+  <li><strong>Transfer to dummy PGPROC</strong>: Move locks and ProcArray entry from the real backend to the dummy</li>
+  <li><strong>Release backend</strong>: The backend’s PGPROC is freed, and the connection can run new transactions</li>
+</ol>
+
+<h2 id="commit-prepared--rollback-prepared">COMMIT PREPARED / ROLLBACK PREPARED</h2>
+
+<p><code class="language-plaintext highlighter-rouge">FinishPreparedTransaction(gid, isCommit)</code> handles both cases:</p>
+
+<ol>
+  <li><strong>Find the prepared transaction</strong> by scanning the GlobalTransaction list for the matching GID</li>
+  <li><strong>Write WAL</strong>: A commit-prepared or abort-prepared WAL record</li>
+  <li><strong>Set CLOG status</strong>: COMMITTED or ABORTED for the XID and all its subtransaction XIDs</li>
+  <li><strong>Release locks</strong>: Remove all locks held by the dummy PGPROC</li>
+  <li><strong>Clean up SSI</strong>: Release predicate locks if serializable</li>
+  <li><strong>Remove from ProcArray</strong>: The dummy PGPROC is returned to the free pool</li>
+  <li><strong>Delete state file</strong>: Remove the <code class="language-plaintext highlighter-rouge">pg_twophase/</code> file</li>
+</ol>
+
+<h2 id="crash-recovery">Crash Recovery</h2>
+
+<p>Prepared transactions survive crashes. During recovery:</p>
+
+<ol>
+  <li><code class="language-plaintext highlighter-rouge">PrescanPreparedTransactions()</code>: Scans <code class="language-plaintext highlighter-rouge">pg_twophase/</code> state files and the WAL for prepare records. Returns the oldest XID among prepared transactions.</li>
+  <li><code class="language-plaintext highlighter-rouge">StandbyRecoverPreparedTransactions()</code>: Restores dummy PGPROCs in standby mode.</li>
+  <li><code class="language-plaintext highlighter-rouge">RecoverPreparedTransactions()</code>: Fully restores prepared transactions including locks and resource manager state. Called after WAL replay is complete.</li>
+</ol>
+
+<p>After recovery, the prepared transactions appear in <code class="language-plaintext highlighter-rouge">pg_prepared_xacts</code> exactly as they did before the crash, and an administrator or application can <code class="language-plaintext highlighter-rouge">COMMIT PREPARED</code> or <code class="language-plaintext highlighter-rouge">ROLLBACK PREPARED</code> them.</p>
+
+<h2 id="monitoring">Monitoring</h2>
+
+<div class="language-sql highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">SELECT</span> <span class="o">*</span> <span class="k">FROM</span> <span class="n">pg_prepared_xacts</span><span class="p">;</span>
+</code></pre></div></div>
+
+<p>Returns:</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>Column</th>
+      <th>Type</th>
+      <th>Description</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">transaction</code></td>
+      <td>xid</td>
+      <td>Transaction ID</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">gid</code></td>
+      <td>text</td>
+      <td>Global transaction identifier</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">prepared</code></td>
+      <td>timestamptz</td>
+      <td>When PREPARE was executed</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">owner</code></td>
+      <td>name</td>
+      <td>User who prepared</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">database</code></td>
+      <td>name</td>
+      <td>Database</td>
+    </tr>
+  </tbody>
+</table>
+
+<h2 id="limitations-and-operational-concerns">Limitations and Operational Concerns</h2>
+
+<ul>
+  <li><strong>max_prepared_transactions</strong> must be set &gt; 0 (default is 0)</li>
+  <li>Prepared transactions <strong>hold locks</strong> indefinitely until finalized</li>
+  <li>Prepared transactions <strong>pin the xmin horizon</strong> through their dummy PGPROC, preventing VACUUM cleanup</li>
+  <li>An orphaned prepared transaction (one that is never committed or rolled back) can cause table bloat and lock contention</li>
+  <li>Two-phase commit cannot be used with temporary tables or cursors</li>
+</ul>
+
+<h2 id="gid-global-identifier">GID (Global Identifier)</h2>
+
+<p>The GID is a string (up to <code class="language-plaintext highlighter-rouge">GIDSIZE</code> = 200 bytes) that uniquely identifies the prepared transaction across the cluster. It is chosen by the application or transaction manager:</p>
+
+<div class="language-sql highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">PREPARE</span> <span class="n">TRANSACTION</span> <span class="s1">'order_12345_payment'</span><span class="p">;</span>
+<span class="c1">-- later, possibly from a different session:</span>
+<span class="k">COMMIT</span> <span class="n">PREPARED</span> <span class="s1">'order_12345_payment'</span><span class="p">;</span>
+</code></pre></div></div>
+
+<p>For logical replication, PostgreSQL generates GIDs automatically using the subscription OID and transaction ID.</p>
+
+<h2 id="integration-with-logical-replication">Integration with Logical Replication</h2>
+
+<p>Logical replication uses two-phase commit to apply transactions atomically on the subscriber. The <code class="language-plaintext highlighter-rouge">TwoPhaseTransactionGid()</code> function generates deterministic GIDs for this purpose, and <code class="language-plaintext highlighter-rouge">LookupGXactBySubid()</code> checks whether a subscription’s prepared transaction already exists.</p>
+
+<h2 id="key-data-structures-summary">Key Data Structures Summary</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>Structure</th>
+      <th>Location</th>
+      <th>Role</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">GlobalTransactionData</code></td>
+      <td><code class="language-plaintext highlighter-rouge">twophase.c</code></td>
+      <td>State for each prepared transaction</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">TwoPhaseFileHeader</code></td>
+      <td><code class="language-plaintext highlighter-rouge">twophase.c</code></td>
+      <td>Header of the serialized state file</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">PGPROC</code> (dummy)</td>
+      <td><code class="language-plaintext highlighter-rouge">proc.h</code></td>
+      <td>Holds locks and ProcArray slot for prepared xact</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">TwoPhaseRmgrId</code></td>
+      <td><code class="language-plaintext highlighter-rouge">twophase_rmgr.h</code></td>
+      <td>Resource manager callbacks for state serialization</td>
+    </tr>
+  </tbody>
+</table>
+
+<h2 id="connections">Connections</h2>
+
+<ul>
+  <li><strong>CLOG</strong>: Prepared transactions stay <code class="language-plaintext highlighter-rouge">IN_PROGRESS</code> in CLOG until <code class="language-plaintext highlighter-rouge">COMMIT PREPARED</code> sets them to <code class="language-plaintext highlighter-rouge">COMMITTED</code>. See <a href="clog-and-subtrans.html">CLOG and Subtransactions</a>.</li>
+  <li><strong>SSI</strong>: Serializable prepared transactions retain their SERIALIZABLEXACT and predicate locks. See <a href="ssi.html">SSI</a>.</li>
+  <li><strong>Snapshots</strong>: Dummy PGPROCs appear in ProcArray scans, so prepared transactions are correctly treated as in-progress by all snapshots. See <a href="snapshots.html">Snapshots</a>.</li>
+  <li><strong>WAL</strong>: Prepare and commit-prepared records are critical for crash recovery. See Chapter 5 (WAL).</li>
+  <li><strong>Locks</strong>: The dummy PGPROC holds all lock types (heavyweight, predicate) until the prepared transaction is finalized.</li>
+</ul>
+
+
+      <hr>
+
+      <!-- Prev / Next / Up navigation -->
+      
+      
+      
+
+      <div class="clearfix" style="margin-top: 2rem;">
+        
+          
+          
+
+          
+            
+            <a class="btn btn-primary float-left" href="/postgresql/03-transactions/ssi.html" title="Serializable Snapshot Isolation">&larr; Previous</a>
+          
+
+          
+            
+            <a class="btn btn-primary float-right" href="/postgresql/04-wal/" title="Write-Ahead Logging">Next &rarr;</a>
+          
+        
+      </div>
+
+      
+      <div style="text-align: center; margin-top: 1rem;">
+        <a href="/postgresql-internals/">&uarr; Back to Table of Contents</a>
+      </div>
+      
+
+    </div>
+  </div>
+</div>
+
+
+  <!-- Footer -->
+
+<hr>
+
+<footer>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <ul class="list-inline text-center">
+          
+          <li class="list-inline-item">
+            <a href="mailto:amitava.dev@proton.me" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="far fa-envelope fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          
+          
+          <li class="list-inline-item">
+            <a href="https://www.linkedin.com/in/amitavaag" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-linkedin fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          <li class="list-inline-item">
+            <a href="https://github.com/ikouchiha47" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-github fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+        </ul>
+
+        <p class="copyright text-muted">
+          Build with: 
+          <a 
+            href="https://github.com/StartBootstrap/startbootstrap-clean-blog-jekyll"
+            class="text-gray"
+            target="_blank">startbootstrap-clean-blog-jekyll</a></p>
+      </div>
+    </div>
+  </div>
+</footer>
+
+
+  <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="/assets/vendor/blog/js/scripts.js"></script>
+
+<script src="/assets/scripts.js"></script>
+
+
+
+
+
+  <script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+
+    document.querySelectorAll('pre > code.language-mermaid').forEach((codeBlock) => {
+      codeBlock.parentElement.outerHTML = `<pre class="mermaid">${codeBlock.textContent}</pre>`;
+    });
+
+
+    mermaid.initialize({ startOnLoad: true, theme: 'forest' });
+</script>
+
+
+  
+
+</body>
+
+</html>

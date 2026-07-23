@@ -1,0 +1,523 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+  <title>
+    Domain is Moat - iko&#39;s logs
+    
+  </title>
+
+  <meta name="description" content="Most teams treat prompts and models as the product. The real moat is understanding the domain deeply enough to build the right decision systems and feedback loops.">
+  <meta property="og:description" content="Most teams treat prompts and models as the product. The real moat is understanding the domain deeply enough to build the right decision systems and feedback ...">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Domain is Moat">
+  <meta property="og:url" content="https://ikouchiha47.github.io/2026/07/04/domain-is-moat.html">
+
+  
+
+  <link href='https://fonts.googleapis.com/css?family=Lora:400,700,400italic,700italic' rel='stylesheet' type='text/css'>
+  <link href='https://fonts.googleapis.com/css?family=Open+Sans:300italic,400italic,600italic,700italic,800italic,400,300,600,700,800' rel='stylesheet' type='text/css'>
+
+  <!-- <script src="https://use.fontawesome.com/releases/v5.15.3/js/all.js" crossorigin="anonymous"></script> -->
+  <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.15.4/css/all.css" integrity="sha384-DyZ88mC6Up2uqS4h/KRgHuoeGwBcD4Ng9SiP4dIRy0EXTlnuz47vAwmeGwVChigm" crossorigin="anonymous"/>
+
+  <link rel="stylesheet" href="/assets/main.css">
+  <link rel="canonical" href="https://ikouchiha47.github.io/2026/07/04/domain-is-moat.html">
+  <link rel="alternate" type="application/rss+xml" title="iko&#39;s logs" href="/feed.xml">
+
+  <meta name="google-site-verification" content="lWkg6gIxJgzEKX_5XnhcxCtPE9QknaimFWWos_dTvPM" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fira+Sans:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Inconsolata:wght@200..900&family=Jersey+25&family=Kanit:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Merriweather+Sans:ital,wght@0,300..800;1,300..800&family=Nanum+Gothic+Coding&family=Space+Grotesk:wght@300..700&family=Titillium+Web:ital,wght@0,200;0,300;0,400;0,600;0,700;0,900;1,200;1,300;1,400;1,600;1,700&display=swap" rel="stylesheet">
+
+</head>
+
+
+<body>
+
+  <!-- Navigation -->
+<nav class="navbar navbar-expand-lg navbar-light fixed-top" id="mainNav">
+  <div class="container">
+    <a class="navbar-brand" href="/">iko&#39;s logs</a>
+    <button class="navbar-toggler navbar-toggler-right" type="button" data-toggle="collapse" data-target="#navbarResponsive" aria-controls="navbarResponsive" aria-expanded="false" aria-label="Toggle navigation">
+      Menu
+      <i class="fa fa-bars"></i>
+    </button>
+    <div class="collapse navbar-collapse" id="navbarResponsive">
+      <ul class="navbar-nav ml-auto">
+        <li class="nav-item">
+          <a class="nav-link" href="/">Home</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/about">About</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/posts">Posts</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/contact">Contact</a>
+        </li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+
+  <!-- Page Header -->
+
+<header class="masthead" style="background: linear-gradient(135deg,">
+
+  <div class="overlay"></div>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <div class="post-heading">
+          <h1>Domain is Moat</h1>
+          
+          <h2 class="subheading">Why most generative AI products fail at the creator layer</h2>
+          
+          <span class="meta">Posted by
+            <a href="#">ikouchiha47</a>
+            on July 04, 2026 &middot; <span class="reading-time" title="Estimated read time">
+  
+   9 mins  read </span>
+
+          </span>
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="container space-grotesk">
+  <div class="row">
+    <div class="col-lg-8 col-md-10 mx-auto">
+
+      <p>I thought I’d be building AI systems</p>
+
+<p>When I joined a startup building AI generated images and videos, I expected to spend my time solving difficult generation problems.</p>
+
+<ul>
+  <li>Model routing.</li>
+  <li>Evaluation.</li>
+  <li>Fine tuning. (Although not my forte)</li>
+  <li>Specialized pipelines.</li>
+</ul>
+
+<p>Instead, I found myself building folders full of prompt templates.</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>experts/
+    ecommerce/
+      prompts.txt
+    jewellery/
+      prompts.txt
+    watches/
+      prompts.txt
+    fashion/
+      prompts.txt
+</code></pre></div></div>
+
+<p>To give credit where due, the <code class="language-plaintext highlighter-rouge">prompts.txt</code> is not a single file, but a structured set of files, which allows sharing of prompts, templating, and even versioning.</p>
+
+<ul>
+  <li>Every feature meant adding another prompt.</li>
+  <li>Every failure meant tweaking another prompt.</li>
+</ul>
+
+<p>It worked well enough to ship products, but something felt fundamentally wrong.</p>
+
+<p>Whenever I suggested evolving the architecture, the response was usually the same.</p>
+
+<blockquote>
+  <p>“We’re in a red ocean. We have to keep sailing.”</p>
+</blockquote>
+
+<p>I understood the business pressure. Speed matters.
+But every week I became more convinced we were optimizing the wrong layer.</p>
+
+<p><em>Different products fail for different reasons.</em></p>
+
+<hr />
+
+<p>The first thing that bothered me was how differently models behaved across categories.</p>
+
+<p>To humans, these prompts are obviously different.</p>
+
+<ul>
+  <li>A pocket watch.</li>
+  <li>A wrist watch.</li>
+  <li>A wall clock.</li>
+  <li>A handbag.</li>
+  <li>A necklace.</li>
+</ul>
+
+<p>To a diffusion model, they are simply distributions of pixels and language.</p>
+
+<p>Sometimes that difference matters a lot.</p>
+
+<p>I remember asking a model to generate a watch dangling from a pocket.</p>
+
+<p>Instead of a pocket watch hanging from a chain, it generated something closer to a wall clock attached to clothing.</p>
+
+<ul>
+  <li>The physics made no sense.</li>
+  <li>The object relationship was wrong.</li>
+  <li>Changing the wording to “pocket watch” suddenly produced much better results.</li>
+</ul>
+
+<p>Interestingly, another model interpreted the original prompt correctly.</p>
+
+<p>That was the moment something clicked.</p>
+
+<p><strong>The problem wasn’t just prompt engineering.</strong></p>
+
+<p>Different models understood different concepts with different levels of accuracy.</p>
+
+<p>A prompt isn’t a strategy, if one is serious about making a business. Given the advent of agentic cli tools and cursor like editors, there is nothing preventing another person to replicate and refine prompts.</p>
+
+<p>The more categories I looked at, the more obvious it became.</p>
+
+<ul>
+  <li>A watch fails differently from jewellery.</li>
+  <li>Jewellery fails differently from clothing.</li>
+  <li>Clothing fails differently from furniture.</li>
+</ul>
+
+<p>Even within watches, a luxury wrist watch and an antique pocket watch have different visual expectations.</p>
+
+<p>Yet our pipeline treated every request as the same problem.</p>
+
+<ul>
+  <li>Take a prompt.</li>
+  <li>Insert it into a template.</li>
+  <li>Call the model.</li>
+  <li>Hope for the best.</li>
+</ul>
+
+<p><strong>That isn’t really a generation strategy. It’s a wrapper.</strong></p>
+
+<p>The interesting work happens before generation. At some point I stopped asking,</p>
+
+<p>“How do we write a better prompt?”</p>
+
+<p>Instead I started asking,</p>
+
+<p>“How do we decide what should happen before generation even begins?”</p>
+
+<p>That completely changed how I thought about the system.</p>
+
+<p>A user asking for an advertisement isn’t really asking for pixels. They’re describing intent.</p>
+<ul>
+  <li>What are they selling?</li>
+  <li>Who is the audience?</li>
+  <li>Is this luxury?</li>
+  <li>Is it fashion?</li>
+  <li>Is it food?</li>
+  <li>Does this become an image?</li>
+  <li>A short video?</li>
+  <li>A cinematic product showcase?</li>
+</ul>
+
+<p>Those decisions shouldn’t be hidden inside prompt text.
+They should exist as first class components of the system.</p>
+
+<p>I started imagining a team of specialists. Instead of one giant generation pipeline, I started thinking about specialists.</p>
+
+<p><strong>Imagine a creative director instead of a prompt template.</strong></p>
+
+<p>The director receives a request. The first decision isn’t which prompt to use.</p>
+
+<p>The first decision is which expert should handle the request.</p>
+
+<ul>
+  <li>A jewellery expert.</li>
+  <li>A fashion expert.</li>
+  <li>A luxury goods expert.</li>
+  <li>A food photography expert.</li>
+</ul>
+
+<p>Each expert:</p>
+<ul>
+  <li>Understands different failure modes.</li>
+  <li>Choose a different model.</li>
+  <li>Choose different generation parameters.</li>
+  <li>Choose an entirely different pipeline.</li>
+</ul>
+
+<p>Some categories might use a LoRA. Others might use a custom workflow. Others might rely on a different base model entirely.</p>
+
+<p>The important part is that specialization becomes intentional instead of accidental.</p>
+
+<p><strong>The router becomes the product</strong></p>
+
+<hr />
+
+<h3 id="the-missing-creator-loop">The Missing Creator Loop</h3>
+
+<p>There was one fatal flaw that no amount of clever routing or LoRA adapters could fix.</p>
+
+<p><strong>We had no creators.</strong></p>
+
+<p>Not a single person on the team regularly made marketing content for a living. We were a group of technical people trying to build a creative tool for a domain we didn’t deeply understand.</p>
+
+<p>We assumed that if we built a good enough prompt-to-video system, creators would naturally come and use it. That was a serious mistake.</p>
+
+<p>Professional short-form video is not a “write one good prompt” problem. It is a craft that involves:</p>
+
+<ul>
+  <li>Understanding hook structures that work in the first 1-3 seconds</li>
+  <li>Color grading and visual rhythm specific to the platform</li>
+  <li>Pacing, cut timing, and visual storytelling</li>
+  <li>Rapid iteration across dozens of variations</li>
+  <li>Tight feedback loops between concept, generation, and editing</li>
+</ul>
+
+<p>None of this was researched. There was no internal studio, no embedded creator, no regular user testing with actual marketing professionals. Even the one video specialist on the team refused to use the product.</p>
+
+<p>We spent months building prose-mirror features and debating internal architecture while completely ignoring the fundamental truth: <strong>if real creators won’t use your tool to make their living, nothing else matters.</strong></p>
+
+<p>The best generative media companies treat creators as the primary feedback mechanism from day one. We treated them as the last-mile problem.</p>
+
+<p>This wasn’t a technical failure.<br />
+It was a <strong>creator bankruptcy</strong>.</p>
+
+<hr />
+
+<p>People often say AI startups are just wrappers around foundation models.</p>
+
+<p>They’re usually right.</p>
+
+<p>But I don’t think the wrapper is the interesting part.</p>
+
+<p>The interesting part is everything between user intent and the model call.</p>
+
+<p>A good system might</p>
+<ul>
+  <li>classify the request.</li>
+  <li>Select the appropriate model.</li>
+  <li>Choose a category specific adapter.</li>
+  <li>Inject constraints, Run validation.</li>
+  <li>Evaluate the output, and</li>
+  <li>Record what succeeded.</li>
+</ul>
+
+<blockquote>
+  <p>Over time, that decision layer becomes smarter. Not because the frontier models changed, because your system learned which decisions produce better outcomes.</p>
+</blockquote>
+
+<p><em>That is much harder to copy than a collection of prompts.</em></p>
+
+<hr />
+
+<p>This is where LoRA adapters become useful. LoRA is one piece, not the destination</p>
+
+<ul>
+  <li>Not because every category needs fine tuning.</li>
+  <li>Not because every model should have an adapter.</li>
+</ul>
+
+<p>But because some domains genuinely benefit from specialization.</p>
+
+<p>Imagine training adapters only on high quality examples for a specific category.</p>
+
+<ul>
+  <li>One for watches.</li>
+  <li>One for jewellery.</li>
+  <li>One for cosmetics. etc.</li>
+</ul>
+
+<p>Now the router isn’t just choosing prompts. It’s choosing expertise.</p>
+
+<p>That expertise can evolve independently as new data arrives.</p>
+
+<p><strong>Data becomes your advantage</strong></p>
+
+<hr />
+
+<p>Every generation tells you something.</p>
+
+<ul>
+  <li>Which model was used?</li>
+  <li>
+    <p>Which adapter? and parameters?</p>
+  </li>
+  <li>Did the user regenerate?</li>
+  <li>Did they download it?</li>
+  <li>Did they publish it or reject it?</li>
+</ul>
+
+<p>Over time you stop collecting prompts. You start collecting decisions and outcomes.</p>
+
+<p>That feedback loop becomes increasingly difficult for competitors to replicate because it reflects how your users actually create content.</p>
+
+<hr />
+
+<h2 id="looking-back">Looking back</h2>
+
+<p>When I first joined, I thought prompt engineering would be the interesting part of the job.</p>
+
+<p>It wasn’t.</p>
+
+<p>The interesting part was realizing that prompts were only the visible surface of a much larger system.</p>
+
+<p>The companies that survive won’t win because they discovered the perfect prompt.</p>
+
+<p>They’ll win because they build better decision systems.</p>
+
+<p>Foundation models will continue improving.</p>
+
+<p>The real question is no longer which model you call.</p>
+
+<p>It’s how intelligently you decide to call it.</p>
+
+
+      <hr>
+      <div class="row mb-5 mt-5">
+  <div class="col-md-6 d-flex align-items-end ">
+    <span>Thanks. <i>mind sharing?</i></span>
+  </div>
+
+  <!-- Right Column with Social Media Icons (on the right for larger screens, on bottom for smaller screens) -->
+  <div class="col-md-6 order-md-2 order-1 text-md-right text-center mt-3 mt-md-0">
+    <div>
+
+      <a
+          href="https://www.linkedin.com/sharing/share-offsite?url=ikouchiha47.github.io/2026/07/04/domain-is-moat.html"
+          onclick="window.open(this.href, 'pop-up', 'left=20,top=20,width=500,height=500,toolbar=1,resizable=0'); return false;"
+          class="d-inline-block mr-2"
+       >
+        <span class="fa-stack fa-lg" style="color: #0077b5;">
+          <i class="fas fa-square fa-stack-2x"></i>
+          <i class="fab fa-linkedin fa-stack-1x fa-inverse"></i>
+        </span>
+      </a>
+
+      <a
+          href="https://twitter.com/intent/tweet?text=Domain is Moat&url=ikouchiha47.github.io/2026/07/04/domain-is-moat.html"
+          onclick="window.open(this.href, 'pop-up', 'left=20,top=20,width=500,height=500,toolbar=1,resizable=0'); return false;"
+          class="d-inline-block mr-2">
+        <span class="fa-stack fa-lg" style="color: #1DA1F2;">
+          <i class="fas fa-square fa-stack-2x"></i>
+          <i class="fab fa-twitter fa-stack-1x fa-inverse"></i>
+        </span>
+      </a>
+
+      <a
+          href="http://www.reddit.com/submit?url=ikouchiha47.github.io/2026/07/04/domain-is-moat.html"
+          onclick="window.open(this.href, 'pop-up', 'left=20,top=20,width=500,height=500,toolbar=1,resizable=0'); return false;"
+          class="d-inline-block mr-2">
+        <span class="fa-stack fa-lg" style="color: #FF4500;">
+          <i class="fas fa-square fa-stack-2x"></i>
+          <i class="fab fa-reddit fa-stack-1x fa-inverse"></i>
+        </span>
+      </a>
+    </div>
+  </div>
+</div>
+
+<hr/>
+
+
+      <div class="clearfix">
+
+        
+        <a class="btn btn-primary float-left" href="/millionrps/" data-toggle="tooltip" data-placement="top" title="Chasing 1 Million RPS">&larr; Previous<span class="d-none d-md-inline">
+            Post</span></a>
+        
+        
+
+      </div>
+
+    </div>
+  </div>
+</div>
+
+
+  <!-- Footer -->
+
+<hr>
+
+<footer>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <ul class="list-inline text-center">
+          
+          <li class="list-inline-item">
+            <a href="mailto:amitava.dev@proton.me" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="far fa-envelope fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          
+          
+          <li class="list-inline-item">
+            <a href="https://www.linkedin.com/in/amitavaag" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-linkedin fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          <li class="list-inline-item">
+            <a href="https://github.com/ikouchiha47" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-github fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+        </ul>
+
+        <p class="copyright text-muted">
+          Build with: 
+          <a 
+            href="https://github.com/StartBootstrap/startbootstrap-clean-blog-jekyll"
+            class="text-gray"
+            target="_blank">startbootstrap-clean-blog-jekyll</a></p>
+      </div>
+    </div>
+  </div>
+</footer>
+
+
+  <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="/assets/vendor/blog/js/scripts.js"></script>
+
+<script src="/assets/scripts.js"></script>
+
+
+
+
+
+  <script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+
+    document.querySelectorAll('pre > code.language-mermaid').forEach((codeBlock) => {
+      codeBlock.parentElement.outerHTML = `<pre class="mermaid">${codeBlock.textContent}</pre>`;
+    });
+
+
+    mermaid.initialize({ startOnLoad: true, theme: 'forest' });
+</script>
+
+
+  
+
+</body>
+
+</html>

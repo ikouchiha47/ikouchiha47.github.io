@@ -1,0 +1,373 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+  <title>
+    Progressive Indexing: Making Papers Searchable in Seconds - iko&#39;s logs
+    
+  </title>
+
+  <meta name="description" content="">
+  <meta property="og:description" content="">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Progressive Indexing: Making Papers Searchable ...">
+  <meta property="og:url" content="https://ikouchiha47.github.io/materials-science/progressive-indexing.html">
+
+  
+
+  <link href='https://fonts.googleapis.com/css?family=Lora:400,700,400italic,700italic' rel='stylesheet' type='text/css'>
+  <link href='https://fonts.googleapis.com/css?family=Open+Sans:300italic,400italic,600italic,700italic,800italic,400,300,600,700,800' rel='stylesheet' type='text/css'>
+
+  <!-- <script src="https://use.fontawesome.com/releases/v5.15.3/js/all.js" crossorigin="anonymous"></script> -->
+  <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.15.4/css/all.css" integrity="sha384-DyZ88mC6Up2uqS4h/KRgHuoeGwBcD4Ng9SiP4dIRy0EXTlnuz47vAwmeGwVChigm" crossorigin="anonymous"/>
+
+  <link rel="stylesheet" href="/assets/main.css">
+  <link rel="canonical" href="https://ikouchiha47.github.io/materials-science/progressive-indexing.html">
+  <link rel="alternate" type="application/rss+xml" title="iko&#39;s logs" href="/feed.xml">
+
+  <meta name="google-site-verification" content="lWkg6gIxJgzEKX_5XnhcxCtPE9QknaimFWWos_dTvPM" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fira+Sans:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Inconsolata:wght@200..900&family=Jersey+25&family=Kanit:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Merriweather+Sans:ital,wght@0,300..800;1,300..800&family=Nanum+Gothic+Coding&family=Space+Grotesk:wght@300..700&family=Titillium+Web:ital,wght@0,200;0,300;0,400;0,600;0,700;0,900;1,200;1,300;1,400;1,600;1,700&display=swap" rel="stylesheet">
+
+</head>
+
+
+<body>
+
+  <!-- Navigation -->
+<nav class="navbar navbar-expand-lg navbar-light fixed-top" id="mainNav">
+  <div class="container">
+    <a class="navbar-brand" href="/">iko&#39;s logs</a>
+    <button class="navbar-toggler navbar-toggler-right" type="button" data-toggle="collapse" data-target="#navbarResponsive" aria-controls="navbarResponsive" aria-expanded="false" aria-label="Toggle navigation">
+      Menu
+      <i class="fa fa-bars"></i>
+    </button>
+    <div class="collapse navbar-collapse" id="navbarResponsive">
+      <ul class="navbar-nav ml-auto">
+        <li class="nav-item">
+          <a class="nav-link" href="/">Home</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/about">About</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/posts">Posts</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/contact">Contact</a>
+        </li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+
+  <!-- Page Header -->
+
+<header class="masthead">
+
+  <div class="overlay"></div>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <div class="post-heading">
+          <h1>Progressive Indexing: Making Papers Searchable in Seconds</h1>
+          
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="container space-grotesk">
+  <div class="row">
+    <div class="col-lg-8 col-md-10 mx-auto">
+
+      <!-- Breadcrumb -->
+      <nav aria-label="breadcrumb" style="margin-bottom: 1.5rem;">
+        <ol class="breadcrumb" style="background: transparent; padding: 0;">
+          
+            <li class="breadcrumb-item"><a href="/p/b8e2c4/materials-science-notes/">Materials Science Engineering Notes</a></li>
+          
+          
+          <li class="breadcrumb-item active" aria-current="page">Progressive Indexing: Making Papers Searchable in Seconds</li>
+        </ol>
+      </nav>
+
+      <p>Most tools for working with research papers have the same problem: you upload a PDF and then you wait. The system needs to parse, extract, embed, and index before you can do anything. For a 20-page materials science paper, that’s a minute or two of staring at a progress bar.</p>
+
+<p>We thought researchers deserved better than that. So we built a system where papers become useful the moment they land in your workspace.</p>
+
+<h2 id="the-old-way-all-or-nothing">The Old Way: All or Nothing</h2>
+
+<p>Traditional document processing is a pipeline. The PDF goes in one end, gets processed through several stages, and comes out the other end as a searchable, indexed document. Nothing is available until everything is done.</p>
+
+<pre><code class="language-mermaid">graph LR
+    A[Upload PDF] --&gt; B[Parse + Layout]
+    B --&gt; C[Extraction]
+    C --&gt; D[Embedding + Index]
+    D --&gt; E[Ready to Use]
+    style A fill:#f3f4f6,stroke:#6366f1,color:#111827
+    style E fill:#eef2ff,stroke:#6366f1,color:#111827
+</code></pre>
+
+<p>For batch processing, this is fine. For an interactive workspace where a researcher just dragged in a paper and wants to find a specific table — it’s not.</p>
+
+<h2 id="progressive-indexing-three-stages-of-readiness">Progressive Indexing: Three Stages of Readiness</h2>
+
+<p>We broke the pipeline apart. Instead of one long process, we run three stages in parallel, each unlocking a new level of functionality:</p>
+
+<pre><code class="language-mermaid">graph TD
+    U[Upload PDF] --&gt; T1[Stage 1: Text]
+    U --&gt; T2[Stage 2: Layout]
+    U --&gt; T3[Stage 3: Deep Extraction]
+    T1 --&gt;|~2s| S1[Search + Chat Ready]
+    T2 --&gt;|~15s| S2[Figures + Tables Ready]
+    T3 --&gt;|~60s| S3[Datasets + Citations Ready]
+    style U fill:#f3f4f6,stroke:#6366f1,color:#111827
+    style S1 fill:#eef2ff,stroke:#6366f1,color:#111827
+    style S2 fill:#eef2ff,stroke:#6366f1,color:#111827
+    style S3 fill:#eef2ff,stroke:#6366f1,color:#111827
+</code></pre>
+
+<h3 id="stage-1-instant-text-2-seconds">Stage 1: Instant Text (~2 seconds)</h3>
+
+<p>The moment a PDF arrives, we extract the embedded text layer — no OCR, no layout analysis, just fast text extraction. Within two seconds, the researcher can:</p>
+
+<ul>
+  <li>Search across the full text of the paper</li>
+  <li>See the title, authors, and abstract</li>
+  <li>Start asking questions in the chat interface</li>
+</ul>
+
+<p>For well-formed PDFs from publishers and preprint servers, this captures over 95% of the text content. That’s enough to be immediately useful.</p>
+
+<h3 id="stage-2-structure-15-seconds">Stage 2: Structure (~15 seconds)</h3>
+
+<p>While the researcher is already working with Stage 1 results, we run layout-aware parsing in the background. This adds:</p>
+
+<ul>
+  <li><strong>Figures and tables</strong> with their captions</li>
+  <li><strong>Section boundaries</strong> — Introduction, Methods, Results, Discussion</li>
+  <li><strong>Page-level navigation</strong> with visual thumbnails</li>
+  <li><strong>Precise coordinates</strong> for every element on the page</li>
+</ul>
+
+<p>The system caches these results intelligently. When the same PDF has been processed before — common in collaborative workspaces — Stage 2 completes instantly.</p>
+
+<h3 id="stage-3-deep-extraction-60-seconds">Stage 3: Deep Extraction (~60 seconds)</h3>
+
+<p>This is where AI-powered analysis runs. The system identifies:</p>
+
+<ul>
+  <li><strong>Dataset references</strong> with full provenance — where the data came from, how it was collected</li>
+  <li><strong>Material compositions</strong> and their reported properties</li>
+  <li><strong>Figure-to-data connections</strong> — linking plots back to the underlying numbers</li>
+  <li><strong>Citation networks</strong> — which other papers are referenced and why</li>
+</ul>
+
+<p>By the time Stage 3 finishes, the researcher might already be two questions deep in a conversation. The dataset cards and citations simply appear in the sidebar, enriching an already-active session.</p>
+
+<h2 id="why-not-just-pgvector">Why Not Just pgvector</h2>
+
+<p>A natural question: if you’re already on Postgres, why not use <code class="language-plaintext highlighter-rouge">pgvector</code> for everything?</p>
+
+<p>We did, initially. Postgres gives you exact nearest-neighbor search out of the box, and with <code class="language-plaintext highlighter-rouge">pgvector</code>’s IVFFlat or HNSW indexes you get approximate nearest-neighbor (ANN). For a few hundred papers it’s fine.</p>
+
+<p>The problem shows up at scale with multi-model embeddings. We run two embedding models per chunk (a general-purpose embedder and a domain-specific one like SPECTER), fuse results with RRF, and also need per-page visual embeddings from ColPali (~1030 vectors of 128 dims <em>per page</em>). That’s a lot of vectors with different dimensionalities and different query patterns.</p>
+
+<p>Postgres HNSW indexes are single-vector, single-metric. To do multi-model RRF you’d need separate indexes, separate queries, and manual fusion in SQL or application code — which is what we ended up doing, but with a dedicated vector store (ChromaDB for development, Qdrant for production) where index management, batch upserts, and collection isolation are first-class operations rather than afterthoughts bolted onto a relational engine.</p>
+
+<p>The tradeoff: Postgres stays as the source of truth for paper metadata, processing state, and workspace management. The vector stores are derived indexes — rebuildable from source. If a vector store corrupts, we re-embed from the stored chunks. That separation keeps the progressive pipeline honest: Stage 1 writes to Postgres immediately, vector indexing happens asynchronously without blocking the researcher.</p>
+
+<h2 id="the-state-machine">The State Machine</h2>
+
+<p>Each paper moves through a clear progression:</p>
+
+<pre><code class="language-mermaid">stateDiagram-v2
+    [*] --&gt; uploaded
+    uploaded --&gt; searchable: Stage 1
+    searchable --&gt; structured: Stage 2
+    structured --&gt; enriched: Stage 3
+    searchable --&gt; failed: Error
+    structured --&gt; failed: Error
+    failed --&gt; uploaded: Retry
+</code></pre>
+
+<p>The interface adapts to each state. A searchable paper shows a search bar and text viewer. A structured paper adds figure thumbnails and section navigation. An enriched paper shows dataset cards, property tables, and citation links.</p>
+
+<p>No guessing, no “loading” states that don’t tell you what’s available. The UI always reflects exactly what’s ready.</p>
+
+<h2 id="what-changed">What Changed</h2>
+
+<p>After deploying progressive indexing:</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>Metric</th>
+      <th>Before</th>
+      <th>After</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Time to first search</td>
+      <td>90s</td>
+      <td><strong>2s</strong></td>
+    </tr>
+    <tr>
+      <td>Time to see figures</td>
+      <td>90s</td>
+      <td><strong>15s</strong></td>
+    </tr>
+    <tr>
+      <td>Drop-off during upload</td>
+      <td>34%</td>
+      <td><strong>8%</strong></td>
+    </tr>
+    <tr>
+      <td>Papers per session</td>
+      <td>2.1</td>
+      <td><strong>4.7</strong></td>
+    </tr>
+  </tbody>
+</table>
+
+<p>The speed improvement mattered, but the engagement shift mattered more. When researchers could immediately interact with their uploads, they stayed on the platform and brought in more papers. The bottleneck was never extraction quality — it was the dead time between uploading and <em>doing something</em>.</p>
+
+<p>Researchers who process 10-50 papers a week can’t afford to wait a minute per paper. With progressive indexing, they upload a batch and start working. By the time they’ve finished reading the first abstract, the figures and tables are ready. By the time they’ve asked their first question, the full extraction is complete.</p>
+
+<h2 id="the-design-principle">The Design Principle</h2>
+
+<p>There’s a broader lesson here that applies beyond document processing:</p>
+
+<p><strong>Deliver value incrementally.</strong> Users would rather have 80% of the capability in 2 seconds than 100% in 90 seconds. The remaining 20% can arrive while they’re already productive.</p>
+
+<p>This principle shapes how we think about every feature on the platform. Don’t make people wait for the complete result. Give them something useful immediately, and let the system catch up in the background.</p>
+
+<hr />
+
+
+
+      <hr>
+
+      <!-- Prev / Next / Up navigation -->
+      
+      
+      
+
+      <div class="clearfix" style="margin-top: 2rem;">
+        
+          
+          
+
+          
+            
+            <a class="btn btn-primary float-left" href="/materials-science/hypothesis-engineering-loop.html" title="From Paper Chaos to Testable Hypotheses">&larr; Previous</a>
+          
+
+          
+        
+      </div>
+
+      
+      <div style="text-align: center; margin-top: 1rem;">
+        <a href="/p/b8e2c4/materials-science-notes/">&uarr; Back to Table of Contents</a>
+      </div>
+      
+
+    </div>
+  </div>
+</div>
+
+
+  <!-- Footer -->
+
+<hr>
+
+<footer>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <ul class="list-inline text-center">
+          
+          <li class="list-inline-item">
+            <a href="mailto:amitava.dev@proton.me" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="far fa-envelope fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          
+          
+          <li class="list-inline-item">
+            <a href="https://www.linkedin.com/in/amitavaag" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-linkedin fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          <li class="list-inline-item">
+            <a href="https://github.com/ikouchiha47" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-github fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+        </ul>
+
+        <p class="copyright text-muted">
+          Build with: 
+          <a 
+            href="https://github.com/StartBootstrap/startbootstrap-clean-blog-jekyll"
+            class="text-gray"
+            target="_blank">startbootstrap-clean-blog-jekyll</a></p>
+      </div>
+    </div>
+  </div>
+</footer>
+
+
+  <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="/assets/vendor/blog/js/scripts.js"></script>
+
+<script src="/assets/scripts.js"></script>
+
+
+
+
+
+  <script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+
+    document.querySelectorAll('pre > code.language-mermaid').forEach((codeBlock) => {
+      codeBlock.parentElement.outerHTML = `<pre class="mermaid">${codeBlock.textContent}</pre>`;
+    });
+
+
+    mermaid.initialize({ startOnLoad: true, theme: 'forest' });
+</script>
+
+
+  
+
+</body>
+
+</html>

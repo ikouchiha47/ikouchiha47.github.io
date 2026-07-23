@@ -1,0 +1,399 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+  <title>
+    Caches - iko&#39;s logs
+    
+  </title>
+
+  <meta name="description" content="">
+  <meta property="og:description" content="">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Caches">
+  <meta property="og:url" content="https://ikouchiha47.github.io/postgresql/09-caches/">
+
+  
+
+  <link href='https://fonts.googleapis.com/css?family=Lora:400,700,400italic,700italic' rel='stylesheet' type='text/css'>
+  <link href='https://fonts.googleapis.com/css?family=Open+Sans:300italic,400italic,600italic,700italic,800italic,400,300,600,700,800' rel='stylesheet' type='text/css'>
+
+  <!-- <script src="https://use.fontawesome.com/releases/v5.15.3/js/all.js" crossorigin="anonymous"></script> -->
+  <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.15.4/css/all.css" integrity="sha384-DyZ88mC6Up2uqS4h/KRgHuoeGwBcD4Ng9SiP4dIRy0EXTlnuz47vAwmeGwVChigm" crossorigin="anonymous"/>
+
+  <link rel="stylesheet" href="/assets/main.css">
+  <link rel="canonical" href="https://ikouchiha47.github.io/postgresql/09-caches/">
+  <link rel="alternate" type="application/rss+xml" title="iko&#39;s logs" href="/feed.xml">
+
+  <meta name="google-site-verification" content="lWkg6gIxJgzEKX_5XnhcxCtPE9QknaimFWWos_dTvPM" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fira+Sans:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Inconsolata:wght@200..900&family=Jersey+25&family=Kanit:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Merriweather+Sans:ital,wght@0,300..800;1,300..800&family=Nanum+Gothic+Coding&family=Space+Grotesk:wght@300..700&family=Titillium+Web:ital,wght@0,200;0,300;0,400;0,600;0,700;0,900;1,200;1,300;1,400;1,600;1,700&display=swap" rel="stylesheet">
+
+</head>
+
+
+<body>
+
+  <!-- Navigation -->
+<nav class="navbar navbar-expand-lg navbar-light fixed-top" id="mainNav">
+  <div class="container">
+    <a class="navbar-brand" href="/">iko&#39;s logs</a>
+    <button class="navbar-toggler navbar-toggler-right" type="button" data-toggle="collapse" data-target="#navbarResponsive" aria-controls="navbarResponsive" aria-expanded="false" aria-label="Toggle navigation">
+      Menu
+      <i class="fa fa-bars"></i>
+    </button>
+    <div class="collapse navbar-collapse" id="navbarResponsive">
+      <ul class="navbar-nav ml-auto">
+        <li class="nav-item">
+          <a class="nav-link" href="/">Home</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/about">About</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/posts">Posts</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/contact">Contact</a>
+        </li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+
+  <!-- Page Header -->
+
+<header class="masthead">
+
+  <div class="overlay"></div>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <div class="post-heading">
+          <h1>Caches</h1>
+          
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="container space-grotesk">
+  <div class="row">
+    <div class="col-lg-8 col-md-10 mx-auto">
+
+      <!-- Breadcrumb -->
+      <nav aria-label="breadcrumb" style="margin-bottom: 1.5rem;">
+        <ol class="breadcrumb" style="background: transparent; padding: 0;">
+          
+            <li class="breadcrumb-item"><a href="/postgresql-internals/">PostgreSQL Internals Deep Dive</a></li>
+          
+          
+          <li class="breadcrumb-item active" aria-current="page">Caches</li>
+        </ol>
+      </nav>
+
+      <h1 id="chapter-9-caches">Chapter 9: Caches</h1>
+
+<p>PostgreSQL is a process-per-connection system. Every backend needs fast access to metadata about tables, types, operators, and plans – but that metadata lives in ordinary heap tables (the system catalogs) on disk. Without caching, even a simple <code class="language-plaintext highlighter-rouge">SELECT 1</code> would trigger dozens of catalog lookups through the full buffer manager path.</p>
+
+<p>The caching subsystem solves this by maintaining <strong>per-backend, in-process-memory caches</strong> that keep hot catalog data a pointer dereference away. The tradeoff is coherence: when one backend runs <code class="language-plaintext highlighter-rouge">ALTER TABLE</code>, every other backend’s cached view of that table becomes stale. PostgreSQL addresses this through a <strong>shared invalidation (sinval) message queue</strong> – a lockless, ring-buffer-based broadcast channel in shared memory.</p>
+
+<h2 id="the-caching-layers">The Caching Layers</h2>
+
+<p>PostgreSQL maintains several distinct caches, each specialized for a different access pattern:</p>
+
+<pre><code class="language-mermaid">graph TD
+    SQL["SQL Query"] --&gt; PlanCache["Plan Cache&lt;br/&gt;&lt;i&gt;plancache.c&lt;/i&gt;"]
+    PlanCache --&gt; RelCache["Relation Cache&lt;br/&gt;&lt;i&gt;relcache.c&lt;/i&gt;"]
+    PlanCache --&gt; CatCache["Catalog Cache&lt;br/&gt;&lt;i&gt;catcache.c / syscache.c&lt;/i&gt;"]
+    RelCache --&gt; CatCache
+    CatCache --&gt; TypeCache["Type Cache&lt;br/&gt;&lt;i&gt;typcache.c&lt;/i&gt;"]
+
+    CatCache --&gt; BufferMgr["Buffer Manager&lt;br/&gt;&lt;i&gt;bufmgr.c&lt;/i&gt;"]
+    RelCache --&gt; BufferMgr
+
+    Sinval["Shared Invalidation Queue&lt;br/&gt;&lt;i&gt;sinval.c / sinvaladt.c&lt;/i&gt;"]
+    Inval["Invalidation Dispatcher&lt;br/&gt;&lt;i&gt;inval.c&lt;/i&gt;"]
+
+    DDL["DDL in Backend A"] --&gt; Inval
+    Inval --&gt; Sinval
+    Sinval --&gt; |"Backend B reads messages"| Inval2["inval.c in Backend B"]
+    Inval2 --&gt; CatCache
+    Inval2 --&gt; RelCache
+    Inval2 --&gt; PlanCache
+    Inval2 --&gt; TypeCache
+
+    style Sinval fill:#f9f,stroke:#333
+    style Inval fill:#f9f,stroke:#333
+    style Inval2 fill:#f9f,stroke:#333
+</code></pre>
+
+<table>
+  <thead>
+    <tr>
+      <th>Cache</th>
+      <th>Scope</th>
+      <th>Keyed By</th>
+      <th>Stores</th>
+      <th>Source</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><strong>Catalog Cache (catcache)</strong></td>
+      <td>Per-backend</td>
+      <td>Up to 4 key columns</td>
+      <td>Individual catalog tuples</td>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/utils/cache/catcache.c</code></td>
+    </tr>
+    <tr>
+      <td><strong>System Cache (syscache)</strong></td>
+      <td>Per-backend</td>
+      <td>Cache ID + keys</td>
+      <td>Wrapper over catcache with named IDs</td>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/utils/cache/syscache.c</code></td>
+    </tr>
+    <tr>
+      <td><strong>Relation Cache (relcache)</strong></td>
+      <td>Per-backend</td>
+      <td>Relation OID</td>
+      <td>Full <code class="language-plaintext highlighter-rouge">RelationData</code> structs</td>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/utils/cache/relcache.c</code></td>
+    </tr>
+    <tr>
+      <td><strong>Plan Cache (plancache)</strong></td>
+      <td>Per-backend</td>
+      <td>Query string / source</td>
+      <td>Parsed, rewritten, and planned query trees</td>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/utils/cache/plancache.c</code></td>
+    </tr>
+    <tr>
+      <td><strong>Type Cache (typcache)</strong></td>
+      <td>Per-backend</td>
+      <td>Type OID</td>
+      <td>Operator families, comparison procs, tuple descriptors</td>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/utils/cache/typcache.c</code></td>
+    </tr>
+    <tr>
+      <td><strong>Invalidation Dispatcher</strong></td>
+      <td>Per-backend + shared</td>
+      <td>–</td>
+      <td>Pending invalidation messages</td>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/utils/cache/inval.c</code></td>
+    </tr>
+    <tr>
+      <td><strong>Sinval Queue</strong></td>
+      <td>Shared memory</td>
+      <td>–</td>
+      <td>Ring buffer of <code class="language-plaintext highlighter-rouge">SharedInvalidationMessage</code></td>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/storage/ipc/sinval.c</code></td>
+    </tr>
+  </tbody>
+</table>
+
+<h2 id="lifecycle-of-a-cache-lookup">Lifecycle of a Cache Lookup</h2>
+
+<p>A typical flow when executing a prepared statement:</p>
+
+<ol>
+  <li><strong>Plan cache</strong> checks if the <code class="language-plaintext highlighter-rouge">CachedPlanSource</code> is still valid (<code class="language-plaintext highlighter-rouge">is_valid</code> flag).</li>
+  <li>If valid, the cached plan references relations by OID. The <strong>relcache</strong> returns the <code class="language-plaintext highlighter-rouge">RelationData</code> for each OID, building it from catalog lookups if not already cached.</li>
+  <li>Each catalog lookup goes through <strong>syscache</strong> (a named wrapper) which delegates to the appropriate <strong>catcache</strong>. The catcache hashes the lookup keys and probes its hash table. On a miss, it performs an index scan of the underlying system catalog through the buffer manager.</li>
+  <li>During query execution, if the executor needs to compare composite types or look up hash/equality operators, it consults the <strong>type cache</strong>.</li>
+</ol>
+
+<h2 id="invalidation-flow">Invalidation Flow</h2>
+
+<p>When <code class="language-plaintext highlighter-rouge">Backend A</code> runs <code class="language-plaintext highlighter-rouge">ALTER TABLE foo ADD COLUMN bar int</code>:</p>
+
+<ol>
+  <li><code class="language-plaintext highlighter-rouge">heap_update()</code> on <code class="language-plaintext highlighter-rouge">pg_attribute</code> calls <code class="language-plaintext highlighter-rouge">CacheInvalidateHeapTuple()</code>.</li>
+  <li><code class="language-plaintext highlighter-rouge">inval.c</code> queues a catcache invalidation message (keyed by hash value) and a relcache invalidation message (keyed by relation OID).</li>
+  <li>At <code class="language-plaintext highlighter-rouge">CommandCounterIncrement()</code>, Backend A processes its own pending invalidations so subsequent commands in the same transaction see the new state.</li>
+  <li>At <code class="language-plaintext highlighter-rouge">COMMIT</code>, the pending messages are sent to the <strong>sinval shared queue</strong> via <code class="language-plaintext highlighter-rouge">SendSharedInvalidMessages()</code>.</li>
+  <li>Other backends call <code class="language-plaintext highlighter-rouge">AcceptInvalidationMessages()</code> at the start of each transaction (and at other safe points). Each message triggers registered callbacks that mark the appropriate cache entries as invalid or remove them.</li>
+</ol>
+
+<p class="note">Backends that fall too far behind on the sinval queue receive a <code class="language-plaintext highlighter-rouge">PROCSIG_CATCHUP_INTERRUPT</code> signal, forcing them to catch up before the circular buffer wraps around and overwrites unread messages.</p>
+
+<h2 id="key-design-decisions">Key Design Decisions</h2>
+
+<p><strong>Per-backend, not shared.</strong> The caches live in each backend’s private memory. This avoids locking overhead on the read path (which dominates), at the cost of duplicated memory across connections.</p>
+
+<p><strong>Lazy invalidation.</strong> Entries are not eagerly pushed to other backends. Instead, invalidation messages are queued and processed opportunistically. This means a backend may briefly serve queries using stale metadata, but transactional DDL and locking protocols ensure this never produces incorrect results.</p>
+
+<p><strong>Negative caching.</strong> The catalog cache stores “negative” entries – proof that a tuple with certain keys does not exist. This is critical for avoiding repeated fruitless catalog scans (e.g., checking for a non-existent function overload).</p>
+
+<p><strong>Reference counting.</strong> Both <code class="language-plaintext highlighter-rouge">CatCTup</code> and <code class="language-plaintext highlighter-rouge">CachedPlan</code> entries are reference-counted. An invalidation marks the entry as “dead” but does not free it until all active references are released. This prevents dangling pointers mid-query.</p>
+
+<h2 id="chapter-contents">Chapter Contents</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>Page</th>
+      <th>What You’ll Learn</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><a href="catalog-cache">Catalog Cache</a></td>
+      <td>catcache hash tables, syscache named lookups, negative entries, reference counting</td>
+    </tr>
+    <tr>
+      <td><a href="relation-cache">Relation Cache</a></td>
+      <td>RelationData construction, init files, three-phase bootstrap, invalidation</td>
+    </tr>
+    <tr>
+      <td><a href="plan-cache">Plan Cache</a></td>
+      <td>Generic vs. custom plans, cost-based switching, invalidation triggers</td>
+    </tr>
+    <tr>
+      <td><a href="type-cache">Type Cache</a></td>
+      <td>Operator and comparison function lookup, domain constraints, composite types</td>
+    </tr>
+    <tr>
+      <td><a href="invalidation">Invalidation</a></td>
+      <td>sinval message types, the shared queue, callback registration, cross-backend coherence</td>
+    </tr>
+  </tbody>
+</table>
+
+<h2 id="connections">Connections</h2>
+
+<ul>
+  <li><strong>Chapter 1 (Storage)</strong> – Catalog cache misses fall through to the buffer manager for actual disk I/O.</li>
+  <li><strong>Chapter 3 (Transactions)</strong> – Invalidation messages are transactional; they are only broadcast on commit.</li>
+  <li><strong>Chapter 5 (Locking)</strong> – DDL acquires <code class="language-plaintext highlighter-rouge">AccessExclusiveLock</code> to ensure no backend can use a stale relcache entry for the locked relation.</li>
+  <li><strong>Chapter 7 (Optimizer)</strong> – The plan cache feeds pre-optimized plans back to the optimizer’s <code class="language-plaintext highlighter-rouge">GetCachedPlan()</code> path.</li>
+  <li><strong>Chapter 10 (Memory)</strong> – All caches allocate from <code class="language-plaintext highlighter-rouge">CacheMemoryContext</code>, a long-lived memory context.</li>
+  <li><strong>Chapter 11 (IPC)</strong> – The sinval queue is a shared-memory data structure managed by <code class="language-plaintext highlighter-rouge">sinvaladt.c</code>.</li>
+</ul>
+
+
+      <hr>
+
+      <!-- Prev / Next / Up navigation -->
+      
+      
+      
+
+      <div class="clearfix" style="margin-top: 2rem;">
+        
+          
+          
+
+          
+            
+            <a class="btn btn-primary float-left" href="/postgresql/08-executor/volcano-model.html" title="Volcano Iterator Model">&larr; Previous</a>
+          
+
+          
+            
+            <a class="btn btn-primary float-right" href="/postgresql/09-caches/catalog-cache.html" title="Catalog Cache">Next &rarr;</a>
+          
+        
+      </div>
+
+      
+      <div style="text-align: center; margin-top: 1rem;">
+        <a href="/postgresql-internals/">&uarr; Back to Table of Contents</a>
+      </div>
+      
+
+    </div>
+  </div>
+</div>
+
+
+  <!-- Footer -->
+
+<hr>
+
+<footer>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <ul class="list-inline text-center">
+          
+          <li class="list-inline-item">
+            <a href="mailto:amitava.dev@proton.me" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="far fa-envelope fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          
+          
+          <li class="list-inline-item">
+            <a href="https://www.linkedin.com/in/amitavaag" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-linkedin fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          <li class="list-inline-item">
+            <a href="https://github.com/ikouchiha47" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-github fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+        </ul>
+
+        <p class="copyright text-muted">
+          Build with: 
+          <a 
+            href="https://github.com/StartBootstrap/startbootstrap-clean-blog-jekyll"
+            class="text-gray"
+            target="_blank">startbootstrap-clean-blog-jekyll</a></p>
+      </div>
+    </div>
+  </div>
+</footer>
+
+
+  <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="/assets/vendor/blog/js/scripts.js"></script>
+
+<script src="/assets/scripts.js"></script>
+
+
+
+
+
+  <script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+
+    document.querySelectorAll('pre > code.language-mermaid').forEach((codeBlock) => {
+      codeBlock.parentElement.outerHTML = `<pre class="mermaid">${codeBlock.textContent}</pre>`;
+    });
+
+
+    mermaid.initialize({ startOnLoad: true, theme: 'forest' });
+</script>
+
+
+  
+
+</body>
+
+</html>

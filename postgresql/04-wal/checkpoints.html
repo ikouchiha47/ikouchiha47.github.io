@@ -1,0 +1,554 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+  <title>
+    Checkpoints - iko&#39;s logs
+    
+  </title>
+
+  <meta name="description" content="">
+  <meta property="og:description" content="">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Checkpoints">
+  <meta property="og:url" content="https://ikouchiha47.github.io/postgresql/04-wal/checkpoints.html">
+
+  
+
+  <link href='https://fonts.googleapis.com/css?family=Lora:400,700,400italic,700italic' rel='stylesheet' type='text/css'>
+  <link href='https://fonts.googleapis.com/css?family=Open+Sans:300italic,400italic,600italic,700italic,800italic,400,300,600,700,800' rel='stylesheet' type='text/css'>
+
+  <!-- <script src="https://use.fontawesome.com/releases/v5.15.3/js/all.js" crossorigin="anonymous"></script> -->
+  <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.15.4/css/all.css" integrity="sha384-DyZ88mC6Up2uqS4h/KRgHuoeGwBcD4Ng9SiP4dIRy0EXTlnuz47vAwmeGwVChigm" crossorigin="anonymous"/>
+
+  <link rel="stylesheet" href="/assets/main.css">
+  <link rel="canonical" href="https://ikouchiha47.github.io/postgresql/04-wal/checkpoints.html">
+  <link rel="alternate" type="application/rss+xml" title="iko&#39;s logs" href="/feed.xml">
+
+  <meta name="google-site-verification" content="lWkg6gIxJgzEKX_5XnhcxCtPE9QknaimFWWos_dTvPM" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fira+Sans:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Inconsolata:wght@200..900&family=Jersey+25&family=Kanit:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Merriweather+Sans:ital,wght@0,300..800;1,300..800&family=Nanum+Gothic+Coding&family=Space+Grotesk:wght@300..700&family=Titillium+Web:ital,wght@0,200;0,300;0,400;0,600;0,700;0,900;1,200;1,300;1,400;1,600;1,700&display=swap" rel="stylesheet">
+
+</head>
+
+
+<body>
+
+  <!-- Navigation -->
+<nav class="navbar navbar-expand-lg navbar-light fixed-top" id="mainNav">
+  <div class="container">
+    <a class="navbar-brand" href="/">iko&#39;s logs</a>
+    <button class="navbar-toggler navbar-toggler-right" type="button" data-toggle="collapse" data-target="#navbarResponsive" aria-controls="navbarResponsive" aria-expanded="false" aria-label="Toggle navigation">
+      Menu
+      <i class="fa fa-bars"></i>
+    </button>
+    <div class="collapse navbar-collapse" id="navbarResponsive">
+      <ul class="navbar-nav ml-auto">
+        <li class="nav-item">
+          <a class="nav-link" href="/">Home</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/about">About</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/posts">Posts</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/contact">Contact</a>
+        </li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+
+  <!-- Page Header -->
+
+<header class="masthead">
+
+  <div class="overlay"></div>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <div class="post-heading">
+          <h1>Checkpoints</h1>
+          
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="container space-grotesk">
+  <div class="row">
+    <div class="col-lg-8 col-md-10 mx-auto">
+
+      <!-- Breadcrumb -->
+      <nav aria-label="breadcrumb" style="margin-bottom: 1.5rem;">
+        <ol class="breadcrumb" style="background: transparent; padding: 0;">
+          
+            <li class="breadcrumb-item"><a href="/postgresql-internals/">PostgreSQL Internals Deep Dive</a></li>
+          
+          
+            
+              <li class="breadcrumb-item"><a href="/postgresql/04-wal/">Write-Ahead Logging</a></li>
+            
+          
+          <li class="breadcrumb-item active" aria-current="page">Checkpoints</li>
+        </ol>
+      </nav>
+
+      <h1 id="checkpoints-bounding-recovery-time">Checkpoints: Bounding Recovery Time</h1>
+
+<h2 id="summary">Summary</h2>
+
+<p>A checkpoint is a periodic operation that flushes all dirty buffers to disk and
+writes a checkpoint record into the WAL. The checkpoint’s <strong>redo point</strong> marks
+the position in WAL from which recovery must begin after a crash. Without
+checkpoints, recovery would have to replay the entire WAL history from the
+beginning of time. Checkpoints bound recovery time at the cost of write
+amplification.</p>
+
+<h2 id="overview">Overview</h2>
+
+<p>The checkpoint process performs three things:</p>
+
+<ol>
+  <li>
+    <p><strong>Establishes a redo point</strong> – records the current WAL insert position
+<em>before</em> starting to flush. This is the LSN from which crash recovery will
+start replaying.</p>
+  </li>
+  <li>
+    <p><strong>Flushes all dirty shared buffers</strong> – writes every dirty page to its
+permanent location on disk. After this, all pages on disk reflect WAL up
+to at least the redo point.</p>
+  </li>
+  <li>
+    <p><strong>Writes a checkpoint WAL record</strong> – records the redo point, transaction
+counters, and other state into a <code class="language-plaintext highlighter-rouge">CheckPoint</code> struct that is both written
+to WAL and stored in <code class="language-plaintext highlighter-rouge">pg_control</code>.</p>
+  </li>
+</ol>
+
+<p>After a checkpoint completes, WAL segments before the redo point are no longer
+needed for crash recovery and can be recycled or archived.</p>
+
+<h2 id="key-source-files">Key Source Files</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>File</th>
+      <th>Purpose</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/access/transam/xlog.c</code></td>
+      <td><code class="language-plaintext highlighter-rouge">CreateCheckPoint()</code>, <code class="language-plaintext highlighter-rouge">CreateRestartPoint()</code></td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/postmaster/checkpointer.c</code></td>
+      <td>Checkpointer process main loop</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/catalog/pg_control.h</code></td>
+      <td><code class="language-plaintext highlighter-rouge">CheckPoint</code> struct, <code class="language-plaintext highlighter-rouge">DBState</code>, checkpoint XLOG info values</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/access/xlog.h</code></td>
+      <td>Checkpoint request flags (<code class="language-plaintext highlighter-rouge">CHECKPOINT_IS_SHUTDOWN</code>, etc.)</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/storage/buffer/bufmgr.c</code></td>
+      <td><code class="language-plaintext highlighter-rouge">BufferSync()</code> – flushes dirty buffers during checkpoint</td>
+    </tr>
+  </tbody>
+</table>
+
+<h2 id="how-it-works">How It Works</h2>
+
+<h3 id="the-checkpoint-sequence">The Checkpoint Sequence</h3>
+
+<pre><code class="language-mermaid">flowchart TD
+    A["Checkpointer wakes up&lt;br/&gt;(timer or WAL volume trigger)"] --&gt; B["Record redo point:&lt;br/&gt;GetInsertRecPtr()"]
+    B --&gt; C["WAL-log XLOG_CHECKPOINT_REDO&lt;br/&gt;(lightweight pre-record)"]
+    C --&gt; D["BufferSync(): flush all&lt;br/&gt;dirty shared buffers"]
+    D --&gt; E["CheckPointGuts(): flush CLOG,&lt;br/&gt;multixact, SUB, other SLRUs"]
+    E --&gt; F["Write CheckPoint WAL record&lt;br/&gt;(XLOG_CHECKPOINT_ONLINE)"]
+    F --&gt; G["Update pg_control with&lt;br/&gt;new checkpoint info"]
+    G --&gt; H["Recycle or remove old&lt;br/&gt;WAL segments"]
+
+    style B fill:#e8f4e8
+    style D fill:#f4e8e8
+    style G fill:#e8e8f4
+</code></pre>
+
+<h4 id="step-by-step-inside-createcheckpoint">Step-by-step inside <code class="language-plaintext highlighter-rouge">CreateCheckPoint()</code>:</h4>
+
+<ol>
+  <li>
+    <p><strong>Lock out concurrent checkpoints</strong> – only one checkpoint runs at a time.</p>
+  </li>
+  <li>
+    <p><strong>Determine the redo point</strong> – call <code class="language-plaintext highlighter-rouge">GetInsertRecPtr()</code> to capture the
+current WAL insert position. This LSN becomes <code class="language-plaintext highlighter-rouge">CheckPoint.redo</code>. Any WAL
+record at or after this point might describe a change to a page that has
+not yet been flushed to disk.</p>
+  </li>
+  <li>
+    <p><strong>Enable full-page writes from the redo point</strong> – update
+<code class="language-plaintext highlighter-rouge">XLogCtlInsert.RedoRecPtr</code> so that subsequent page modifications will
+include FPIs until the next checkpoint.</p>
+  </li>
+  <li>
+    <p><strong>Flush all dirty buffers</strong> – <code class="language-plaintext highlighter-rouge">BufferSync()</code> iterates through the buffer
+pool, writing every dirty page whose oldest modification LSN is before the
+checkpoint start. This is spread over time using <code class="language-plaintext highlighter-rouge">checkpoint_completion_target</code>
+to avoid I/O spikes.</p>
+  </li>
+  <li>
+    <p><strong>Flush SLRU buffers</strong> – CLOG, multixact, commit timestamp, and other
+SLRU-managed data are also flushed.</p>
+  </li>
+  <li>
+    <p><strong>Write the checkpoint record</strong> – a WAL record of type
+<code class="language-plaintext highlighter-rouge">XLOG_CHECKPOINT_ONLINE</code> (or <code class="language-plaintext highlighter-rouge">XLOG_CHECKPOINT_SHUTDOWN</code> during shutdown)
+containing the <code class="language-plaintext highlighter-rouge">CheckPoint</code> struct.</p>
+  </li>
+  <li>
+    <p><strong>Update <code class="language-plaintext highlighter-rouge">pg_control</code></strong> – the <code class="language-plaintext highlighter-rouge">ControlFileData</code> is updated with the new
+checkpoint information and fsynced. This file is the first thing checked
+during startup.</p>
+  </li>
+  <li>
+    <p><strong>Recycle old WAL</strong> – segments before the redo point (minus any retention
+for replication slots, <code class="language-plaintext highlighter-rouge">wal_keep_size</code>, or archiving) are recycled or deleted.</p>
+  </li>
+</ol>
+
+<h3 id="the-redo-point">The Redo Point</h3>
+
+<p>The redo point is the most important concept in the checkpoint. It is the answer
+to “where does recovery start?”</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code> WAL timeline:  ... [redo point] ... [dirty pages flushed] ... [checkpoint record]
+                     ^                                          ^
+                     |                                          |
+          Recovery starts here                       pg_control points here
+</code></pre></div></div>
+
+<p>Note that the redo point is captured <em>before</em> dirty pages are flushed. This is
+critical: any page modification that happens <em>during</em> the flush must also be
+recoverable. Since those modifications generate WAL records after the redo point,
+replaying from the redo point will reconstruct them.</p>
+
+<h3 id="checkpoint-triggers">Checkpoint Triggers</h3>
+
+<p>Checkpoints are triggered by:</p>
+
+<ol>
+  <li>
+    <p><strong>WAL volume</strong> – when <code class="language-plaintext highlighter-rouge">max_wal_size</code> worth of WAL has been generated since
+the last checkpoint, the checkpointer is signaled with <code class="language-plaintext highlighter-rouge">CHECKPOINT_CAUSE_XLOG</code>.</p>
+  </li>
+  <li>
+    <p><strong>Time</strong> – every <code class="language-plaintext highlighter-rouge">checkpoint_timeout</code> seconds (default 5 minutes), the
+checkpointer wakes up with <code class="language-plaintext highlighter-rouge">CHECKPOINT_CAUSE_TIME</code>.</p>
+  </li>
+  <li>
+    <p><strong>Manual</strong> – <code class="language-plaintext highlighter-rouge">CHECKPOINT</code> SQL command sets <code class="language-plaintext highlighter-rouge">CHECKPOINT_FORCE | CHECKPOINT_WAIT</code>.</p>
+  </li>
+  <li>
+    <p><strong>Shutdown</strong> – <code class="language-plaintext highlighter-rouge">CHECKPOINT_IS_SHUTDOWN</code> is set, ensuring all data is on disk.</p>
+  </li>
+</ol>
+
+<p>The request flags are OR-able bitmasks:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="cm">/* src/include/access/xlog.h:149 */</span>
+<span class="cp">#define CHECKPOINT_IS_SHUTDOWN         0x0001
+#define CHECKPOINT_END_OF_RECOVERY     0x0002
+#define CHECKPOINT_FAST                0x0004
+#define CHECKPOINT_FORCE               0x0008
+#define CHECKPOINT_FLUSH_UNLOGGED      0x0010
+#define CHECKPOINT_WAIT                0x0020
+#define CHECKPOINT_REQUESTED           0x0040
+#define CHECKPOINT_CAUSE_XLOG          0x0080
+#define CHECKPOINT_CAUSE_TIME          0x0100
+</span></code></pre></div></div>
+
+<h3 id="spread-checkpoints">Spread Checkpoints</h3>
+
+<p>Flushing all dirty buffers at once would cause a massive I/O spike. The
+<code class="language-plaintext highlighter-rouge">checkpoint_completion_target</code> GUC (default 0.9) tells the checkpointer to
+spread the writes over 90% of the expected time until the next checkpoint.
+<code class="language-plaintext highlighter-rouge">BufferSync()</code> uses this to pace its writes, sleeping between batches.</p>
+
+<h3 id="pg_control-the-recovery-anchor">pg_control: The Recovery Anchor</h3>
+
+<p><code class="language-plaintext highlighter-rouge">pg_control</code> is a single file (<code class="language-plaintext highlighter-rouge">global/pg_control</code>) that stores the last
+completed checkpoint location, the database state, and system parameters. It
+is the first file read during startup.</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="cm">/* Key fields from ControlFileData (src/include/catalog/pg_control.h) */</span>
+<span class="k">typedef</span> <span class="k">enum</span> <span class="n">DBState</span>
+<span class="p">{</span>
+    <span class="n">DB_STARTUP</span> <span class="o">=</span> <span class="mi">0</span><span class="p">,</span>
+    <span class="n">DB_SHUTDOWNED</span><span class="p">,</span>                <span class="cm">/* clean shutdown completed */</span>
+    <span class="n">DB_SHUTDOWNED_IN_RECOVERY</span><span class="p">,</span>    <span class="cm">/* clean shutdown during recovery */</span>
+    <span class="n">DB_SHUTDOWNING</span><span class="p">,</span>               <span class="cm">/* shutdown in progress */</span>
+    <span class="n">DB_IN_CRASH_RECOVERY</span><span class="p">,</span>         <span class="cm">/* crash recovery in progress */</span>
+    <span class="n">DB_IN_ARCHIVE_RECOVERY</span><span class="p">,</span>       <span class="cm">/* archive recovery in progress */</span>
+    <span class="n">DB_IN_PRODUCTION</span><span class="p">,</span>             <span class="cm">/* normal operation */</span>
+<span class="p">}</span> <span class="n">DBState</span><span class="p">;</span>
+</code></pre></div></div>
+
+<p>During startup:</p>
+
+<ul>
+  <li>If <code class="language-plaintext highlighter-rouge">state == DB_SHUTDOWNED</code>, no recovery is needed.</li>
+  <li>If <code class="language-plaintext highlighter-rouge">state == DB_IN_PRODUCTION</code> or <code class="language-plaintext highlighter-rouge">DB_IN_CRASH_RECOVERY</code>, the system crashed
+and recovery must start from the checkpoint’s redo point.</li>
+</ul>
+
+<h3 id="restartpoints-standby-checkpoints">Restartpoints (Standby Checkpoints)</h3>
+
+<p>A standby server cannot create real checkpoints because it is not generating
+new WAL. Instead, it creates <strong>restartpoints</strong> via <code class="language-plaintext highlighter-rouge">CreateRestartPoint()</code>. A
+restartpoint flushes dirty buffers and updates <code class="language-plaintext highlighter-rouge">pg_control</code> to reflect the
+latest checkpoint record received from the primary. This bounds how far back
+recovery must go if the standby crashes.</p>
+
+<p>Restartpoints are triggered when a checkpoint record is replayed and enough
+WAL has been processed since the last restartpoint.</p>
+
+<h2 id="key-data-structures">Key Data Structures</h2>
+
+<h3 id="checkpoint">CheckPoint</h3>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="cm">/* src/include/catalog/pg_control.h:35 */</span>
+<span class="k">typedef</span> <span class="k">struct</span> <span class="n">CheckPoint</span>
+<span class="p">{</span>
+    <span class="n">XLogRecPtr</span>      <span class="n">redo</span><span class="p">;</span>              <span class="cm">/* REDO start point */</span>
+    <span class="n">TimeLineID</span>      <span class="n">ThisTimeLineID</span><span class="p">;</span>    <span class="cm">/* current TLI */</span>
+    <span class="n">TimeLineID</span>      <span class="n">PrevTimeLineID</span><span class="p">;</span>    <span class="cm">/* previous TLI (fork point) */</span>
+    <span class="n">bool</span>            <span class="n">fullPageWrites</span><span class="p">;</span>    <span class="cm">/* current full_page_writes */</span>
+    <span class="kt">int</span>             <span class="n">wal_level</span><span class="p">;</span>         <span class="cm">/* current wal_level */</span>
+    <span class="n">FullTransactionId</span> <span class="n">nextXid</span><span class="p">;</span>         <span class="cm">/* next free XID */</span>
+    <span class="n">Oid</span>             <span class="n">nextOid</span><span class="p">;</span>           <span class="cm">/* next free OID */</span>
+    <span class="n">MultiXactId</span>     <span class="n">nextMulti</span><span class="p">;</span>         <span class="cm">/* next free MultiXactId */</span>
+    <span class="n">MultiXactOffset</span> <span class="n">nextMultiOffset</span><span class="p">;</span>   <span class="cm">/* next free MultiXact offset */</span>
+    <span class="n">TransactionId</span>   <span class="n">oldestXid</span><span class="p">;</span>         <span class="cm">/* cluster-wide minimum datfrozenxid */</span>
+    <span class="n">Oid</span>             <span class="n">oldestXidDB</span><span class="p">;</span>       <span class="cm">/* database with minimum datfrozenxid */</span>
+    <span class="n">MultiXactId</span>     <span class="n">oldestMulti</span><span class="p">;</span>       <span class="cm">/* cluster-wide minimum datminmxid */</span>
+    <span class="n">Oid</span>             <span class="n">oldestMultiDB</span><span class="p">;</span>     <span class="cm">/* database with minimum datminmxid */</span>
+    <span class="n">pg_time_t</span>       <span class="n">time</span><span class="p">;</span>              <span class="cm">/* timestamp of checkpoint */</span>
+    <span class="n">TransactionId</span>   <span class="n">oldestCommitTsXid</span><span class="p">;</span>
+    <span class="n">TransactionId</span>   <span class="n">newestCommitTsXid</span><span class="p">;</span>
+    <span class="n">TransactionId</span>   <span class="n">oldestActiveXid</span><span class="p">;</span>   <span class="cm">/* oldest running XID (for hot standby) */</span>
+<span class="p">}</span> <span class="n">CheckPoint</span><span class="p">;</span>
+</code></pre></div></div>
+
+<p>This struct is written both as a WAL record payload and stored in <code class="language-plaintext highlighter-rouge">pg_control</code>.
+The <code class="language-plaintext highlighter-rouge">redo</code> field is the most critical – it is the LSN where crash recovery begins.</p>
+
+<h3 id="checkpointstatsdata">CheckpointStatsData</h3>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="cm">/* src/include/access/xlog.h:171 */</span>
+<span class="k">typedef</span> <span class="k">struct</span> <span class="n">CheckpointStatsData</span>
+<span class="p">{</span>
+    <span class="n">TimestampTz</span> <span class="n">ckpt_start_t</span><span class="p">;</span>      <span class="cm">/* start of checkpoint */</span>
+    <span class="n">TimestampTz</span> <span class="n">ckpt_write_t</span><span class="p">;</span>      <span class="cm">/* start of flushing buffers */</span>
+    <span class="n">TimestampTz</span> <span class="n">ckpt_sync_t</span><span class="p">;</span>       <span class="cm">/* start of fsyncs */</span>
+    <span class="n">TimestampTz</span> <span class="n">ckpt_sync_end_t</span><span class="p">;</span>   <span class="cm">/* end of fsyncs */</span>
+    <span class="n">TimestampTz</span> <span class="n">ckpt_end_t</span><span class="p">;</span>        <span class="cm">/* end of checkpoint */</span>
+    <span class="kt">int</span>         <span class="n">ckpt_bufs_written</span><span class="p">;</span> <span class="cm">/* # of buffers written */</span>
+    <span class="kt">int</span>         <span class="n">ckpt_slru_written</span><span class="p">;</span> <span class="cm">/* # of SLRU buffers written */</span>
+    <span class="kt">int</span>         <span class="n">ckpt_segs_added</span><span class="p">;</span>   <span class="cm">/* # of new WAL segments created */</span>
+    <span class="kt">int</span>         <span class="n">ckpt_segs_removed</span><span class="p">;</span> <span class="cm">/* # of WAL segments deleted */</span>
+    <span class="kt">int</span>         <span class="n">ckpt_segs_recycled</span><span class="p">;</span><span class="cm">/* # of WAL segments recycled */</span>
+    <span class="kt">int</span>         <span class="n">ckpt_sync_rels</span><span class="p">;</span>    <span class="cm">/* # of relations synced */</span>
+    <span class="n">uint64</span>      <span class="n">ckpt_longest_sync</span><span class="p">;</span> <span class="cm">/* longest sync for one relation */</span>
+    <span class="n">uint64</span>      <span class="n">ckpt_agg_sync_time</span><span class="p">;</span><span class="cm">/* sum of all sync times */</span>
+<span class="p">}</span> <span class="n">CheckpointStatsData</span><span class="p">;</span>
+</code></pre></div></div>
+
+<p>When <code class="language-plaintext highlighter-rouge">log_checkpoints = on</code>, these stats are logged at checkpoint completion,
+providing visibility into checkpoint duration and I/O behavior.</p>
+
+<h3 id="checkpoint-timeline-diagram">Checkpoint Timeline Diagram</h3>
+
+<pre><code class="language-mermaid">flowchart LR
+    subgraph "Checkpoint N"
+        R1["Redo Point N"]
+        CP1["Checkpoint Record N"]
+    end
+    subgraph "Between Checkpoints"
+        W1["WAL records with FPIs&lt;br/&gt;(first page touch after ckpt)"]
+        W2["WAL records without FPIs&lt;br/&gt;(subsequent touches)"]
+    end
+    subgraph "Checkpoint N+1"
+        R2["Redo Point N+1"]
+        CP2["Checkpoint Record N+1"]
+    end
+
+    R1 --&gt; CP1 --&gt; W1 --&gt; W2 --&gt; R2 --&gt; CP2
+
+    R1 -. "Recovery for crash here&lt;br/&gt;starts at Redo Point N" .-&gt; W1
+
+    style R1 fill:#e8f4e8
+    style R2 fill:#e8f4e8
+    style CP1 fill:#e8e8f4
+    style CP2 fill:#e8e8f4
+</code></pre>
+
+<h2 id="connections">Connections</h2>
+
+<ul>
+  <li>
+    <p><strong><a href="wal-internals">WAL Internals</a></strong> – checkpoints set <code class="language-plaintext highlighter-rouge">RedoRecPtr</code> which
+controls full-page write decisions during WAL insertion.</p>
+  </li>
+  <li>
+    <p><strong><a href="recovery">Recovery</a></strong> – the checkpoint’s redo point is where crash
+recovery begins. <code class="language-plaintext highlighter-rouge">pg_control</code> tells the startup process which checkpoint
+to use.</p>
+  </li>
+  <li>
+    <p><strong><a href="../01-storage/">Storage Engine (Ch. 1)</a></strong> – <code class="language-plaintext highlighter-rouge">BufferSync()</code> is the
+checkpoint’s main I/O work, flushing dirty pages from the buffer pool.</p>
+  </li>
+  <li>
+    <p><strong><a href="../12-replication/">Replication (Ch. 12)</a></strong> – <code class="language-plaintext highlighter-rouge">pg_basebackup</code> uses
+<code class="language-plaintext highlighter-rouge">do_pg_backup_start()</code>/<code class="language-plaintext highlighter-rouge">do_pg_backup_stop()</code> to bracket a backup, forcing
+a checkpoint at the start. Replication slots prevent WAL recycling.</p>
+  </li>
+</ul>
+
+
+      <hr>
+
+      <!-- Prev / Next / Up navigation -->
+      
+      
+      
+
+      <div class="clearfix" style="margin-top: 2rem;">
+        
+          
+          
+
+          
+            
+            <a class="btn btn-primary float-left" href="/postgresql/04-wal/" title="Write-Ahead Logging">&larr; Previous</a>
+          
+
+          
+            
+            <a class="btn btn-primary float-right" href="/postgresql/04-wal/recovery.html" title="Recovery">Next &rarr;</a>
+          
+        
+      </div>
+
+      
+      <div style="text-align: center; margin-top: 1rem;">
+        <a href="/postgresql-internals/">&uarr; Back to Table of Contents</a>
+      </div>
+      
+
+    </div>
+  </div>
+</div>
+
+
+  <!-- Footer -->
+
+<hr>
+
+<footer>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <ul class="list-inline text-center">
+          
+          <li class="list-inline-item">
+            <a href="mailto:amitava.dev@proton.me" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="far fa-envelope fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          
+          
+          <li class="list-inline-item">
+            <a href="https://www.linkedin.com/in/amitavaag" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-linkedin fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          <li class="list-inline-item">
+            <a href="https://github.com/ikouchiha47" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-github fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+        </ul>
+
+        <p class="copyright text-muted">
+          Build with: 
+          <a 
+            href="https://github.com/StartBootstrap/startbootstrap-clean-blog-jekyll"
+            class="text-gray"
+            target="_blank">startbootstrap-clean-blog-jekyll</a></p>
+      </div>
+    </div>
+  </div>
+</footer>
+
+
+  <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="/assets/vendor/blog/js/scripts.js"></script>
+
+<script src="/assets/scripts.js"></script>
+
+
+
+
+
+  <script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+
+    document.querySelectorAll('pre > code.language-mermaid').forEach((codeBlock) => {
+      codeBlock.parentElement.outerHTML = `<pre class="mermaid">${codeBlock.textContent}</pre>`;
+    });
+
+
+    mermaid.initialize({ startOnLoad: true, theme: 'forest' });
+</script>
+
+
+  
+
+</body>
+
+</html>

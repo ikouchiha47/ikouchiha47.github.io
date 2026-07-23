@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+  <title>
+    RUNE Part 5: Calibration, From 125 Seconds to 3 - iko&#39;s logs
+    
+  </title>
+
+  <meta name="description" content="Why the original calibration took 2 minutes and how it was fixed to take 3 seconds.">
+  <meta property="og:description" content="Why the original calibration took 2 minutes and how it was fixed to take 3 seconds.">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="RUNE Part 5: Calibration, From 125 Seconds to 3">
+  <meta property="og:url" content="https://ikouchiha47.github.io/rune/05-calibration.html">
+
+  
+
+  <link href='https://fonts.googleapis.com/css?family=Lora:400,700,400italic,700italic' rel='stylesheet' type='text/css'>
+  <link href='https://fonts.googleapis.com/css?family=Open+Sans:300italic,400italic,600italic,700italic,800italic,400,300,600,700,800' rel='stylesheet' type='text/css'>
+
+  <!-- <script src="https://use.fontawesome.com/releases/v5.15.3/js/all.js" crossorigin="anonymous"></script> -->
+  <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.15.4/css/all.css" integrity="sha384-DyZ88mC6Up2uqS4h/KRgHuoeGwBcD4Ng9SiP4dIRy0EXTlnuz47vAwmeGwVChigm" crossorigin="anonymous"/>
+
+  <link rel="stylesheet" href="/assets/main.css">
+  <link rel="canonical" href="https://ikouchiha47.github.io/rune/05-calibration.html">
+  <link rel="alternate" type="application/rss+xml" title="iko&#39;s logs" href="/feed.xml">
+
+  <meta name="google-site-verification" content="lWkg6gIxJgzEKX_5XnhcxCtPE9QknaimFWWos_dTvPM" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fira+Sans:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Inconsolata:wght@200..900&family=Jersey+25&family=Kanit:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Merriweather+Sans:ital,wght@0,300..800;1,300..800&family=Nanum+Gothic+Coding&family=Space+Grotesk:wght@300..700&family=Titillium+Web:ital,wght@0,200;0,300;0,400;0,600;0,700;0,900;1,200;1,300;1,400;1,600;1,700&display=swap" rel="stylesheet">
+
+</head>
+
+
+<body>
+
+  <!-- Navigation -->
+<nav class="navbar navbar-expand-lg navbar-light fixed-top" id="mainNav">
+  <div class="container">
+    <a class="navbar-brand" href="/">iko&#39;s logs</a>
+    <button class="navbar-toggler navbar-toggler-right" type="button" data-toggle="collapse" data-target="#navbarResponsive" aria-controls="navbarResponsive" aria-expanded="false" aria-label="Toggle navigation">
+      Menu
+      <i class="fa fa-bars"></i>
+    </button>
+    <div class="collapse navbar-collapse" id="navbarResponsive">
+      <ul class="navbar-nav ml-auto">
+        <li class="nav-item">
+          <a class="nav-link" href="/">Home</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/about">About</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/posts">Posts</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/contact">Contact</a>
+        </li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+
+  <!-- Page Header -->
+
+<header class="masthead" style="background: #0a1628">
+
+  <div class="overlay"></div>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <div class="post-heading">
+          <h1>RUNE Part 5: Calibration, From 125 Seconds to 3</h1>
+          
+          <h2 class="subheading">MASR throttling, stable windows, and a timer that fires regardless of IMU events</h2>
+          
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="container space-grotesk">
+  <div class="row">
+    <div class="col-lg-8 col-md-10 mx-auto">
+
+      <!-- Breadcrumb -->
+      <nav aria-label="breadcrumb" style="margin-bottom: 1.5rem;">
+        <ol class="breadcrumb" style="background: transparent; padding: 0;">
+          
+            <li class="breadcrumb-item"><a href="/rune/">RUNE</a></li>
+          
+          
+          <li class="breadcrumb-item active" aria-current="page">RUNE Part 5: Calibration, From 125 Seconds to 3</li>
+        </ol>
+      </nav>
+
+      <p><img src="/assets/rune/img/IMG_20260330_152939403.jpg" alt="Early prototype during calibration testing" style="max-width:100%;height:auto;display:block;margin:0 auto 1.5rem;" /></p>
+
+<p>Calibration answers the question from <a href="/rune/04-gestures">Part 4</a>: reference anchoring. The device needs to know where “neutral” is for this user in this position before it can classify any motion as a gesture. That baseline is captured once after pairing — user holds arm in wearing position, firmware collects rotation vector samples, computes average, stores as the reference.</p>
+
+<p>The original implementation required the user to hold still for up to two minutes. This is not a product.</p>
+
+<hr />
+
+<h2 id="the-cause-masr-throttling">The cause: MASR throttling</h2>
+
+<p>The BNO085 has a feature called Motion Adaptive Sample Rate. When it detects that the device is stationary, it automatically throttles the ROTATION_VECTOR report rate to save power.</p>
+
+<p>Throttled rate: approximately <strong>0.12 Hz</strong>.</p>
+
+<p>The original calibration algorithm waited for 25 samples to fill the buffer. At 0.12 Hz, that’s 208 seconds worst case. In practice, 60–120 seconds. The user has to stand there, arm raised in wearing position, not moving, while the sensor slowly decides it might be worth sending another quaternion.</p>
+
+<p>The log tags confirmed it — <code class="language-plaintext highlighter-rouge">[RVRate]</code> showed 0.12 Hz during the calibration window, <code class="language-plaintext highlighter-rouge">[CalBuf]</code> showed samples trickling in one every 8 seconds.</p>
+
+<hr />
+
+<h2 id="the-fix-wall-clock-deadline-two-buffers">The fix: wall-clock deadline, two buffers</h2>
+
+<p>The rewrite (<code class="language-plaintext highlighter-rouge">docs/CALIBRATION_REWRITE.md</code>, implemented in <code class="language-plaintext highlighter-rouge">88aa7d7</code>) makes one structural change: <strong>stop waiting for a sample count, use a fixed time deadline instead.</strong></p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>3-second collection window, started when arm event fires.
+Two buffers:
+  calBuffer       — ALL rotation vector samples during window
+  stableCalBuffer — samples received while BNO085 stability = STABLE (stab=3)
+
+Finalization priority (at 3-second expiry):
+  1. stableCalBuffer.count &gt; 0  →  baseline = mean(stableCalBuffer)
+  2. calBuffer.count &gt; 0        →  baseline = mean(calBuffer)
+  3. both empty                 →  fail, app retries
+</code></pre></div></div>
+
+<p>The key detail is where the timer check lives:</p>
+
+<div class="language-cpp highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="c1">// In loop(), before waitForEvent() — fires on every iteration</span>
+<span class="k">if</span> <span class="p">(</span><span class="n">calInProgress</span> <span class="o">&amp;&amp;</span> <span class="o">!</span><span class="n">baselineCaptured</span><span class="p">)</span> <span class="p">{</span>
+  <span class="k">if</span> <span class="p">(</span><span class="n">millis</span><span class="p">()</span> <span class="o">-</span> <span class="n">calStartMs</span> <span class="o">&gt;=</span> <span class="n">CAL_WINDOW_MS</span><span class="p">)</span> <span class="p">{</span>
+    <span class="n">finalizeCalibration</span><span class="p">();</span>
+  <span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div></div>
+
+<p>Not in the IMU event handler. Not gated on receiving a sample. In <code class="language-plaintext highlighter-rouge">loop()</code>, unconditionally, on every pass. If the IMU is throttled to 0.12 Hz and sends zero samples during the 3-second window, the timer still fires. The fallback path handles it.</p>
+
+<hr />
+
+<h2 id="the-stability-window">The stability window</h2>
+
+<p>The BNO085 reports a stability class with each rotation vector sample:</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>stab value</th>
+      <th>Meaning</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>1</td>
+      <td>On table</td>
+    </tr>
+    <tr>
+      <td>2</td>
+      <td>Stationary</td>
+    </tr>
+    <tr>
+      <td>3</td>
+      <td><strong>Stable</strong> — sensor confident in orientation</td>
+    </tr>
+    <tr>
+      <td>4+</td>
+      <td>In motion</td>
+    </tr>
+  </tbody>
+</table>
+
+<p><code class="language-plaintext highlighter-rouge">stab=3</code> is what you want for calibration — the sensor is confident. Samples collected during stab=3 go into <code class="language-plaintext highlighter-rouge">stableCalBuffer</code>. When stab rises above 3 (motion detected), the window pauses but <code class="language-plaintext highlighter-rouge">stableCalBuffer</code> is not cleared; prior stable samples are retained across brief motion spikes.</p>
+
+<div class="language-cpp highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="c1">// In handleStabilityClassifier()</span>
+<span class="k">if</span> <span class="p">(</span><span class="n">calInProgress</span> <span class="o">&amp;&amp;</span> <span class="o">!</span><span class="n">baselineCaptured</span><span class="p">)</span> <span class="p">{</span>
+  <span class="k">if</span> <span class="p">(</span><span class="n">stab</span> <span class="o">==</span> <span class="n">STABILITY_STABLE</span><span class="p">)</span> <span class="p">{</span>
+    <span class="n">inStableWindow</span> <span class="o">=</span> <span class="nb">true</span><span class="p">;</span>
+  <span class="p">}</span> <span class="k">else</span> <span class="nf">if</span> <span class="p">(</span><span class="n">stab</span> <span class="o">&gt;=</span> <span class="mi">4</span><span class="p">)</span> <span class="p">{</span>
+    <span class="n">inStableWindow</span> <span class="o">=</span> <span class="nb">false</span><span class="p">;</span>
+    <span class="c1">// stableCalBuffer NOT cleared — keep prior stable samples</span>
+  <span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div></div>
+
+<p>If the user’s arm is reasonably still during the 3-second window, <code class="language-plaintext highlighter-rouge">stableCalBuffer</code> fills with a handful of high-confidence samples. If the arm was moving the whole time, the fallback to <code class="language-plaintext highlighter-rouge">calBuffer</code> (all samples) gives a noisier but usable baseline.</p>
+
+<hr />
+
+<h2 id="state-resets">State resets</h2>
+
+<p>Calibration state resets on three events:</p>
+
+<ol>
+  <li><strong>Disarm</strong> — user explicitly disarms via app</li>
+  <li><strong>BLE disconnect</strong> — connection dropped</li>
+  <li><strong>App writes <code class="language-plaintext highlighter-rouge">-999,-999,-999</code> to the baseline characteristic</strong> — the protocol sentinel for “start over”</li>
+</ol>
+
+<p>All three clear both buffers and the <code class="language-plaintext highlighter-rouge">inStableWindow</code> flag. The <code class="language-plaintext highlighter-rouge">-999</code> sentinel is a deliberate API contract: the app can trigger a fresh calibration without bouncing the BLE connection.</p>
+
+<p>The EARS requirements document (<code class="language-plaintext highlighter-rouge">CALIBRATION_REWRITE.md</code>) has 18 requirements covering every state transition. The full checklist is there if you want to understand why each reset path needs its own handling.</p>
+
+<hr />
+
+<h2 id="result">Result</h2>
+
+<p>Happy path timing: arm → user raises arm (1s of motion) → stab=3 fires → stableCalBuffer starts collecting → 3-second expiry → baseline set. Total: <strong>3–4 seconds</strong>.</p>
+
+<p>Log confirmation:</p>
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>[Arm] armed
+[Reports] rotation vector enabled
+[RVRate] sample=10 elapsed=200ms (~50Hz)
+[CalBuf] count=1/25 ...
+[Cal] stable window used: 8 samples
+[Cal] baseline: r=12.3 p=-8.1 y=44.7
+</code></pre></div></div>
+
+<p>The app does not forward gestures to the host while <code class="language-plaintext highlighter-rouge">calibrationComplete == false</code>. That gate lives in TypeScript, not firmware — separation of concerns. Firmware captures baseline. App enforces the gate. Each side owns its piece.</p>
+
+<hr />
+
+<h2 id="whats-still-open">What’s still open</h2>
+
+<p>Sample rate at 50Hz fills 25 samples in ~500ms. The 3-second window is generous — the actual fill time is fast when the IMU isn’t throttled. The open question is whether the MASR throttle kicks in during the calibration window for certain users who hold very still. The log tags exist to detect this. The fallback path handles it. But characterizing the failure rate across different conditions is ongoing.</p>
+
+<p>The multimeter and the serial monitor are the tools. The protocol gives you the visibility.</p>
+
+
+      <hr>
+
+      <!-- Prev / Next / Up navigation -->
+      
+      
+      
+
+      <div class="clearfix" style="margin-top: 2rem;">
+        
+          
+          
+
+          
+            
+            <a class="btn btn-primary float-left" href="/rune/04-gestures.html" title="RUNE Part 4: Eight Problems Called Gesture Detection">&larr; Previous</a>
+          
+
+          
+            
+            <a class="btn btn-primary float-right" href="/rune/06-app.html" title="RUNE Part 6: The App">Next &rarr;</a>
+          
+        
+      </div>
+
+      
+      <div style="text-align: center; margin-top: 1rem;">
+        <a href="/rune/">&uarr; Back to Table of Contents</a>
+      </div>
+      
+
+    </div>
+  </div>
+</div>
+
+
+  <!-- Footer -->
+
+<hr>
+
+<footer>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <ul class="list-inline text-center">
+          
+          <li class="list-inline-item">
+            <a href="mailto:amitava.dev@proton.me" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="far fa-envelope fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          
+          
+          <li class="list-inline-item">
+            <a href="https://www.linkedin.com/in/amitavaag" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-linkedin fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          <li class="list-inline-item">
+            <a href="https://github.com/ikouchiha47" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-github fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+        </ul>
+
+        <p class="copyright text-muted">
+          Build with: 
+          <a 
+            href="https://github.com/StartBootstrap/startbootstrap-clean-blog-jekyll"
+            class="text-gray"
+            target="_blank">startbootstrap-clean-blog-jekyll</a></p>
+      </div>
+    </div>
+  </div>
+</footer>
+
+
+  <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="/assets/vendor/blog/js/scripts.js"></script>
+
+<script src="/assets/scripts.js"></script>
+
+
+
+
+
+  <script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+
+    document.querySelectorAll('pre > code.language-mermaid').forEach((codeBlock) => {
+      codeBlock.parentElement.outerHTML = `<pre class="mermaid">${codeBlock.textContent}</pre>`;
+    });
+
+
+    mermaid.initialize({ startOnLoad: true, theme: 'forest' });
+</script>
+
+
+  
+
+</body>
+
+</html>

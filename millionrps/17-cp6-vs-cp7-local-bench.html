@@ -1,0 +1,441 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+  <title>
+    CP6 vs CP6+agg vs CP7: local benchmark on Colima (2000 SSE connections) - iko&#39;s logs
+    
+  </title>
+
+  <meta name="description" content="">
+  <meta property="og:description" content="">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="CP6 vs CP6+agg vs CP7: local benchmark on Colim...">
+  <meta property="og:url" content="https://ikouchiha47.github.io/millionrps/17-cp6-vs-cp7-local-bench.html">
+
+  
+
+  <link href='https://fonts.googleapis.com/css?family=Lora:400,700,400italic,700italic' rel='stylesheet' type='text/css'>
+  <link href='https://fonts.googleapis.com/css?family=Open+Sans:300italic,400italic,600italic,700italic,800italic,400,300,600,700,800' rel='stylesheet' type='text/css'>
+
+  <!-- <script src="https://use.fontawesome.com/releases/v5.15.3/js/all.js" crossorigin="anonymous"></script> -->
+  <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.15.4/css/all.css" integrity="sha384-DyZ88mC6Up2uqS4h/KRgHuoeGwBcD4Ng9SiP4dIRy0EXTlnuz47vAwmeGwVChigm" crossorigin="anonymous"/>
+
+  <link rel="stylesheet" href="/assets/main.css">
+  <link rel="canonical" href="https://ikouchiha47.github.io/millionrps/17-cp6-vs-cp7-local-bench.html">
+  <link rel="alternate" type="application/rss+xml" title="iko&#39;s logs" href="/feed.xml">
+
+  <meta name="google-site-verification" content="lWkg6gIxJgzEKX_5XnhcxCtPE9QknaimFWWos_dTvPM" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fira+Sans:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Inconsolata:wght@200..900&family=Jersey+25&family=Kanit:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Merriweather+Sans:ital,wght@0,300..800;1,300..800&family=Nanum+Gothic+Coding&family=Space+Grotesk:wght@300..700&family=Titillium+Web:ital,wght@0,200;0,300;0,400;0,600;0,700;0,900;1,200;1,300;1,400;1,600;1,700&display=swap" rel="stylesheet">
+
+</head>
+
+
+<body>
+
+  <!-- Navigation -->
+<nav class="navbar navbar-expand-lg navbar-light fixed-top" id="mainNav">
+  <div class="container">
+    <a class="navbar-brand" href="/">iko&#39;s logs</a>
+    <button class="navbar-toggler navbar-toggler-right" type="button" data-toggle="collapse" data-target="#navbarResponsive" aria-controls="navbarResponsive" aria-expanded="false" aria-label="Toggle navigation">
+      Menu
+      <i class="fa fa-bars"></i>
+    </button>
+    <div class="collapse navbar-collapse" id="navbarResponsive">
+      <ul class="navbar-nav ml-auto">
+        <li class="nav-item">
+          <a class="nav-link" href="/">Home</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/about">About</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/posts">Posts</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/contact">Contact</a>
+        </li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+
+  
+<header class="masthead">
+
+  <div class="overlay"></div>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <div class="post-heading">
+          <h1>CP6 vs CP6+agg vs CP7: local benchmark on Colima (2000 SSE connections)</h1>
+          
+          <h2 class="subheading">Aggregation alone eliminates all drops and doubles write throughput. The popserver architecture adds another 21% on top.</h2>
+          
+          <span class="meta">
+            July 23, 2026
+            
+            &mdash; <span class="journal-entry-status published">PUBLISHED</span>
+            
+          </span>
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="container space-grotesk">
+  <div class="row">
+    <div class="col-lg-8 col-md-10 mx-auto">
+
+      <!-- Breadcrumb -->
+      <nav aria-label="breadcrumb" style="margin-bottom: 1.5rem;">
+        <ol class="breadcrumb" style="background: transparent; padding: 0;">
+          <li class="breadcrumb-item"><a href="/millionrps/">Chasing 1 Million RPS</a></li>
+          <li class="breadcrumb-item active" aria-current="page">CP6 vs CP6+agg vs CP7: local benchmark on Colima (2000 SSE connections)</li>
+        </ol>
+      </nav>
+
+      
+      <div style="margin-bottom: 1.5rem;">
+        
+        <span class="journal-tag">SSE</span>
+        
+        <span class="journal-tag">fan-out</span>
+        
+        <span class="journal-tag">aggregation</span>
+        
+        <span class="journal-tag">popserver</span>
+        
+        <span class="journal-tag">CP6</span>
+        
+        <span class="journal-tag">CP7</span>
+        
+        <span class="journal-tag">benchmark</span>
+        
+        <span class="journal-tag">local</span>
+        
+      </div>
+      
+
+      <p>Source code: <a href="https://github.com/ikouchiha47/gothun">ikouchiha47/gothun</a> — <code class="language-plaintext highlighter-rouge">src/likes/</code></p>
+
+<h2 id="context">context</h2>
+
+<p>Entry 16 ended with the implementation complete but no numbers — AWS was shut down. This entry runs the benchmark locally to get directional data. Local results aren’t AWS-comparable (4 vCPU vs 32, shared resources, virtualization overhead) but they’re enough to confirm the architecture works and to quantify the relative gains between checkpoints.</p>
+
+<h2 id="local-test-environment">local test environment</h2>
+
+<p>All three checkpoints run on the same machine and the same Colima VM.</p>
+
+<p><strong>Host:</strong> Apple Silicon (aarch64), macOS<br />
+<strong>Colima config:</strong></p>
+
+<div class="language-yaml highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="na">cpu</span><span class="pi">:</span> <span class="m">4</span>
+<span class="na">memory</span><span class="pi">:</span> <span class="m">16</span>   <span class="c1"># GiB</span>
+<span class="na">arch</span><span class="pi">:</span> <span class="s">aarch64</span>
+<span class="na">vmType</span><span class="pi">:</span> <span class="s">vz</span>
+<span class="na">docker</span><span class="pi">:</span>
+  <span class="na">default-ulimits</span><span class="pi">:</span>
+    <span class="na">nofile</span><span class="pi">:</span>
+      <span class="na">soft</span><span class="pi">:</span> <span class="m">1048576</span>
+      <span class="na">hard</span><span class="pi">:</span> <span class="m">1048576</span>
+</code></pre></div></div>
+
+<p><strong>docker-compose per-service:</strong></p>
+
+<div class="language-yaml highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="na">ulimits</span><span class="pi">:</span>
+  <span class="na">nofile</span><span class="pi">:</span>
+    <span class="na">soft</span><span class="pi">:</span> <span class="m">1048576</span>
+    <span class="na">hard</span><span class="pi">:</span> <span class="m">1048576</span>
+<span class="na">sysctls</span><span class="pi">:</span>
+  <span class="na">net.core.somaxconn</span><span class="pi">:</span> <span class="m">65535</span>
+  <span class="na">net.ipv4.tcp_tw_reuse</span><span class="pi">:</span> <span class="m">1</span>
+</code></pre></div></div>
+
+<p>The 1M file-descriptor limit is necessary — at 2000 SSE connections plus 100 like-writer connections, the default container limit of 1024 causes immediate crashes.</p>
+
+<p><strong>Load:</strong></p>
+<ul>
+  <li>SSE connections: 2000 (100 per post × 10 posts, all on one fanout-node)</li>
+  <li>Like-writers: 100 goroutines hitting <code class="language-plaintext highlighter-rouge">/like/:postID</code> across 10 posts</li>
+  <li>Duration: 20 seconds per phase</li>
+</ul>
+
+<p><strong>Binaries:</strong></p>
+<ul>
+  <li>CP6: <code class="language-plaintext highlighter-rouge">cmd/likes-server-cp6</code>, <code class="language-plaintext highlighter-rouge">cmd/fanout-node-cp6</code>, <code class="language-plaintext highlighter-rouge">cmd/registry-cp6</code></li>
+  <li>CP7: <code class="language-plaintext highlighter-rouge">cmd/likes-server</code>, <code class="language-plaintext highlighter-rouge">cmd/fanout-node</code>, <code class="language-plaintext highlighter-rouge">cmd/registry</code></li>
+</ul>
+
+<p>CP6 and CP7 live in separate cmd dirs so they can be compared without touching each other’s code.</p>
+
+<h2 id="the-three-checkpoints">the three checkpoints</h2>
+
+<p><strong>CP6 (no aggregation):</strong> consistent-hash ring maps <code class="language-plaintext highlighter-rouge">postID → fixed fanout-node</code>. <code class="language-plaintext highlighter-rouge">likes-server</code> fires one HTTP POST per increment directly to the owning node. At 17K inc/s, that’s 17,000 push operations per second — each contending for a 512-slot buffered channel per node.</p>
+
+<p><strong>CP6+agg:</strong> same consistent-hash architecture, same binary, but with <code class="language-plaintext highlighter-rouge">-agg-interval 100ms</code>. The <code class="language-plaintext highlighter-rouge">aggregator</code> accumulates <code class="language-plaintext highlighter-rouge">postID → latestCount</code> in a mutex-guarded map and swaps it every 100ms, pushing once per post per tick instead of once per increment.</p>
+
+<p><strong>CP7 (popserver):</strong> the architecture changes. <code class="language-plaintext highlighter-rouge">fanout-node</code> registers itself with a K-V registry (<code class="language-plaintext highlighter-rouge">postID → set&lt;nodeAddr&gt;</code>) when a subscriber connects, and unregisters when they disconnect. <code class="language-plaintext highlighter-rouge">likes-server</code> at each 100ms flush queries the registry for the live node set per postID and fans out only to those nodes. No static ring; routing is always fresh.</p>
+
+<h2 id="results">results</h2>
+
+<h3 id="three-way-comparison-at-2000-sse-connections">three-way comparison at 2000 SSE connections</h3>
+
+<table>
+  <thead>
+    <tr>
+      <th>Checkpoint</th>
+      <th>arch</th>
+      <th>agg</th>
+      <th>write/s</th>
+      <th>events/s</th>
+      <th>drop%</th>
+      <th>flush/s</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>CP6</td>
+      <td>consistent-hash</td>
+      <td>none</td>
+      <td>~17,200</td>
+      <td>~108,700</td>
+      <td><strong>96.8%</strong></td>
+      <td>0</td>
+    </tr>
+    <tr>
+      <td>CP6+agg</td>
+      <td>consistent-hash</td>
+      <td>100ms</td>
+      <td>~38,600</td>
+      <td>20,000</td>
+      <td><strong>0%</strong></td>
+      <td>10</td>
+    </tr>
+    <tr>
+      <td>CP7</td>
+      <td>popserver K-V</td>
+      <td>100ms</td>
+      <td>~46,860</td>
+      <td>20,000</td>
+      <td><strong>0%</strong></td>
+      <td>10</td>
+    </tr>
+  </tbody>
+</table>
+
+<h3 id="cp6-baseline-raw-stats">CP6 baseline raw stats</h3>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>increments_total: 342,885
+push_dropped:     331,796
+flushes_total:    0
+
+like-writer: rps ≈ 17,200/s  (peak 18,524)
+sse-client:  events/s ≈ 108,700  delivery: 3.1%
+</code></pre></div></div>
+
+<p>The delivery% here is misleading — 108K events/s sounds high but it represents 3.1% of what should have been delivered. 96.8% of pushes were dropped before they reached SSE subscribers.</p>
+
+<h3 id="cp6agg-raw-stats">CP6+agg raw stats</h3>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>increments_total: 785,573
+push_dropped:     0
+flushes_total:    200   (200 / 20s = 10/s)
+
+like-writer: rps ≈ 38,600/s  (peak 40,656)
+sse-client:  events/s = 20,000  delivery: 0.3%
+</code></pre></div></div>
+
+<p>Zero drops. The 200 flushes over 20 seconds is exactly what the math predicts: 10 posts × 100ms interval = 10 flushes/s.</p>
+
+<p>Delivery% of 0.3% reflects the aggregation itself — 785K writes collapsed into 400K SSE events. Each window sends the <em>latest</em> count once; intermediate values are intentionally discarded. Subscribers get the current count at 100ms granularity.</p>
+
+<h3 id="cp7-reference">CP7 reference</h3>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>increments_total: (from cp7_local_bench_20260723.md)
+push_dropped:     0
+flushes_total:    10/s
+
+like-writer: rps ≈ 46,860/s
+sse-client:  events/s = 20,000  delivery: 0.3%
+</code></pre></div></div>
+
+<p>Same delivery shape as CP6+agg (zero drops, 100ms granularity), higher write throughput.</p>
+
+<h2 id="what-the-numbers-tell-us">what the numbers tell us</h2>
+
+<p><strong>Aggregation is the load-shaping lever, not the architecture.</strong> The move from CP6 → CP6+agg is the dramatic one:</p>
+
+<ul>
+  <li>Drops: 96.8% → 0%</li>
+  <li>Write throughput: 17,200 → 38,600 (+124%)</li>
+  <li>Push volume to fanout-node: ~17K/s → ~100/s (170× reduction)</li>
+</ul>
+
+<p>This works because like counts are monotonically increasing and subscribers only need the <em>current</em> value, not every intermediate value. Collapsing a 100ms window from 3,800 individual increments per post into a single push is semantically lossless from the subscriber’s perspective.</p>
+
+<p><strong>The popserver architecture then adds 21% on top.</strong> CP6+agg → CP7 brings write/s from ~38,600 to ~46,860. Both flush at the same rate. The difference comes from how the dispatcher routes at flush time:</p>
+
+<ul>
+  <li>CP6+agg: consistent-hash picks a fixed node for each postID regardless of who’s watching. Even if no subscribers are connected to that node, a push is sent.</li>
+  <li>CP7: the registry query returns only the nodes that have active SSE connections for that postID. If nobody’s watching, nothing is sent. The push channel stays empty.</li>
+</ul>
+
+<p>At 2000 SSE connections across 10 posts on a single node, the routing difference is small — the popserver benefit grows as the number of fanout-nodes scales, because most posts will have zero subscribers on most nodes. On AWS with multiple nodes this gap would widen significantly.</p>
+
+<h2 id="whats-still-local-only">what’s still local-only</h2>
+
+<p>These numbers confirm direction, not magnitude. Limitations:</p>
+
+<ul>
+  <li><strong>4 vCPU Colima VM vs 32 vCPU c6in.8xlarge</strong> — everything is CPU-bound sooner</li>
+  <li><strong>Single fanout-node</strong> — the popserver’s routing advantage is understated; a multi-node deployment would show a larger gap</li>
+  <li><strong>No NIC saturation testing</strong> — local loopback has no bandwidth ceiling</li>
+  <li><strong>2000 SSE vs 64K SSE</strong> — CP5 showed the shard-channel ceiling at 64K connections; we haven’t hit that locally</li>
+</ul>
+
+<p>The open question from entry 16 — whether the hub’s shard channel becomes the new ceiling after aggregation removes the push bottleneck — still needs an AWS run to answer.</p>
+
+<h2 id="code-structure">code structure</h2>
+
+<p>Both checkpoints live in the same repo under separate cmd dirs:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>src/likes/cmd/
+  likes-server-cp6/    # consistent-hash, -agg-interval flag (0=per-event)
+  fanout-node-cp6/     # plain SSE hub, no registry integration
+  registry-cp6/        # static node list, -nodes flag
+  likes-server/        # CP7: popserver dispatcher, 100ms agg
+  fanout-node/         # CP7: subTracker ref-counts, auto-register with registry
+  registry/            # CP7: postID→set&lt;nodeAddr&gt; K-V store
+</code></pre></div></div>
+
+<p>CP6 binaries also use a <code class="language-plaintext highlighter-rouge">/tmp/gothun-cp6</code> git worktree (detached HEAD at <code class="language-plaintext highlighter-rouge">d40ef17</code>) which was used during development, but the canonical source is now the <code class="language-plaintext highlighter-rouge">cmd/likes-server-cp6</code> directory in main.</p>
+
+<div class="journal-callout info">
+<strong>Financial constraint — still active</strong>
+AWS benchmarking remains paused. The local numbers validate the approach. A proper AWS run (c6in.8xlarge, 32 vCPU, 50 Gbps NIC, 64K SSE connections) would confirm whether CP7's popserver advantage scales up with node count and whether the shard-channel ceiling from CP5 has moved.
+</div>
+
+
+      <hr>
+
+      <!-- Prev / Next -->
+      
+      
+      
+
+      <div class="clearfix" style="margin-top: 2rem;">
+        
+          
+          
+
+          
+            
+            <a class="btn btn-primary float-left" href="/millionrps/16-aggregation-tier.html">&larr; 100ms aggregation tier: collapsing 23K dispatches/s into 100</a>
+          
+
+          
+        
+      </div>
+
+      <div style="text-align: center; margin-top: 1rem;">
+        <a href="/millionrps/">&uarr; Back to Journal</a>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+
+  <!-- Footer -->
+
+<hr>
+
+<footer>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <ul class="list-inline text-center">
+          
+          <li class="list-inline-item">
+            <a href="mailto:amitava.dev@proton.me" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="far fa-envelope fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          
+          
+          <li class="list-inline-item">
+            <a href="https://www.linkedin.com/in/amitavaag" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-linkedin fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          <li class="list-inline-item">
+            <a href="https://github.com/ikouchiha47" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-github fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+        </ul>
+
+        <p class="copyright text-muted">
+          Build with: 
+          <a 
+            href="https://github.com/StartBootstrap/startbootstrap-clean-blog-jekyll"
+            class="text-gray"
+            target="_blank">startbootstrap-clean-blog-jekyll</a></p>
+      </div>
+    </div>
+  </div>
+</footer>
+
+
+  <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="/assets/vendor/blog/js/scripts.js"></script>
+
+<script src="/assets/scripts.js"></script>
+
+
+
+
+
+  <script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+
+    document.querySelectorAll('pre > code.language-mermaid').forEach((codeBlock) => {
+      codeBlock.parentElement.outerHTML = `<pre class="mermaid">${codeBlock.textContent}</pre>`;
+    });
+
+
+    mermaid.initialize({ startOnLoad: true, theme: 'forest' });
+</script>
+
+
+  
+
+</body>
+
+</html>

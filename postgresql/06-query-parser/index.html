@@ -1,0 +1,538 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+  <title>
+    Parsing &amp; Rewriting - iko&#39;s logs
+    
+  </title>
+
+  <meta name="description" content="">
+  <meta property="og:description" content="">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Parsing &amp; Rewriting">
+  <meta property="og:url" content="https://ikouchiha47.github.io/postgresql/06-query-parser/">
+
+  
+
+  <link href='https://fonts.googleapis.com/css?family=Lora:400,700,400italic,700italic' rel='stylesheet' type='text/css'>
+  <link href='https://fonts.googleapis.com/css?family=Open+Sans:300italic,400italic,600italic,700italic,800italic,400,300,600,700,800' rel='stylesheet' type='text/css'>
+
+  <!-- <script src="https://use.fontawesome.com/releases/v5.15.3/js/all.js" crossorigin="anonymous"></script> -->
+  <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.15.4/css/all.css" integrity="sha384-DyZ88mC6Up2uqS4h/KRgHuoeGwBcD4Ng9SiP4dIRy0EXTlnuz47vAwmeGwVChigm" crossorigin="anonymous"/>
+
+  <link rel="stylesheet" href="/assets/main.css">
+  <link rel="canonical" href="https://ikouchiha47.github.io/postgresql/06-query-parser/">
+  <link rel="alternate" type="application/rss+xml" title="iko&#39;s logs" href="/feed.xml">
+
+  <meta name="google-site-verification" content="lWkg6gIxJgzEKX_5XnhcxCtPE9QknaimFWWos_dTvPM" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fira+Sans:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Inconsolata:wght@200..900&family=Jersey+25&family=Kanit:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Merriweather+Sans:ital,wght@0,300..800;1,300..800&family=Nanum+Gothic+Coding&family=Space+Grotesk:wght@300..700&family=Titillium+Web:ital,wght@0,200;0,300;0,400;0,600;0,700;0,900;1,200;1,300;1,400;1,600;1,700&display=swap" rel="stylesheet">
+
+</head>
+
+
+<body>
+
+  <!-- Navigation -->
+<nav class="navbar navbar-expand-lg navbar-light fixed-top" id="mainNav">
+  <div class="container">
+    <a class="navbar-brand" href="/">iko&#39;s logs</a>
+    <button class="navbar-toggler navbar-toggler-right" type="button" data-toggle="collapse" data-target="#navbarResponsive" aria-controls="navbarResponsive" aria-expanded="false" aria-label="Toggle navigation">
+      Menu
+      <i class="fa fa-bars"></i>
+    </button>
+    <div class="collapse navbar-collapse" id="navbarResponsive">
+      <ul class="navbar-nav ml-auto">
+        <li class="nav-item">
+          <a class="nav-link" href="/">Home</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/about">About</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/posts">Posts</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/contact">Contact</a>
+        </li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+
+  <!-- Page Header -->
+
+<header class="masthead">
+
+  <div class="overlay"></div>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <div class="post-heading">
+          <h1>Parsing & Rewriting</h1>
+          
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="container space-grotesk">
+  <div class="row">
+    <div class="col-lg-8 col-md-10 mx-auto">
+
+      <!-- Breadcrumb -->
+      <nav aria-label="breadcrumb" style="margin-bottom: 1.5rem;">
+        <ol class="breadcrumb" style="background: transparent; padding: 0;">
+          
+            <li class="breadcrumb-item"><a href="/postgresql-internals/">PostgreSQL Internals Deep Dive</a></li>
+          
+          
+          <li class="breadcrumb-item active" aria-current="page">Parsing & Rewriting</li>
+        </ol>
+      </nav>
+
+      <h1 id="chapter-6-parsing--rewriting">Chapter 6: Parsing &amp; Rewriting</h1>
+
+<p><strong>Summary.</strong> Every SQL statement enters PostgreSQL as a plain text string and must be transformed into an executable internal representation before any real work can happen. This chapter traces that transformation through three distinct phases: lexing/parsing (text to raw parse tree), semantic analysis (raw parse tree to Query tree), and rewriting (Query tree expansion via rules and row-level security). Together these phases form the “front end” of the query pipeline, and they run entirely before the optimizer ever sees the statement.</p>
+
+<hr />
+
+<h2 id="overview">Overview</h2>
+
+<p>When a client sends <code class="language-plaintext highlighter-rouge">SELECT name FROM employees WHERE id = 42;</code>, the backend must answer three questions in sequence:</p>
+
+<ol>
+  <li>
+    <p><strong>Is the SQL syntactically valid?</strong> The lexer (<code class="language-plaintext highlighter-rouge">scan.l</code>) tokenizes the string and the parser (<code class="language-plaintext highlighter-rouge">gram.y</code>) checks it against the SQL grammar, producing a <strong>raw parse tree</strong> – a tree of unresolved node structs that mirrors the syntactic structure. No catalog access happens here; the parser does not know whether <code class="language-plaintext highlighter-rouge">employees</code> is a real table.</p>
+  </li>
+  <li>
+    <p><strong>Is the SQL semantically valid?</strong> The analyzer (<code class="language-plaintext highlighter-rouge">analyze.c</code> and its helpers) resolves names against the system catalog, checks types, inserts implicit coercions, and produces a <strong>Query tree</strong> with fully resolved OIDs, type information, and a populated range table.</p>
+  </li>
+  <li>
+    <p><strong>Should the query be rewritten?</strong> The rewrite system (<code class="language-plaintext highlighter-rouge">rewriteHandler.c</code>) expands views into their defining queries, applies <code class="language-plaintext highlighter-rouge">CREATE RULE</code> rules, and injects row-level security (RLS) qualifiers. A single input Query can produce zero, one, or many output Queries.</p>
+  </li>
+</ol>
+
+<p>The optimizer (Chapter 7) only ever sees the final, rewritten Query trees.</p>
+
+<h2 id="key-source-files">Key Source Files</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>File</th>
+      <th>Purpose</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/parser/scan.l</code></td>
+      <td>Flex lexer – tokenizes SQL text</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/parser/gram.y</code></td>
+      <td>Bison grammar – builds raw parse tree</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/parser/parser.c</code></td>
+      <td>Entry point: <code class="language-plaintext highlighter-rouge">raw_parser()</code></td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/parser/analyze.c</code></td>
+      <td>Top-level semantic analysis: <code class="language-plaintext highlighter-rouge">parse_analyze_fixedparams()</code></td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/parser/parse_coerce.c</code></td>
+      <td>Type coercion and resolution</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/parser/parse_expr.c</code></td>
+      <td>Expression transformation</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/parser/parse_clause.c</code></td>
+      <td>FROM, WHERE, ORDER BY, GROUP BY</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/parser/parse_relation.c</code></td>
+      <td>Range table construction</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/parser/parse_target.c</code></td>
+      <td>Target list (SELECT columns)</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/parser/parse_func.c</code></td>
+      <td>Function call resolution</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/parser/parse_oper.c</code></td>
+      <td>Operator resolution</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/parser/parse_agg.c</code></td>
+      <td>Aggregate validation</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/rewrite/rewriteHandler.c</code></td>
+      <td>Rule application and view expansion</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/rewrite/rowsecurity.c</code></td>
+      <td>Row-level security policy injection</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/rewrite/rewriteManip.c</code></td>
+      <td>Tree manipulation helpers for rewriting</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/nodes/parsenodes.h</code></td>
+      <td>All parse-tree and Query-tree node definitions</td>
+    </tr>
+  </tbody>
+</table>
+
+<h2 id="how-it-works">How It Works</h2>
+
+<p>The entire front-end pipeline is driven from <code class="language-plaintext highlighter-rouge">exec_simple_query()</code> in <code class="language-plaintext highlighter-rouge">src/backend/tcop/postgres.c</code>. The call sequence is:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>exec_simple_query(query_string)
+  |
+  +-- raw_parser(query_string)           --&gt; List of RawStmt
+  |
+  +-- parse_analyze_fixedparams(rawstmt) --&gt; Query
+  |
+  +-- QueryRewrite(query)                --&gt; List of Query
+  |
+  +-- pg_plan_queries(querytree_list)    --&gt; (Chapter 7)
+</code></pre></div></div>
+
+<p>For prepared statements, parsing and analysis happen at <code class="language-plaintext highlighter-rouge">PREPARE</code> time, while rewriting and planning happen at <code class="language-plaintext highlighter-rouge">EXECUTE</code> time.</p>
+
+<pre><code class="language-mermaid">flowchart LR
+    A["SQL text"] --&gt; B["Lexer&lt;br/&gt;(scan.l)"]
+    B --&gt; C["Parser&lt;br/&gt;(gram.y)"]
+    C --&gt; D["Raw Parse Tree&lt;br/&gt;(RawStmt)"]
+    D --&gt; E["Analyzer&lt;br/&gt;(analyze.c)"]
+    E --&gt; F["Query Tree&lt;br/&gt;(Query)"]
+    F --&gt; G["Rewriter&lt;br/&gt;(rewriteHandler.c)"]
+    G --&gt; H["Rewritten Query(s)"]
+    H --&gt; I["Optimizer&lt;br/&gt;(Chapter 7)"]
+
+    style D fill:#ffd,stroke:#aa0
+    style F fill:#dfd,stroke:#0a0
+    style H fill:#ddf,stroke:#00a
+</code></pre>
+
+<h2 id="key-data-structures">Key Data Structures</h2>
+
+<h3 id="rawstmt">RawStmt</h3>
+
+<p>The outermost wrapper around any raw parse tree node. Produced by <code class="language-plaintext highlighter-rouge">raw_parser()</code>.</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="cm">/* src/include/nodes/parsenodes.h */</span>
+<span class="k">typedef</span> <span class="k">struct</span> <span class="n">RawStmt</span>
+<span class="p">{</span>
+    <span class="n">NodeTag</span>     <span class="n">type</span><span class="p">;</span>
+    <span class="n">Node</span>       <span class="o">*</span><span class="n">stmt</span><span class="p">;</span>           <span class="cm">/* raw parse tree (e.g. SelectStmt) */</span>
+    <span class="n">ParseLoc</span>    <span class="n">stmt_location</span><span class="p">;</span>  <span class="cm">/* byte offset in source text */</span>
+    <span class="n">ParseLoc</span>    <span class="n">stmt_len</span><span class="p">;</span>       <span class="cm">/* length in bytes; 0 = rest of string */</span>
+<span class="p">}</span> <span class="n">RawStmt</span><span class="p">;</span>
+</code></pre></div></div>
+
+<p>The <code class="language-plaintext highlighter-rouge">stmt</code> field points to statement-specific nodes like <code class="language-plaintext highlighter-rouge">SelectStmt</code>, <code class="language-plaintext highlighter-rouge">InsertStmt</code>, <code class="language-plaintext highlighter-rouge">UpdateStmt</code>, etc. These are purely syntactic – they store string names, not OIDs.</p>
+
+<h3 id="query">Query</h3>
+
+<p>The central structure for a semantically analyzed statement. This is what the optimizer and executor ultimately consume.</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="cm">/* src/include/nodes/parsenodes.h (abbreviated) */</span>
+<span class="k">typedef</span> <span class="k">struct</span> <span class="n">Query</span>
+<span class="p">{</span>
+    <span class="n">NodeTag</span>     <span class="n">type</span><span class="p">;</span>
+    <span class="n">CmdType</span>     <span class="n">commandType</span><span class="p">;</span>    <span class="cm">/* CMD_SELECT, CMD_INSERT, ... */</span>
+    <span class="n">QuerySource</span> <span class="n">querySource</span><span class="p">;</span>    <span class="cm">/* QSRC_ORIGINAL, QSRC_INSTEAD_RULE, ... */</span>
+    <span class="n">int64</span>       <span class="n">queryId</span><span class="p">;</span>        <span class="cm">/* set by query jumbling */</span>
+    <span class="n">bool</span>        <span class="n">canSetTag</span><span class="p">;</span>
+    <span class="n">Node</span>       <span class="o">*</span><span class="n">utilityStmt</span><span class="p">;</span>    <span class="cm">/* non-null for CMD_UTILITY */</span>
+    <span class="kt">int</span>         <span class="n">resultRelation</span><span class="p">;</span> <span class="cm">/* rtable index of INSERT/UPDATE/DELETE target */</span>
+
+    <span class="cm">/* Capability flags */</span>
+    <span class="n">bool</span>        <span class="n">hasAggs</span><span class="p">;</span>
+    <span class="n">bool</span>        <span class="n">hasWindowFuncs</span><span class="p">;</span>
+    <span class="n">bool</span>        <span class="n">hasSubLinks</span><span class="p">;</span>
+    <span class="n">bool</span>        <span class="n">hasRowSecurity</span><span class="p">;</span> <span class="cm">/* RLS policies were applied */</span>
+    <span class="cm">/* ... */</span>
+
+    <span class="n">List</span>       <span class="o">*</span><span class="n">cteList</span><span class="p">;</span>        <span class="cm">/* WITH clauses */</span>
+    <span class="n">List</span>       <span class="o">*</span><span class="n">rtable</span><span class="p">;</span>         <span class="cm">/* range table: list of RangeTblEntry */</span>
+    <span class="n">FromExpr</span>   <span class="o">*</span><span class="n">jointree</span><span class="p">;</span>       <span class="cm">/* FROM + WHERE */</span>
+    <span class="n">List</span>       <span class="o">*</span><span class="n">targetList</span><span class="p">;</span>     <span class="cm">/* list of TargetEntry */</span>
+    <span class="n">List</span>       <span class="o">*</span><span class="n">sortClause</span><span class="p">;</span>
+    <span class="n">List</span>       <span class="o">*</span><span class="n">groupClause</span><span class="p">;</span>
+    <span class="n">Node</span>       <span class="o">*</span><span class="n">havingQual</span><span class="p">;</span>
+    <span class="n">List</span>       <span class="o">*</span><span class="n">windowClause</span><span class="p">;</span>
+    <span class="n">Node</span>       <span class="o">*</span><span class="n">limitOffset</span><span class="p">;</span>
+    <span class="n">Node</span>       <span class="o">*</span><span class="n">limitCount</span><span class="p">;</span>
+    <span class="cm">/* ... */</span>
+<span class="p">}</span> <span class="n">Query</span><span class="p">;</span>
+</code></pre></div></div>
+
+<h3 id="rangetblentry-rte">RangeTblEntry (RTE)</h3>
+
+<p>Each entry in <code class="language-plaintext highlighter-rouge">Query.rtable</code> describes one “range” the query references – a table, subquery, join, function, VALUES list, or CTE.</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">typedef</span> <span class="k">struct</span> <span class="n">RangeTblEntry</span>
+<span class="p">{</span>
+    <span class="n">NodeTag</span>     <span class="n">type</span><span class="p">;</span>
+    <span class="n">Alias</span>      <span class="o">*</span><span class="n">alias</span><span class="p">;</span>          <span class="cm">/* user-written alias */</span>
+    <span class="n">Alias</span>      <span class="o">*</span><span class="n">eref</span><span class="p">;</span>           <span class="cm">/* expanded column names */</span>
+    <span class="n">RTEKind</span>     <span class="n">rtekind</span><span class="p">;</span>        <span class="cm">/* RTE_RELATION, RTE_SUBQUERY, RTE_JOIN, ... */</span>
+
+    <span class="cm">/* For RTE_RELATION: */</span>
+    <span class="n">Oid</span>         <span class="n">relid</span><span class="p">;</span>          <span class="cm">/* pg_class OID */</span>
+    <span class="n">bool</span>        <span class="n">inh</span><span class="p">;</span>            <span class="cm">/* include inheritance children? */</span>
+    <span class="kt">char</span>        <span class="n">relkind</span><span class="p">;</span>        <span class="cm">/* 'r', 'v', 'm', ... */</span>
+    <span class="kt">int</span>         <span class="n">rellockmode</span><span class="p">;</span>
+
+    <span class="cm">/* For RTE_SUBQUERY: */</span>
+    <span class="n">Query</span>      <span class="o">*</span><span class="n">subquery</span><span class="p">;</span>
+    <span class="n">bool</span>        <span class="n">security_barrier</span><span class="p">;</span> <span class="cm">/* from security_barrier view? */</span>
+    <span class="cm">/* ... many more fields for joins, functions, CTEs, etc. */</span>
+<span class="p">}</span> <span class="n">RangeTblEntry</span><span class="p">;</span>
+</code></pre></div></div>
+
+<h3 id="parsestate">ParseState</h3>
+
+<p>The mutable context threaded through all of semantic analysis. It tracks the range table being built, namespace for name resolution, current expression kind, and more.</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="cm">/* src/include/parser/parse_node.h */</span>
+<span class="k">typedef</span> <span class="k">struct</span> <span class="n">ParseState</span>
+<span class="p">{</span>
+    <span class="k">struct</span> <span class="n">ParseState</span> <span class="o">*</span><span class="n">parentParseState</span><span class="p">;</span>  <span class="cm">/* for subqueries */</span>
+    <span class="k">const</span> <span class="kt">char</span>       <span class="o">*</span><span class="n">p_sourcetext</span><span class="p">;</span>
+    <span class="n">List</span>             <span class="o">*</span><span class="n">p_rtable</span><span class="p">;</span>          <span class="cm">/* range table being built */</span>
+    <span class="n">List</span>             <span class="o">*</span><span class="n">p_namespace</span><span class="p">;</span>       <span class="cm">/* name lookup scopes */</span>
+    <span class="kt">int</span>               <span class="n">p_next_resno</span><span class="p">;</span>      <span class="cm">/* next target list resno */</span>
+    <span class="cm">/* ... many more fields */</span>
+<span class="p">}</span> <span class="n">ParseState</span><span class="p">;</span>
+</code></pre></div></div>
+
+<h2 id="pipeline-diagram--full-detail">Pipeline Diagram – Full Detail</h2>
+
+<pre><code class="language-mermaid">flowchart TD
+    subgraph "Phase 1: Lexing &amp; Parsing"
+        SQL["SQL string"] --&gt; LEX["scanner_init() + base_yylex()"]
+        LEX --&gt; TOK["Token stream"]
+        TOK --&gt; PARSE["base_yyparse()"]
+        PARSE --&gt; RAW["List of RawStmt"]
+    end
+
+    subgraph "Phase 2: Semantic Analysis"
+        RAW --&gt; PA["parse_analyze_fixedparams()"]
+        PA --&gt; PS["Create ParseState"]
+        PS --&gt; TX["transformStmt()"]
+        TX --&gt;|SELECT| TS["transformSelectStmt()"]
+        TX --&gt;|INSERT| TI["transformInsertStmt()"]
+        TX --&gt;|UPDATE| TU["transformUpdateStmt()"]
+        TX --&gt;|DELETE| TD2["transformDeleteStmt()"]
+        TS &amp; TI &amp; TU &amp; TD2 --&gt; QT["Query tree"]
+    end
+
+    subgraph "Phase 3: Rewriting"
+        QT --&gt; RW["QueryRewrite()"]
+        RW --&gt; VE["fireRIRrules()&lt;br/&gt;View expansion"]
+        VE --&gt; RL["get_row_security_policies()&lt;br/&gt;RLS injection"]
+        RL --&gt; RR["Rule application&lt;br/&gt;(INSTEAD / ALSO)"]
+        RR --&gt; FQ["Final Query list"]
+    end
+
+    FQ --&gt; OPT["Optimizer (Chapter 7)"]
+</code></pre>
+
+<h2 id="connections">Connections</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>Related Subsystem</th>
+      <th>Relationship</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><a href="../07-query-optimizer/">Query Optimizer (Ch. 7)</a></td>
+      <td>Consumes the rewritten Query tree list</td>
+    </tr>
+    <tr>
+      <td><a href="../08-executor/">Executor (Ch. 8)</a></td>
+      <td>Executes utility statements that skip the optimizer</td>
+    </tr>
+    <tr>
+      <td><a href="../09-caches/">Caches (Ch. 9)</a></td>
+      <td>Semantic analysis reads catalog caches heavily; plan cache stores Query trees</td>
+    </tr>
+    <tr>
+      <td><a href="../05-locking/">Locking (Ch. 5)</a></td>
+      <td><code class="language-plaintext highlighter-rouge">analyze.c</code> acquires <code class="language-plaintext highlighter-rouge">AccessShareLock</code> on referenced relations</td>
+    </tr>
+    <tr>
+      <td><a href="../03-transactions/">Transactions (Ch. 3)</a></td>
+      <td>Parser runs inside the current transaction snapshot</td>
+    </tr>
+  </tbody>
+</table>
+
+<h2 id="chapter-sections">Chapter Sections</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>Section</th>
+      <th>Topic</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><a href="lexer-parser">Lexer &amp; Parser</a></td>
+      <td><code class="language-plaintext highlighter-rouge">scan.l</code>, <code class="language-plaintext highlighter-rouge">gram.y</code>, raw parse tree construction</td>
+    </tr>
+    <tr>
+      <td><a href="semantic-analysis">Semantic Analysis</a></td>
+      <td><code class="language-plaintext highlighter-rouge">analyze.c</code>, type resolution, coercion</td>
+    </tr>
+    <tr>
+      <td><a href="rewrite-rules">Rewrite Rules</a></td>
+      <td>View expansion, rule application, RLS injection</td>
+    </tr>
+  </tbody>
+</table>
+
+
+      <hr>
+
+      <!-- Prev / Next / Up navigation -->
+      
+      
+      
+
+      <div class="clearfix" style="margin-top: 2rem;">
+        
+          
+          
+
+          
+            
+            <a class="btn btn-primary float-left" href="/postgresql/05-locking/spinlocks.html" title="Spinlocks">&larr; Previous</a>
+          
+
+          
+            
+            <a class="btn btn-primary float-right" href="/postgresql/06-query-parser/lexer-parser.html" title="Lexer & Parser">Next &rarr;</a>
+          
+        
+      </div>
+
+      
+      <div style="text-align: center; margin-top: 1rem;">
+        <a href="/postgresql-internals/">&uarr; Back to Table of Contents</a>
+      </div>
+      
+
+    </div>
+  </div>
+</div>
+
+
+  <!-- Footer -->
+
+<hr>
+
+<footer>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <ul class="list-inline text-center">
+          
+          <li class="list-inline-item">
+            <a href="mailto:amitava.dev@proton.me" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="far fa-envelope fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          
+          
+          <li class="list-inline-item">
+            <a href="https://www.linkedin.com/in/amitavaag" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-linkedin fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          <li class="list-inline-item">
+            <a href="https://github.com/ikouchiha47" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-github fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+        </ul>
+
+        <p class="copyright text-muted">
+          Build with: 
+          <a 
+            href="https://github.com/StartBootstrap/startbootstrap-clean-blog-jekyll"
+            class="text-gray"
+            target="_blank">startbootstrap-clean-blog-jekyll</a></p>
+      </div>
+    </div>
+  </div>
+</footer>
+
+
+  <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="/assets/vendor/blog/js/scripts.js"></script>
+
+<script src="/assets/scripts.js"></script>
+
+
+
+
+
+  <script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+
+    document.querySelectorAll('pre > code.language-mermaid').forEach((codeBlock) => {
+      codeBlock.parentElement.outerHTML = `<pre class="mermaid">${codeBlock.textContent}</pre>`;
+    });
+
+
+    mermaid.initialize({ startOnLoad: true, theme: 'forest' });
+</script>
+
+
+  
+
+</body>
+
+</html>

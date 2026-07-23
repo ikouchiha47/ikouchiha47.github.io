@@ -1,0 +1,597 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+  <title>
+    GIN Index - iko&#39;s logs
+    
+  </title>
+
+  <meta name="description" content="">
+  <meta property="og:description" content="">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="GIN Index">
+  <meta property="og:url" content="https://ikouchiha47.github.io/postgresql/02-access-methods/gin.html">
+
+  
+
+  <link href='https://fonts.googleapis.com/css?family=Lora:400,700,400italic,700italic' rel='stylesheet' type='text/css'>
+  <link href='https://fonts.googleapis.com/css?family=Open+Sans:300italic,400italic,600italic,700italic,800italic,400,300,600,700,800' rel='stylesheet' type='text/css'>
+
+  <!-- <script src="https://use.fontawesome.com/releases/v5.15.3/js/all.js" crossorigin="anonymous"></script> -->
+  <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.15.4/css/all.css" integrity="sha384-DyZ88mC6Up2uqS4h/KRgHuoeGwBcD4Ng9SiP4dIRy0EXTlnuz47vAwmeGwVChigm" crossorigin="anonymous"/>
+
+  <link rel="stylesheet" href="/assets/main.css">
+  <link rel="canonical" href="https://ikouchiha47.github.io/postgresql/02-access-methods/gin.html">
+  <link rel="alternate" type="application/rss+xml" title="iko&#39;s logs" href="/feed.xml">
+
+  <meta name="google-site-verification" content="lWkg6gIxJgzEKX_5XnhcxCtPE9QknaimFWWos_dTvPM" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fira+Sans:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Inconsolata:wght@200..900&family=Jersey+25&family=Kanit:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Merriweather+Sans:ital,wght@0,300..800;1,300..800&family=Nanum+Gothic+Coding&family=Space+Grotesk:wght@300..700&family=Titillium+Web:ital,wght@0,200;0,300;0,400;0,600;0,700;0,900;1,200;1,300;1,400;1,600;1,700&display=swap" rel="stylesheet">
+
+</head>
+
+
+<body>
+
+  <!-- Navigation -->
+<nav class="navbar navbar-expand-lg navbar-light fixed-top" id="mainNav">
+  <div class="container">
+    <a class="navbar-brand" href="/">iko&#39;s logs</a>
+    <button class="navbar-toggler navbar-toggler-right" type="button" data-toggle="collapse" data-target="#navbarResponsive" aria-controls="navbarResponsive" aria-expanded="false" aria-label="Toggle navigation">
+      Menu
+      <i class="fa fa-bars"></i>
+    </button>
+    <div class="collapse navbar-collapse" id="navbarResponsive">
+      <ul class="navbar-nav ml-auto">
+        <li class="nav-item">
+          <a class="nav-link" href="/">Home</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/about">About</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/posts">Posts</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/contact">Contact</a>
+        </li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+
+  <!-- Page Header -->
+
+<header class="masthead">
+
+  <div class="overlay"></div>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <div class="post-heading">
+          <h1>GIN Index</h1>
+          
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="container space-grotesk">
+  <div class="row">
+    <div class="col-lg-8 col-md-10 mx-auto">
+
+      <!-- Breadcrumb -->
+      <nav aria-label="breadcrumb" style="margin-bottom: 1.5rem;">
+        <ol class="breadcrumb" style="background: transparent; padding: 0;">
+          
+            <li class="breadcrumb-item"><a href="/postgresql-internals/">PostgreSQL Internals Deep Dive</a></li>
+          
+          
+            
+              <li class="breadcrumb-item"><a href="/postgresql/02-access-methods/">Access Methods</a></li>
+            
+          
+          <li class="breadcrumb-item active" aria-current="page">GIN Index</li>
+        </ol>
+      </nav>
+
+      <h1 id="gin-generalized-inverted-index">GIN (Generalized Inverted Index)</h1>
+
+<h2 id="summary">Summary</h2>
+
+<p>GIN is an <strong>inverted index</strong> designed for values that contain multiple
+elements – arrays, full-text documents (<code class="language-plaintext highlighter-rouge">tsvector</code>), JSONB keys. For each
+distinct element (key), GIN stores a sorted list of TIDs (a <strong>posting list</strong>)
+referencing all heap tuples that contain that element. GIN trades insert speed
+for fast multi-element lookups, and its <strong>fast update</strong> buffer amortizes insert
+costs over time.</p>
+
+<hr />
+
+<h2 id="key-source-files">Key Source Files</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>File</th>
+      <th>Purpose</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/access/gin/gininsert.c</code></td>
+      <td><code class="language-plaintext highlighter-rouge">gininsert()</code> – insert into GIN (or pending list)</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/access/gin/ginfast.c</code></td>
+      <td>Fast update pending list management</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/access/gin/ginget.c</code></td>
+      <td><code class="language-plaintext highlighter-rouge">gingetbitmap()</code> – scan and intersect posting lists</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/access/gin/ginbtree.c</code></td>
+      <td>B-tree operations on the GIN entry tree</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/access/gin/ginentrypage.c</code></td>
+      <td>Entry page (internal tree) management</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/access/gin/gindatapage.c</code></td>
+      <td>Posting tree (data page) management</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/access/gin/ginpostinglist.c</code></td>
+      <td>Varbyte-encoded posting list compression</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/access/gin/ginbulk.c</code></td>
+      <td>Bulk insert accumulator</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/access/gin/ginscan.c</code></td>
+      <td>Scan initialization and key setup</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/access/gin/ginlogic.c</code></td>
+      <td>Consistent function evaluation logic</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/access/gin/ginutil.c</code></td>
+      <td><code class="language-plaintext highlighter-rouge">ginhandler()</code>, utilities</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/access/gin/ginvacuum.c</code></td>
+      <td>VACUUM support</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/access/gin/ginxlog.c</code></td>
+      <td>WAL redo</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/access/gin/ginarrayproc.c</code></td>
+      <td>Array opclass support functions</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/access/gin/README</code></td>
+      <td>Design document</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/access/gin.h</code></td>
+      <td><code class="language-plaintext highlighter-rouge">GinStatsData</code></td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/access/ginblock.h</code></td>
+      <td><code class="language-plaintext highlighter-rouge">GinPageOpaqueData</code>, <code class="language-plaintext highlighter-rouge">GinMetaPageData</code>, <code class="language-plaintext highlighter-rouge">PostingItem</code>, <code class="language-plaintext highlighter-rouge">GinPostingList</code></td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/access/gin_private.h</code></td>
+      <td><code class="language-plaintext highlighter-rouge">GinState</code>, <code class="language-plaintext highlighter-rouge">GinBtreeData</code>, <code class="language-plaintext highlighter-rouge">GinScanKeyData</code>, <code class="language-plaintext highlighter-rouge">GinScanEntryData</code></td>
+    </tr>
+  </tbody>
+</table>
+
+<hr />
+
+<h2 id="how-it-works">How It Works</h2>
+
+<h3 id="two-level-structure">Two-Level Structure</h3>
+
+<p>GIN has two kinds of B-trees internally:</p>
+
+<pre><code class="language-mermaid">graph TD
+    META["Meta Page&lt;br/&gt;(pending list head/tail)"]
+    ET_ROOT["Entry Tree Root"]
+    ET_L1["Leaf: 'apple'"]
+    ET_L2["Leaf: 'banana'"]
+    ET_L3["Leaf: 'cherry'"]
+    PL1["Inline Posting List&lt;br/&gt;[TID_2, TID_15]"]
+    PL2["Inline Posting List&lt;br/&gt;[TID_3, TID_7, TID_42]"]
+    PT_ROOT["Posting Tree Root&lt;br/&gt;(separate B-tree)"]
+    PT_L1["Data Page&lt;br/&gt;[TID_1..TID_500]"]
+    PT_L2["Data Page&lt;br/&gt;[TID_501..TID_1200]"]
+
+    META --&gt; ET_ROOT
+    ET_ROOT --&gt; ET_L1
+    ET_ROOT --&gt; ET_L2
+    ET_ROOT --&gt; ET_L3
+
+    ET_L1 --&gt; PL1
+    ET_L2 --&gt; PL2
+    ET_L3 --&gt;|"too many TIDs"| PT_ROOT
+    PT_ROOT --&gt; PT_L1
+    PT_ROOT --&gt; PT_L2
+
+    style META fill:#e6f3ff,stroke:#333
+    style ET_ROOT fill:#fff3e6,stroke:#333
+    style ET_L1 fill:#e6ffe6,stroke:#333
+    style ET_L2 fill:#e6ffe6,stroke:#333
+    style ET_L3 fill:#e6ffe6,stroke:#333
+    style PL1 fill:#f0f0f0,stroke:#333
+    style PL2 fill:#f0f0f0,stroke:#333
+    style PT_ROOT fill:#ffe6e6,stroke:#333
+    style PT_L1 fill:#ffe6e6,stroke:#333
+    style PT_L2 fill:#ffe6e6,stroke:#333
+</code></pre>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>                    +------------------+
+                    | Meta page        |
+                    | (pending list    |
+                    |  head/tail)      |
+                    +--------+---------+
+                             |
+                    +--------v---------+
+                    | Entry Tree       |   &lt;-- B-tree of distinct keys
+                    | (key1, key2, ..) |       (e.g., lexemes)
+                    +--+-----+-----+--+
+                       |     |     |
+                       v     v     v
+                    Posting  Posting  Posting
+                    list/    list/    list/
+                    tree     tree     tree
+
+  If posting list fits on one page:  stored inline in the entry tuple
+  If too large:                      stored as a separate B-tree ("posting tree")
+</code></pre></div></div>
+
+<ol>
+  <li>
+    <p><strong>Entry tree</strong>: A B-tree whose keys are the distinct indexed elements
+(lexemes, array elements, JSONB keys/values). Each leaf entry either
+contains an inline posting list or a pointer to a posting tree.</p>
+  </li>
+  <li>
+    <p><strong>Posting list / posting tree</strong>: For each key, the sorted list of TIDs
+referencing heap tuples containing that key. Small lists are stored inline
+(varbyte-compressed). Large lists get their own B-tree of data pages.</p>
+  </li>
+</ol>
+
+<h3 id="posting-list-compression">Posting List Compression</h3>
+
+<p><code class="language-plaintext highlighter-rouge">ginpostinglist.c</code> uses <strong>varbyte encoding</strong> to compress TID lists. Since TIDs
+are sorted, only the delta between consecutive TIDs is stored, and each delta
+is encoded in a variable number of bytes. This typically achieves 2-3x
+compression over raw TID arrays.</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="c1">// src/include/access/ginblock.h</span>
+<span class="k">typedef</span> <span class="k">struct</span>
+<span class="p">{</span>
+    <span class="n">ItemPointerData</span> <span class="n">first</span><span class="p">;</span>   <span class="c1">// first TID (uncompressed)</span>
+    <span class="n">uint16</span>          <span class="n">nbytes</span><span class="p">;</span>  <span class="c1">// size of compressed data</span>
+    <span class="kt">unsigned</span> <span class="kt">char</span>   <span class="n">bytes</span><span class="p">[</span><span class="n">FLEXIBLE_ARRAY_MEMBER</span><span class="p">];</span>  <span class="c1">// varbyte-encoded deltas</span>
+<span class="p">}</span> <span class="n">GinPostingList</span><span class="p">;</span>
+</code></pre></div></div>
+
+<h3 id="fast-update-buffer-pending-list">Fast Update Buffer (Pending List)</h3>
+
+<p>Inserting into GIN is expensive because a single heap tuple may contain many
+keys (e.g., hundreds of lexemes in a document). Each key requires a B-tree
+lookup and potential posting list update.</p>
+
+<p>The <strong>fast update</strong> optimization (<code class="language-plaintext highlighter-rouge">gin_pending_list_limit</code>, default 4 MB)
+defers these inserts:</p>
+
+<ol>
+  <li>New entries are appended to a <strong>pending list</strong> – a linked list of heap
+pages stored in the index itself.</li>
+  <li>The pending list is drained (merged into the main entry tree) when:
+    <ul>
+      <li>It exceeds <code class="language-plaintext highlighter-rouge">gin_pending_list_limit</code>.</li>
+      <li><code class="language-plaintext highlighter-rouge">VACUUM</code> runs.</li>
+      <li>An explicit <code class="language-plaintext highlighter-rouge">gin_clean_pending_list()</code> is called.</li>
+    </ul>
+  </li>
+  <li>During a scan, GIN checks both the main tree AND the pending list.</li>
+</ol>
+
+<p>Controlled by <code class="language-plaintext highlighter-rouge">fastupdate = on | off</code> storage parameter.</p>
+
+<h3 id="scan-algorithm">Scan Algorithm</h3>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>gingetbitmap(scan)
+  -&gt; for each scan key (e.g., 'cat' &amp; 'dog' for ts_query):
+       -&gt; look up key in entry tree
+       -&gt; retrieve posting list (inline or from posting tree)
+       -&gt; scan pending list for additional matches
+  -&gt; intersect / union posting lists according to query logic
+       (ginlogic.c evaluates consistent / triConsistent)
+  -&gt; return TID bitmap
+</code></pre></div></div>
+
+<p>GIN always returns a <strong>bitmap</strong> (<code class="language-plaintext highlighter-rouge">amgetbitmap</code>), never individual tuples
+(<code class="language-plaintext highlighter-rouge">amgettuple = NULL</code>). The executor then does a bitmap heap scan.</p>
+
+<hr />
+
+<h2 id="key-data-structures">Key Data Structures</h2>
+
+<h3 id="ginmetapagedata">GinMetaPageData</h3>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="c1">// src/include/access/ginblock.h</span>
+<span class="k">typedef</span> <span class="k">struct</span> <span class="n">GinMetaPageData</span>
+<span class="p">{</span>
+    <span class="n">BlockNumber</span> <span class="n">head</span><span class="p">;</span>              <span class="c1">// first page of pending list</span>
+    <span class="n">BlockNumber</span> <span class="n">tail</span><span class="p">;</span>              <span class="c1">// last page of pending list</span>
+    <span class="n">uint32</span>      <span class="n">tailFreeSize</span><span class="p">;</span>      <span class="c1">// free space on tail page</span>
+    <span class="n">int64</span>       <span class="n">nPendingPages</span><span class="p">;</span>
+    <span class="n">int64</span>       <span class="n">nPendingHeapTuples</span><span class="p">;</span>
+    <span class="n">int64</span>       <span class="n">nTotalPages</span><span class="p">;</span>       <span class="c1">// total pages in GIN index</span>
+    <span class="n">int64</span>       <span class="n">nEntryPages</span><span class="p">;</span>       <span class="c1">// pages in entry tree</span>
+    <span class="n">int64</span>       <span class="n">nDataPages</span><span class="p">;</span>        <span class="c1">// pages in posting trees</span>
+    <span class="n">int64</span>       <span class="n">nEntries</span><span class="p">;</span>          <span class="c1">// number of distinct keys</span>
+    <span class="n">int32</span>       <span class="n">ginVersion</span><span class="p">;</span>
+<span class="p">}</span> <span class="n">GinMetaPageData</span><span class="p">;</span>
+</code></pre></div></div>
+
+<h3 id="ginpageopaquedata">GinPageOpaqueData</h3>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="c1">// src/include/access/ginblock.h</span>
+<span class="k">typedef</span> <span class="k">struct</span> <span class="n">GinPageOpaqueData</span>
+<span class="p">{</span>
+    <span class="n">BlockNumber</span> <span class="n">rightlink</span><span class="p">;</span>    <span class="c1">// right sibling</span>
+    <span class="n">OffsetNumber</span> <span class="n">maxoff</span><span class="p">;</span>      <span class="c1">// max offset on page</span>
+    <span class="n">uint16</span>      <span class="n">flags</span><span class="p">;</span>        <span class="c1">// GIN_DATA, GIN_LEAF, GIN_DELETED, GIN_META,</span>
+                              <span class="c1">// GIN_LIST, GIN_LIST_PENDING, GIN_COMPRESSED</span>
+<span class="p">}</span> <span class="n">GinPageOpaqueData</span><span class="p">;</span>
+</code></pre></div></div>
+
+<h3 id="ginscankeydata">GinScanKeyData</h3>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="c1">// src/include/access/gin_private.h</span>
+<span class="k">typedef</span> <span class="k">struct</span> <span class="n">GinScanKeyData</span>
+<span class="p">{</span>
+    <span class="c1">// ... scan key definition</span>
+    <span class="n">ScanKey</span>         <span class="n">scanEntry</span><span class="p">;</span>       <span class="c1">// underlying scan key</span>
+    <span class="n">GinScanEntry</span>   <span class="o">*</span><span class="n">scanEntries</span><span class="p">;</span>     <span class="c1">// array of entries to look up</span>
+    <span class="kt">int</span>             <span class="n">nentries</span><span class="p">;</span>
+    <span class="c1">// ... tri-state consistent function, required entries, etc.</span>
+    <span class="n">bool</span>          <span class="p">(</span><span class="o">*</span><span class="n">triConsistentFn</span><span class="p">)(</span><span class="n">GinScanKey</span> <span class="n">key</span><span class="p">);</span>
+<span class="p">}</span> <span class="n">GinScanKeyData</span><span class="p">;</span>
+</code></pre></div></div>
+
+<hr />
+
+<h2 id="diagram-gin-insert-flow">Diagram: GIN Insert Flow</h2>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>  INSERT INTO docs(body) VALUES ('the cat sat on the mat');
+
+  tsvector extraction produces keys: {cat, mat, sat}
+
+  With fastupdate=on:
+  +----------+     +----------+     +----------+
+  | pending  | --&gt; | pending  | --&gt; | pending  |
+  | page 1   |     | page 2   |     | page 3   |
+  | (TID,keys)|    | (TID,keys)|    | (TID,keys)|
+  +----------+     +----------+     +----------+
+
+  On drain (VACUUM or limit reached):
+
+  Entry tree:          Posting lists:
+  +------+
+  | cat  | --&gt; [TID_1, TID_47, TID_203]
+  +------+
+  | mat  | --&gt; [TID_1, TID_88]
+  +------+
+  | sat  | --&gt; [TID_1, TID_5, TID_12, ...] --&gt; posting tree (if large)
+  +------+
+</code></pre></div></div>
+
+<hr />
+
+<h2 id="triconsistent-function">triConsistent Function</h2>
+
+<p>GIN supports a <strong>ternary consistent</strong> function for optimization. Instead of
+just true/false, it returns:</p>
+
+<ul>
+  <li><code class="language-plaintext highlighter-rouge">GIN_TRUE</code> – the query definitely matches.</li>
+  <li><code class="language-plaintext highlighter-rouge">GIN_FALSE</code> – the query definitely does not match.</li>
+  <li><code class="language-plaintext highlighter-rouge">GIN_MAYBE</code> – need to recheck against the heap tuple.</li>
+</ul>
+
+<p>This allows GIN to skip posting lists for keys that cannot affect the outcome,
+and to perform partial matching during scan.</p>
+
+<hr />
+
+<h2 id="common-use-cases">Common Use Cases</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>Data Type</th>
+      <th>Operators</th>
+      <th>Use Case</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">tsvector</code></td>
+      <td><code class="language-plaintext highlighter-rouge">@@</code></td>
+      <td>Full-text search</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">array</code></td>
+      <td><code class="language-plaintext highlighter-rouge">@&gt;</code>, <code class="language-plaintext highlighter-rouge">&lt;@</code>, <code class="language-plaintext highlighter-rouge">&amp;&amp;</code>, <code class="language-plaintext highlighter-rouge">=</code></td>
+      <td>Array containment and overlap</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">jsonb</code></td>
+      <td><code class="language-plaintext highlighter-rouge">@&gt;</code>, <code class="language-plaintext highlighter-rouge">?</code>, <code class="language-plaintext highlighter-rouge">?\|</code>, <code class="language-plaintext highlighter-rouge">?&amp;</code></td>
+      <td>JSONB key/value existence and containment</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">hstore</code></td>
+      <td><code class="language-plaintext highlighter-rouge">@&gt;</code>, <code class="language-plaintext highlighter-rouge">?</code>, <code class="language-plaintext highlighter-rouge">?\|</code>, <code class="language-plaintext highlighter-rouge">?&amp;</code></td>
+      <td>Key-value store queries</td>
+    </tr>
+  </tbody>
+</table>
+
+<hr />
+
+<h2 id="connections">Connections</h2>
+
+<ul>
+  <li><strong>GiST</strong>: For full-text search, GiST uses lossy signatures (smaller index,
+more rechecks). GIN stores exact posting lists (larger index, fewer
+rechecks). Choose based on update frequency vs. query performance needs.</li>
+  <li><strong>Heap AM</strong>: GIN returns TID bitmaps. The executor does bitmap heap scans to
+retrieve actual tuples and apply rechecks.</li>
+  <li><strong>VACUUM</strong>: <code class="language-plaintext highlighter-rouge">ginvacuum.c</code> removes dead TIDs from posting lists and cleans
+the pending list. Critical for preventing unbounded pending list growth.</li>
+  <li><strong>WAL</strong>: <code class="language-plaintext highlighter-rouge">ginxlog.c</code> handles redo for entry tree changes, posting list
+updates, pending list operations, and page splits.</li>
+</ul>
+
+
+      <hr>
+
+      <!-- Prev / Next / Up navigation -->
+      
+      
+      
+
+      <div class="clearfix" style="margin-top: 2rem;">
+        
+          
+          
+
+          
+            
+            <a class="btn btn-primary float-left" href="/postgresql/02-access-methods/btree.html" title="B-tree Index">&larr; Previous</a>
+          
+
+          
+            
+            <a class="btn btn-primary float-right" href="/postgresql/02-access-methods/gist.html" title="GiST Index">Next &rarr;</a>
+          
+        
+      </div>
+
+      
+      <div style="text-align: center; margin-top: 1rem;">
+        <a href="/postgresql-internals/">&uarr; Back to Table of Contents</a>
+      </div>
+      
+
+    </div>
+  </div>
+</div>
+
+
+  <!-- Footer -->
+
+<hr>
+
+<footer>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <ul class="list-inline text-center">
+          
+          <li class="list-inline-item">
+            <a href="mailto:amitava.dev@proton.me" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="far fa-envelope fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          
+          
+          <li class="list-inline-item">
+            <a href="https://www.linkedin.com/in/amitavaag" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-linkedin fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          <li class="list-inline-item">
+            <a href="https://github.com/ikouchiha47" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-github fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+        </ul>
+
+        <p class="copyright text-muted">
+          Build with: 
+          <a 
+            href="https://github.com/StartBootstrap/startbootstrap-clean-blog-jekyll"
+            class="text-gray"
+            target="_blank">startbootstrap-clean-blog-jekyll</a></p>
+      </div>
+    </div>
+  </div>
+</footer>
+
+
+  <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="/assets/vendor/blog/js/scripts.js"></script>
+
+<script src="/assets/scripts.js"></script>
+
+
+
+
+
+  <script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+
+    document.querySelectorAll('pre > code.language-mermaid').forEach((codeBlock) => {
+      codeBlock.parentElement.outerHTML = `<pre class="mermaid">${codeBlock.textContent}</pre>`;
+    });
+
+
+    mermaid.initialize({ startOnLoad: true, theme: 'forest' });
+</script>
+
+
+  
+
+</body>
+
+</html>

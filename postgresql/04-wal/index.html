@@ -1,0 +1,512 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+  <title>
+    Write-Ahead Logging - iko&#39;s logs
+    
+  </title>
+
+  <meta name="description" content="">
+  <meta property="og:description" content="">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Write-Ahead Logging">
+  <meta property="og:url" content="https://ikouchiha47.github.io/postgresql/04-wal/">
+
+  
+
+  <link href='https://fonts.googleapis.com/css?family=Lora:400,700,400italic,700italic' rel='stylesheet' type='text/css'>
+  <link href='https://fonts.googleapis.com/css?family=Open+Sans:300italic,400italic,600italic,700italic,800italic,400,300,600,700,800' rel='stylesheet' type='text/css'>
+
+  <!-- <script src="https://use.fontawesome.com/releases/v5.15.3/js/all.js" crossorigin="anonymous"></script> -->
+  <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.15.4/css/all.css" integrity="sha384-DyZ88mC6Up2uqS4h/KRgHuoeGwBcD4Ng9SiP4dIRy0EXTlnuz47vAwmeGwVChigm" crossorigin="anonymous"/>
+
+  <link rel="stylesheet" href="/assets/main.css">
+  <link rel="canonical" href="https://ikouchiha47.github.io/postgresql/04-wal/">
+  <link rel="alternate" type="application/rss+xml" title="iko&#39;s logs" href="/feed.xml">
+
+  <meta name="google-site-verification" content="lWkg6gIxJgzEKX_5XnhcxCtPE9QknaimFWWos_dTvPM" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fira+Sans:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Inconsolata:wght@200..900&family=Jersey+25&family=Kanit:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Merriweather+Sans:ital,wght@0,300..800;1,300..800&family=Nanum+Gothic+Coding&family=Space+Grotesk:wght@300..700&family=Titillium+Web:ital,wght@0,200;0,300;0,400;0,600;0,700;0,900;1,200;1,300;1,400;1,600;1,700&display=swap" rel="stylesheet">
+
+</head>
+
+
+<body>
+
+  <!-- Navigation -->
+<nav class="navbar navbar-expand-lg navbar-light fixed-top" id="mainNav">
+  <div class="container">
+    <a class="navbar-brand" href="/">iko&#39;s logs</a>
+    <button class="navbar-toggler navbar-toggler-right" type="button" data-toggle="collapse" data-target="#navbarResponsive" aria-controls="navbarResponsive" aria-expanded="false" aria-label="Toggle navigation">
+      Menu
+      <i class="fa fa-bars"></i>
+    </button>
+    <div class="collapse navbar-collapse" id="navbarResponsive">
+      <ul class="navbar-nav ml-auto">
+        <li class="nav-item">
+          <a class="nav-link" href="/">Home</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/about">About</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/posts">Posts</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/contact">Contact</a>
+        </li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+
+  <!-- Page Header -->
+
+<header class="masthead">
+
+  <div class="overlay"></div>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <div class="post-heading">
+          <h1>Write-Ahead Logging</h1>
+          
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="container space-grotesk">
+  <div class="row">
+    <div class="col-lg-8 col-md-10 mx-auto">
+
+      <!-- Breadcrumb -->
+      <nav aria-label="breadcrumb" style="margin-bottom: 1.5rem;">
+        <ol class="breadcrumb" style="background: transparent; padding: 0;">
+          
+            <li class="breadcrumb-item"><a href="/postgresql-internals/">PostgreSQL Internals Deep Dive</a></li>
+          
+          
+          <li class="breadcrumb-item active" aria-current="page">Write-Ahead Logging</li>
+        </ol>
+      </nav>
+
+      <h1 id="chapter-4-write-ahead-logging-wal">Chapter 4: Write-Ahead Logging (WAL)</h1>
+
+<blockquote>
+  <p><em>“No data is committed until its log record is on stable storage.”</em>
+– The WAL protocol, the single most important invariant in PostgreSQL’s durability story.</p>
+</blockquote>
+
+<h2 id="summary">Summary</h2>
+
+<p>Write-Ahead Logging is PostgreSQL’s mechanism for ensuring crash safety and enabling
+point-in-time recovery. Every modification to a data page is first recorded as a WAL
+record in a sequential log. The WAL record <em>must</em> reach stable storage before the
+modified data page is written to disk. This simple invariant – “log before data” –
+allows PostgreSQL to recover from crashes by replaying the log, reconstruct any
+consistent state within the retention window, and stream changes to replicas.</p>
+
+<p>This chapter covers the WAL record format, the insertion machinery, the checkpoint
+process that bounds recovery time, crash recovery and PITR, and the extension points
+that allow custom WAL record types.</p>
+
+<h2 id="chapter-map">Chapter Map</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>Page</th>
+      <th>What You’ll Learn</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><a href="wal-internals">WAL Internals</a></td>
+      <td>WAL buffers, LSN addressing, record format, insertion locks, flush pipeline</td>
+    </tr>
+    <tr>
+      <td><a href="checkpoints">Checkpoints</a></td>
+      <td>Checkpoint process, redo points, <code class="language-plaintext highlighter-rouge">pg_control</code>, restartpoints</td>
+    </tr>
+    <tr>
+      <td><a href="recovery">Recovery</a></td>
+      <td>Crash recovery, archive recovery, PITR, timelines</td>
+    </tr>
+    <tr>
+      <td><a href="wal-for-extensions">WAL for Extensions</a></td>
+      <td>Generic WAL API, custom resource managers</td>
+    </tr>
+  </tbody>
+</table>
+
+<h2 id="overview">Overview</h2>
+
+<h3 id="why-wal-exists">Why WAL Exists</h3>
+
+<p>Without WAL, PostgreSQL would need to flush every dirty page to disk before
+confirming a commit. That would serialize all writes through random I/O to the
+data directory. WAL converts this into sequential I/O to a log file, which is
+orders of magnitude faster on both spinning disks and SSDs.</p>
+
+<p>WAL serves three purposes:</p>
+
+<ol>
+  <li><strong>Crash recovery</strong> – after an unclean shutdown, replay WAL from the last
+checkpoint to bring the database back to a consistent state.</li>
+  <li><strong>Point-in-time recovery (PITR)</strong> – replay WAL to an arbitrary point,
+restoring the database to any moment within the archive window.</li>
+  <li><strong>Replication</strong> – stream WAL to standbys for physical or logical replication.</li>
+</ol>
+
+<h3 id="the-wal-protocol-in-one-paragraph">The WAL Protocol in One Paragraph</h3>
+
+<p>When a backend modifies a page (e.g., inserts a tuple into a heap page), it
+constructs an <code class="language-plaintext highlighter-rouge">XLogRecord</code> describing the change, reserves space in the WAL
+buffer via the insertion locks, copies the record into the buffer, and returns
+the LSN (Log Sequence Number) at which the record was written. Before that dirty
+page can be flushed to disk by the background writer or checkpointer, the WAL
+must be flushed up to at least the page’s LSN. The <code class="language-plaintext highlighter-rouge">XLogFlush()</code> call ensures
+this ordering.</p>
+
+<h3 id="key-concepts">Key Concepts</h3>
+
+<ul>
+  <li>
+    <p><strong>LSN (Log Sequence Number)</strong> – a 64-bit byte offset into the WAL stream.
+Every WAL record, and every data page, carries an LSN. Defined as <code class="language-plaintext highlighter-rouge">typedef uint64 XLogRecPtr</code>
+in <code class="language-plaintext highlighter-rouge">src/include/access/xlogdefs.h:22</code>.</p>
+  </li>
+  <li>
+    <p><strong>WAL Segment</strong> – the WAL stream is divided into segment files, each
+<code class="language-plaintext highlighter-rouge">wal_segment_size</code> bytes (default 16 MB). Files live in <code class="language-plaintext highlighter-rouge">pg_wal/</code> and are named
+by timeline and segment number (e.g., <code class="language-plaintext highlighter-rouge">000000010000000000000001</code>).</p>
+  </li>
+  <li>
+    <p><strong>WAL Buffer</strong> – a shared-memory ring buffer (<code class="language-plaintext highlighter-rouge">wal_buffers</code> pages, default
+auto-tuned) where WAL records are assembled before being written to disk.</p>
+  </li>
+  <li>
+    <p><strong>Full-Page Write (FPW)</strong> – the first modification of a page after a
+checkpoint records the entire page image in WAL, protecting against torn pages.</p>
+  </li>
+  <li>
+    <p><strong>Resource Manager (rmgr)</strong> – a subsystem that knows how to generate and
+replay WAL for its record types. Each rmgr has a unique <code class="language-plaintext highlighter-rouge">RmgrId</code> and a set of
+callbacks (<code class="language-plaintext highlighter-rouge">RmgrData</code> struct in <code class="language-plaintext highlighter-rouge">src/include/access/xlog_internal.h:339</code>).</p>
+  </li>
+</ul>
+
+<h2 id="key-source-files">Key Source Files</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>File</th>
+      <th>Purpose</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/access/xlogrecord.h</code></td>
+      <td><code class="language-plaintext highlighter-rouge">XLogRecord</code> struct, block header format</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/access/xlog.h</code></td>
+      <td>WAL manager public API, GUCs, checkpoint flags</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/access/xloginsert.h</code></td>
+      <td>WAL insertion API (<code class="language-plaintext highlighter-rouge">XLogBeginInsert</code>, <code class="language-plaintext highlighter-rouge">XLogInsert</code>, etc.)</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/access/xlog_internal.h</code></td>
+      <td>Page headers, segment math, <code class="language-plaintext highlighter-rouge">RmgrData</code>, <code class="language-plaintext highlighter-rouge">XLogRecData</code></td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/access/xlogdefs.h</code></td>
+      <td><code class="language-plaintext highlighter-rouge">XLogRecPtr</code>, <code class="language-plaintext highlighter-rouge">TimeLineID</code>, <code class="language-plaintext highlighter-rouge">XLogSegNo</code> typedefs</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/catalog/pg_control.h</code></td>
+      <td><code class="language-plaintext highlighter-rouge">CheckPoint</code> struct, <code class="language-plaintext highlighter-rouge">DBState</code> enum, XLOG info values</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/access/transam/xlog.c</code></td>
+      <td>Core WAL engine: insertion, flush, checkpoint, startup</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/access/transam/xloginsert.c</code></td>
+      <td>Record construction and reservation</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/access/transam/xlogrecovery.c</code></td>
+      <td>Recovery loop, timeline management</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/access/transam/generic_xlog.c</code></td>
+      <td>Generic WAL for extensions</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/access/generic_xlog.h</code></td>
+      <td>Generic WAL public API</td>
+    </tr>
+  </tbody>
+</table>
+
+<h2 id="how-it-works-the-big-picture">How It Works: The Big Picture</h2>
+
+<pre><code class="language-mermaid">flowchart TD
+    subgraph "Backend Process"
+        A["Modify data page&lt;br/&gt;(e.g., heap_insert)"] --&gt; B["XLogBeginInsert()"]
+        B --&gt; C["XLogRegisterBuffer()&lt;br/&gt;XLogRegisterData()"]
+        C --&gt; D["XLogInsert(rmid, info)"]
+    end
+
+    subgraph "WAL Insertion (xloginsert.c)"
+        D --&gt; E["Construct XLogRecData chain"]
+        E --&gt; F["XLogInsertRecord()"]
+    end
+
+    subgraph "WAL Buffer (xlog.c)"
+        F --&gt; G["Acquire WALInsertLock"]
+        G --&gt; H["Reserve space via&lt;br/&gt;CurrBytePos / PrevBytePos"]
+        H --&gt; I["Copy record into&lt;br/&gt;WAL buffer pages"]
+        I --&gt; J["Release WALInsertLock"]
+        J --&gt; K["Return LSN"]
+    end
+
+    subgraph "WAL Flush Path"
+        K --&gt; L{"Synchronous&lt;br/&gt;commit?"}
+        L --&gt;|Yes| M["XLogFlush(LSN)"]
+        L --&gt;|No| N["WAL writer flushes&lt;br/&gt;asynchronously"]
+        M --&gt; O["Write + fsync to&lt;br/&gt;pg_wal segment file"]
+        N --&gt; O
+    end
+
+    subgraph "Checkpoint / Recovery"
+        O --&gt; P["Checkpointer creates&lt;br/&gt;checkpoint record"]
+        O --&gt; Q["On crash: replay from&lt;br/&gt;redo point to end of WAL"]
+    end
+
+    style A fill:#e8f4e8
+    style K fill:#e8e8f4
+    style O fill:#f4e8e8
+</code></pre>
+
+<h2 id="key-data-structures-at-a-glance">Key Data Structures at a Glance</h2>
+
+<h3 id="xlogrecord-the-on-disk-record-header">XLogRecord (the on-disk record header)</h3>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="cm">/* src/include/access/xlogrecord.h:41 */</span>
+<span class="k">typedef</span> <span class="k">struct</span> <span class="n">XLogRecord</span>
+<span class="p">{</span>
+    <span class="n">uint32</span>      <span class="n">xl_tot_len</span><span class="p">;</span>   <span class="cm">/* total len of entire record */</span>
+    <span class="n">TransactionId</span> <span class="n">xl_xid</span><span class="p">;</span>     <span class="cm">/* xact id */</span>
+    <span class="n">XLogRecPtr</span>  <span class="n">xl_prev</span><span class="p">;</span>      <span class="cm">/* ptr to previous record in log */</span>
+    <span class="n">uint8</span>       <span class="n">xl_info</span><span class="p">;</span>      <span class="cm">/* flag bits, see below */</span>
+    <span class="n">RmgrId</span>      <span class="n">xl_rmid</span><span class="p">;</span>      <span class="cm">/* resource manager for this record */</span>
+    <span class="cm">/* 2 bytes of padding here, initialize to zero */</span>
+    <span class="n">pg_crc32c</span>   <span class="n">xl_crc</span><span class="p">;</span>       <span class="cm">/* CRC for this record */</span>
+<span class="p">}</span> <span class="n">XLogRecord</span><span class="p">;</span>
+</code></pre></div></div>
+
+<h3 id="checkpoint-written-at-every-checkpoint">CheckPoint (written at every checkpoint)</h3>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="cm">/* src/include/catalog/pg_control.h:35 */</span>
+<span class="k">typedef</span> <span class="k">struct</span> <span class="n">CheckPoint</span>
+<span class="p">{</span>
+    <span class="n">XLogRecPtr</span>  <span class="n">redo</span><span class="p">;</span>              <span class="cm">/* REDO start point */</span>
+    <span class="n">TimeLineID</span>  <span class="n">ThisTimeLineID</span><span class="p">;</span>    <span class="cm">/* current TLI */</span>
+    <span class="n">TimeLineID</span>  <span class="n">PrevTimeLineID</span><span class="p">;</span>    <span class="cm">/* previous TLI (fork point) */</span>
+    <span class="n">bool</span>        <span class="n">fullPageWrites</span><span class="p">;</span>    <span class="cm">/* current full_page_writes */</span>
+    <span class="n">FullTransactionId</span> <span class="n">nextXid</span><span class="p">;</span>     <span class="cm">/* next free XID */</span>
+    <span class="n">Oid</span>         <span class="n">nextOid</span><span class="p">;</span>           <span class="cm">/* next free OID */</span>
+    <span class="cm">/* ... transaction and multixact counters ... */</span>
+    <span class="n">pg_time_t</span>   <span class="n">time</span><span class="p">;</span>              <span class="cm">/* timestamp of checkpoint */</span>
+<span class="p">}</span> <span class="n">CheckPoint</span><span class="p">;</span>
+</code></pre></div></div>
+
+<h3 id="wal-lifecycle-diagram">WAL Lifecycle Diagram</h3>
+
+<pre><code class="language-mermaid">flowchart LR
+    subgraph "WAL Lifecycle"
+        W1["WAL record&lt;br/&gt;inserted into buffer"] --&gt; W2["WAL buffer&lt;br/&gt;written to segment"]
+        W2 --&gt; W3["Segment file&lt;br/&gt;fsynced to disk"]
+        W3 --&gt; W4["Checkpoint advances&lt;br/&gt;redo pointer"]
+        W4 --&gt; W5["Old segments&lt;br/&gt;recycled or archived"]
+    end
+
+    subgraph "Key LSN Pointers"
+        L1["InsertRecPtr&lt;br/&gt;(latest inserted)"]
+        L2["WriteRecPtr&lt;br/&gt;(latest written)"]
+        L3["FlushRecPtr&lt;br/&gt;(latest flushed)"]
+        L4["RedoRecPtr&lt;br/&gt;(checkpoint redo)"]
+    end
+
+    L1 -.-&gt;|"&gt;="| L2
+    L2 -.-&gt;|"&gt;="| L3
+    L3 -.-&gt;|"&gt;="| L4
+
+    style W1 fill:#e8f4e8
+    style W3 fill:#f4e8e8
+    style W5 fill:#e8e8f4
+</code></pre>
+
+<h2 id="connections">Connections</h2>
+
+<ul>
+  <li>
+    <p><strong><a href="../01-storage/">Storage Engine (Ch. 1)</a></strong> – the buffer manager calls
+<code class="language-plaintext highlighter-rouge">XLogFlush(page_lsn)</code> before writing a dirty page. The <code class="language-plaintext highlighter-rouge">pd_lsn</code> field in every
+page header records the LSN of the last WAL record that modified the page.</p>
+  </li>
+  <li>
+    <p><strong><a href="../03-transactions/">Transactions &amp; MVCC (Ch. 3)</a></strong> – commit and abort
+records are WAL records. The CLOG is also WAL-logged. Synchronous commit
+guarantees depend on <code class="language-plaintext highlighter-rouge">XLogFlush()</code> completing before the commit response.</p>
+  </li>
+  <li>
+    <p><strong><a href="../05-locking/">Locking (Ch. 5)</a></strong> – WAL insertion uses a fixed set of
+<code class="language-plaintext highlighter-rouge">WALInsertLock</code> lightweight locks to allow concurrent insertion. <code class="language-plaintext highlighter-rouge">WALWriteLock</code>
+serializes actual writes to disk.</p>
+  </li>
+  <li>
+    <p><strong><a href="../12-replication/">Replication (Ch. 12)</a></strong> – physical replication streams
+WAL bytes directly. Logical replication decodes WAL records into logical change
+events via the resource manager callbacks.</p>
+  </li>
+  <li>
+    <p><strong><a href="../14-platform/">Platform Layer (Ch. 14)</a></strong> – WAL flush uses platform-specific
+sync methods (<code class="language-plaintext highlighter-rouge">fsync</code>, <code class="language-plaintext highlighter-rouge">fdatasync</code>, <code class="language-plaintext highlighter-rouge">O_DSYNC</code>), selected by <code class="language-plaintext highlighter-rouge">wal_sync_method</code>.</p>
+  </li>
+</ul>
+
+
+      <hr>
+
+      <!-- Prev / Next / Up navigation -->
+      
+      
+      
+
+      <div class="clearfix" style="margin-top: 2rem;">
+        
+          
+          
+
+          
+            
+            <a class="btn btn-primary float-left" href="/postgresql/03-transactions/two-phase-commit.html" title="Two-Phase Commit">&larr; Previous</a>
+          
+
+          
+            
+            <a class="btn btn-primary float-right" href="/postgresql/04-wal/checkpoints.html" title="Checkpoints">Next &rarr;</a>
+          
+        
+      </div>
+
+      
+      <div style="text-align: center; margin-top: 1rem;">
+        <a href="/postgresql-internals/">&uarr; Back to Table of Contents</a>
+      </div>
+      
+
+    </div>
+  </div>
+</div>
+
+
+  <!-- Footer -->
+
+<hr>
+
+<footer>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <ul class="list-inline text-center">
+          
+          <li class="list-inline-item">
+            <a href="mailto:amitava.dev@proton.me" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="far fa-envelope fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          
+          
+          <li class="list-inline-item">
+            <a href="https://www.linkedin.com/in/amitavaag" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-linkedin fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          <li class="list-inline-item">
+            <a href="https://github.com/ikouchiha47" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-github fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+        </ul>
+
+        <p class="copyright text-muted">
+          Build with: 
+          <a 
+            href="https://github.com/StartBootstrap/startbootstrap-clean-blog-jekyll"
+            class="text-gray"
+            target="_blank">startbootstrap-clean-blog-jekyll</a></p>
+      </div>
+    </div>
+  </div>
+</footer>
+
+
+  <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="/assets/vendor/blog/js/scripts.js"></script>
+
+<script src="/assets/scripts.js"></script>
+
+
+
+
+
+  <script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+
+    document.querySelectorAll('pre > code.language-mermaid').forEach((codeBlock) => {
+      codeBlock.parentElement.outerHTML = `<pre class="mermaid">${codeBlock.textContent}</pre>`;
+    });
+
+
+    mermaid.initialize({ startOnLoad: true, theme: 'forest' });
+</script>
+
+
+  
+
+</body>
+
+</html>

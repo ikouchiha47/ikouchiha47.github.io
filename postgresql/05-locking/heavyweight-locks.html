@@ -1,0 +1,667 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+  <title>
+    Heavyweight Locks - iko&#39;s logs
+    
+  </title>
+
+  <meta name="description" content="">
+  <meta property="og:description" content="">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Heavyweight Locks">
+  <meta property="og:url" content="https://ikouchiha47.github.io/postgresql/05-locking/heavyweight-locks.html">
+
+  
+
+  <link href='https://fonts.googleapis.com/css?family=Lora:400,700,400italic,700italic' rel='stylesheet' type='text/css'>
+  <link href='https://fonts.googleapis.com/css?family=Open+Sans:300italic,400italic,600italic,700italic,800italic,400,300,600,700,800' rel='stylesheet' type='text/css'>
+
+  <!-- <script src="https://use.fontawesome.com/releases/v5.15.3/js/all.js" crossorigin="anonymous"></script> -->
+  <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.15.4/css/all.css" integrity="sha384-DyZ88mC6Up2uqS4h/KRgHuoeGwBcD4Ng9SiP4dIRy0EXTlnuz47vAwmeGwVChigm" crossorigin="anonymous"/>
+
+  <link rel="stylesheet" href="/assets/main.css">
+  <link rel="canonical" href="https://ikouchiha47.github.io/postgresql/05-locking/heavyweight-locks.html">
+  <link rel="alternate" type="application/rss+xml" title="iko&#39;s logs" href="/feed.xml">
+
+  <meta name="google-site-verification" content="lWkg6gIxJgzEKX_5XnhcxCtPE9QknaimFWWos_dTvPM" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fira+Sans:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Inconsolata:wght@200..900&family=Jersey+25&family=Kanit:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Merriweather+Sans:ital,wght@0,300..800;1,300..800&family=Nanum+Gothic+Coding&family=Space+Grotesk:wght@300..700&family=Titillium+Web:ital,wght@0,200;0,300;0,400;0,600;0,700;0,900;1,200;1,300;1,400;1,600;1,700&display=swap" rel="stylesheet">
+
+</head>
+
+
+<body>
+
+  <!-- Navigation -->
+<nav class="navbar navbar-expand-lg navbar-light fixed-top" id="mainNav">
+  <div class="container">
+    <a class="navbar-brand" href="/">iko&#39;s logs</a>
+    <button class="navbar-toggler navbar-toggler-right" type="button" data-toggle="collapse" data-target="#navbarResponsive" aria-controls="navbarResponsive" aria-expanded="false" aria-label="Toggle navigation">
+      Menu
+      <i class="fa fa-bars"></i>
+    </button>
+    <div class="collapse navbar-collapse" id="navbarResponsive">
+      <ul class="navbar-nav ml-auto">
+        <li class="nav-item">
+          <a class="nav-link" href="/">Home</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/about">About</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/posts">Posts</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/contact">Contact</a>
+        </li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+
+  <!-- Page Header -->
+
+<header class="masthead">
+
+  <div class="overlay"></div>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <div class="post-heading">
+          <h1>Heavyweight Locks</h1>
+          
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="container space-grotesk">
+  <div class="row">
+    <div class="col-lg-8 col-md-10 mx-auto">
+
+      <!-- Breadcrumb -->
+      <nav aria-label="breadcrumb" style="margin-bottom: 1.5rem;">
+        <ol class="breadcrumb" style="background: transparent; padding: 0;">
+          
+            <li class="breadcrumb-item"><a href="/postgresql-internals/">PostgreSQL Internals Deep Dive</a></li>
+          
+          
+            
+              <li class="breadcrumb-item"><a href="/postgresql/05-locking/">Locking</a></li>
+            
+          
+          <li class="breadcrumb-item active" aria-current="page">Heavyweight Locks</li>
+        </ol>
+      </nav>
+
+      <h1 id="heavyweight-locks">Heavyweight Locks</h1>
+
+<p>Heavyweight locks (also called “regular locks”) are the primary mechanism for
+coordinating user-visible operations – DDL, DML, explicit <code class="language-plaintext highlighter-rouge">LOCK TABLE</code>, and
+advisory locks. They support eight lock modes with a table-driven conflict
+matrix, full deadlock detection, and automatic release at transaction end.</p>
+
+<h2 id="overview">Overview</h2>
+
+<p>Every SQL statement acquires at least one heavyweight lock. A <code class="language-plaintext highlighter-rouge">SELECT</code>
+acquires <code class="language-plaintext highlighter-rouge">AccessShareLock</code> on the target relation; an <code class="language-plaintext highlighter-rouge">ALTER TABLE</code> acquires
+<code class="language-plaintext highlighter-rouge">AccessExclusiveLock</code>. The lock manager records these in shared-memory hash
+tables (LOCK and PROCLOCK), checks for conflicts using a bitmask-based
+conflict matrix, and queues waiters in FIFO order when conflicts exist.</p>
+
+<p>Because the shared hash tables can become a contention bottleneck, PostgreSQL
+provides a <strong>fast-path</strong> mechanism that lets backends record certain common,
+non-conflicting locks in a per-backend array, bypassing the shared tables
+entirely.</p>
+
+<h2 id="key-source-files">Key Source Files</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>File</th>
+      <th>Purpose</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/storage/lmgr/lock.c</code></td>
+      <td>Core lock manager: hash tables, conflict checking, fast-path</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/storage/lock.h</code></td>
+      <td>LOCK, PROCLOCK, LOCALLOCK structs; LOCKTAG; function prototypes</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/storage/lockdefs.h</code></td>
+      <td>Lock mode constants and LOCKMASK type</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/storage/lmgr/lmgr.c</code></td>
+      <td>High-level wrappers: <code class="language-plaintext highlighter-rouge">LockRelation</code>, <code class="language-plaintext highlighter-rouge">UnlockRelation</code>, etc.</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/storage/lmgr/proc.c</code></td>
+      <td><code class="language-plaintext highlighter-rouge">ProcSleep</code> / <code class="language-plaintext highlighter-rouge">ProcWakeup</code> – backend sleep/wake on lock waits</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/storage/lmgr/README</code></td>
+      <td>Authoritative design document</td>
+    </tr>
+  </tbody>
+</table>
+
+<h2 id="lock-modes-and-the-conflict-matrix">Lock Modes and the Conflict Matrix</h2>
+
+<p>PostgreSQL defines eight lock modes, numbered 1-8:</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>#</th>
+      <th>Lock Mode</th>
+      <th>Typical SQL</th>
+      <th>Conflicts With</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>1</td>
+      <td><code class="language-plaintext highlighter-rouge">AccessShareLock</code></td>
+      <td><code class="language-plaintext highlighter-rouge">SELECT</code></td>
+      <td>8</td>
+    </tr>
+    <tr>
+      <td>2</td>
+      <td><code class="language-plaintext highlighter-rouge">RowShareLock</code></td>
+      <td><code class="language-plaintext highlighter-rouge">SELECT FOR UPDATE/SHARE</code></td>
+      <td>7, 8</td>
+    </tr>
+    <tr>
+      <td>3</td>
+      <td><code class="language-plaintext highlighter-rouge">RowExclusiveLock</code></td>
+      <td><code class="language-plaintext highlighter-rouge">INSERT</code>, <code class="language-plaintext highlighter-rouge">UPDATE</code>, <code class="language-plaintext highlighter-rouge">DELETE</code></td>
+      <td>5, 6, 7, 8</td>
+    </tr>
+    <tr>
+      <td>4</td>
+      <td><code class="language-plaintext highlighter-rouge">ShareUpdateExclusiveLock</code></td>
+      <td><code class="language-plaintext highlighter-rouge">VACUUM</code>, <code class="language-plaintext highlighter-rouge">ANALYZE</code>, <code class="language-plaintext highlighter-rouge">CREATE INDEX CONCURRENTLY</code></td>
+      <td>4, 5, 6, 7, 8</td>
+    </tr>
+    <tr>
+      <td>5</td>
+      <td><code class="language-plaintext highlighter-rouge">ShareLock</code></td>
+      <td><code class="language-plaintext highlighter-rouge">CREATE INDEX</code></td>
+      <td>3, 4, 6, 7, 8</td>
+    </tr>
+    <tr>
+      <td>6</td>
+      <td><code class="language-plaintext highlighter-rouge">ShareRowExclusiveLock</code></td>
+      <td><code class="language-plaintext highlighter-rouge">CREATE TRIGGER</code>, some <code class="language-plaintext highlighter-rouge">ALTER TABLE</code></td>
+      <td>3, 4, 5, 6, 7, 8</td>
+    </tr>
+    <tr>
+      <td>7</td>
+      <td><code class="language-plaintext highlighter-rouge">ExclusiveLock</code></td>
+      <td>Blocks <code class="language-plaintext highlighter-rouge">ROW SHARE</code></td>
+      <td>2, 3, 4, 5, 6, 7, 8</td>
+    </tr>
+    <tr>
+      <td>8</td>
+      <td><code class="language-plaintext highlighter-rouge">AccessExclusiveLock</code></td>
+      <td><code class="language-plaintext highlighter-rouge">ALTER TABLE</code>, <code class="language-plaintext highlighter-rouge">DROP</code>, <code class="language-plaintext highlighter-rouge">VACUUM FULL</code>, <code class="language-plaintext highlighter-rouge">LOCK TABLE</code></td>
+      <td>1, 2, 3, 4, 5, 6, 7, 8</td>
+    </tr>
+  </tbody>
+</table>
+
+<h3 id="full-conflict-matrix">Full Conflict Matrix</h3>
+
+<p>A cell marked <code class="language-plaintext highlighter-rouge">X</code> means the two modes conflict (cannot be held simultaneously
+on the same object by different transactions):</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>                  Requested Lock Mode
+              1    2    3    4    5    6    7    8
+Held    1          .    .    .    .    .    .    X
+        2          .    .    .    .    .    X    X
+        3          .    .    .    X    X    X    X
+        4          .    .    .    X    X    X    X
+        5          .    .    X    X    .    X    X
+        6          .    .    X    X    X    X    X
+        7          .    X    X    X    X    X    X
+        8          X    X    X    X    X    X    X
+
+Key: 1=AccessShare 2=RowShare 3=RowExclusive 4=ShareUpdateExclusive
+     5=Share 6=ShareRowExclusive 7=Exclusive 8=AccessExclusive
+</code></pre></div></div>
+
+<p>The conflict table is implemented as a C array of bitmasks:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">static</span> <span class="k">const</span> <span class="n">LOCKMASK</span> <span class="n">LockConflicts</span><span class="p">[]</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="mi">0</span><span class="p">,</span>
+    <span class="cm">/* AccessShareLock */</span>      <span class="n">LOCKBIT_ON</span><span class="p">(</span><span class="n">AccessExclusiveLock</span><span class="p">),</span>
+    <span class="cm">/* RowShareLock */</span>         <span class="n">LOCKBIT_ON</span><span class="p">(</span><span class="n">ExclusiveLock</span><span class="p">)</span> <span class="o">|</span>
+                               <span class="n">LOCKBIT_ON</span><span class="p">(</span><span class="n">AccessExclusiveLock</span><span class="p">),</span>
+    <span class="cm">/* RowExclusiveLock */</span>     <span class="n">LOCKBIT_ON</span><span class="p">(</span><span class="n">ShareLock</span><span class="p">)</span> <span class="o">|</span>
+                               <span class="n">LOCKBIT_ON</span><span class="p">(</span><span class="n">ShareRowExclusiveLock</span><span class="p">)</span> <span class="o">|</span>
+                               <span class="n">LOCKBIT_ON</span><span class="p">(</span><span class="n">ExclusiveLock</span><span class="p">)</span> <span class="o">|</span>
+                               <span class="n">LOCKBIT_ON</span><span class="p">(</span><span class="n">AccessExclusiveLock</span><span class="p">),</span>
+    <span class="cm">/* ... and so on for each mode ... */</span>
+<span class="p">};</span>
+</code></pre></div></div>
+
+<p>Conflict checking is a single bitwise AND:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">if</span> <span class="p">(</span><span class="n">lockMethodTable</span><span class="o">-&gt;</span><span class="n">conflictTab</span><span class="p">[</span><span class="n">lockmode</span><span class="p">]</span> <span class="o">&amp;</span> <span class="n">lock</span><span class="o">-&gt;</span><span class="n">grantMask</span><span class="p">)</span>
+    <span class="cm">/* conflict exists */</span>
+</code></pre></div></div>
+
+<h2 id="how-it-works">How It Works</h2>
+
+<h3 id="lock-acquisition-flow">Lock Acquisition Flow</h3>
+
+<pre><code class="language-mermaid">flowchart TD
+    START["LockAcquire(locktag, lockmode)"]
+    LOCAL["Look up LOCALLOCK&lt;br/&gt;in backend-local hash table"]
+    HELD{"Already held&lt;br/&gt;in this mode?"}
+    INCR["Increment local count&lt;br/&gt;return GRANTED"]
+    FP{"Eligible for&lt;br/&gt;fast-path?"}
+    FPCHECK{"Strong lock&lt;br/&gt;counter == 0?"}
+    FPGRANT["Record in PGPROC&lt;br/&gt;fast-path slot, return"]
+    PARTITION["Hash LOCKTAG&lt;br/&gt;acquire partition LWLock"]
+    SHARED["Look up / create&lt;br/&gt;LOCK + PROCLOCK&lt;br/&gt;in shared hash tables"]
+    CONFLICT{"LockCheckConflicts:&lt;br/&gt;conflictTab &amp; grantMask?"}
+    GRANT["GrantLock()&lt;br/&gt;release LWLock, return"]
+    DONTWAIT{"dontWait?"}
+    NOTAVAIL["Release LWLock&lt;br/&gt;return NOT_AVAIL"]
+    PROCSLEEP["ProcSleep:&lt;br/&gt;join waitProcs queue&lt;br/&gt;set DeadlockTimeout timer&lt;br/&gt;sleep on semaphore"]
+
+    START --&gt; LOCAL
+    LOCAL --&gt; HELD
+    HELD -- "Yes" --&gt; INCR
+    HELD -- "No" --&gt; FP
+    FP -- "Yes" --&gt; FPCHECK
+    FP -- "No" --&gt; PARTITION
+    FPCHECK -- "Yes" --&gt; FPGRANT
+    FPCHECK -- "No" --&gt; PARTITION
+    PARTITION --&gt; SHARED
+    SHARED --&gt; CONFLICT
+    CONFLICT -- "No conflict" --&gt; GRANT
+    CONFLICT -- "Conflict" --&gt; DONTWAIT
+    DONTWAIT -- "Yes" --&gt; NOTAVAIL
+    DONTWAIT -- "No" --&gt; PROCSLEEP
+
+    style START fill:#e6f3ff,stroke:#333
+    style GRANT fill:#e6ffe6,stroke:#333
+    style FPGRANT fill:#e6ffe6,stroke:#333
+    style INCR fill:#e6ffe6,stroke:#333
+    style NOTAVAIL fill:#ffe6e6,stroke:#333
+    style PROCSLEEP fill:#fff3e6,stroke:#333
+</code></pre>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>LockAcquire(locktag, lockmode, sessionLock, dontWait)
+  |
+  +-- Look up / create LOCALLOCK in backend-local hash table
+  |     If already held in this mode: increment local count, return
+  |
+  +-- Attempt fast-path? (see "Fast-Path Locking" below)
+  |     If eligible and no strong lock conflicts: record in PGPROC, return
+  |
+  +-- Compute hash of LOCKTAG -&gt; determine partition
+  |
+  +-- Acquire partition LWLock (exclusive)
+  |
+  +-- Look up / create LOCK in shared hash table
+  |     Look up / create PROCLOCK in shared hash table
+  |
+  +-- LockCheckConflicts():
+  |     conflictMask = conflictTab[lockmode] &amp; lock-&gt;grantMask
+  |     Exclude locks held by our own lock group (parallel queries)
+  |     If no conflict: GrantLock(), release LWLock, return
+  |
+  +-- If dontWait: release LWLock, return LOCKACQUIRE_NOT_AVAIL
+  |
+  +-- ProcSleep():
+        Insert into lock-&gt;waitProcs queue (usually at tail)
+        Exception: if we already hold locks that conflict with
+          an earlier waiter, insert just ahead of that waiter
+        Release partition LWLock
+        Set a timer for DeadlockTimeout (default 1s)
+        Sleep on semaphore
+        If timer fires: run DeadLockCheck() (see deadlock-detection chapter)
+        When woken: lock has been granted by ProcLockWakeup
+</code></pre></div></div>
+
+<h3 id="lock-release-flow">Lock Release Flow</h3>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>LockRelease(locktag, lockmode, sessionLock)
+  |
+  +-- Find LOCALLOCK
+  |     Decrement local count
+  |     If count &gt; 0: return (still held by other request in same backend)
+  |
+  +-- If fast-path lock: clear the PGPROC slot, return
+  |
+  +-- Acquire partition LWLock
+  |     Decrement LOCK.granted[lockmode] and LOCK.nGranted
+  |     Update PROCLOCK.holdMask and LOCK.grantMask
+  |
+  +-- ProcLockWakeup(lock):
+  |     Scan waitProcs queue front-to-back
+  |     Wake each waiter whose request does not conflict with:
+  |       (a) currently granted locks, OR
+  |       (b) requests of earlier un-woken waiters
+  |
+  +-- Release partition LWLock
+</code></pre></div></div>
+
+<h2 id="key-data-structures">Key Data Structures</h2>
+
+<h3 id="locktag--identifying-the-locked-object">LOCKTAG – Identifying the Locked Object</h3>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">typedef</span> <span class="k">struct</span> <span class="n">LOCKTAG</span>
+<span class="p">{</span>
+    <span class="n">uint32</span>  <span class="n">locktag_field1</span><span class="p">;</span>     <span class="cm">/* e.g., database OID */</span>
+    <span class="n">uint32</span>  <span class="n">locktag_field2</span><span class="p">;</span>     <span class="cm">/* e.g., relation OID */</span>
+    <span class="n">uint32</span>  <span class="n">locktag_field3</span><span class="p">;</span>     <span class="cm">/* e.g., block number */</span>
+    <span class="n">uint16</span>  <span class="n">locktag_field4</span><span class="p">;</span>     <span class="cm">/* e.g., offset number */</span>
+    <span class="n">uint8</span>   <span class="n">locktag_type</span><span class="p">;</span>       <span class="cm">/* LockTagType enum */</span>
+    <span class="n">uint8</span>   <span class="n">locktag_lockmethodid</span><span class="p">;</span> <span class="cm">/* DEFAULT_LOCKMETHOD or USER_LOCKMETHOD */</span>
+<span class="p">}</span> <span class="n">LOCKTAG</span><span class="p">;</span>   <span class="cm">/* exactly 16 bytes, no padding */</span>
+</code></pre></div></div>
+
+<p>Lock tag types include: <code class="language-plaintext highlighter-rouge">LOCKTAG_RELATION</code>, <code class="language-plaintext highlighter-rouge">LOCKTAG_TUPLE</code>,
+<code class="language-plaintext highlighter-rouge">LOCKTAG_TRANSACTION</code>, <code class="language-plaintext highlighter-rouge">LOCKTAG_VIRTUALTRANSACTION</code>, <code class="language-plaintext highlighter-rouge">LOCKTAG_ADVISORY</code>,
+and several others.</p>
+
+<h3 id="lock--per-object-state-in-shared-memory">LOCK – Per-Object State in Shared Memory</h3>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">typedef</span> <span class="k">struct</span> <span class="n">LOCK</span>
+<span class="p">{</span>
+    <span class="n">LOCKTAG</span>     <span class="n">tag</span><span class="p">;</span>                        <span class="cm">/* unique identifier */</span>
+    <span class="n">LOCKMASK</span>    <span class="n">grantMask</span><span class="p">;</span>                  <span class="cm">/* bitmask of granted lock types */</span>
+    <span class="n">LOCKMASK</span>    <span class="n">waitMask</span><span class="p">;</span>                   <span class="cm">/* bitmask of awaited lock types */</span>
+    <span class="n">dlist_head</span>  <span class="n">procLocks</span><span class="p">;</span>                  <span class="cm">/* list of PROCLOCKs for this lock */</span>
+    <span class="n">dclist_head</span> <span class="n">waitProcs</span><span class="p">;</span>                  <span class="cm">/* queue of waiting PGPROCs */</span>
+    <span class="kt">int</span>         <span class="n">requested</span><span class="p">[</span><span class="n">MAX_LOCKMODES</span><span class="p">];</span>   <span class="cm">/* requested count per mode */</span>
+    <span class="kt">int</span>         <span class="n">nRequested</span><span class="p">;</span>                 <span class="cm">/* total requested */</span>
+    <span class="kt">int</span>         <span class="n">granted</span><span class="p">[</span><span class="n">MAX_LOCKMODES</span><span class="p">];</span>     <span class="cm">/* granted count per mode */</span>
+    <span class="kt">int</span>         <span class="n">nGranted</span><span class="p">;</span>                   <span class="cm">/* total granted */</span>
+<span class="p">}</span> <span class="n">LOCK</span><span class="p">;</span>
+</code></pre></div></div>
+
+<h3 id="proclock--per-backend-per-object-state">PROCLOCK – Per-Backend-Per-Object State</h3>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">typedef</span> <span class="k">struct</span> <span class="n">PROCLOCK</span>
+<span class="p">{</span>
+    <span class="n">PROCLOCKTAG</span> <span class="n">tag</span><span class="p">;</span>            <span class="cm">/* (LOCK*, PGPROC*) pair */</span>
+    <span class="n">PGPROC</span>     <span class="o">*</span><span class="n">groupLeader</span><span class="p">;</span>   <span class="cm">/* lock group leader (for parallel query) */</span>
+    <span class="n">LOCKMASK</span>    <span class="n">holdMask</span><span class="p">;</span>       <span class="cm">/* bitmask of modes held by this backend */</span>
+    <span class="n">LOCKMASK</span>    <span class="n">releaseMask</span><span class="p">;</span>    <span class="cm">/* workspace for LockReleaseAll */</span>
+    <span class="n">dlist_node</span>  <span class="n">lockLink</span><span class="p">;</span>       <span class="cm">/* link in LOCK's procLocks list */</span>
+    <span class="n">dlist_node</span>  <span class="n">procLink</span><span class="p">;</span>       <span class="cm">/* link in PGPROC's procLocks list */</span>
+<span class="p">}</span> <span class="n">PROCLOCK</span><span class="p">;</span>
+</code></pre></div></div>
+
+<h3 id="locallock--per-backend-local-cache">LOCALLOCK – Per-Backend Local Cache</h3>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">typedef</span> <span class="k">struct</span> <span class="n">LOCALLOCK</span>
+<span class="p">{</span>
+    <span class="n">LOCALLOCKTAG</span> <span class="n">tag</span><span class="p">;</span>           <span class="cm">/* (LOCKTAG, LOCKMODE) */</span>
+    <span class="n">uint32</span>       <span class="n">hashcode</span><span class="p">;</span>      <span class="cm">/* cached hash for partition lookup */</span>
+    <span class="n">LOCK</span>        <span class="o">*</span><span class="n">lock</span><span class="p">;</span>          <span class="cm">/* pointer to shared LOCK (NULL if fast-path) */</span>
+    <span class="n">PROCLOCK</span>    <span class="o">*</span><span class="n">proclock</span><span class="p">;</span>      <span class="cm">/* pointer to shared PROCLOCK (NULL if fast-path) */</span>
+    <span class="n">int64</span>        <span class="n">nLocks</span><span class="p">;</span>        <span class="cm">/* total hold count in this backend */</span>
+    <span class="kt">int</span>          <span class="n">numLockOwners</span><span class="p">;</span>
+    <span class="kt">int</span>          <span class="n">maxLockOwners</span><span class="p">;</span>
+    <span class="n">LOCALLOCKOWNER</span> <span class="o">*</span><span class="n">lockOwners</span><span class="p">;</span> <span class="cm">/* per-ResourceOwner hold counts */</span>
+    <span class="n">bool</span>         <span class="n">holdsStrongLockCount</span><span class="p">;</span>
+    <span class="n">bool</span>         <span class="n">lockCleared</span><span class="p">;</span>
+<span class="p">}</span> <span class="n">LOCALLOCK</span><span class="p">;</span>
+</code></pre></div></div>
+
+<h3 id="relationship-diagram">Relationship Diagram</h3>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>  Backend-local                  Shared Memory
+  +-----------+
+  | LOCALLOCK |--+
+  | (tag,     |  |    +--------+          +----------+
+  |  nLocks,  |  +---&gt;| LOCK   |&lt;--------&gt;| PROCLOCK |
+  |  lock*,   |       | tag    |  procLocks| holdMask |
+  |  proclock*|       | grant  |          | myLock*  |
+  +-----------+       | Mask   |          | myProc*  |
+                      | wait   |          +----------+
+                      | Procs  |               |
+                      +--------+               v
+                                          +--------+
+                                          | PGPROC |
+                                          | (per-  |
+                                          | backend|
+                                          | struct)|
+                                          +--------+
+</code></pre></div></div>
+
+<h2 id="fast-path-locking">Fast-Path Locking</h2>
+
+<p>The fast-path mechanism avoids the shared hash tables for the most common
+lock acquisitions. It is eligible when all of the following are true:</p>
+
+<ol>
+  <li>The lock uses <code class="language-plaintext highlighter-rouge">DEFAULT_LOCKMETHOD</code>.</li>
+  <li>The target is an unshared relation (not a shared catalog).</li>
+  <li>The requested mode is “weak”: <code class="language-plaintext highlighter-rouge">AccessShareLock</code>, <code class="language-plaintext highlighter-rouge">RowShareLock</code>, or
+<code class="language-plaintext highlighter-rouge">RowExclusiveLock</code>.</li>
+  <li>No conflicting “strong” locks exist for this relation’s hash partition.</li>
+</ol>
+
+<h3 id="how-fast-path-works">How Fast-Path Works</h3>
+
+<p>Each PGPROC has an array of <code class="language-plaintext highlighter-rouge">FP_LOCK_SLOTS_PER_BACKEND</code> (typically 16) slots:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="cm">/* In PGPROC: */</span>
+<span class="n">Oid</span>         <span class="n">fpRelId</span><span class="p">[</span><span class="n">FP_LOCK_SLOTS_PER_BACKEND</span><span class="p">];</span>    <span class="cm">/* relation OIDs */</span>
+<span class="n">LOCKMASK</span>    <span class="n">fpLockBits</span><span class="p">[</span><span class="n">FP_LOCK_SLOTS_PER_BACKEND</span><span class="p">];</span>  <span class="cm">/* held lock modes */</span>
+</code></pre></div></div>
+
+<p>A global array <code class="language-plaintext highlighter-rouge">FastPathStrongRelationLocks</code> contains 1024 counters. Each
+counter tracks how many “strong” locks (modes 4-8) are held on relations
+whose hash falls in that partition:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>Acquisition:
+  1. Lock the per-backend LWLock
+  2. Hash the relation OID into the 1024-way partition
+  3. Check FastPathStrongRelationLocks[partition]
+     If zero: record lock in fpRelId/fpLockBits, done
+     If nonzero: fall through to the main lock manager
+
+Strong lock acquisition:
+  1. Increment FastPathStrongRelationLocks[partition]
+  2. Scan ALL backends' fast-path arrays for matching weak locks
+  3. Transfer any found locks to the main lock table
+  4. Proceed with normal lock acquisition
+</code></pre></div></div>
+
+<p>This design ensures that the common case (many <code class="language-plaintext highlighter-rouge">SELECT</code>s on the same table)
+never touches the shared lock hash table or its partition LWLock.</p>
+
+<h2 id="partitioning">Partitioning</h2>
+
+<p>The lock manager’s shared hash tables are divided into 16 partitions
+(<code class="language-plaintext highlighter-rouge">NUM_LOCK_PARTITIONS = 16</code>), each protected by its own LWLock:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="cp">#define LockHashPartition(hashcode)  ((hashcode) % NUM_LOCK_PARTITIONS)
+#define LockHashPartitionLock(hashcode) \
+    (&amp;MainLWLockArray[LOCK_MANAGER_LWLOCK_OFFSET + \
+        LockHashPartition(hashcode)].lock)
+</span></code></pre></div></div>
+
+<p>Normal lock acquisition and release only touch one partition. Deadlock
+detection acquires all 16 partition locks in order (to avoid LWLock deadlock).</p>
+
+<h2 id="group-locking-parallel-query">Group Locking (Parallel Query)</h2>
+
+<p>In parallel query, the leader and workers share a lock group. Locks held by
+any member of the group are considered non-conflicting with requests from
+other members (except for relation extension locks). This prevents
+self-deadlock scenarios where a worker tries to lock a relation the leader
+already holds exclusively.</p>
+
+<p>Group membership is tracked through <code class="language-plaintext highlighter-rouge">PGPROC.lockGroupLeader</code> and
+<code class="language-plaintext highlighter-rouge">PGPROC.lockGroupMembers</code>, protected by a lock-manager partition LWLock
+determined by the leader’s <code class="language-plaintext highlighter-rouge">pgprocno</code>.</p>
+
+<h2 id="advisory-locks">Advisory Locks</h2>
+
+<p>Advisory locks use <code class="language-plaintext highlighter-rouge">USER_LOCKMETHOD</code> and <code class="language-plaintext highlighter-rouge">LOCKTAG_ADVISORY</code>. They share the
+same conflict matrix as regular locks but are entirely application-driven.
+They can be held at session level (surviving transaction boundaries) or at
+transaction level (released at commit/abort).</p>
+
+<h2 id="connections">Connections</h2>
+
+<ul>
+  <li><strong>LWLocks</strong>: Each lock manager partition is protected by an LWLock. The
+fast-path per-backend arrays are also protected by per-backend LWLocks.</li>
+  <li><strong>Deadlock Detection</strong>: Described in the next chapter. Triggered by a timer
+after <code class="language-plaintext highlighter-rouge">DeadlockTimeout</code> milliseconds of waiting.</li>
+  <li><strong>MVCC / Transactions</strong>: Heavyweight locks are released by
+<code class="language-plaintext highlighter-rouge">LockReleaseAll()</code> at transaction commit or abort. The <code class="language-plaintext highlighter-rouge">ResourceOwner</code>
+mechanism tracks which locks belong to which transaction or subtransaction.</li>
+  <li><strong>Hot Standby</strong>: During recovery, the startup process acquires
+<code class="language-plaintext highlighter-rouge">AccessExclusiveLock</code> on behalf of the primary. Regular backends on the
+standby can only acquire locks up to <code class="language-plaintext highlighter-rouge">RowExclusiveLock</code>, ensuring they
+never conflict with each other.</li>
+  <li><strong>pg_locks View</strong>: The <code class="language-plaintext highlighter-rouge">pg_locks</code> system view queries <code class="language-plaintext highlighter-rouge">GetLockStatusData()</code>
+to display all currently held and awaited locks, including fast-path locks.</li>
+</ul>
+
+
+      <hr>
+
+      <!-- Prev / Next / Up navigation -->
+      
+      
+      
+
+      <div class="clearfix" style="margin-top: 2rem;">
+        
+          
+          
+
+          
+            
+            <a class="btn btn-primary float-left" href="/postgresql/05-locking/deadlock-detection.html" title="Deadlock Detection">&larr; Previous</a>
+          
+
+          
+            
+            <a class="btn btn-primary float-right" href="/postgresql/05-locking/lwlocks.html" title="Lightweight Locks">Next &rarr;</a>
+          
+        
+      </div>
+
+      
+      <div style="text-align: center; margin-top: 1rem;">
+        <a href="/postgresql-internals/">&uarr; Back to Table of Contents</a>
+      </div>
+      
+
+    </div>
+  </div>
+</div>
+
+
+  <!-- Footer -->
+
+<hr>
+
+<footer>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <ul class="list-inline text-center">
+          
+          <li class="list-inline-item">
+            <a href="mailto:amitava.dev@proton.me" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="far fa-envelope fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          
+          
+          <li class="list-inline-item">
+            <a href="https://www.linkedin.com/in/amitavaag" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-linkedin fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          <li class="list-inline-item">
+            <a href="https://github.com/ikouchiha47" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-github fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+        </ul>
+
+        <p class="copyright text-muted">
+          Build with: 
+          <a 
+            href="https://github.com/StartBootstrap/startbootstrap-clean-blog-jekyll"
+            class="text-gray"
+            target="_blank">startbootstrap-clean-blog-jekyll</a></p>
+      </div>
+    </div>
+  </div>
+</footer>
+
+
+  <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="/assets/vendor/blog/js/scripts.js"></script>
+
+<script src="/assets/scripts.js"></script>
+
+
+
+
+
+  <script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+
+    document.querySelectorAll('pre > code.language-mermaid').forEach((codeBlock) => {
+      codeBlock.parentElement.outerHTML = `<pre class="mermaid">${codeBlock.textContent}</pre>`;
+    });
+
+
+    mermaid.initialize({ startOnLoad: true, theme: 'forest' });
+</script>
+
+
+  
+
+</body>
+
+</html>

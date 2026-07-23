@@ -1,0 +1,430 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+  <title>
+    Visibility Map - iko&#39;s logs
+    
+  </title>
+
+  <meta name="description" content="">
+  <meta property="og:description" content="">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Visibility Map">
+  <meta property="og:url" content="https://ikouchiha47.github.io/postgresql/01-storage/visibility-map.html">
+
+  
+
+  <link href='https://fonts.googleapis.com/css?family=Lora:400,700,400italic,700italic' rel='stylesheet' type='text/css'>
+  <link href='https://fonts.googleapis.com/css?family=Open+Sans:300italic,400italic,600italic,700italic,800italic,400,300,600,700,800' rel='stylesheet' type='text/css'>
+
+  <!-- <script src="https://use.fontawesome.com/releases/v5.15.3/js/all.js" crossorigin="anonymous"></script> -->
+  <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.15.4/css/all.css" integrity="sha384-DyZ88mC6Up2uqS4h/KRgHuoeGwBcD4Ng9SiP4dIRy0EXTlnuz47vAwmeGwVChigm" crossorigin="anonymous"/>
+
+  <link rel="stylesheet" href="/assets/main.css">
+  <link rel="canonical" href="https://ikouchiha47.github.io/postgresql/01-storage/visibility-map.html">
+  <link rel="alternate" type="application/rss+xml" title="iko&#39;s logs" href="/feed.xml">
+
+  <meta name="google-site-verification" content="lWkg6gIxJgzEKX_5XnhcxCtPE9QknaimFWWos_dTvPM" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fira+Sans:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Inconsolata:wght@200..900&family=Jersey+25&family=Kanit:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Merriweather+Sans:ital,wght@0,300..800;1,300..800&family=Nanum+Gothic+Coding&family=Space+Grotesk:wght@300..700&family=Titillium+Web:ital,wght@0,200;0,300;0,400;0,600;0,700;0,900;1,200;1,300;1,400;1,600;1,700&display=swap" rel="stylesheet">
+
+</head>
+
+
+<body>
+
+  <!-- Navigation -->
+<nav class="navbar navbar-expand-lg navbar-light fixed-top" id="mainNav">
+  <div class="container">
+    <a class="navbar-brand" href="/">iko&#39;s logs</a>
+    <button class="navbar-toggler navbar-toggler-right" type="button" data-toggle="collapse" data-target="#navbarResponsive" aria-controls="navbarResponsive" aria-expanded="false" aria-label="Toggle navigation">
+      Menu
+      <i class="fa fa-bars"></i>
+    </button>
+    <div class="collapse navbar-collapse" id="navbarResponsive">
+      <ul class="navbar-nav ml-auto">
+        <li class="nav-item">
+          <a class="nav-link" href="/">Home</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/about">About</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/posts">Posts</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/contact">Contact</a>
+        </li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+
+  <!-- Page Header -->
+
+<header class="masthead">
+
+  <div class="overlay"></div>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <div class="post-heading">
+          <h1>Visibility Map</h1>
+          
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="container space-grotesk">
+  <div class="row">
+    <div class="col-lg-8 col-md-10 mx-auto">
+
+      <!-- Breadcrumb -->
+      <nav aria-label="breadcrumb" style="margin-bottom: 1.5rem;">
+        <ol class="breadcrumb" style="background: transparent; padding: 0;">
+          
+            <li class="breadcrumb-item"><a href="/postgresql-internals/">PostgreSQL Internals Deep Dive</a></li>
+          
+          
+            
+              <li class="breadcrumb-item"><a href="/postgresql/01-storage/">Storage Engine</a></li>
+            
+          
+          <li class="breadcrumb-item active" aria-current="page">Visibility Map</li>
+        </ol>
+      </nav>
+
+      <h1 id="visibility-map">Visibility Map</h1>
+
+<p>The Visibility Map (VM) is a per-relation bitmap that tracks two properties for each heap page: whether all tuples on the page are visible to all transactions (all-visible), and whether all tuples are completely frozen (all-frozen). These bits enable two major optimizations: VACUUM can skip clean pages, and index-only scans can avoid heap fetches.</p>
+
+<h2 id="overview">Overview</h2>
+
+<p>The VM is stored in a dedicated fork (<code class="language-plaintext highlighter-rouge">VISIBILITYMAP_FORKNUM</code>, file suffix <code class="language-plaintext highlighter-rouge">_vm</code>). It uses <strong>2 bits per heap page</strong>: one for all-visible and one for all-frozen. A single VM page (8 KB minus the standard page header) can therefore track:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>MAPSIZE = BLCKSZ - MAXALIGN(SizeOfPageHeaderData)
+        = 8192 - 24 = 8168 bytes (approximately)
+
+HEAPBLOCKS_PER_PAGE = MAPSIZE * (8 bits / 2 bits per block)
+                    = 8168 * 4
+                    = 32672 heap pages per VM page
+</code></pre></div></div>
+
+<p>This means a single 8 KB VM page covers about 256 MB of heap data (<code class="language-plaintext highlighter-rouge">32672 * 8 KB</code>).</p>
+
+<p>The VM is <strong>conservative</strong>: a set bit guarantees the property holds, but a clear bit means nothing – the page might still be all-visible, we just have not confirmed it. Clearing bits is cheap and safe; setting bits requires holding a buffer lock on the heap page and writing WAL.</p>
+
+<h2 id="key-source-files">Key Source Files</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>File</th>
+      <th>Purpose</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/access/visibilitymap.h</code></td>
+      <td>Public API: <code class="language-plaintext highlighter-rouge">visibilitymap_set()</code>, <code class="language-plaintext highlighter-rouge">visibilitymap_get_status()</code>, <code class="language-plaintext highlighter-rouge">visibilitymap_count()</code></td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/access/heap/visibilitymap.c</code></td>
+      <td>All VM implementation: bit manipulation, locking protocol, WAL logging</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/storage/bufpage.h</code></td>
+      <td><code class="language-plaintext highlighter-rouge">PD_ALL_VISIBLE</code> flag in <code class="language-plaintext highlighter-rouge">PageHeaderData.pd_flags</code></td>
+    </tr>
+  </tbody>
+</table>
+
+<h2 id="how-it-works">How It Works</h2>
+
+<h3 id="bit-layout">Bit Layout</h3>
+
+<p>Each heap page has two bits in the VM:</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>Bit</th>
+      <th>Name</th>
+      <th>Meaning</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Bit 0</td>
+      <td><code class="language-plaintext highlighter-rouge">VISIBILITYMAP_ALL_VISIBLE</code></td>
+      <td>All tuples on the page are visible to every snapshot</td>
+    </tr>
+    <tr>
+      <td>Bit 1</td>
+      <td><code class="language-plaintext highlighter-rouge">VISIBILITYMAP_ALL_FROZEN</code></td>
+      <td>All tuples on the page are completely frozen (xmin committed and old enough)</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>The all-frozen bit is only set when all-visible is also set. The bits are packed consecutively:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>Byte N:  [page3_frozen, page3_visible, page2_frozen, page2_visible,
+          page1_frozen, page1_visible, page0_frozen, page0_visible]
+</code></pre></div></div>
+
+<p>Mapping formulas from <code class="language-plaintext highlighter-rouge">visibilitymap.c</code>:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="cp">#define HEAPBLK_TO_MAPBLOCK(x)  ((x) / HEAPBLOCKS_PER_PAGE)
+#define HEAPBLK_TO_MAPBYTE(x)   (((x) % HEAPBLOCKS_PER_PAGE) / HEAPBLOCKS_PER_BYTE)
+#define HEAPBLK_TO_OFFSET(x)    (((x) % HEAPBLOCKS_PER_BYTE) * BITS_PER_HEAPBLOCK)
+</span></code></pre></div></div>
+
+<h3 id="setting-bits-vacuum">Setting Bits (VACUUM)</h3>
+
+<p>Setting a VM bit is the more complex operation because it must be crash-safe:</p>
+
+<pre><code class="language-mermaid">sequenceDiagram
+    participant V as VACUUM
+    participant HP as Heap Page Buffer
+    participant VP as VM Page Buffer
+    participant W as WAL
+
+    V-&gt;&gt;HP: LockBuffer(EXCLUSIVE)
+    V-&gt;&gt;V: Confirm all tuples are visible/frozen
+    V-&gt;&gt;HP: Set PD_ALL_VISIBLE in pd_flags
+    V-&gt;&gt;VP: Pin VM page (visibilitymap_pin)
+    V-&gt;&gt;V: START_CRIT_SECTION
+    V-&gt;&gt;VP: Set bit(s) in VM page
+    V-&gt;&gt;VP: MarkBufferDirty()
+    V-&gt;&gt;W: XLogInsert(XLOG_HEAP2_VISIBLE)
+    Note over VP,W: WAL record contains both&lt;br/&gt;heap page LSN and VM page LSN
+    V-&gt;&gt;VP: Update VM page LSN
+    V-&gt;&gt;V: END_CRIT_SECTION
+    V-&gt;&gt;HP: UnlockBuffer()
+</code></pre>
+
+<p>The WAL record is essential because of a race condition: if the VM page reaches disk before the heap page, and a crash occurs, recovery must be able to re-set the VM bit. The WAL record for <code class="language-plaintext highlighter-rouge">XLOG_HEAP2_VISIBLE</code> contains the information needed to do this.</p>
+
+<h3 id="clearing-bits-heapam">Clearing Bits (heapam)</h3>
+
+<p>Clearing bits is simpler and does <strong>not</strong> require WAL logging. When any modification makes a page no longer all-visible (INSERT, UPDATE, DELETE, or setting hint bits on a tuple that was not previously committed):</p>
+
+<ol>
+  <li>Check <code class="language-plaintext highlighter-rouge">PD_ALL_VISIBLE</code> flag on the heap page.</li>
+  <li>If set, clear <code class="language-plaintext highlighter-rouge">PD_ALL_VISIBLE</code> on the heap page.</li>
+  <li>Call <code class="language-plaintext highlighter-rouge">visibilitymap_clear()</code> to clear both bits in the VM.</li>
+</ol>
+
+<p>This is safe without WAL because clearing a bit is always correct – it might cause extra work (VACUUM revisiting the page, index scan doing a heap fetch) but never causes incorrect results.</p>
+
+<h3 id="index-only-scans">Index-Only Scans</h3>
+
+<p>The VM’s most impactful optimization is enabling <strong>index-only scans</strong>. When an index contains all columns needed by a query, PostgreSQL can return results directly from the index without fetching heap tuples – but only if it can confirm the tuples are visible.</p>
+
+<p>The index-only scan algorithm:</p>
+
+<pre><code class="language-mermaid">flowchart TD
+    A[Index scan finds entry&lt;br/&gt;with TID = block B, offset N] --&gt; B{VM bit for block B&lt;br/&gt;all-visible?}
+    B --&gt;|Yes| C[Return data from index entry&lt;br/&gt;No heap fetch needed]
+    B --&gt;|No| D[Fetch heap tuple at TID]
+    D --&gt; E{Tuple visible to&lt;br/&gt;current snapshot?}
+    E --&gt;|Yes| F[Return data from heap tuple]
+    E --&gt;|No| G[Skip tuple]
+</code></pre>
+
+<p>This optimization is transformative for read-heavy workloads on tables that are mostly static. If 99% of pages are all-visible, an index-only scan avoids 99% of heap I/O.</p>
+
+<p>The <code class="language-plaintext highlighter-rouge">pg_stat_user_tables.idx_tup_fetch</code> counter (index tuples that required a heap fetch) versus <code class="language-plaintext highlighter-rouge">pg_stat_user_indexes.idx_tup_read</code> (index tuples scanned) reveals how effective the VM is for index-only scans.</p>
+
+<h3 id="vacuum-skip-optimization">VACUUM Skip Optimization</h3>
+
+<p>When VACUUM scans a relation, it checks the VM before processing each page:</p>
+
+<ul>
+  <li><strong>All-visible and all-frozen</strong>: Skip entirely. No dead tuples possible, and no freezing needed.</li>
+  <li><strong>All-visible but not all-frozen</strong>: Skip dead tuple removal, but may need to freeze old tuples (during aggressive/anti-wraparound VACUUM).</li>
+  <li><strong>Neither bit set</strong>: Full processing – check for dead tuples, update FSM, potentially set VM bits after cleanup.</li>
+</ul>
+
+<p>This is why VACUUM on a mostly-clean table is fast: it only has to process the pages that have been modified since the last VACUUM.</p>
+
+<h3 id="relation-between-pd_all_visible-and-vm-bit">Relation Between PD_ALL_VISIBLE and VM Bit</h3>
+
+<p>There are two representations of “all-visible”:</p>
+<ol>
+  <li><code class="language-plaintext highlighter-rouge">PD_ALL_VISIBLE</code> in <code class="language-plaintext highlighter-rouge">pd_flags</code> on the heap page itself.</li>
+  <li>The all-visible bit in the VM.</li>
+</ol>
+
+<p>These are set together by VACUUM, but cleared separately. The heap page flag is the authoritative source; the VM bit is derived from it. When a modification clears <code class="language-plaintext highlighter-rouge">PD_ALL_VISIBLE</code> on the heap page, it also clears the VM bit. But if only the VM bit were lost (e.g., VM page corruption), the system would still operate correctly – just with reduced performance until VACUUM re-sets the bits.</p>
+
+<h2 id="key-data-structures">Key Data Structures</h2>
+
+<p>The VM does not have its own dedicated struct. It uses:</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>Structure</th>
+      <th>Header</th>
+      <th>Role in VM</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">PageHeaderData</code></td>
+      <td><code class="language-plaintext highlighter-rouge">bufpage.h</code></td>
+      <td>Standard page header for VM pages; content area is the raw bitmap</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">pd_flags</code></td>
+      <td><code class="language-plaintext highlighter-rouge">bufpage.h</code></td>
+      <td><code class="language-plaintext highlighter-rouge">PD_ALL_VISIBLE</code> (0x0004) on heap pages mirrors the VM all-visible bit</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>The VM page content is simply a raw byte array (no <code class="language-plaintext highlighter-rouge">FSMPageData</code>-style wrapper). The content starts at <code class="language-plaintext highlighter-rouge">MAXALIGN(SizeOfPageHeaderData)</code> and extends to the end of the page.</p>
+
+<h2 id="connections">Connections</h2>
+
+<ul>
+  <li><strong>VACUUM</strong>: The primary writer of VM bits. Lazy VACUUM sets all-visible; aggressive VACUUM sets all-frozen. The skip optimization depends entirely on the VM.</li>
+  <li><strong>Index-Only Scans</strong>: Consult <code class="language-plaintext highlighter-rouge">visibilitymap_get_status()</code> to decide whether a heap fetch is needed.</li>
+  <li><strong>Page Layout</strong>: <code class="language-plaintext highlighter-rouge">PD_ALL_VISIBLE</code> in <code class="language-plaintext highlighter-rouge">pd_flags</code> is the page-level mirror of the VM bit. It must be kept in sync.</li>
+  <li><strong>smgr and Forks</strong>: The VM is fork number 2 (<code class="language-plaintext highlighter-rouge">VISIBILITYMAP_FORKNUM</code>), stored as <code class="language-plaintext highlighter-rouge">&lt;relfilenum&gt;_vm</code> on disk.</li>
+  <li><strong>WAL</strong>: Setting VM bits is WAL-logged (<code class="language-plaintext highlighter-rouge">XLOG_HEAP2_VISIBLE</code>) for crash safety. Clearing is not WAL-logged.</li>
+  <li><strong>Free Space Map</strong>: The FSM and VM are complementary per-relation metadata forks. VACUUM updates both during its scan.</li>
+  <li><strong>Autovacuum</strong>: Monitors table modification counts to trigger VACUUM, which in turn maintains the VM. Tables with aggressive insert/update patterns will have fewer all-visible pages.</li>
+</ul>
+
+
+      <hr>
+
+      <!-- Prev / Next / Up navigation -->
+      
+      
+      
+
+      <div class="clearfix" style="margin-top: 2rem;">
+        
+          
+          
+
+          
+            
+            <a class="btn btn-primary float-left" href="/postgresql/01-storage/smgr-and-forks.html" title="smgr and Forks">&larr; Previous</a>
+          
+
+          
+            
+            <a class="btn btn-primary float-right" href="/postgresql/02-access-methods/" title="Access Methods">Next &rarr;</a>
+          
+        
+      </div>
+
+      
+      <div style="text-align: center; margin-top: 1rem;">
+        <a href="/postgresql-internals/">&uarr; Back to Table of Contents</a>
+      </div>
+      
+
+    </div>
+  </div>
+</div>
+
+
+  <!-- Footer -->
+
+<hr>
+
+<footer>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <ul class="list-inline text-center">
+          
+          <li class="list-inline-item">
+            <a href="mailto:amitava.dev@proton.me" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="far fa-envelope fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          
+          
+          <li class="list-inline-item">
+            <a href="https://www.linkedin.com/in/amitavaag" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-linkedin fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          <li class="list-inline-item">
+            <a href="https://github.com/ikouchiha47" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-github fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+        </ul>
+
+        <p class="copyright text-muted">
+          Build with: 
+          <a 
+            href="https://github.com/StartBootstrap/startbootstrap-clean-blog-jekyll"
+            class="text-gray"
+            target="_blank">startbootstrap-clean-blog-jekyll</a></p>
+      </div>
+    </div>
+  </div>
+</footer>
+
+
+  <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="/assets/vendor/blog/js/scripts.js"></script>
+
+<script src="/assets/scripts.js"></script>
+
+
+
+
+
+  <script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+
+    document.querySelectorAll('pre > code.language-mermaid').forEach((codeBlock) => {
+      codeBlock.parentElement.outerHTML = `<pre class="mermaid">${codeBlock.textContent}</pre>`;
+    });
+
+
+    mermaid.initialize({ startOnLoad: true, theme: 'forest' });
+</script>
+
+
+  
+
+</body>
+
+</html>

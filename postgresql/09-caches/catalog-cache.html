@@ -1,0 +1,440 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+  <title>
+    Catalog Cache - iko&#39;s logs
+    
+  </title>
+
+  <meta name="description" content="">
+  <meta property="og:description" content="">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Catalog Cache">
+  <meta property="og:url" content="https://ikouchiha47.github.io/postgresql/09-caches/catalog-cache.html">
+
+  
+
+  <link href='https://fonts.googleapis.com/css?family=Lora:400,700,400italic,700italic' rel='stylesheet' type='text/css'>
+  <link href='https://fonts.googleapis.com/css?family=Open+Sans:300italic,400italic,600italic,700italic,800italic,400,300,600,700,800' rel='stylesheet' type='text/css'>
+
+  <!-- <script src="https://use.fontawesome.com/releases/v5.15.3/js/all.js" crossorigin="anonymous"></script> -->
+  <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.15.4/css/all.css" integrity="sha384-DyZ88mC6Up2uqS4h/KRgHuoeGwBcD4Ng9SiP4dIRy0EXTlnuz47vAwmeGwVChigm" crossorigin="anonymous"/>
+
+  <link rel="stylesheet" href="/assets/main.css">
+  <link rel="canonical" href="https://ikouchiha47.github.io/postgresql/09-caches/catalog-cache.html">
+  <link rel="alternate" type="application/rss+xml" title="iko&#39;s logs" href="/feed.xml">
+
+  <meta name="google-site-verification" content="lWkg6gIxJgzEKX_5XnhcxCtPE9QknaimFWWos_dTvPM" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fira+Sans:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Inconsolata:wght@200..900&family=Jersey+25&family=Kanit:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Merriweather+Sans:ital,wght@0,300..800;1,300..800&family=Nanum+Gothic+Coding&family=Space+Grotesk:wght@300..700&family=Titillium+Web:ital,wght@0,200;0,300;0,400;0,600;0,700;0,900;1,200;1,300;1,400;1,600;1,700&display=swap" rel="stylesheet">
+
+</head>
+
+
+<body>
+
+  <!-- Navigation -->
+<nav class="navbar navbar-expand-lg navbar-light fixed-top" id="mainNav">
+  <div class="container">
+    <a class="navbar-brand" href="/">iko&#39;s logs</a>
+    <button class="navbar-toggler navbar-toggler-right" type="button" data-toggle="collapse" data-target="#navbarResponsive" aria-controls="navbarResponsive" aria-expanded="false" aria-label="Toggle navigation">
+      Menu
+      <i class="fa fa-bars"></i>
+    </button>
+    <div class="collapse navbar-collapse" id="navbarResponsive">
+      <ul class="navbar-nav ml-auto">
+        <li class="nav-item">
+          <a class="nav-link" href="/">Home</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/about">About</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/posts">Posts</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/contact">Contact</a>
+        </li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+
+  <!-- Page Header -->
+
+<header class="masthead">
+
+  <div class="overlay"></div>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <div class="post-heading">
+          <h1>Catalog Cache</h1>
+          
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="container space-grotesk">
+  <div class="row">
+    <div class="col-lg-8 col-md-10 mx-auto">
+
+      <!-- Breadcrumb -->
+      <nav aria-label="breadcrumb" style="margin-bottom: 1.5rem;">
+        <ol class="breadcrumb" style="background: transparent; padding: 0;">
+          
+            <li class="breadcrumb-item"><a href="/postgresql-internals/">PostgreSQL Internals Deep Dive</a></li>
+          
+          
+            
+              <li class="breadcrumb-item"><a href="/postgresql/09-caches/">Caches</a></li>
+            
+          
+          <li class="breadcrumb-item active" aria-current="page">Catalog Cache</li>
+        </ol>
+      </nav>
+
+      <h1 id="catalog-cache-catcache--syscache">Catalog Cache (catcache &amp; syscache)</h1>
+
+<p>PostgreSQL’s system catalogs (<code class="language-plaintext highlighter-rouge">pg_class</code>, <code class="language-plaintext highlighter-rouge">pg_attribute</code>, <code class="language-plaintext highlighter-rouge">pg_proc</code>, <code class="language-plaintext highlighter-rouge">pg_type</code>, and dozens more) are ordinary heap tables. The <strong>catalog cache</strong> (catcache) provides a per-backend, in-memory hash table that avoids repeated heap scans for frequently accessed catalog tuples. The <strong>system cache</strong> (syscache) is a thin naming layer on top of catcache that maps symbolic cache identifiers (like <code class="language-plaintext highlighter-rouge">PROCOID</code> or <code class="language-plaintext highlighter-rouge">RELOID</code>) to specific catcache instances.</p>
+
+<h2 id="overview">Overview</h2>
+
+<p>Every backend maintains its own private set of catcaches. There are roughly 80+ distinct caches (one per unique index on a system catalog that warrants caching). Each catcache is a hash table keyed by 1-4 columns that correspond to the columns of a unique index on the underlying catalog.</p>
+
+<p>A lookup proceeds as:</p>
+<ol>
+  <li>Hash the search keys.</li>
+  <li>Probe the hash bucket.</li>
+  <li>On hit, return the cached <code class="language-plaintext highlighter-rouge">HeapTuple</code> (bumping the reference count).</li>
+  <li>On miss, perform an index scan of the catalog table, insert the result into the cache, and return it.</li>
+  <li>If the index scan finds nothing, insert a <strong>negative cache entry</strong> – a sentinel proving the tuple does not exist.</li>
+</ol>
+
+<h2 id="key-source-files">Key Source Files</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>File</th>
+      <th>Role</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/utils/cache/catcache.c</code></td>
+      <td>Core hash table implementation, lookup, insertion, invalidation</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/utils/cache/syscache.c</code></td>
+      <td>Named cache IDs, <code class="language-plaintext highlighter-rouge">SearchSysCache*()</code> convenience functions</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/utils/catcache.h</code></td>
+      <td><code class="language-plaintext highlighter-rouge">CatCache</code>, <code class="language-plaintext highlighter-rouge">CatCTup</code>, <code class="language-plaintext highlighter-rouge">CatCList</code>, <code class="language-plaintext highlighter-rouge">CatCacheHeader</code> structs</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/utils/syscache.h</code></td>
+      <td><code class="language-plaintext highlighter-rouge">SysCacheIdentifier</code> enum, <code class="language-plaintext highlighter-rouge">SearchSysCache1..4()</code> prototypes</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/utils/cache/lsyscache.c</code></td>
+      <td>Higher-level convenience wrappers (e.g., <code class="language-plaintext highlighter-rouge">get_rel_name()</code>)</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/catalog/syscache_ids.h</code></td>
+      <td>Auto-generated enum of all cache IDs</td>
+    </tr>
+  </tbody>
+</table>
+
+<h2 id="how-it-works">How It Works</h2>
+
+<h3 id="initialization">Initialization</h3>
+
+<p>During backend startup, <code class="language-plaintext highlighter-rouge">InitCatalogCache()</code> (in <code class="language-plaintext highlighter-rouge">syscache.c</code>) iterates over the <code class="language-plaintext highlighter-rouge">cacheinfo[]</code> array – a static table that maps each <code class="language-plaintext highlighter-rouge">SysCacheIdentifier</code> to its catalog OID, index OID, key columns, and initial bucket count. For each entry it calls <code class="language-plaintext highlighter-rouge">InitCatCache()</code>, which allocates the <code class="language-plaintext highlighter-rouge">CatCache</code> struct but does <strong>not</strong> yet open the catalog or read its <code class="language-plaintext highlighter-rouge">TupleDesc</code>. That deferred work happens on first use via <code class="language-plaintext highlighter-rouge">CatalogCacheInitializeCache()</code>.</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="cm">/* From syscache.c -- the cache descriptor array is generated from
+   MAKE_SYSCACHE macros in catalog header files */</span>
+<span class="k">static</span> <span class="n">CatCache</span> <span class="o">*</span><span class="n">SysCache</span><span class="p">[</span><span class="n">SysCacheSize</span><span class="p">];</span>
+</code></pre></div></div>
+
+<h3 id="lookup-path-searchcatcache">Lookup Path: SearchCatCache</h3>
+
+<p>The hot path is <code class="language-plaintext highlighter-rouge">SearchCatCacheInternal()</code>, called by the public <code class="language-plaintext highlighter-rouge">SearchCatCache1()</code> through <code class="language-plaintext highlighter-rouge">SearchCatCache4()</code> functions:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>SearchSysCache1(RELOID, relid)
+  -&gt; SearchCatCache1(SysCache[RELOID], relid)
+    -&gt; SearchCatCacheInternal(cache, 1, relid, 0, 0, 0)
+      1. Compute hash: CatalogCacheComputeHashValue()
+      2. Probe bucket: HASH_INDEX(hash, cc_nbuckets)
+      3. Walk dlist looking for matching keys
+      4. Hit -&gt; move to front of LRU list, bump refcount, return
+      5. Miss -&gt; SearchCatCacheMiss()
+            -&gt; index scan of catalog
+            -&gt; CatalogCacheCreateEntry() to insert result
+            -&gt; return new entry (or negative entry if not found)
+</code></pre></div></div>
+
+<p>The hash table uses <strong>power-of-2 sizing</strong> with a bitmask (<code class="language-plaintext highlighter-rouge">h &amp; (sz - 1)</code>) rather than modulo. Buckets are doubly-linked lists (<code class="language-plaintext highlighter-rouge">dlist_head</code>) maintained in LRU order so repeated lookups of the same key hit the list head.</p>
+
+<h3 id="negative-caching">Negative Caching</h3>
+
+<p>When a search finds no matching tuple, catcache inserts a <code class="language-plaintext highlighter-rouge">CatCTup</code> with <code class="language-plaintext highlighter-rouge">negative = true</code> and no tuple data. Subsequent lookups for the same key return <code class="language-plaintext highlighter-rouge">NULL</code> immediately without touching the catalog. This is critical for performance in scenarios like function resolution, where the parser may probe for overloads that do not exist.</p>
+
+<p>A negative entry is invalidated just like a positive one – via hash value match in <code class="language-plaintext highlighter-rouge">CatCacheInvalidate()</code>.</p>
+
+<h3 id="list-searches-searchcatcachelist">List Searches: SearchCatCacheList</h3>
+
+<p>Some lookups need all tuples matching a partial key (e.g., all attributes of a relation). <code class="language-plaintext highlighter-rouge">SearchCatCacheList()</code> returns a <code class="language-plaintext highlighter-rouge">CatCList</code> – an array of <code class="language-plaintext highlighter-rouge">CatCTup</code> pointers for all matching tuples. List entries have their own hash table (<code class="language-plaintext highlighter-rouge">cc_lbucket</code>) and are separately reference-counted.</p>
+
+<h3 id="reference-counting-and-the-dead-flag">Reference Counting and the “Dead” Flag</h3>
+
+<p>Every <code class="language-plaintext highlighter-rouge">CatCTup</code> has a <code class="language-plaintext highlighter-rouge">refcount</code>. Callers receive a reference via <code class="language-plaintext highlighter-rouge">SearchSysCache*()</code> and must call <code class="language-plaintext highlighter-rouge">ReleaseSysCache()</code> when done. When an invalidation arrives, the entry is marked <code class="language-plaintext highlighter-rouge">dead = true</code>. A dead entry is invisible to new searches but is not freed until its refcount drops to zero. This prevents use-after-free in code that holds a pointer across operations that might trigger invalidation.</p>
+
+<p class="warning">Forgetting to call <code class="language-plaintext highlighter-rouge">ReleaseSysCache()</code> causes a resource leak that is detected by the ResourceOwner system at transaction end. The backend will emit a WARNING and force-release the reference.</p>
+
+<h3 id="invalidation">Invalidation</h3>
+
+<p><code class="language-plaintext highlighter-rouge">CatCacheInvalidate(cache, hashValue)</code> scans the hash bucket for entries whose hash matches and marks them dead (or removes them if refcount is zero). It also scans the <code class="language-plaintext highlighter-rouge">CatCList</code> entries. The actual invalidation is triggered by the <code class="language-plaintext highlighter-rouge">inval.c</code> dispatcher, which receives sinval messages and calls <code class="language-plaintext highlighter-rouge">SysCacheInvalidate()</code> for the appropriate cache ID and hash value.</p>
+
+<h3 id="create-in-progress-protection">Create-in-Progress Protection</h3>
+
+<p>A subtle race exists: what if an invalidation message arrives while we are in the middle of building a new cache entry (between the catalog scan and the insertion)? The <code class="language-plaintext highlighter-rouge">CatCInProgress</code> stack handles this. Before performing a catalog scan for a miss, the code pushes a <code class="language-plaintext highlighter-rouge">CatCInProgress</code> entry. If an invalidation callback fires during the scan and matches the in-progress entry’s hash, it sets <code class="language-plaintext highlighter-rouge">dead = true</code> on the stack entry. After insertion, the code checks this flag and, if set, immediately marks the new entry as dead.</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">typedef</span> <span class="k">struct</span> <span class="n">CatCInProgress</span>
+<span class="p">{</span>
+    <span class="n">CatCache</span>   <span class="o">*</span><span class="n">cache</span><span class="p">;</span>
+    <span class="n">uint32</span>      <span class="n">hash_value</span><span class="p">;</span>
+    <span class="n">bool</span>        <span class="n">list</span><span class="p">;</span>
+    <span class="n">bool</span>        <span class="n">dead</span><span class="p">;</span>       <span class="cm">/* set by invalidation callback */</span>
+    <span class="k">struct</span> <span class="n">CatCInProgress</span> <span class="o">*</span><span class="n">next</span><span class="p">;</span>
+<span class="p">}</span> <span class="n">CatCInProgress</span><span class="p">;</span>
+</code></pre></div></div>
+
+<h2 id="key-data-structures">Key Data Structures</h2>
+
+<h3 id="catcache">CatCache</h3>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>CatCache
+  +-- id                  cache identifier (SysCacheIdentifier)
+  +-- cc_nbuckets         number of hash buckets (power of 2)
+  +-- cc_bucket[]         array of dlist_head (hash chains)
+  +-- cc_nkeys            number of key columns (1..4)
+  +-- cc_keyno[]          attribute numbers of key columns
+  +-- cc_hashfunc[]       hash function for each key
+  +-- cc_fastequal[]      equality function for each key
+  +-- cc_reloid           OID of the cached catalog relation
+  +-- cc_indexoid          OID of the underlying unique index
+  +-- cc_ntup             current number of cached tuples
+  +-- cc_nlbuckets        number of list-search hash buckets
+  +-- cc_lbucket[]        hash chains for CatCList entries
+</code></pre></div></div>
+
+<h3 id="catctup-individual-cached-tuple">CatCTup (individual cached tuple)</h3>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>CatCTup
+  +-- cache_elem          dlist node in hash bucket chain
+  +-- hash_value          hash of lookup keys
+  +-- keys[4]             cached key datums
+  +-- refcount            active reference count
+  +-- dead                invalidated but not yet freed?
+  +-- negative            is this a negative (not-found) entry?
+  +-- tuple               HeapTupleData with actual tuple data following
+  +-- c_list              pointer to containing CatCList, or NULL
+  +-- my_cache            back-pointer to owning CatCache
+</code></pre></div></div>
+
+<h3 id="catclist-partial-key-list-result">CatCList (partial-key list result)</h3>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>CatCList
+  +-- cache_elem          dlist node in list hash bucket
+  +-- hash_value          hash of partial key
+  +-- keys[4]             partial key datums
+  +-- refcount            active reference count
+  +-- dead                invalidated?
+  +-- ordered             are members in index order?
+  +-- nkeys               number of key columns used for this list
+  +-- n_members           number of matching tuples
+  +-- members[]           flexible array of CatCTup pointers
+</code></pre></div></div>
+
+<h3 id="syscache-lookup-flow">Syscache Lookup Flow</h3>
+
+<pre><code class="language-mermaid">sequenceDiagram
+    participant Caller
+    participant SysCache as syscache.c
+    participant CatCache as catcache.c
+    participant Catalog as pg_class (heap)
+
+    Caller-&gt;&gt;SysCache: SearchSysCache1(RELOID, oid)
+    SysCache-&gt;&gt;CatCache: SearchCatCache1(SysCache[RELOID], oid)
+    CatCache-&gt;&gt;CatCache: hash = ComputeHashValue(oid)
+    CatCache-&gt;&gt;CatCache: probe cc_bucket[hash &amp; mask]
+
+    alt Cache Hit
+        CatCache-&gt;&gt;CatCache: refcount++, move to LRU front
+        CatCache--&gt;&gt;Caller: return HeapTuple
+    else Cache Miss
+        CatCache-&gt;&gt;Catalog: index scan using cc_indexoid
+        alt Tuple Found
+            CatCache-&gt;&gt;CatCache: CatalogCacheCreateEntry(tuple)
+            CatCache--&gt;&gt;Caller: return HeapTuple
+        else Not Found
+            CatCache-&gt;&gt;CatCache: create negative entry
+            CatCache--&gt;&gt;Caller: return NULL
+        end
+    end
+</code></pre>
+
+<h2 id="rehashing">Rehashing</h2>
+
+<p>When the number of entries in a catcache grows large relative to the bucket count, <code class="language-plaintext highlighter-rouge">RehashCatCache()</code> doubles the number of buckets. The threshold is when <code class="language-plaintext highlighter-rouge">cc_ntup</code> exceeds <code class="language-plaintext highlighter-rouge">cc_nbuckets * 2</code>. Since bucket count is always a power of 2, rehashing simply recomputes <code class="language-plaintext highlighter-rouge">HASH_INDEX</code> for each entry and moves it. The same mechanism exists for list buckets via <code class="language-plaintext highlighter-rouge">RehashCatCacheLists()</code>.</p>
+
+<h2 id="catcache_stats">CATCACHE_STATS</h2>
+
+<p>When compiled with <code class="language-plaintext highlighter-rouge">#define CATCACHE_STATS</code>, each <code class="language-plaintext highlighter-rouge">CatCache</code> tracks hit rates, miss rates, negative hits, and invalidation counts. An <code class="language-plaintext highlighter-rouge">on_proc_exit</code> handler prints these statistics to the server log. This is invaluable for diagnosing cache pressure in workloads with many distinct catalog lookups.</p>
+
+<h2 id="the-lsyscachec-convenience-layer">The lsyscache.c Convenience Layer</h2>
+
+<p>Most callers do not use <code class="language-plaintext highlighter-rouge">SearchSysCache*()</code> directly. Instead, they call functions in <code class="language-plaintext highlighter-rouge">lsyscache.c</code> like <code class="language-plaintext highlighter-rouge">get_rel_name()</code>, <code class="language-plaintext highlighter-rouge">get_atttype()</code>, or <code class="language-plaintext highlighter-rouge">get_func_rettype()</code>. These wrappers handle the <code class="language-plaintext highlighter-rouge">SearchSysCache</code> / extract attribute / <code class="language-plaintext highlighter-rouge">ReleaseSysCache</code> pattern in a single call, reducing boilerplate and preventing reference leaks.</p>
+
+<h2 id="connections">Connections</h2>
+
+<ul>
+  <li><strong><a href="relation-cache">Relation Cache</a></strong> – The relcache is built on top of multiple syscache lookups (pg_class, pg_attribute, pg_index, etc.).</li>
+  <li><strong><a href="invalidation">Invalidation</a></strong> – Catcache invalidation is driven by sinval messages dispatched through <code class="language-plaintext highlighter-rouge">inval.c</code>.</li>
+  <li><strong><a href="plan-cache">Plan Cache</a></strong> – Plan invalidation can be triggered by catcache invalidation callbacks registered by <code class="language-plaintext highlighter-rouge">plancache.c</code>.</li>
+  <li><strong>Chapter 1 (Storage)</strong> – Cache misses ultimately read catalog pages through the buffer manager.</li>
+  <li><strong>Chapter 10 (Memory)</strong> – All catcache entries live in <code class="language-plaintext highlighter-rouge">CacheMemoryContext</code>, which persists for the backend’s lifetime.</li>
+</ul>
+
+
+      <hr>
+
+      <!-- Prev / Next / Up navigation -->
+      
+      
+      
+
+      <div class="clearfix" style="margin-top: 2rem;">
+        
+          
+          
+
+          
+            
+            <a class="btn btn-primary float-left" href="/postgresql/09-caches/" title="Caches">&larr; Previous</a>
+          
+
+          
+            
+            <a class="btn btn-primary float-right" href="/postgresql/09-caches/invalidation.html" title="Invalidation">Next &rarr;</a>
+          
+        
+      </div>
+
+      
+      <div style="text-align: center; margin-top: 1rem;">
+        <a href="/postgresql-internals/">&uarr; Back to Table of Contents</a>
+      </div>
+      
+
+    </div>
+  </div>
+</div>
+
+
+  <!-- Footer -->
+
+<hr>
+
+<footer>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <ul class="list-inline text-center">
+          
+          <li class="list-inline-item">
+            <a href="mailto:amitava.dev@proton.me" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="far fa-envelope fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          
+          
+          <li class="list-inline-item">
+            <a href="https://www.linkedin.com/in/amitavaag" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-linkedin fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          <li class="list-inline-item">
+            <a href="https://github.com/ikouchiha47" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-github fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+        </ul>
+
+        <p class="copyright text-muted">
+          Build with: 
+          <a 
+            href="https://github.com/StartBootstrap/startbootstrap-clean-blog-jekyll"
+            class="text-gray"
+            target="_blank">startbootstrap-clean-blog-jekyll</a></p>
+      </div>
+    </div>
+  </div>
+</footer>
+
+
+  <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="/assets/vendor/blog/js/scripts.js"></script>
+
+<script src="/assets/scripts.js"></script>
+
+
+
+
+
+  <script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+
+    document.querySelectorAll('pre > code.language-mermaid').forEach((codeBlock) => {
+      codeBlock.parentElement.outerHTML = `<pre class="mermaid">${codeBlock.textContent}</pre>`;
+    });
+
+
+    mermaid.initialize({ startOnLoad: true, theme: 'forest' });
+</script>
+
+
+  
+
+</body>
+
+</html>

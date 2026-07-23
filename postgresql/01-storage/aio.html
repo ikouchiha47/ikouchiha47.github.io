@@ -1,0 +1,561 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+  <title>
+    Async I/O - iko&#39;s logs
+    
+  </title>
+
+  <meta name="description" content="">
+  <meta property="og:description" content="">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Async I/O">
+  <meta property="og:url" content="https://ikouchiha47.github.io/postgresql/01-storage/aio.html">
+
+  
+
+  <link href='https://fonts.googleapis.com/css?family=Lora:400,700,400italic,700italic' rel='stylesheet' type='text/css'>
+  <link href='https://fonts.googleapis.com/css?family=Open+Sans:300italic,400italic,600italic,700italic,800italic,400,300,600,700,800' rel='stylesheet' type='text/css'>
+
+  <!-- <script src="https://use.fontawesome.com/releases/v5.15.3/js/all.js" crossorigin="anonymous"></script> -->
+  <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.15.4/css/all.css" integrity="sha384-DyZ88mC6Up2uqS4h/KRgHuoeGwBcD4Ng9SiP4dIRy0EXTlnuz47vAwmeGwVChigm" crossorigin="anonymous"/>
+
+  <link rel="stylesheet" href="/assets/main.css">
+  <link rel="canonical" href="https://ikouchiha47.github.io/postgresql/01-storage/aio.html">
+  <link rel="alternate" type="application/rss+xml" title="iko&#39;s logs" href="/feed.xml">
+
+  <meta name="google-site-verification" content="lWkg6gIxJgzEKX_5XnhcxCtPE9QknaimFWWos_dTvPM" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fira+Sans:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Inconsolata:wght@200..900&family=Jersey+25&family=Kanit:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Merriweather+Sans:ital,wght@0,300..800;1,300..800&family=Nanum+Gothic+Coding&family=Space+Grotesk:wght@300..700&family=Titillium+Web:ital,wght@0,200;0,300;0,400;0,600;0,700;0,900;1,200;1,300;1,400;1,600;1,700&display=swap" rel="stylesheet">
+
+</head>
+
+
+<body>
+
+  <!-- Navigation -->
+<nav class="navbar navbar-expand-lg navbar-light fixed-top" id="mainNav">
+  <div class="container">
+    <a class="navbar-brand" href="/">iko&#39;s logs</a>
+    <button class="navbar-toggler navbar-toggler-right" type="button" data-toggle="collapse" data-target="#navbarResponsive" aria-controls="navbarResponsive" aria-expanded="false" aria-label="Toggle navigation">
+      Menu
+      <i class="fa fa-bars"></i>
+    </button>
+    <div class="collapse navbar-collapse" id="navbarResponsive">
+      <ul class="navbar-nav ml-auto">
+        <li class="nav-item">
+          <a class="nav-link" href="/">Home</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/about">About</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/posts">Posts</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/contact">Contact</a>
+        </li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+
+  <!-- Page Header -->
+
+<header class="masthead">
+
+  <div class="overlay"></div>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <div class="post-heading">
+          <h1>Async I/O</h1>
+          
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="container space-grotesk">
+  <div class="row">
+    <div class="col-lg-8 col-md-10 mx-auto">
+
+      <!-- Breadcrumb -->
+      <nav aria-label="breadcrumb" style="margin-bottom: 1.5rem;">
+        <ol class="breadcrumb" style="background: transparent; padding: 0;">
+          
+            <li class="breadcrumb-item"><a href="/postgresql-internals/">PostgreSQL Internals Deep Dive</a></li>
+          
+          
+            
+              <li class="breadcrumb-item"><a href="/postgresql/01-storage/">Storage Engine</a></li>
+            
+          
+          <li class="breadcrumb-item active" aria-current="page">Async I/O</li>
+        </ol>
+      </nav>
+
+      <h1 id="asynchronous-io-framework">Asynchronous I/O Framework</h1>
+
+<p>PostgreSQL 17+ introduces a native asynchronous I/O (AIO) subsystem that replaces the previous reliance on the operating system’s page cache for hiding I/O latency. The framework supports pluggable execution methods (synchronous fallback, worker processes, and io_uring on Linux) and enables the read stream abstraction for look-ahead prefetching.</p>
+
+<h2 id="overview">Overview</h2>
+
+<p>Historically, PostgreSQL performed all I/O synchronously: a backend calling <code class="language-plaintext highlighter-rouge">ReadBuffer()</code> would block until <code class="language-plaintext highlighter-rouge">pread()</code> returned. The OS page cache masked much of this latency, but could not help with operations like <code class="language-plaintext highlighter-rouge">fdatasync()</code> or large sequential scans that outrun the kernel’s read-ahead.</p>
+
+<p>The AIO framework introduces:</p>
+<ul>
+  <li><strong>PgAioHandle</strong>: A shared-memory handle representing one in-flight I/O operation.</li>
+  <li><strong>Pluggable methods</strong>: <code class="language-plaintext highlighter-rouge">IOMETHOD_SYNC</code> (blocking pread/pwrite), <code class="language-plaintext highlighter-rouge">IOMETHOD_WORKER</code> (background I/O workers), and <code class="language-plaintext highlighter-rouge">IOMETHOD_IO_URING</code> (Linux kernel io_uring).</li>
+  <li><strong>Completion callbacks</strong>: Registered per-handle callbacks that update buffer descriptors or other state when I/O completes.</li>
+  <li><strong>Read streams</strong>: A higher-level abstraction that automatically prefetches blocks based on a user-provided callback.</li>
+</ul>
+
+<p>The <code class="language-plaintext highlighter-rouge">io_method</code> GUC selects the execution method. The default is <code class="language-plaintext highlighter-rouge">worker</code>.</p>
+
+<h2 id="key-source-files">Key Source Files</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>File</th>
+      <th>Purpose</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/storage/aio.h</code></td>
+      <td>Public AIO API: <code class="language-plaintext highlighter-rouge">pgaio_io_acquire()</code>, <code class="language-plaintext highlighter-rouge">pgaio_io_start_readv()</code>, enums for methods/ops/targets</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/storage/aio_types.h</code></td>
+      <td>Forward declarations: <code class="language-plaintext highlighter-rouge">PgAioHandle</code>, <code class="language-plaintext highlighter-rouge">PgAioWaitRef</code>, <code class="language-plaintext highlighter-rouge">PgAioReturn</code>, <code class="language-plaintext highlighter-rouge">PgAioResult</code></td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/storage/aio_internal.h</code></td>
+      <td><code class="language-plaintext highlighter-rouge">PgAioHandle</code> struct, <code class="language-plaintext highlighter-rouge">PgAioHandleState</code> enum, internal constants</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/storage/aio/aio.c</code></td>
+      <td>Handle lifecycle: acquire, release, wait, submit</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/storage/aio/aio_io.c</code></td>
+      <td>I/O operation dispatch: <code class="language-plaintext highlighter-rouge">pgaio_io_start_readv()</code>, <code class="language-plaintext highlighter-rouge">pgaio_io_start_writev()</code></td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/storage/aio/aio_callback.c</code></td>
+      <td>Callback registration and invocation</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/storage/aio/aio_target.c</code></td>
+      <td>Target abstraction (currently only smgr)</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/storage/aio/aio_init.c</code></td>
+      <td>Shared memory initialization</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/storage/aio/method_sync.c</code></td>
+      <td>Synchronous I/O method (blocking fallback)</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/storage/aio/method_worker.c</code></td>
+      <td>Worker process I/O method</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/storage/aio/method_io_uring.c</code></td>
+      <td>Linux io_uring I/O method</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/storage/aio/read_stream.c</code></td>
+      <td>Read stream: adaptive look-ahead prefetching</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/include/storage/read_stream.h</code></td>
+      <td>Read stream API: <code class="language-plaintext highlighter-rouge">read_stream_begin_relation()</code>, <code class="language-plaintext highlighter-rouge">read_stream_next_buffer()</code></td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">src/backend/storage/aio/README.md</code></td>
+      <td>Comprehensive design document</td>
+    </tr>
+  </tbody>
+</table>
+
+<h2 id="how-it-works">How It Works</h2>
+
+<h3 id="aio-handle-lifecycle">AIO Handle Lifecycle</h3>
+
+<p>A <code class="language-plaintext highlighter-rouge">PgAioHandle</code> moves through a linear state machine:</p>
+
+<pre><code class="language-mermaid">stateDiagram-v2
+    [*] --&gt; IDLE
+    IDLE --&gt; HANDED_OUT: pgaio_io_acquire()
+    HANDED_OUT --&gt; IDLE: pgaio_io_release()&lt;br/&gt;(cancelled)
+    HANDED_OUT --&gt; DEFINED: pgaio_io_start_readv/writev()
+    DEFINED --&gt; STAGED: stage callbacks called
+    STAGED --&gt; SUBMITTED: submitted to IO method
+    SUBMITTED --&gt; COMPLETED_IO: IO finished
+    COMPLETED_IO --&gt; COMPLETED_SHARED: shared callbacks called
+    COMPLETED_SHARED --&gt; COMPLETED_LOCAL: local callbacks called&lt;br/&gt;(in issuing backend)
+    COMPLETED_LOCAL --&gt; IDLE: handle recycled
+</code></pre>
+
+<h3 id="pgaiohandle-structure">PgAioHandle Structure</h3>
+
+<p>Defined in <code class="language-plaintext highlighter-rouge">src/include/storage/aio_internal.h</code>, this struct lives in shared memory:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">struct</span> <span class="n">PgAioHandle</span>
+<span class="p">{</span>
+    <span class="n">uint8</span>            <span class="n">state</span><span class="p">;</span>         <span class="cm">/* PgAioHandleState */</span>
+    <span class="n">uint8</span>            <span class="n">target</span><span class="p">;</span>        <span class="cm">/* PgAioTargetID (e.g., PGAIO_TID_SMGR) */</span>
+    <span class="n">uint8</span>            <span class="n">op</span><span class="p">;</span>            <span class="cm">/* PgAioOp (READV or WRITEV) */</span>
+    <span class="n">uint8</span>            <span class="n">flags</span><span class="p">;</span>         <span class="cm">/* PgAioHandleFlags bitmask */</span>
+    <span class="n">uint8</span>            <span class="n">num_callbacks</span><span class="p">;</span>
+    <span class="n">uint8</span>            <span class="n">callbacks</span><span class="p">[</span><span class="n">PGAIO_HANDLE_MAX_CALLBACKS</span><span class="p">];</span>  <span class="cm">/* callback IDs */</span>
+    <span class="n">uint8</span>            <span class="n">cb_data</span><span class="p">[</span><span class="n">PGAIO_HANDLE_MAX_CALLBACKS</span><span class="p">];</span>    <span class="cm">/* per-callback data */</span>
+    <span class="cm">/* ... owner info, iovec, result, wait reference, handle data ... */</span>
+<span class="p">};</span>
+</code></pre></div></div>
+
+<p>The struct is kept compact because there is one <code class="language-plaintext highlighter-rouge">PgAioHandle</code> per in-flight I/O slot in shared memory.</p>
+
+<h3 id="io-methods">I/O Methods</h3>
+
+<table>
+  <thead>
+    <tr>
+      <th>Method</th>
+      <th>GUC Value</th>
+      <th>How It Works</th>
+      <th>Best For</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">sync</code></td>
+      <td><code class="language-plaintext highlighter-rouge">io_method=sync</code></td>
+      <td>Blocking <code class="language-plaintext highlighter-rouge">preadv()</code>/<code class="language-plaintext highlighter-rouge">pwritev()</code> in the calling backend</td>
+      <td>Debugging, platforms without worker support</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">worker</code></td>
+      <td><code class="language-plaintext highlighter-rouge">io_method=worker</code></td>
+      <td>I/O is dispatched to a pool of background worker processes</td>
+      <td>Default; works everywhere</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">io_uring</code></td>
+      <td><code class="language-plaintext highlighter-rouge">io_method=io_uring</code></td>
+      <td>Kernel-level async I/O via Linux io_uring</td>
+      <td>Linux with kernel 5.10+; lowest latency</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>The <code class="language-plaintext highlighter-rouge">io_uring</code> method is only available when compiled with <code class="language-plaintext highlighter-rouge">USE_LIBURING</code> and not using <code class="language-plaintext highlighter-rouge">EXEC_BACKEND</code> mode. It submits I/O to a submission queue (SQ) in the kernel, which processes them asynchronously and posts completions to a completion queue (CQ).</p>
+
+<h3 id="completion-callbacks">Completion Callbacks</h3>
+
+<p>Callbacks are identified by <code class="language-plaintext highlighter-rouge">PgAioHandleCallbackID</code> rather than function pointers, because handles live in shared memory and function pointers are not stable across <code class="language-plaintext highlighter-rouge">EXEC_BACKEND</code> processes:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">typedef</span> <span class="k">enum</span> <span class="n">PgAioHandleCallbackID</span>
+<span class="p">{</span>
+    <span class="n">PGAIO_HCB_INVALID</span> <span class="o">=</span> <span class="mi">0</span><span class="p">,</span>
+    <span class="n">PGAIO_HCB_MD_READV</span><span class="p">,</span>              <span class="cm">/* md.c read completion */</span>
+    <span class="n">PGAIO_HCB_SHARED_BUFFER_READV</span><span class="p">,</span>   <span class="cm">/* shared buffer read completion */</span>
+    <span class="n">PGAIO_HCB_LOCAL_BUFFER_READV</span><span class="p">,</span>    <span class="cm">/* local buffer read completion */</span>
+<span class="p">}</span> <span class="n">PgAioHandleCallbackID</span><span class="p">;</span>
+</code></pre></div></div>
+
+<p>Each callback struct provides four hooks:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">struct</span> <span class="n">PgAioHandleCallbacks</span>
+<span class="p">{</span>
+    <span class="n">PgAioHandleCallbackStage</span>    <span class="n">stage</span><span class="p">;</span>            <span class="cm">/* prepare resources before submission */</span>
+    <span class="n">PgAioHandleCallbackComplete</span> <span class="n">complete_shared</span><span class="p">;</span>  <span class="cm">/* update shared state after IO */</span>
+    <span class="n">PgAioHandleCallbackComplete</span> <span class="n">complete_local</span><span class="p">;</span>   <span class="cm">/* update local state in issuing backend */</span>
+    <span class="n">PgAioHandleCallbackReport</span>   <span class="n">report</span><span class="p">;</span>           <span class="cm">/* report errors to the issuing backend */</span>
+<span class="p">};</span>
+</code></pre></div></div>
+
+<p>The <code class="language-plaintext highlighter-rouge">complete_shared</code> callback runs in whichever process completes the I/O (could be a worker), so it can only modify shared memory. The <code class="language-plaintext highlighter-rouge">complete_local</code> callback runs in the original backend and can access process-local state (e.g., local buffer descriptors).</p>
+
+<h3 id="batch-mode">Batch Mode</h3>
+
+<p>For efficiency, multiple I/Os can be batched before submission:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="n">pgaio_enter_batchmode</span><span class="p">();</span>
+
+<span class="cm">/* Acquire and start multiple IOs */</span>
+<span class="k">for</span> <span class="p">(</span><span class="kt">int</span> <span class="n">i</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span> <span class="n">i</span> <span class="o">&lt;</span> <span class="n">n</span><span class="p">;</span> <span class="n">i</span><span class="o">++</span><span class="p">)</span>
+<span class="p">{</span>
+    <span class="n">PgAioHandle</span> <span class="o">*</span><span class="n">ioh</span> <span class="o">=</span> <span class="n">pgaio_io_acquire</span><span class="p">(</span><span class="n">CurrentResourceOwner</span><span class="p">,</span> <span class="o">&amp;</span><span class="n">ioret</span><span class="p">[</span><span class="n">i</span><span class="p">]);</span>
+    <span class="cm">/* configure and start the IO */</span>
+    <span class="n">smgrstartreadv</span><span class="p">(</span><span class="n">ioh</span><span class="p">,</span> <span class="n">smgr</span><span class="p">,</span> <span class="n">forknum</span><span class="p">,</span> <span class="n">blocknum</span> <span class="o">+</span> <span class="n">i</span><span class="p">,</span> <span class="o">&amp;</span><span class="n">pages</span><span class="p">[</span><span class="n">i</span><span class="p">],</span> <span class="mi">1</span><span class="p">);</span>
+<span class="p">}</span>
+
+<span class="n">pgaio_exit_batchmode</span><span class="p">();</span>  <span class="cm">/* submits all staged IOs at once */</span>
+</code></pre></div></div>
+
+<p>Batch submission is particularly beneficial for <code class="language-plaintext highlighter-rouge">io_uring</code>, where the kernel can process multiple requests in a single system call. The maximum batch size is <code class="language-plaintext highlighter-rouge">PGAIO_SUBMIT_BATCH_SIZE = 32</code>.</p>
+
+<p>Caution: while in batch mode, the calling code must not block on anything that could deadlock with an unsubmitted I/O. If blocking is necessary, call <code class="language-plaintext highlighter-rouge">pgaio_submit_staged()</code> first.</p>
+
+<h3 id="pgaioopdata">PgAioOpData</h3>
+
+<p>The operation-specific data for reads and writes:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">typedef</span> <span class="k">union</span>
+<span class="p">{</span>
+    <span class="k">struct</span> <span class="p">{</span>
+        <span class="kt">int</span>      <span class="n">fd</span><span class="p">;</span>            <span class="cm">/* file descriptor */</span>
+        <span class="n">uint16</span>   <span class="n">iov_length</span><span class="p">;</span>    <span class="cm">/* number of iovec entries */</span>
+        <span class="n">uint64</span>   <span class="n">offset</span><span class="p">;</span>        <span class="cm">/* byte offset in file */</span>
+    <span class="p">}</span> <span class="n">read</span><span class="p">;</span>
+
+    <span class="k">struct</span> <span class="p">{</span>
+        <span class="kt">int</span>      <span class="n">fd</span><span class="p">;</span>
+        <span class="n">uint16</span>   <span class="n">iov_length</span><span class="p">;</span>
+        <span class="n">uint64</span>   <span class="n">offset</span><span class="p">;</span>
+    <span class="p">}</span> <span class="n">write</span><span class="p">;</span>
+<span class="p">}</span> <span class="n">PgAioOpData</span><span class="p">;</span>
+</code></pre></div></div>
+
+<h3 id="read-streams">Read Streams</h3>
+
+<p>The read stream is the primary consumer-facing abstraction built on top of AIO. It provides automatic, adaptive look-ahead prefetching:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="cm">/* Create a read stream with a callback that generates block numbers */</span>
+<span class="n">ReadStream</span> <span class="o">*</span><span class="n">stream</span> <span class="o">=</span> <span class="n">read_stream_begin_relation</span><span class="p">(</span>
+    <span class="n">READ_STREAM_DEFAULT</span><span class="p">,</span>
+    <span class="n">strategy</span><span class="p">,</span>           <span class="cm">/* BufferAccessStrategy, e.g., for bulk read ring buffer */</span>
+    <span class="n">rel</span><span class="p">,</span>
+    <span class="n">MAIN_FORKNUM</span><span class="p">,</span>
+    <span class="n">my_block_callback</span><span class="p">,</span>  <span class="cm">/* returns the next block number to read */</span>
+    <span class="n">callback_data</span><span class="p">,</span>
+    <span class="mi">0</span>                   <span class="cm">/* per_buffer_data_size */</span>
+<span class="p">);</span>
+
+<span class="cm">/* Consume buffers one at a time */</span>
+<span class="n">Buffer</span> <span class="n">buf</span><span class="p">;</span>
+<span class="k">while</span> <span class="p">((</span><span class="n">buf</span> <span class="o">=</span> <span class="n">read_stream_next_buffer</span><span class="p">(</span><span class="n">stream</span><span class="p">,</span> <span class="nb">NULL</span><span class="p">))</span> <span class="o">!=</span> <span class="n">InvalidBuffer</span><span class="p">)</span>
+<span class="p">{</span>
+    <span class="cm">/* process the page */</span>
+    <span class="n">ReleaseBuffer</span><span class="p">(</span><span class="n">buf</span><span class="p">);</span>
+<span class="p">}</span>
+
+<span class="n">read_stream_end</span><span class="p">(</span><span class="n">stream</span><span class="p">);</span>
+</code></pre></div></div>
+
+<p>The callback function has the signature:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">typedef</span> <span class="nf">BlockNumber</span> <span class="p">(</span><span class="o">*</span><span class="n">ReadStreamBlockNumberCB</span><span class="p">)(</span>
+    <span class="n">ReadStream</span> <span class="o">*</span><span class="n">stream</span><span class="p">,</span>
+    <span class="kt">void</span> <span class="o">*</span><span class="n">callback_private_data</span><span class="p">,</span>
+    <span class="kt">void</span> <span class="o">*</span><span class="n">per_buffer_data</span>
+<span class="p">);</span>
+</code></pre></div></div>
+
+<p>It returns <code class="language-plaintext highlighter-rouge">InvalidBlockNumber</code> to signal end of stream.</p>
+
+<p><strong>Adaptive look-ahead</strong>: The read stream maintains a circular buffer of pinned pages. It starts with a small look-ahead distance and increases it rapidly when cache misses are detected (I/O is needed), then decreases it gradually when cache hits dominate. This balances prefetching benefit against resource consumption.</p>
+
+<pre><code class="language-mermaid">flowchart LR
+    subgraph "Read Stream Internals"
+        CB["Block Number&lt;br/&gt;Callback"] --&gt;|"block N"| Q["Circular Buffer&lt;br/&gt;of pinned buffers"]
+        Q --&gt;|"StartReadBuffers()"| AIO["AIO Subsystem"]
+        AIO --&gt;|"completion"| Q
+        Q --&gt;|"read_stream_next_buffer()"| CALLER["Caller&lt;br/&gt;(e.g., SeqScan)"]
+    end
+</code></pre>
+
+<p>Read stream flags control behavior:</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>Flag</th>
+      <th>Value</th>
+      <th>Meaning</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">READ_STREAM_DEFAULT</code></td>
+      <td>0x00</td>
+      <td>Standard tuning with adaptive look-ahead</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">READ_STREAM_MAINTENANCE</code></td>
+      <td>0x01</td>
+      <td>Use <code class="language-plaintext highlighter-rouge">maintenance_io_concurrency</code> (for VACUUM, CREATE INDEX)</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">READ_STREAM_SEQUENTIAL</code></td>
+      <td>0x02</td>
+      <td>Disable sequential detection heuristic</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">READ_STREAM_FULL</code></td>
+      <td>0x04</td>
+      <td>Skip ramp-up, immediately use maximum look-ahead</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">READ_STREAM_USE_BATCHING</code></td>
+      <td>0x08</td>
+      <td>Enable AIO batch mode for the callback</td>
+    </tr>
+  </tbody>
+</table>
+
+<h3 id="integration-with-buffer-manager">Integration with Buffer Manager</h3>
+
+<p>The AIO framework integrates with the buffer manager through <code class="language-plaintext highlighter-rouge">StartReadBuffers()</code> and <code class="language-plaintext highlighter-rouge">WaitReadBuffers()</code>. When a read stream determines that blocks need to be fetched from disk:</p>
+
+<ol>
+  <li>It calls <code class="language-plaintext highlighter-rouge">StartReadBuffers()</code> which allocates buffer slots, checks the hash table for hits, and initiates AIO for misses.</li>
+  <li>The <code class="language-plaintext highlighter-rouge">PGAIO_HCB_SHARED_BUFFER_READV</code> callback updates <code class="language-plaintext highlighter-rouge">BufferDesc</code> state (sets <code class="language-plaintext highlighter-rouge">BM_VALID</code>, clears <code class="language-plaintext highlighter-rouge">BM_IO_IN_PROGRESS</code>) when the I/O completes.</li>
+  <li>Before returning a buffer to the caller, <code class="language-plaintext highlighter-rouge">read_stream_next_buffer()</code> calls <code class="language-plaintext highlighter-rouge">WaitReadBuffers()</code> to ensure the I/O has finished.</li>
+</ol>
+
+<h2 id="connections">Connections</h2>
+
+<ul>
+  <li><strong>Buffer Manager</strong>: AIO completion callbacks update <code class="language-plaintext highlighter-rouge">BufferDesc</code> state. The read stream is the primary interface between sequential/index scans and the buffer pool.</li>
+  <li><strong>smgr</strong>: <code class="language-plaintext highlighter-rouge">smgrstartreadv()</code> is the async counterpart to <code class="language-plaintext highlighter-rouge">smgrread()</code>. It sets up the <code class="language-plaintext highlighter-rouge">PgAioHandle</code> with the correct file descriptor and offset from <code class="language-plaintext highlighter-rouge">md.c</code>.</li>
+  <li><strong>Sequential Scans</strong>: Use read streams with <code class="language-plaintext highlighter-rouge">block_range_read_stream_cb</code> for efficient prefetching.</li>
+  <li><strong>Index Scans</strong>: Bitmap heap scans and index-only scans can use read streams to prefetch heap pages identified by the index.</li>
+  <li><strong>VACUUM</strong>: Uses read streams with <code class="language-plaintext highlighter-rouge">READ_STREAM_MAINTENANCE</code> flag for efficient scanning of heap pages.</li>
+  <li><strong>WAL</strong>: Future work may extend AIO to asynchronous WAL writes (<code class="language-plaintext highlighter-rouge">fdatasync()</code> / O_DSYNC), which is especially impactful for commit latency.</li>
+  <li><strong>Direct I/O</strong>: The AIO framework is a prerequisite for direct I/O support (bypassing the kernel page cache), which eliminates double buffering and enables DMA transfers.</li>
+</ul>
+
+
+      <hr>
+
+      <!-- Prev / Next / Up navigation -->
+      
+      
+      
+
+      <div class="clearfix" style="margin-top: 2rem;">
+        
+          
+          
+
+          
+            
+            <a class="btn btn-primary float-left" href="/postgresql/01-storage/" title="Storage Engine">&larr; Previous</a>
+          
+
+          
+            
+            <a class="btn btn-primary float-right" href="/postgresql/01-storage/buffer-manager.html" title="Buffer Manager">Next &rarr;</a>
+          
+        
+      </div>
+
+      
+      <div style="text-align: center; margin-top: 1rem;">
+        <a href="/postgresql-internals/">&uarr; Back to Table of Contents</a>
+      </div>
+      
+
+    </div>
+  </div>
+</div>
+
+
+  <!-- Footer -->
+
+<hr>
+
+<footer>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <ul class="list-inline text-center">
+          
+          <li class="list-inline-item">
+            <a href="mailto:amitava.dev@proton.me" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="far fa-envelope fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          
+          
+          <li class="list-inline-item">
+            <a href="https://www.linkedin.com/in/amitavaag" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-linkedin fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          <li class="list-inline-item">
+            <a href="https://github.com/ikouchiha47" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-github fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+        </ul>
+
+        <p class="copyright text-muted">
+          Build with: 
+          <a 
+            href="https://github.com/StartBootstrap/startbootstrap-clean-blog-jekyll"
+            class="text-gray"
+            target="_blank">startbootstrap-clean-blog-jekyll</a></p>
+      </div>
+    </div>
+  </div>
+</footer>
+
+
+  <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="/assets/vendor/blog/js/scripts.js"></script>
+
+<script src="/assets/scripts.js"></script>
+
+
+
+
+
+  <script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+
+    document.querySelectorAll('pre > code.language-mermaid').forEach((codeBlock) => {
+      codeBlock.parentElement.outerHTML = `<pre class="mermaid">${codeBlock.textContent}</pre>`;
+    });
+
+
+    mermaid.initialize({ startOnLoad: true, theme: 'forest' });
+</script>
+
+
+  
+
+</body>
+
+</html>
