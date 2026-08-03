@@ -3,7 +3,7 @@ active: true
 layout: post
 title: "Learnings from Building LLM Systems"
 subtitle: "What building an LLM-powered research platform actually looks like"
-date: 2026-02-23 00:00:00
+date: 2026-08-01 00:00:00
 background_color: '#000'
 ---
 
@@ -22,6 +22,11 @@ During the time I was also:
   and the rest 10% adds a bunch of non-sense to hide their pathetic hot-chocolate.
 
 This blog documents some of the observations, in building a research oriented framework, and my understanding of this space, apart from code.
+
+For the engineering deep-dive on the research platform itself, see [Materials Science Engineering Notes](/p/b8e2c4/materials-science-notes/):
+- [Progressive Indexing: Making Papers Searchable in Seconds](/materials-science/progressive-indexing.html)
+- [Anatomy of a Research Agent](/materials-science/anatomy-of-a-research-agent.html)
+- [From Paper Chaos to Testable Hypotheses](/materials-science/hypothesis-engineering-loop.html)
 
 ---
 

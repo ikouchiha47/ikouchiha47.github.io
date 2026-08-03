@@ -3,10 +3,10 @@ active: true
 layout: group_index
 title: "Materials Science Engineering Notes"
 subtitle: "Technical notes from a materials science platform"
-date: 2026-02-14 00:00:00
+date: 2026-08-02 00:00:00
 background_color: '#000'
 group: materials-science
-hidden: falae
+hidden: false
 sitemap: true
 permalink: /p/b8e2c4/materials-science-notes/
 ---
