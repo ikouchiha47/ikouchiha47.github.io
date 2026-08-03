@@ -6,7 +6,7 @@ baseurl:            ""
 url:                "https://ikouchiha47.github.io"
 remote_url:         "ikouchiha47.github.io"
 description: >- # this means to ignore newlines until "baseurl:"
-  Yet another platform enginner, with a love for designing systems, writing tools, and hating third-party api integrations.
+  Yet another platform engineer who'd rather design systems and write tools than glue together someone else's API.
 
 # Social Profiles
 github_username:    ikouchiha47
