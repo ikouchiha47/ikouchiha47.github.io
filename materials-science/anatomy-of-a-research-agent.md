@@ -147,6 +147,47 @@ This matters because it lets the agent answer questions like:
 
 without pretending that those are purely text search problems.
 
+### Tables Are Not Markdown Pipes
+
+A table is not a fixed shape you can assume going in.
+
+Sometimes plain structured text, a list of parameters, say, gets read as a table by the OCR model.
+Sometimes an actual table shows up as unstructured text, or as a flattened image with no cell structure left in it at all.
+Before anything downstream can trust a "table," something has to decide what it is actually looking at.
+
+Once that call is made, the harder cases start.
+
+Headers that are nested or grouped across two rows instead of one.
+Tables that run across a page break, where the next page either repeats the header or silently continues the same table with no header at all.
+Both of these break a naive "one markdown table per page" extraction.
+
+Once a table is captured with reasonable confidence, we normalize it and compute basic things like column means or ranges.
+
+This does two jobs at once.
+It untangles multi-column layouts, and it turns the table into something usable as a dataset later, instead of a block of text sitting in the page.
+
+The embedding for that table chunk also needs to reflect what the table means given its surrounding text and the paper's context, not just the cell values.
+Same idea as the hypothetical questions used for text chunks.
+
+This is the shape a `TabularAgent` fits into.
+It slots into the same `section_covers` structure from earlier, rather than being a separate system bolted on the side.
+
+### Diagrams Are Their Own Thing
+
+Diagrams are a separate category from tables, not a variant of them.
+
+We give the agent two tools for reading one.
+`read_diagram` for a first pass over the whole figure, and `zoom_diagram` to look closer at a region when the first pass was not enough.
+The same way a person leans in on a plot instead of trying to read all of it at arm's length.
+
+For scientific figures specifically, color is carrying data, not styling.
+Phase diagrams, band structures, heatmaps, all of them encode meaning in color that a shape-and-label reading would miss.
+Reading a diagram means reading that dimension too.
+
+For evaluation, we also save bounding boxes against diagrams and tables.
+That was not just about measuring extraction accuracy.
+It gave us a way to see what the tool was actually looking at when it made a call, which turned debugging the pipeline from guessing at outputs into something we could actually inspect.
+
 ## The Materials Specialist
 
 When the agent encounters a question about a specific compound or crystal structure, it calls a **materials specialist** — a sub-agent purpose-built for property lookups.
