@@ -1,0 +1,298 @@
+// the wall — short-form feed
+// A teletext/BBS-flavored departure from the rest of the site, the way
+// millionrps and domain-is-moat each get their own visual identity.
+
+.wall-page {
+  --wall-paper: #f4ecd8;
+  --wall-card: #fffdf5;
+  --wall-ink: #1c1a15;
+  --wall-ink-soft: #55503f;
+  --wall-rule: #1c1a15;
+  --wall-teal: #007a8f;
+  --wall-magenta: #c72a5e;
+  --wall-mustard: #d38f1f;
+
+  @media (prefers-color-scheme: dark) {
+    --wall-paper: #12161d;
+    --wall-card: #171c24;
+    --wall-ink: #e7e5dc;
+    --wall-ink-soft: #98978a;
+    --wall-rule: #3a3f4a;
+    --wall-teal: #3fc4dd;
+    --wall-magenta: #ef6a97;
+    --wall-mustard: #e8b04f;
+  }
+
+  background: var(--wall-paper);
+  color: var(--wall-ink);
+  padding: 6.5rem 1.25rem 6rem;
+  min-height: 100vh;
+
+  .wall-inner {
+    max-width: 640px;
+    margin: 0 auto;
+  }
+
+  .mono {
+    font-family: SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  }
+
+  .wall-head {
+    padding: 0 0 1.25rem;
+    margin-bottom: 2rem;
+    border-bottom: 3px solid var(--wall-rule);
+  }
+
+  .wall-banner-rule {
+    font-family: SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 0.72rem;
+    letter-spacing: 0.08em;
+    color: var(--wall-ink-soft);
+    display: flex;
+    justify-content: space-between;
+    padding-bottom: 0.5rem;
+    margin-bottom: 0.85rem;
+  }
+
+  .wall-live-dot {
+    display: inline-block;
+    width: 7px;
+    height: 7px;
+    background: var(--wall-magenta);
+    border-radius: 50%;
+    margin-right: 0.4em;
+    animation: wall-blink 1.4s step-start infinite;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .wall-live-dot, .wall-cursor { animation: none !important; }
+  }
+
+  @keyframes wall-blink {
+    50% { opacity: 0.15; }
+  }
+
+  h1.wall-title {
+    font-family: SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-weight: 700;
+    font-size: 1.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    margin: 0 0 0.4rem;
+
+    &::before { content: "// "; color: var(--wall-teal); }
+  }
+
+  .wall-sub {
+    color: var(--wall-ink-soft);
+    font-size: 0.95rem;
+    margin: 0;
+    font-style: italic;
+  }
+
+  .wall-feed {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .wall-entry {
+    padding: 1.5rem 0;
+    border-bottom: 1px solid var(--wall-rule);
+
+    &:first-child { padding-top: 0; }
+  }
+
+  .wall-entry-meta {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+    margin-bottom: 0.75rem;
+  }
+
+  .wall-timestamp {
+    font-family: SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 0.74rem;
+    letter-spacing: 0.03em;
+    font-variant-numeric: tabular-nums;
+    color: var(--wall-ink-soft);
+
+    &::before { content: "["; color: var(--wall-mustard); }
+    &::after { content: "]"; color: var(--wall-mustard); }
+  }
+
+  .wall-tags {
+    display: flex;
+    gap: 0.9rem;
+    flex-wrap: wrap;
+  }
+
+  .wall-tag {
+    font-family: SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 0.68rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+
+    &::before { content: "#"; opacity: 0.6; }
+    &:nth-child(3n+1) { color: var(--wall-mustard); }
+    &:nth-child(3n+2) { color: var(--wall-magenta); }
+    &:nth-child(3n+3) { color: var(--wall-teal); }
+  }
+
+  .wall-body {
+    font-size: 0.99rem;
+    color: var(--wall-ink);
+    position: relative;
+
+    &.clamped {
+      max-height: 7.8em;
+      overflow: hidden;
+
+      &:not(.expanded)::after {
+        content: "";
+        position: absolute;
+        bottom: 0;
+        right: 0;
+        width: 45%;
+        height: 1.5em;
+        background: linear-gradient(to right, transparent, var(--wall-paper) 65%);
+      }
+
+      &.expanded { max-height: none; }
+    }
+
+    p { margin: 0 0 0.7em; }
+    p:last-child { margin-bottom: 0; }
+    strong { font-weight: 700; color: var(--wall-magenta); }
+    em { font-style: italic; }
+
+    ul, ol { margin: 0 0 0.7em; padding-left: 1.2em; }
+    li { margin-bottom: 0.3em; }
+    li::marker { color: var(--wall-teal); }
+
+    code {
+      font-family: SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      color: var(--wall-magenta);
+      font-size: 0.87em;
+      background: rgba(199, 42, 94, 0.08);
+      padding: 0.1em 0.3em;
+    }
+
+    pre {
+      background: var(--wall-ink);
+      color: #d9f4fa;
+      border-radius: 0;
+      border-left: 4px solid var(--wall-teal);
+      padding: 0.8rem 1rem;
+      overflow-x: auto;
+      margin: 0 0 0.7em;
+      font-size: 0.8rem;
+      line-height: 1.55;
+
+      code {
+        color: inherit;
+        background: none;
+        padding: 0;
+        font-size: 1em;
+      }
+    }
+
+    blockquote {
+      margin: 0 0 0.7em;
+      padding: 0.4em 0 0.4em 0.9em;
+      border-left: 3px solid var(--wall-mustard);
+      color: var(--wall-ink-soft);
+      font-style: italic;
+    }
+  }
+
+  .wall-more-btn {
+    background: none;
+    border: none;
+    color: var(--wall-teal);
+    font-family: SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    font-weight: 700;
+    padding: 0.55rem 0 0;
+    cursor: pointer;
+
+    &::before { content: "▸ "; }
+    &:hover { text-decoration: underline; }
+    &:focus-visible {
+      outline: 2px solid var(--wall-teal);
+      outline-offset: 2px;
+    }
+  }
+
+  .wall-footer {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0.9rem;
+    margin-top: 0.9rem;
+  }
+
+  .wall-share-btn {
+    width: 20px;
+    height: 20px;
+    border: none;
+    background: none;
+    color: var(--wall-ink-soft);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    text-decoration: none;
+
+    &:hover { color: var(--wall-teal); }
+    &:focus-visible {
+      outline: 2px solid var(--wall-teal);
+      outline-offset: 2px;
+    }
+
+    svg { width: 13px; height: 13px; fill: currentColor; }
+  }
+
+  .wall-divider-note {
+    text-align: center;
+    color: var(--wall-ink-soft);
+    font-size: 0.75rem;
+    margin: 2.5rem 0 1rem;
+    font-family: SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    letter-spacing: 0.06em;
+  }
+
+  .wall-cursor {
+    display: inline-block;
+    width: 0.55em;
+    height: 1em;
+    background: var(--wall-ink);
+    vertical-align: text-bottom;
+    animation: wall-blink 1s step-start infinite;
+  }
+
+  .wall-pager {
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-top: 2rem;
+    font-family: SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 0.85rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+
+    a { color: var(--wall-teal); }
+    a:hover { text-decoration: underline; }
+  }
+
+  .wall-back-link {
+    display: inline-block;
+    margin-top: 2rem;
+    font-family: SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 0.85rem;
+    color: var(--wall-teal);
+  }
+}

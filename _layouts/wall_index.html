@@ -1,0 +1,69 @@
+---
+layout: default
+---
+
+<div class="wall-page">
+  <div class="wall-inner">
+
+    <header class="wall-head">
+      <div class="wall-banner-rule mono">
+        <span><span class="wall-live-dot"></span>LOCAL // NOT SYNDICATED</span>
+        <span>PAGE {{ page.paginator.page }}{% if page.paginator.total_pages > 1 %} / {{ page.paginator.total_pages }}{% endif %}</span>
+      </div>
+      <h1 class="wall-title">the wall</h1>
+      <p class="wall-sub">short-form notes, markdown-formatted. no likes, no comments — just the ones worth saying without a full write-up.</p>
+    </header>
+
+    <div class="wall-feed">
+      {% for doc in page.paginator.docs %}
+      {% assign entry_url = site.url | append: site.baseurl | append: doc.url %}
+      {% assign entry_text = doc.content | strip_html | strip_newlines | normalize_whitespace | truncate: 200 %}
+      <article class="wall-entry">
+        <div class="wall-entry-meta">
+          <span class="wall-timestamp mono">{{ doc.date | date: "%d.%m.%Y :: %H:%M" }}</span>
+          {% if doc.tags.size > 0 %}
+          <div class="wall-tags">
+            {% for tag in doc.tags %}
+            <span class="wall-tag">{{ tag }}</span>
+            {% endfor %}
+          </div>
+          {% endif %}
+        </div>
+
+        <div class="wall-body clamped" id="wall-body-{{ forloop.index }}">
+          {{ doc.content }}
+        </div>
+        <button class="wall-more-btn" data-target="wall-body-{{ forloop.index }}">more</button>
+
+        {% include wall_share.html url=entry_url text=entry_text %}
+      </article>
+      {% endfor %}
+    </div>
+
+    {% if page.paginator.total_pages > 1 %}
+    <div class="wall-pager">
+      {% if page.paginator.previous_page_path %}
+      <a href="{{ page.paginator.previous_page_path | relative_url }}">&larr; Newer</a>
+      {% else %}
+      <span></span>
+      {% endif %}
+      {% if page.paginator.next_page_path %}
+      <a href="{{ page.paginator.next_page_path | relative_url }}">Older &rarr;</a>
+      {% endif %}
+    </div>
+    {% endif %}
+
+    <p class="wall-divider-note">--- END OF TRANSMISSION <span class="wall-cursor"></span></p>
+
+  </div>
+</div>
+
+<script>
+  document.querySelectorAll('.wall-more-btn').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var target = document.getElementById(btn.dataset.target);
+      var expanded = target.classList.toggle('expanded');
+      btn.textContent = expanded ? 'less' : 'more';
+    });
+  });
+</script>

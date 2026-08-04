@@ -1,0 +1,40 @@
+---
+layout: default
+---
+
+<div class="wall-page">
+  <div class="wall-inner">
+
+    <header class="wall-head">
+      <div class="wall-banner-rule mono">
+        <span><span class="wall-live-dot"></span>LOCAL // NOT SYNDICATED</span>
+        <span><a href="{{ "/wall/" | relative_url }}" class="mono" style="color: inherit;">the wall</a></span>
+      </div>
+    </header>
+
+    {% assign entry_url = site.url | append: site.baseurl | append: page.url %}
+    {% assign entry_text = content | strip_html | strip_newlines | normalize_whitespace | truncate: 200 %}
+
+    <article class="wall-entry" style="border-bottom: none;">
+      <div class="wall-entry-meta">
+        <span class="wall-timestamp mono">{{ page.date | date: "%d.%m.%Y :: %H:%M" }}</span>
+        {% if page.tags.size > 0 %}
+        <div class="wall-tags">
+          {% for tag in page.tags %}
+          <span class="wall-tag">{{ tag }}</span>
+          {% endfor %}
+        </div>
+        {% endif %}
+      </div>
+
+      <div class="wall-body">
+        {{ content }}
+      </div>
+
+      {% include wall_share.html url=entry_url text=entry_text %}
+    </article>
+
+    <a class="wall-back-link" href="{{ "/wall/" | relative_url }}">&larr; back to the wall</a>
+
+  </div>
+</div>

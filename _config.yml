@@ -23,5 +23,20 @@ paginate_path:      "/posts/page/:num/"
 plugins:
   - jekyll-feed
   - jekyll-paginate
-  - jekyll-sitemap 
+  - jekyll-sitemap
+
+collections:
+  shorts:
+    output:     true
+    permalink:  "/wall/:name/"
+
+defaults:
+  - scope:
+      path: ""
+      type: "shorts"
+    values:
+      layout: "wall_entry"
+
+wall:
+  paginate: 15
 
