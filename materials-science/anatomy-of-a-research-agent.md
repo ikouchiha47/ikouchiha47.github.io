@@ -139,6 +139,22 @@ For that, we run two visual pipelines on every page:
 
 **An LLM-based OCR model** for structured text extraction — a vision-language model that reads page images and produces clean markdown with tables, equations, and headings preserved. This replaces traditional OCR for pages where layout matters, which in scientific papers is most of them.
 
+Both pipelines run on every query, and the results get merged before anything is shown back:
+
+```mermaid
+graph TD
+    Q["Incoming User Query"] --> S1[Stage 1: Text BM25<br/>Fast Keyword Match]
+    Q --> S2[Stage 1: ColPali<br/>Dense Visual Search]
+    S1 --> RRF["Reciprocal Rank Fusion<br/>(RRF) / Cross-Encoder"]
+    S2 --> RRF
+    RRF --> TOPK[Top-K Images Selected]
+    TOPK --> VLM["Vision Language Model<br/>(Generates Final Answer)"]
+    style Q fill:#f3f4f6,stroke:#6366f1,color:#111827
+    style VLM fill:#eef2ff,stroke:#6366f1,color:#111827
+```
+
+Keyword matching finds the page fast when the query names something exact — a formula, an element symbol, a database ID. ColPali finds it when the query is about what the page *looks like* instead. RRF fuses the two ranked lists the same way it fuses text retrieval earlier in the pipeline, and only the top-K survive to reach the vision-language model that actually answers the question.
+
 This matters because it lets the agent answer questions like:
 
 - "find the plot where bandgap changes with composition"
