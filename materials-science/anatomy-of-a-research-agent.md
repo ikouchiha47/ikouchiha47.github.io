@@ -170,6 +170,10 @@ Once a table is captured with reasonable confidence, we normalize it and compute
 This does two jobs at once.
 It untangles multi-column layouts, and it turns the table into something usable as a dataset later, instead of a block of text sitting in the page.
 
+"Usable as a dataset" means something specific: a table becomes a dataframe, not just cleaner text. Columns get types, units get parsed out of headers where they're embedded there, and the result is something `pandas` can actually load and operate on — group, filter, join.
+
+Every table is namespaced to the paper it came from. That namespace is what lets a formation-energy table from one paper sit next to a formation-energy table from another and get merged, or joined against an external dataset that's just sitting in a CSV or a database. The paper stops being the unit a table lives in — it becomes one source among several that a dataset can be assembled from.
+
 The embedding for that table chunk also needs to reflect what the table means given its surrounding text and the paper's context, not just the cell values.
 Same idea as the hypothetical questions used for text chunks.
 
