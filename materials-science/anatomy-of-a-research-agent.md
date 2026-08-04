@@ -161,6 +161,10 @@ Headers that are nested or grouped across two rows instead of one.
 Tables that run across a page break, where the next page either repeats the header or silently continues the same table with no header at all.
 Both of these break a naive "one markdown table per page" extraction.
 
+Markdown pipe tables have no way to represent a merged header cell — there's no `rowspan`, no `colspan`. So we don't capture the raw table as markdown at all. The `TabularAgent` captures it as HTML or JSON instead, where a grouped header is just a `rowspan`, not a representation problem markdown can't express in the first place.
+
+Page-break continuation gets decided the same way CRAG v2 decides most things — by asking. The model gets a screengrab of the current page plus the one or two before it, with the previously captured table kept in context, and judges whether the new page continues that table or starts a fresh one. That works whether the continuation repeats the header or not, because the decision isn't based on the header at all — it's based on the actual table history the model is holding.
+
 Once a table is captured with reasonable confidence, we normalize it and compute basic things like column means or ranges.
 
 This does two jobs at once.
