@@ -1,5 +1,7 @@
 ---
 active: true
+featured: true
+featured_order: 2
 layout: group_index
 title: "Materials Science Engineering Notes"
 subtitle: "Technical notes from a materials science platform"

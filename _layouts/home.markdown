@@ -140,15 +140,21 @@ layout: default
       {{ content }}
 
       <!-- Home Post List -->
-      {% assign shown = 0 %}
-      {% for post in site.posts %}
-        {% if post.active != true or post.hidden == true %}
-          {% continue %}
-        {% endif %}
-        {% if shown >= 5 %}
-          {% break %}
-        {% endif %}
-        {% assign shown = shown | plus: 1 %}
+      {% comment %}
+        Set `featured: true` (and optionally `featured_order: <number>`, ascending)
+        on posts to hand-pick the home feed. If nothing is marked featured, falls
+        back to the 5 most recent active, non-hidden posts.
+      {% endcomment %}
+      {% assign eligible_posts = site.posts | where_exp: "p", "p.active == true" | where_exp: "p", "p.hidden != true" %}
+      {% assign featured_posts = eligible_posts | where_exp: "p", "p.featured == true" %}
+
+      {% if featured_posts.size > 0 %}
+        {% assign display_posts = featured_posts | sort: "featured_order" %}
+      {% else %}
+        {% assign display_posts = eligible_posts | slice: 0, 5 %}
+      {% endif %}
+
+      {% for post in display_posts %}
 
       <article class="post-preview">
         <a href="{{ post.url | prepend: site.baseurl | replace: '//', '/' }}">

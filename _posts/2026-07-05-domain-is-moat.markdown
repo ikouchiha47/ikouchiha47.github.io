@@ -1,6 +1,8 @@
 ---
 
 active: true
+featured: true
+featured_order: 5
 layout: post
 title: "Domain is Moat"
 subtitle: "Why most generative AI products fail at the creator layer"

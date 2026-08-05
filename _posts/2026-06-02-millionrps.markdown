@@ -1,5 +1,7 @@
 ---
 active: true
+featured: true
+featured_order: 1
 layout: journal_index
 title: "Chasing 1 Million RPS"
 subtitle: "a journal of hardware, kernel tuning, and diminishing returns"

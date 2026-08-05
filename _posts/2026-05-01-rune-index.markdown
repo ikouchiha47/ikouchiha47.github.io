@@ -1,5 +1,7 @@
 ---
 active: true
+featured: true
+featured_order: 3
 layout: group_index
 title: "RUNE"
 subtitle: "A gesture wearable that doesn't track your steps"
