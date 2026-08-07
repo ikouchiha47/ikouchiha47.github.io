@@ -1,0 +1,97 @@
+<!-- GitHub-style contribution grid, real full-year data from
+     github-contributions-api.jogruber.de (a public proxy that scrapes
+     actual GitHub contribution data — accurate counts/levels per day,
+     unlike the paginated/limited public events API). No token needed. -->
+<div class="gh-streak" id="gh-streak">
+  <div class="gh-streak-stats">
+    <div class="gh-streak-stat">
+      <span class="gh-streak-stat-value" id="gh-streak-current">–</span>
+      <span class="gh-streak-stat-label">current streak</span>
+    </div>
+    <div class="gh-streak-stat">
+      <span class="gh-streak-stat-value" id="gh-streak-longest">–</span>
+      <span class="gh-streak-stat-label">longest streak</span>
+    </div>
+    <div class="gh-streak-stat">
+      <span class="gh-streak-stat-value" id="gh-streak-total">–</span>
+      <span class="gh-streak-stat-label">contributions (year)</span>
+    </div>
+  </div>
+  <div class="gh-streak-grid" id="gh-streak-grid" aria-label="GitHub contribution grid, last 365 days"></div>
+</div>
+
+<script>
+(function () {
+  var GH_USER = {{ site.github_username | jsonify }};
+  var YEAR = new Date().getUTCFullYear();
+
+  var grid = document.getElementById('gh-streak-grid');
+  var currentEl = document.getElementById('gh-streak-current');
+  var longestEl = document.getElementById('gh-streak-longest');
+  var totalEl = document.getElementById('gh-streak-total');
+  if (!grid || !GH_USER) { return; }
+
+  fetch('https://github-contributions-api.jogruber.de/v4/' + GH_USER + '?y=' + YEAR + '&y=' + (YEAR - 1))
+    .then(function (res) { if (!res.ok) { throw new Error('contrib api ' + res.status); } return res.json(); })
+    .then(function (data) {
+      var all = data.contributions || [];
+      var today = new Date().toISOString().slice(0, 10);
+
+      var start = new Date();
+      start.setUTCDate(start.getUTCDate() - 364);
+      var startKey = start.toISOString().slice(0, 10);
+
+      var days = all.filter(function (d) { return d.date >= startKey && d.date <= today; });
+      days.sort(function (a, b) { return a.date < b.date ? -1 : 1; });
+
+      var current = 0;
+      for (var j = days.length - 1; j >= 0; j--) {
+        if (days[j].count > 0) { current++; }
+        else if (days[j].date === today) { continue; }
+        else { break; }
+      }
+
+      var longest = 0, run = 0;
+      days.forEach(function (day) {
+        run = day.count > 0 ? run + 1 : 0;
+        if (run > longest) { longest = run; }
+      });
+
+      var total = days.reduce(function (sum, day) { return sum + day.count; }, 0);
+
+      currentEl.textContent = current + (current === 1 ? ' day' : ' days');
+      longestEl.textContent = longest + (longest === 1 ? ' day' : ' days');
+      totalEl.textContent = total;
+
+      var startPad = new Date(days[0].date + 'T00:00:00Z').getUTCDay();
+      var padded = [];
+      for (var p = 0; p < startPad; p++) { padded.push(null); }
+      padded = padded.concat(days);
+
+      var frag = document.createDocumentFragment();
+      for (var w = 0; w < padded.length; w += 7) {
+        var week = document.createElement('div');
+        week.className = 'gh-streak-week';
+        padded.slice(w, w + 7).forEach(function (day) {
+          var cell = document.createElement('span');
+          if (day) {
+            cell.className = 'gh-streak-cell level-' + day.level;
+            cell.title = day.date + ': ' + day.count + ' contribution' + (day.count === 1 ? '' : 's');
+          } else {
+            cell.className = 'gh-streak-cell empty';
+          }
+          week.appendChild(cell);
+        });
+        frag.appendChild(week);
+      }
+      grid.appendChild(frag);
+    })
+    .catch(function () {
+      grid.textContent = '';
+      var note = document.createElement('p');
+      note.className = 'gh-streak-error';
+      note.textContent = 'Couldn\'t load GitHub activity right now.';
+      grid.appendChild(note);
+    });
+})();
+</script>

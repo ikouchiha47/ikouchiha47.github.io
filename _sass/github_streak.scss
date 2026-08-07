@@ -1,0 +1,89 @@
+// GitHub-style contribution grid + streak stats, client-side only.
+// Real data from github-contributions-api.jogruber.de. Grid stretches to
+// exactly fill the container width (no fixed cell size, no scrollbar) —
+// GitHub's own graph never scrolls either; below a breakpoint it just
+// hides the whole thing, same as the media query below.
+
+.gh-streak {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  margin: 1.75rem 0 1.25rem;
+  padding: 1.25rem 1.5rem;
+  border: 1px solid #d0d7de;
+  border-radius: 8px;
+
+  --gh-l0: #ebedf0;
+  --gh-l1: #9be9a8;
+  --gh-l2: #40c463;
+  --gh-l3: #30a14e;
+  --gh-l4: #216e39;
+  --gh-text: #24292f;
+  --gh-text-muted: #57606a;
+
+  @media (max-width: 576px) {
+    display: none;
+  }
+}
+
+.gh-streak-stats {
+  display: flex;
+  gap: 2.5rem;
+  flex-wrap: wrap;
+  margin-bottom: 1.1rem;
+}
+
+.gh-streak-stat {
+  display: flex;
+  flex-direction: column;
+}
+
+.gh-streak-stat-value {
+  font-family: "Open Sans", -apple-system, sans-serif;
+  font-weight: 800;
+  font-size: 1.6rem;
+  color: var(--gh-text);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.2;
+}
+
+.gh-streak-stat-label {
+  font-size: 0.76rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--gh-text-muted);
+  margin-top: 0.2rem;
+}
+
+.gh-streak-grid {
+  display: flex;
+  gap: 3px;
+  width: 100%;
+}
+
+.gh-streak-week {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.gh-streak-cell {
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  border-radius: 2px;
+  background: var(--gh-l0);
+
+  &.level-1 { background: var(--gh-l1); }
+  &.level-2 { background: var(--gh-l2); }
+  &.level-3 { background: var(--gh-l3); }
+  &.level-4 { background: var(--gh-l4); }
+  &.empty { background: transparent; }
+}
+
+.gh-streak-error {
+  font-size: 0.9rem;
+  color: var(--gh-text-muted);
+  margin: 0;
+}

@@ -127,12 +127,12 @@ layout: default
   <div class="row">
     <div class="col-lg-8 col-md-10 mx-auto">
       <i>Personal blog to keep a tack of my work, experiments, findings and thoughts.</i>
-      <a href="https://github.com/ikouchiha47" style="display:inline-block">Github</a> and 
+      <a href="https://github.com/ikouchiha47" style="display:inline-block">Github</a> and
       <a href="https://github.com/go-batteries" style="display:inline-block">Github</a>
+
+      {% include github_streak.html %}
     </div>
   </div>
-
-  <p>&nbsp;</p>
 
   <div class="row">
     <div class="col-lg-8 col-md-10 mx-auto">
