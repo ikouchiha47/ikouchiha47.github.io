@@ -148,4 +148,3 @@ Staff platform engineer with 11+ years of experience, focused on distributed sys
   date: "2010 - 2014",
   description: "B.Tech in Electronics & Communication Engineering",
 )
-
