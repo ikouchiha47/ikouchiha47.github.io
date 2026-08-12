@@ -7,6 +7,7 @@ description: "How Go, Kotlin coroutines, and BEAM handle preemption safely, why 
 date: 2026-08-12
 ---
 
+Related: 001_usage_of_signals_in_language_runtime.md, 006_other_reading_materials.md, 007_concurrency_comparison.md
 
 ## Abstract
 
@@ -214,6 +215,36 @@ measured and **rejected**: 7.8% throughput regression, considered too
 expensive to pay unconditionally across all Go programs just to close this
 gap. Signal-based async preemption was strictly cheaper because it costs
 nothing until actually invoked.
+
+**Tracing it through a concrete example:**
+
+```go
+func main() {
+    go func() {
+        for {} // spin forever, no function calls
+    }()
+    time.Sleep(time.Second)
+    runtime.GC()
+}
+```
+
+On Go ≤1.10, `runtime.GC()` here would never return. `runtime.GC()` forces
+a stop-the-world GC cycle, which calls `stopTheWorldWithSema` — every
+goroutine, including the spinning one, must reach a safe-point first. The
+spinning goroutine calls no functions, so it never hits the stack-bound
+check the old synchronous mechanism relied on. It spins forever; the GC
+waits forever; the program hangs.
+
+On Go ≥1.14, the same program's GC call succeeds. `stopTheWorldWithSema`
+calls `suspendG` on the spinning goroutine; since it's `_Grunning` with no
+pending suspend, `suspendG` calls `preemptM`, which sends `SIGURG` to the
+OS thread running it. The signal interrupts the `for {}` loop mid-flight —
+at literally any instruction, since the compiler's stack maps cover every
+async safe-point in the loop body, even one with zero function calls. The
+signal handler rewrites execution to resume at `asyncPreempt`, which
+spills registers to the stack, and the goroutine parks. GC proceeds. This
+exact scenario — an infinite loop with no calls — is the textbook case the
+2019 proposal was written to fix.
 
 ### 1.3a The actual GC algorithm: tricolor mark-sweep with a hybrid write barrier
 
@@ -444,6 +475,53 @@ concurrency library. This is why `suspend` functions work fine in, say, a
 minimal environment with no kotlinx.coroutines dependency at all, as long
 as something implements `Continuation` to drive them.
 
+**Tracing it through `launch`, which resolves the open question from
+2.4a about where `DispatchedContinuation` gets constructed:**
+
+```kotlin
+fun main() = runBlocking {
+    launch {
+        println("A")
+        delay(1000)   // suspend point
+        println("B")
+    }
+}
+```
+
+`launch` (a kotlinx.coroutines builder, library-layer) takes the lambda,
+which the compiler has already turned into a `Continuation`-implementing
+state machine roughly like:
+
+```kotlin
+class LambdaContinuation : Continuation<Unit> {
+    var label = 0
+    override fun resumeWith(result: Result<Unit>) {
+        when (label) {
+            0 -> { println("A"); label = 1; delay(1000, this) } // returns here
+            1 -> { println("B") }
+        }
+    }
+}
+```
+
+`launch` wraps that state machine in a `DispatchedContinuation` (Part 2.4a)
+before ever calling it. When execution reaches `delay(1000)`, the function
+returns immediately — the thread is free, not blocked — and a timer is
+armed. When the timer fires 1000ms later, something calls `resumeWith` on
+the *same* `DispatchedContinuation` object; its `resumeWith` override (Part
+2.4a) checks `dispatcher.safeIsDispatchNeeded` and routes the resume
+through the dispatcher's thread pool if needed, which then calls the
+wrapped continuation's `resumeWith`, landing back in `label = 1` and
+printing "B" — possibly on a completely different thread than the one
+that printed "A".
+
+The cooperative part: the compiler only inserted a resumable point at
+`delay`, because `delay` is a `suspend` call. A `launch { while (true) {} }`
+with no suspend calls inside the loop has no state machine transition
+anywhere in the loop body — nothing for any dispatcher to interrupt into,
+unlike Go's `for {}` example above, which the runtime can still signal
+into from outside regardless of what the loop body does.
+
 ### 2.2 Why this makes suspension cooperative
 
 The compiler must know, at compile time, every point where execution might
@@ -633,10 +711,12 @@ decides what thread to resume on" (checkpoint 2.5's answer) — a runtime
 branch inside `resumeWith`, not something the compiler's state machine
 knows anything about.
 
-**Open question:** the exact call site in kotlinx.coroutines'
-coroutine-builder code (`launch`, `async`) where a `DispatchedContinuation`
-gets constructed and handed the raw compiler-generated continuation — not
-covered here, only its `resumeWith` behavior once constructed.
+**Open question:** the literal source line inside kotlinx.coroutines'
+`launch`/`async` implementation where a `DispatchedContinuation` gets
+constructed — Part 2.1's `launch`/`delay` walkthrough traces the mechanism
+conceptually (what gets wrapped, when it resumes, which thread), but the
+actual builder source file itself hasn't been read to confirm the
+construction call site line-for-line.
 
 ### 2.5 Checkpoint
 
@@ -838,7 +918,29 @@ plain integer counter checked as part of every instruction dispatch, cheap
 because it's already inline in the interpreter's hot loop, not a bolted-on
 external mechanism.
 
-### 3.4 GC consequence
+**Tracing it through a concrete example:**
+
+```erlang
+loop() -> loop().
+
+main() ->
+    spawn(fun loop/0),
+    spawn(fun() -> io:format("still runs fine~n") end).
+```
+
+`spawn(fun loop/0)` starts a process that never returns — the BEAM
+equivalent of Go's `for {}`. Unlike Go pre-1.14, this doesn't hang the
+system: `process_main`'s interpreter loop dispatches `loop/0`'s call to
+itself as one reduction, decrementing `FCALLS` (Part 3.3.1) each time.
+When `FCALLS` hits zero — after `CONTEXT_REDS` (4000, by default)
+dispatched calls — `process_main` returns control to `erts_schedule`
+(Part 3.5a), which puts the looping process back on the run queue and
+picks the next ready process. The second `spawn`, printing "still runs
+fine," gets scheduled and runs to completion on the same core without
+ever waiting on the infinite loop. No signal was sent to interrupt
+`loop/0`; it was never running long enough at a stretch to need one — the
+counter reaching zero *is* the interruption, already built into every
+single call the loop makes.
 
 Because each process owns its heap exclusively, `erl_gc.c` runs GC
 per-process — a GC pause for one process is invisible to every other
