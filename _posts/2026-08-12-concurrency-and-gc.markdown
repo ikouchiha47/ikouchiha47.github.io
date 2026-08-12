@@ -1,5 +1,6 @@
 ---
 active: true
+featured: true
 layout: post
 title: "A Quick rundown on concurrency and gc"
 subtitle: "Go, Kotlin, BEAM, JVM/HotSpot, GraalVM, and the GC algorithms underneath them"
