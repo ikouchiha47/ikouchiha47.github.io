@@ -8,7 +8,7 @@ title: "Domain is Moat"
 subtitle: "Why most generative AI products fail at the creator layer"
 description: "Most teams treat prompts and models as the product. The real moat is understanding the domain deeply enough to build the right decision systems and feedback loops."
 date: 2026-07-31
-background_color: linear-gradient(135deg, #0f172a 0%, #1e2937 50%, #334155 100%)
+background_color: 'linear-gradient(135deg, #0f172a 0%, #1e2937 50%, #334155 100%)'
 ---
 I thought I'd be building AI systems
 

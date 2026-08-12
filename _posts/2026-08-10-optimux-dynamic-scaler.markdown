@@ -7,7 +7,7 @@ title: "Optimux: from a worker-pool tutorial to a DynamicScaler"
 subtitle: "open-sourcing an on-the-fly image/video optimizer, and why the classic dispatcher pattern didn't fit"
 description: "The Job/Dispatcher worker pool from the famous '1 Million Requests' article is built for I/O-bound fan-out. Image processing is a mixed I/O+CPU pipeline, and pprof proved the difference. Here's the road from that pattern to a self-scaling worker pool."
 date: 2026-08-10
-background_color: linear-gradient(135deg, #0f172a 0%, #1e2937 50%, #334155 100%)
+background_color: 'linear-gradient(135deg, #0f172a 0%, #1e2937 50%, #334155 100%)'
 ---
 
 [optimux](https://github.com/go-batteries/optimux) is a Go service that resizes, re-encodes, and streams images and video on the fly — `/resize?image_url=...&sizes=300x0&format=webp&quality=60`, done. It's been running as an internal service for a while. I'm open-sourcing it now, AGPL-3.0, because the worker pool underneath it — the part that decides how many goroutines are doing image processing at any given moment — ended up being the most interesting thing in the codebase, and it deserves to exist somewhere other than a private repo.
