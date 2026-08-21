@@ -10,107 +10,42 @@ date: 2026-08-08 01:00:00
 background_color: '#1a1a2e'
 ---
 
-## Why this exists
+## The problem
 
-CodeKeyboard is a system Android keyboard (IME), not a text box demo. The layout is Sofle-inspired: split halves, column stagger, multiple layers, home-row modifiers. The point is coder-friendly modifiers and layers on a phone, plus prediction that can learn personal and mixed-script typing (for example Banglish) without a server.
+A phone keyboard for programmers has two things working against it at once: there's only a thumb's reach of screen, and programmers need a denser, weirder set of characters than anyone texting in plain English — brackets that have to nest correctly by feel, modifiers, symbols that don't fit on a QWERTY row without a second thought.
 
-React Native is still in the repo for the launcher app: settings, themes, snippet management, layout preview. The keys you type with in other apps are not RN views. They are a Kotlin `View` subclass drawn on a `Canvas` inside `InputMethodService`.
+The standard fix is "add a symbols page." That doesn't actually solve the problem — it just moves the cost from *not enough keys* to *not enough taps to reach the key you need*, mid-sentence, while you're trying to close three brackets in the right order. The real fix has to change how many things one physical key can mean, not how many pages of keys exist.
 
-`docs/architecture/overview.md` still draws RN as transitional and lists an older component set. Treat that diagram as direction, then read the Kotlin package for what runs today.
+## The constraint that shapes everything else
 
-## Three layers
+There's a second problem underneath the first one, and it's not about keys at all: an Android keyboard never actually touches the app it's typing into. It doesn't see the host app's text field, doesn't get to reach into its view tree. Every keystroke has to go out through a narrow, fixed protocol — `InputConnection` — methods like `commitText`, `setComposingText`, `deleteSurroundingText`, `getTextBeforeCursor`. That's the whole vocabulary. Anything the keyboard wants to do (autocorrect, undo a suggestion, show a word mid-edit with an underline) has to be expressible in that vocabulary, or it doesn't happen.
+
+That's why CodeKeyboard isn't a UI overlay drawn on top of a text box — it's a Kotlin `View` rendered on a `Canvas`, running inside Android's `InputMethodService`, talking to the host app only through that one narrow channel. The launcher app (React Native — settings, themes, snippet management) is a separate process that never touches a keystroke. The keys you actually type on are not RN views; RN can't reach across that `InputConnection` boundary fast enough to matter, and doesn't need to.
+
+## Answering the actual problem: layers, not pages
+
+Given those two constraints — limited space, and a fixed narrow protocol to the outside world — the fix is to let each physical key mean something different depending on which *layer* is active: base, shift, symbol. Not extra pages to swipe to; a held or latched state that changes what the next tap produces. `KeyboardState` tracks this as a plain string (`layer`), with a small state machine (`TapMachine`) deciding whether a modifier press is a tap, a hold, or a latch — because on a small touch target, those three are genuinely ambiguous, and getting that wrong makes every key second-guess the user. That state machine is worth its own part later.
+
+One place this boundary actually leaks into visible behavior: not every field wants a composing region. Password fields, numeric fields, and raw terminal-style inputs (Termux, for instance) either can't or shouldn't get the underlined "still typing this word" treatment — so `CodeKeyboardIME` checks the field type on `onStartInput` and turns composing off for those, falling back to committing characters directly. It's a small check, but it's the kind of detail that only becomes obvious once you've internalized that the keyboard doesn't know what app it's in — it only knows what the field *declares itself to be*.
+
+## Three Layers
 
 ```
 Launcher app (React Native)
-  settings, themes, preview keyboard
+  settings, themes, snippet management, preview keyboard
         |
         |  optional bridge (layout JSON, snippets, settings)
         v
 IME process (Kotlin)
   CodeKeyboardIME
   NativeKeyboardView, KeyboardState, ComposingBuffer
-  Trie, UserTrie, BigramModel, SuggestionBarView, EmojiPanelView
+  LanguagePack (en.cklm -- vocab, char-trie, n-gram trie, phrases)
+  WordDictionary, UserTrie          -- prefix + fuzzy completion
+  PackBackedBigramModel             -- static pack seed + user decay layer
+  PackNgramModel (bigram/trigram)   -- context-keyed follower lists
+  SuggestionStrategy, SuggestionBarView, EmojiPanelView
         |
         |  InputConnection only
         v
 Host app field
 ```
-
-You never find the host `EditText` in the view tree. You only use `InputConnection` methods: `commitText`, `setComposingText`, `finishComposingText`, `deleteSurroundingText`, `sendKeyEvent`, `performEditorAction`, `getTextBeforeCursor`, and so on.
-
-## Register the IME
-
-`android/app/src/main/AndroidManifest.xml`:
-
-```xml
-<service
-    android:name=".CodeKeyboardIME"
-    android:label="@string/ime_name"
-    android:permission="android.permission.BIND_INPUT_METHOD"
-    android:exported="true">
-  <intent-filter>
-    <action android:name="android.view.InputMethod" />
-  </intent-filter>
-  <meta-data
-      android:name="android.view.im"
-      android:resource="@xml/method" />
-</service>
-```
-
-`res/xml/method.xml` points settings at `.MainActivity`. After install the user must enable the IME in system settings. That is normal Android.
-
-## What ships vs what ADRs name
-
-| ADR name | Shipped reality |
-|----------|-----------------|
-| `TextInputConnection` (ADR-001) | Designed; tests have `FakeTextInputConnection`. Live IME mostly uses `currentInputConnection` directly. |
-| `ComposingEngine` (ADR-002) | Shipped as small `ComposingBuffer`; IME owns flush/recompose/suggestion calls. |
-| IME uses ReactSurface (`CLAUDE.md`) | **Stale.** IME input view is `NativeKeyboardView` + `SuggestionBarView`. No `ReactSurface` reference in Kotlin sources. |
-
-## supportsComposing
-
-Set in `CodeKeyboardIME.onStartInput`:
-
-```kotlin
-supportsComposing = when {
-    editorInfo == null -> false
-    editorInfo.inputType == InputType.TYPE_NULL -> false
-    isPasswordField(editorInfo) -> false
-    isNumericField(editorInfo) -> false
-    else -> true
-}
-```
-
-- `TYPE_NULL`: terminals / raw key hosts (for example Termux).
-- Password variations: no underlined composing.
-- Number, phone, datetime classes: direct commits.
-
-When false, characters go through `commitText` (or key events) without building a composing region the same way.
-
-## onCreate wiring (preview of later parts)
-
-```kotlin
-trie = Trie.load(this)
-userTrie = UserTrie.load(File(filesDir, "user.trie"))
-bigramModel = BigramModel(this).also { it.load() }
-suggestionStrategy = BigramAwareSuggestionStrategy(
-    MergedSuggestionStrategy(userTrie, trie), bigramModel)
-wordLearner = WordLearner(userTrie) { word ->
-    trie.suggest(word, 1).firstOrNull() == word
-}
-```
-
-That single stack is the whole suggestion product: user trie, base trie, fuzzy fill inside Merged, bigram promotion outside.
-
----
-
-## Verification (part 1)
-
-| Claim | Evidence |
-|-------|----------|
-| IME is `CodeKeyboardIME : InputMethodService` | `CodeKeyboardIME.kt` class line |
-| Manifest BIND_INPUT_METHOD + method.xml | `AndroidManifest.xml`, `res/xml/method.xml` |
-| No ReactSurface in Kotlin | repo grep: only `CLAUDE.md` mentions it |
-| supportsComposing branches | `CodeKeyboardIME.onStartInput` |
-| Strategy construction | `CodeKeyboardIME.onCreate` |
-| ComposingBuffer not ComposingEngine | `ComposingBuffer.kt` exists; no ComposingEngine.kt |
