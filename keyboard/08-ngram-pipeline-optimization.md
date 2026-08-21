@@ -10,6 +10,10 @@ date: 2026-08-19 08:00:00
 background_color: '#0d1b2a'
 ---
 
+## Background: three models
+
+This post is about building the infrastructure to train next-word prediction models at scale. Three algorithm variants were evaluated: Kneser-Ney (KN), Katz backoff, and SwiftKey-style weighted-difference pruning (WDP). Each one scores and prunes word predictions differently. Part 9 covers what each variant does and why WDP ships. This post covers making the pipeline fast enough to build all three on real data.
+
 ## 1. The problem
 
 We're building next-word prediction for a keyboard app. The training data is the SwiftKey en_US corpus: a single 583MB text file with 4.27 million lines of real-world typing. From it we need:
