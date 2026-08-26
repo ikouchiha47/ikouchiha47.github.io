@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+  <title>
+    Graph Traversal Agents - iko&#39;s logs
+    
+  </title>
+
+  <meta name="description" content="Most agent frameworks treat “reasoning” as a straight line — think, act, observe, repeat. But an agent’s decision space is a graph: states, transitions, branches that dead-end, branches worth revisiting. Game AI solved most of this decades ago, and none of ...">
+  <meta property="og:description" content="Most agent frameworks treat “reasoning” as a straight line — think, act, observe, repeat. But an agent’s decision space is a graph: states, transitions, bran...">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Graph Traversal Agents">
+  <meta property="og:url" content="https://ikouchiha47.github.io/wall/2026-08-07-graph-traversal-agents/">
+
+  
+
+  <link href='https://fonts.googleapis.com/css?family=Lora:400,700,400italic,700italic' rel='stylesheet' type='text/css'>
+  <link href='https://fonts.googleapis.com/css?family=Open+Sans:300italic,400italic,600italic,700italic,800italic,400,300,600,700,800' rel='stylesheet' type='text/css'>
+
+  <!-- <script src="https://use.fontawesome.com/releases/v5.15.3/js/all.js" crossorigin="anonymous"></script> -->
+  <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.15.4/css/all.css" integrity="sha384-DyZ88mC6Up2uqS4h/KRgHuoeGwBcD4Ng9SiP4dIRy0EXTlnuz47vAwmeGwVChigm" crossorigin="anonymous"/>
+
+  <link rel="stylesheet" href="/assets/main.css">
+  <link rel="canonical" href="https://ikouchiha47.github.io/wall/2026-08-07-graph-traversal-agents/">
+  <link rel="alternate" type="application/rss+xml" title="iko&#39;s logs" href="/feed.xml">
+
+  <meta name="google-site-verification" content="lWkg6gIxJgzEKX_5XnhcxCtPE9QknaimFWWos_dTvPM" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fira+Sans:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Inconsolata:wght@200..900&family=Jersey+25&family=Kanit:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Merriweather+Sans:ital,wght@0,300..800;1,300..800&family=Nanum+Gothic+Coding&family=Space+Grotesk:wght@300..700&family=Titillium+Web:ital,wght@0,200;0,300;0,400;0,600;0,700;0,900;1,200;1,300;1,400;1,600;1,700&display=swap" rel="stylesheet">
+
+</head>
+
+
+<body>
+
+  <!-- Navigation -->
+<nav class="navbar navbar-expand-lg navbar-light fixed-top" id="mainNav">
+  <div class="container">
+    <a class="navbar-brand" href="/">iko&#39;s logs</a>
+    <button class="navbar-toggler navbar-toggler-right" type="button" data-toggle="collapse" data-target="#navbarResponsive" aria-controls="navbarResponsive" aria-expanded="false" aria-label="Toggle navigation">
+      Menu
+      <i class="fa fa-bars"></i>
+    </button>
+    <div class="collapse navbar-collapse" id="navbarResponsive">
+      <ul class="navbar-nav ml-auto">
+        <li class="nav-item">
+          <a class="nav-link" href="/">Home</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/about">About</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/posts">Posts</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/wall/">Wall</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/contact">Contact</a>
+        </li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+
+  <div class="wall-page">
+  <div class="wall-inner">
+
+    <header class="wall-head">
+      <div class="wall-banner-rule mono">
+        <span><span class="wall-live-dot"></span>LOCAL // NOT SYNDICATED</span>
+        <span><a href="/wall/" class="mono" style="color: inherit;">the wall</a></span>
+      </div>
+    </header>
+
+    
+    
+
+    <article class="wall-entry" style="border-bottom: none;">
+      <div class="wall-entry-meta">
+        <span class="wall-timestamp mono">07.08.2026 :: 10:30</span>
+        
+        <div class="wall-tags">
+          
+          <span class="wall-tag">ai</span>
+          
+          <span class="wall-tag">agents</span>
+          
+        </div>
+        
+      </div>
+
+      <div class="wall-body">
+        <p>Most agent frameworks treat “reasoning” as a straight line — think, act, observe, repeat. But an agent’s decision space <strong>is a graph</strong>: states, transitions, branches that dead-end, branches worth revisiting. Game AI solved most of this decades ago, and none of it made it into the agentic-AI toolbox.</p>
+
+<p>Concretely, what’s sitting there unused:</p>
+
+<ul>
+  <li><strong>BFS/DFS as retrieval strategy, not just a data structure exercise.</strong> CRAG-style iterative retrieval (retrieve → critique → expand → retrieve again) is already a graph walk in disguise. Choosing BFS-shaped exploration (wide, shallow, cheap to prune early) vs DFS-shaped (commit to a branch, go deep, backtrack on failure) should be a deliberate call based on the query shape — not whatever the framework’s default loop happens to do.</li>
+  <li><strong>A* and heuristic search, for tool selection.</strong> A* is just “BFS with a cost function telling you which branch is worth expanding first.” An agent choosing which tool/sub-agent to call next is the same problem — a cheap heuristic (expected relevance, expected token cost, past success rate) should prune the search instead of trying every tool in sequence and hoping.</li>
+  <li><strong>GOAP (Goal-Oriented Action Planning).</strong> Game AI has used this since the mid-2000s — an agent picks actions by working backward from a goal state through preconditions, not forward from the current state guessing what to try next. Most agent loops still plan forward. Planning backward from “what does success actually look like” is a different, often better-constrained search.</li>
+  <li><strong>Bottleneck-finding.</strong> Game engines profile the decision tree to find which node actually gates the outcome — same instinct as profiling a request path for the slow span. Agent frameworks rarely do this: which step in a reasoning chain is the one actually worth more compute, more retries, a bigger model? Right now most systems spend the same budget everywhere instead of finding the bottleneck node first.</li>
+  <li><strong>Parallelization at the right places, not everywhere.</strong> Hierarchical/parallel A* only parallelizes independent frontiers — it doesn’t fan out blindly. <code class="language-plaintext highlighter-rouge">ParallelReACT</code> should mean the same discipline: parallelize branches that are provably independent (no shared state, no ordering dependency), not just “call five tools at once because we can.”</li>
+</ul>
+
+<p>None of this is novel — it’s a “AI 101 for games” chapter most agent-framework authors never read, because they came from NLP/ML, not from game engineering. The vocabulary already exists: frontier, heuristic, admissibility, backward chaining, critical path. Borrowing it directly would save agent frameworks from re-deriving badly, by trial and error, what search theory already worked out.</p>
+
+      </div>
+
+      <!-- Usage: include wall_share.html, passing url (absolute) and text (plain-text summary) -->
+<div class="wall-footer">
+  <a class="wall-share-btn" href="https://twitter.com/intent/tweet?text=Most+agent+frameworks+treat+%E2%80%9Creasoning%E2%80%9D+as+a+straight+line+%E2%80%94+think%2C+act%2C+observe%2C+repeat.+But+an+agent%E2%80%99s+decision+space+is+a+graph%3A+states%2C+transitions%2C+branches+that+dead-end%2C+branches+worth+revis...&url=https%3A%2F%2Fikouchiha47.github.io%2Fwall%2F2026-08-07-graph-traversal-agents%2F" target="_blank" rel="noopener" aria-label="Share on X" title="Share on X">
+    <svg viewBox="0 0 24 24"><path d="M18.9 2H22l-7.6 8.7L23 22h-6.8l-5.3-6.9L4.8 22H1.7l8.1-9.3L1 2h7l4.8 6.3L18.9 2Zm-1.2 18h1.9L7.4 4h-2l12.3 16Z"/></svg>
+  </a>
+  <a class="wall-share-btn" href="https://www.linkedin.com/sharing/share-offsite/?url=https%3A%2F%2Fikouchiha47.github.io%2Fwall%2F2026-08-07-graph-traversal-agents%2F" target="_blank" rel="noopener" aria-label="Share on LinkedIn" title="Share on LinkedIn">
+    <svg viewBox="0 0 24 24"><path d="M4.98 3.5a2.5 2.5 0 1 1 0 5 2.5 2.5 0 0 1 0-5ZM3 9h4v12H3V9Zm7 0h3.8v1.7h.05c.53-1 1.83-2.05 3.77-2.05 4.03 0 4.78 2.65 4.78 6.1V21h-4v-5.4c0-1.3-.02-3-1.82-3-1.82 0-2.1 1.42-2.1 2.9V21h-4V9Z"/></svg>
+  </a>
+  <a class="wall-share-btn" href="https://www.facebook.com/sharer/sharer.php?u=https%3A%2F%2Fikouchiha47.github.io%2Fwall%2F2026-08-07-graph-traversal-agents%2F" target="_blank" rel="noopener" aria-label="Share on Facebook" title="Share on Facebook">
+    <svg viewBox="0 0 24 24"><path d="M13.5 21v-8.1h2.7l.4-3.2h-3.1V7.6c0-.9.25-1.55 1.57-1.55H16.8V3.14C16.5 3.1 15.55 3 14.44 3c-2.32 0-3.9 1.42-3.9 4V9.7H7.8v3.2h2.74V21h3Z"/></svg>
+  </a>
+</div>
+
+    </article>
+
+    <a class="wall-back-link" href="/wall/">&larr; back to the wall</a>
+
+  </div>
+</div>
+
+
+  <!-- Footer -->
+
+<hr>
+
+<footer>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <ul class="list-inline text-center">
+          
+          <li class="list-inline-item">
+            <a href="mailto:amitava.dev@proton.me" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="far fa-envelope fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          
+          
+          <li class="list-inline-item">
+            <a href="https://www.linkedin.com/in/amitavaag" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-linkedin fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          <li class="list-inline-item">
+            <a href="https://github.com/ikouchiha47" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-github fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+        </ul>
+
+        <p class="copyright text-muted">
+          Build with: 
+          <a 
+            href="https://github.com/StartBootstrap/startbootstrap-clean-blog-jekyll"
+            class="text-gray"
+            target="_blank">startbootstrap-clean-blog-jekyll</a></p>
+      </div>
+    </div>
+  </div>
+</footer>
+
+
+  <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="/assets/vendor/blog/js/scripts.js"></script>
+
+<script src="/assets/scripts.js"></script>
+
+
+
+
+
+  <script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+
+    document.querySelectorAll('pre > code.language-mermaid').forEach((codeBlock) => {
+      codeBlock.parentElement.outerHTML = `<pre class="mermaid">${codeBlock.textContent}</pre>`;
+    });
+
+
+    mermaid.initialize({ startOnLoad: true, theme: 'forest' });
+</script>
+
+
+  
+
+</body>
+
+</html>

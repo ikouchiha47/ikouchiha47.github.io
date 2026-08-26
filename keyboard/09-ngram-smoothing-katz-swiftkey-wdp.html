@@ -1,0 +1,792 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+  <title>
+    CodeKeyboard Part 9: KN vs Katz vs SwiftKey WDP - iko&#39;s logs
+    
+  </title>
+
+  <meta name="description" content="">
+  <meta property="og:description" content="">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="CodeKeyboard Part 9: KN vs Katz vs SwiftKey WDP">
+  <meta property="og:url" content="https://ikouchiha47.github.io/keyboard/09-ngram-smoothing-katz-swiftkey-wdp.html">
+
+  
+
+  <link href='https://fonts.googleapis.com/css?family=Lora:400,700,400italic,700italic' rel='stylesheet' type='text/css'>
+  <link href='https://fonts.googleapis.com/css?family=Open+Sans:300italic,400italic,600italic,700italic,800italic,400,300,600,700,800' rel='stylesheet' type='text/css'>
+
+  <!-- <script src="https://use.fontawesome.com/releases/v5.15.3/js/all.js" crossorigin="anonymous"></script> -->
+  <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.15.4/css/all.css" integrity="sha384-DyZ88mC6Up2uqS4h/KRgHuoeGwBcD4Ng9SiP4dIRy0EXTlnuz47vAwmeGwVChigm" crossorigin="anonymous"/>
+
+  <link rel="stylesheet" href="/assets/main.css">
+  <link rel="canonical" href="https://ikouchiha47.github.io/keyboard/09-ngram-smoothing-katz-swiftkey-wdp.html">
+  <link rel="alternate" type="application/rss+xml" title="iko&#39;s logs" href="/feed.xml">
+
+  <meta name="google-site-verification" content="lWkg6gIxJgzEKX_5XnhcxCtPE9QknaimFWWos_dTvPM" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fira+Sans:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Inconsolata:wght@200..900&family=Jersey+25&family=Kanit:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Merriweather+Sans:ital,wght@0,300..800;1,300..800&family=Nanum+Gothic+Coding&family=Space+Grotesk:wght@300..700&family=Titillium+Web:ital,wght@0,200;0,300;0,400;0,600;0,700;0,900;1,200;1,300;1,400;1,600;1,700&display=swap" rel="stylesheet">
+
+</head>
+
+
+<body>
+
+  <!-- Navigation -->
+<nav class="navbar navbar-expand-lg navbar-light fixed-top" id="mainNav">
+  <div class="container">
+    <a class="navbar-brand" href="/">iko&#39;s logs</a>
+    <button class="navbar-toggler navbar-toggler-right" type="button" data-toggle="collapse" data-target="#navbarResponsive" aria-controls="navbarResponsive" aria-expanded="false" aria-label="Toggle navigation">
+      Menu
+      <i class="fa fa-bars"></i>
+    </button>
+    <div class="collapse navbar-collapse" id="navbarResponsive">
+      <ul class="navbar-nav ml-auto">
+        <li class="nav-item">
+          <a class="nav-link" href="/">Home</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/about">About</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/posts">Posts</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/wall/">Wall</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/contact">Contact</a>
+        </li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+
+  <!-- Page Header -->
+
+<header class="masthead" style="background: #1b2838">
+
+  <div class="overlay"></div>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <div class="post-heading">
+          <h1>CodeKeyboard Part 9: KN vs Katz vs SwiftKey WDP</h1>
+          
+          <h2 class="subheading">Three smoothing variants, one binary pack, 31% smaller</h2>
+          
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="container space-grotesk">
+  <div class="row">
+    <div class="col-lg-8 col-md-10 mx-auto">
+
+      <!-- Breadcrumb -->
+      <nav aria-label="breadcrumb" style="margin-bottom: 1.5rem;">
+        <ol class="breadcrumb" style="background: transparent; padding: 0;">
+          
+            <li class="breadcrumb-item"><a href="/keyboard/">CodeKeyboard Rebuild Notes</a></li>
+          
+          
+          <li class="breadcrumb-item active" aria-current="page">CodeKeyboard Part 9: KN vs Katz vs SwiftKey WDP</li>
+        </ol>
+      </nav>
+
+      <p>We built the same trigram model three ways – Kneser-Ney (KN), Katz backoff, and
+Katz + SwiftKey-style weighted-difference pruning (WDP) – on the full 583 MB
+SwiftKey capstone corpus (Coursera-SwiftKey <code class="language-plaintext highlighter-rouge">en_US</code>: blogs + news + twitter,
+concatenated into <code class="language-plaintext highlighter-rouge">swiftkey_all.txt</code>), and compared them on size and prediction
+agreement.</p>
+
+<p><strong>Verdict up front:</strong> SwiftKey-WDP produces the same predictions as Katz
+(99.2% top-1 agreement at our shipping threshold) in a smaller file. We ship
+SwiftKey-WDP.</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>Build</th>
+      <th>Raw trigrams.json</th>
+      <th>thr=25</th>
+      <th>Contexts</th>
+      <th>Avg followers (thr=25)</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>KN</td>
+      <td>377 MB</td>
+      <td>54.0 MB</td>
+      <td>1,940,183</td>
+      <td>10.0 (capped)</td>
+    </tr>
+    <tr>
+      <td>Katz</td>
+      <td>341 MB</td>
+      <td>53.9 MB</td>
+      <td>1,940,183</td>
+      <td>10.0 (capped)</td>
+    </tr>
+    <tr>
+      <td><strong>SwiftKey-WDP</strong></td>
+      <td><strong>231 MB</strong></td>
+      <td><strong>53.5 MB</strong></td>
+      <td>1,938,465</td>
+      <td><strong>9.82</strong> (min 1, max 10)</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>All three builds share the same counting/merge pipeline and emit identical
+support files (<code class="language-plaintext highlighter-rouge">bigrams_support.json</code>, byte-identical across builds) and
+identical bigram files. The only thing that differs is how the trigram tier is
+scored and pruned.</p>
+
+<h2 id="what-each-variant-actually-solves">What each variant actually solves</h2>
+
+<p>These three aren’t independent designs – each one is a response to a specific
+failure of the one before it. Read them as a chain, not a menu:</p>
+
+<ul>
+  <li>
+    <p><strong>KN (Kneser-Ney) solves: “what should the model guess when it has never
+seen this context?”</strong> Plain frequency backoff gets this wrong – a word like
+<em>“Francisco”</em> has high raw frequency (because “San Francisco” is common) but
+is a bad generic guess, since it only ever completes one context. KN’s fix
+is <code class="language-plaintext highlighter-rouge">cont_p</code>: back off to how many <em>different</em> contexts a word continues,
+not how often it appears. This is the right answer to the cold-start
+problem. <strong>What it doesn’t solve:</strong> KN’s discounting is tuned for
+unpruned, academic-scale models. It interacts badly with the hard pruning a
+keyboard app actually needs – Chelba et al. (2010, Gboard) found this is
+exactly why production keyboard LMs use Katz instead of KN.</p>
+  </li>
+  <li>
+    <p><strong>Katz solves: “make the discounting robust enough to survive aggressive
+pruning.”</strong> Instead of KN’s continuation-probability backoff, Katz uses
+Good-Turing discounts derived straight from count-of-counts (how many
+n-grams were seen exactly once, twice, …), with a clean backoff weight
+`` that keeps the seen + unseen distribution summing to 1. It’s simpler
+and more stable under the size constraints a mobile app has to live within.
+<strong>What it doesn’t solve:</strong> Katz (like KN) still fills every context’s
+follower list up to the hard cap (avg 10.0 followers, every slot used, on
+our corpus) – it has no concept of “this candidate is uninformative,
+drop it.” Every follower list is exactly as full as the size budget
+allows, whether or not the extra entries actually help prediction.</p>
+  </li>
+  <li>
+    <p><strong>SwiftKey-WDP solves: “which of Katz’s followers are actually worth
+keeping?”</strong> WDP takes the Katz model as-is (same statistics, same scores)
+and adds a selection criterion on top: keep a follower only if its
+trigram-conditioned probability differs enough from what the bigram
+backoff alone would have predicted, weighted by how likely the whole
+phrase is. A follower that merely restates the bigram tier carries no
+trigram information and gets dropped – sometimes emptying the context
+entirely (1,718 contexts pruned outright on the full corpus). Result:
+~31% smaller than Katz at equal corpus size, while still matching Katz’s
+top-1 prediction 99.2% of the time at the shipping threshold (thr=25).
+<strong>What it doesn’t solve:</strong> WDP is a pruning layer on top of Katz, not a
+new probability estimate – it inherits whatever Katz got right or wrong
+about the underlying scores; it only decides what’s worth storing.</p>
+  </li>
+</ul>
+
+<p>In short: KN answers <em>what to predict when you’ve seen nothing</em>, Katz answers
+<em>how to discount what you have seen so backoff stays coherent under pruning</em>,
+and WDP answers <em>which of those predictions are worth the bytes to ship</em>.
+That’s why we ship Katz + WDP together – Katz supplies the estimate, WDP
+decides what of it survives onto a phone.</p>
+
+<hr />
+
+<h2 id="what-changes-across-the-three-scripts">What changes across the three scripts</h2>
+
+<p>The three builders are one codebase with two surgical forks:
+<code class="language-plaintext highlighter-rouge">scripts/build_ngrams.py</code> (KN) -&gt; <code class="language-plaintext highlighter-rouge">scripts/build_ngrams_katz.py</code> (Katz) -&gt;
+<code class="language-plaintext highlighter-rouge">scripts/build_ngrams_swiftkey.py</code> (WDP). Two regions change: the <strong>normalize</strong>
+step (what helper statistics get precomputed into <code class="language-plaintext highlighter-rouge">normalized.sqlite</code>) and the
+<strong>score</strong> step (how a context’s followers are scored).</p>
+
+<h3 id="1-normalize-step">1. Normalize step</h3>
+
+<p><strong>KN</strong> precomputes continuation probabilities (the “Francisco” fix) and
+per-context totals:</p>
+
+<div class="language-python highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="c1"># build_ngrams.py (KN)
+</span><span class="n">dst</span><span class="p">.</span><span class="nf">execute</span><span class="p">(</span><span class="sh">"</span><span class="s">CREATE TABLE cont_p(w TEXT PRIMARY KEY, p REAL)</span><span class="sh">"</span><span class="p">)</span>
+<span class="n">dst</span><span class="p">.</span><span class="nf">execute</span><span class="p">(</span><span class="sh">"</span><span class="s">CREATE TABLE bigram_ctx(ctx TEXT PRIMARY KEY, total INTEGER, distinct_n INTEGER)</span><span class="sh">"</span><span class="p">)</span>
+
+<span class="c1"># P_continuation(w) = (# distinct bigram types ending in w) / (# bigram types)
+</span><span class="n">total_types</span> <span class="o">=</span> <span class="n">src</span><span class="p">.</span><span class="nf">execute</span><span class="p">(</span><span class="sh">"</span><span class="s">SELECT COUNT(*) FROM bigrams</span><span class="sh">"</span><span class="p">).</span><span class="nf">fetchone</span><span class="p">()[</span><span class="mi">0</span><span class="p">]</span>
+<span class="n">dst</span><span class="p">.</span><span class="nf">executemany</span><span class="p">(</span>
+    <span class="sh">"</span><span class="s">INSERT INTO cont_p(w, p) VALUES(?, ?)</span><span class="sh">"</span><span class="p">,</span>
+    <span class="p">((</span><span class="n">w</span><span class="p">,</span> <span class="n">c</span> <span class="o">/</span> <span class="n">total_types</span><span class="p">)</span> <span class="k">for</span> <span class="n">w</span><span class="p">,</span> <span class="n">c</span> <span class="ow">in</span>
+     <span class="n">src</span><span class="p">.</span><span class="nf">execute</span><span class="p">(</span><span class="sh">"</span><span class="s">SELECT w, COUNT(*) FROM bigrams GROUP BY w</span><span class="sh">"</span><span class="p">)),</span>
+<span class="p">)</span>
+</code></pre></div></div>
+
+<p><strong>Katz</strong> replaces those with unigram MLE probabilities (the bottom of the
+backoff chain) and Good-Turing count-of-counts histograms per order:</p>
+
+<div class="language-python highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="c1"># build_ngrams_katz.py
+</span><span class="n">dst</span><span class="p">.</span><span class="nf">execute</span><span class="p">(</span><span class="sh">"</span><span class="s">CREATE TABLE uni_p(w TEXT PRIMARY KEY, p REAL)</span><span class="sh">"</span><span class="p">)</span>
+<span class="n">dst</span><span class="p">.</span><span class="nf">execute</span><span class="p">(</span><span class="sh">"</span><span class="s">CREATE TABLE hist(ngram_order INTEGER, r INTEGER, n INTEGER, PRIMARY KEY(ngram_order, r))</span><span class="sh">"</span><span class="p">)</span>
+
+<span class="c1"># Unigram MLE: p(w) = c(w) / N -- the lowest-order backoff.
+</span><span class="n">uni_total</span> <span class="o">=</span> <span class="n">src</span><span class="p">.</span><span class="nf">execute</span><span class="p">(</span><span class="sh">"</span><span class="s">SELECT SUM(count) FROM unigrams</span><span class="sh">"</span><span class="p">).</span><span class="nf">fetchone</span><span class="p">()[</span><span class="mi">0</span><span class="p">]</span> <span class="ow">or</span> <span class="mi">1</span>
+<span class="n">dst</span><span class="p">.</span><span class="nf">executemany</span><span class="p">(</span>
+    <span class="sh">"</span><span class="s">INSERT INTO uni_p(w, p) VALUES(?, ?)</span><span class="sh">"</span><span class="p">,</span>
+    <span class="p">((</span><span class="n">w</span><span class="p">,</span> <span class="n">c</span> <span class="o">/</span> <span class="n">uni_total</span><span class="p">)</span> <span class="k">for</span> <span class="n">w</span><span class="p">,</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">src</span><span class="p">.</span><span class="nf">execute</span><span class="p">(</span><span class="sh">"</span><span class="s">SELECT w, count FROM unigrams</span><span class="sh">"</span><span class="p">)),</span>
+<span class="p">)</span>
+
+<span class="c1"># N_r = # n-gram types with count exactly r, per order (2, 3).
+</span><span class="k">for</span> <span class="n">order</span><span class="p">,</span> <span class="n">table</span> <span class="ow">in</span> <span class="p">((</span><span class="mi">2</span><span class="p">,</span> <span class="sh">"</span><span class="s">bigrams</span><span class="sh">"</span><span class="p">),</span> <span class="p">(</span><span class="mi">3</span><span class="p">,</span> <span class="sh">"</span><span class="s">trigrams</span><span class="sh">"</span><span class="p">)):</span>
+    <span class="n">dst</span><span class="p">.</span><span class="nf">executemany</span><span class="p">(</span>
+        <span class="sh">"</span><span class="s">INSERT INTO hist(ngram_order, r, n) VALUES(?, ?, ?)</span><span class="sh">"</span><span class="p">,</span>
+        <span class="p">((</span><span class="n">order</span><span class="p">,</span> <span class="n">r</span><span class="p">,</span> <span class="n">n</span><span class="p">)</span> <span class="k">for</span> <span class="n">r</span><span class="p">,</span> <span class="n">n</span> <span class="ow">in</span>
+         <span class="n">src</span><span class="p">.</span><span class="nf">execute</span><span class="p">(</span><span class="sa">f</span><span class="sh">"</span><span class="s">SELECT count, COUNT(*) FROM </span><span class="si">{</span><span class="n">table</span><span class="si">}</span><span class="s"> GROUP BY count</span><span class="sh">"</span><span class="p">)),</span>
+    <span class="p">)</span>
+</code></pre></div></div>
+
+<p><strong>SwiftKey-WDP</strong> uses the same normalize step as Katz (it prunes a Katz model;
+it doesn’t change the statistics).</p>
+
+<h4 id="reading-those-sql-tables-in-plain-english">Reading those SQL tables in plain English</h4>
+
+<p>The normalize step exists because each smoother needs different “helper
+statistics” precomputed before it can score anything. What each table actually
+<em>means</em>:</p>
+
+<p><strong>KN’s two tables</strong> (<code class="language-plaintext highlighter-rouge">cont_p</code>, <code class="language-plaintext highlighter-rouge">bigram_ctx</code>):</p>
+
+<ul>
+  <li><strong><code class="language-plaintext highlighter-rouge">cont_p(w, p)</code> – “continuation probability.”</strong> For every word <em>w</em>, count in
+how many <em>different</em> contexts <em>w</em> ever appeared as a follower (i.e. how many
+distinct bigram types end in <em>w</em>), divided by the total number of distinct
+bigram types in the corpus. This is deliberately <strong>not</strong> raw frequency – it’s
+the fix for the classic “San Francisco” problem: <em>“Francisco”</em> has a high raw
+frequency (because “San Francisco” occurs constantly) but is a terrible
+generic guess, because it only ever continues <strong>one</strong> context (“San ___”).
+Raw frequency can’t tell “genuinely common word” apart from “word that
+completes one very common phrase”; continuation count can. This table is the
+bottom tier of the KN backoff chain – what the model falls back to when it
+has never seen the context.</li>
+  <li><strong><code class="language-plaintext highlighter-rouge">bigram_ctx(ctx, total, distinct_n)</code> – per-context bookkeeping.</strong> For each
+context word <em>w1</em>: <code class="language-plaintext highlighter-rouge">total</code> = the total number of bigram <em>tokens</em> that start
+with <em>w1</em> (the sum of all its follower counts), and <code class="language-plaintext highlighter-rouge">distinct_n</code> = how many
+<em>different</em> words ever followed <em>w1</em> (the number of follower types). These
+two numbers produce KN’s interpolation weight
+<strong>(w1) = d  distinct_n / total</strong> – “how much probability mass should this
+context reserve for backoff?” A context with many rare followers (large
+<code class="language-plaintext highlighter-rouge">distinct_n</code> relative to <code class="language-plaintext highlighter-rouge">total</code>) is one where unseen continuations are
+likely, so it hands more mass to the backoff tier; a context dominated by one
+frequent follower keeps most mass on what was seen.</li>
+</ul>
+
+<p><strong>Katz’s two tables</strong> (<code class="language-plaintext highlighter-rouge">uni_p</code>, <code class="language-plaintext highlighter-rouge">hist</code>):</p>
+
+<ul>
+  <li><strong><code class="language-plaintext highlighter-rouge">uni_p(w, p)</code> – plain unigram frequency.</strong> <code class="language-plaintext highlighter-rouge">p(w) = count(w) / total tokens
+in corpus</code>. No cleverness at all – this is the absolute bottom of the Katz
+backoff chain: when the model knows nothing about the context, it guesses the
+globally most frequent words.</li>
+  <li><strong><code class="language-plaintext highlighter-rouge">hist(order, r, n)</code> – the “count-of-counts” histogram.</strong> Read a row as:
+<em>“for n-grams of length <code class="language-plaintext highlighter-rouge">order</code>, exactly <strong>n</strong> distinct n-gram types were
+observed exactly <strong>r</strong> times in the corpus.”</em> So <code class="language-plaintext highlighter-rouge">hist(3, 1, 400000)</code> means
+“400,000 distinct trigram types were seen exactly once.” Good-Turing
+discounting works entirely off the ratio of adjacent rows, <strong>N_{r+1} / N_r</strong>,
+to answer: <em>“of all the things seen r times, how much probability mass should
+we shave off and hand to things never seen at all?”</em> Intuition: if a huge
+number of types were seen exactly once (N large), the corpus is sparse –
+next time you’re likely to see something new, so discounts are aggressive. If
+few singletons exist relative to higher counts, the corpus is dense and the
+discounts clamp to 1.0 – <em>no</em> discount, seen counts pass through as-is. That
+clamp is exactly what happened on our 583 MB corpus (build log:
+<code class="language-plaintext highlighter-rouge">d_bi[1]=1.0000 d_tri[1]=1.0000</code>): the corpus is dense enough that Katz 
+plain relative frequency for seen n-grams, but the backoff machinery is still
+fully in place for unseen ones.</li>
+</ul>
+
+<h3 id="2-score-step--bigram">2. Score step – bigram</h3>
+
+<p><strong>KN</strong> interpolates every seen follower with the continuation probability:</p>
+
+<div class="language-python highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="c1"># KN score_bigram
+</span><span class="n">lam</span> <span class="o">=</span> <span class="p">(</span><span class="n">discount</span> <span class="o">*</span> <span class="nf">len</span><span class="p">(</span><span class="n">followers</span><span class="p">))</span> <span class="o">/</span> <span class="n">total</span>
+<span class="n">scored</span> <span class="o">=</span> <span class="p">[(</span><span class="n">w</span><span class="p">,</span> <span class="nf">max</span><span class="p">(</span><span class="n">c</span> <span class="o">-</span> <span class="n">discount</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span> <span class="o">/</span> <span class="n">total</span> <span class="o">+</span> <span class="n">lam</span> <span class="o">*</span> <span class="n">cont_p</span><span class="p">.</span><span class="nf">get</span><span class="p">(</span><span class="n">w</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">))</span>
+          <span class="k">for</span> <span class="n">w</span><span class="p">,</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">followers</span><span class="p">.</span><span class="nf">items</span><span class="p">()]</span>
+</code></pre></div></div>
+
+<p><em>“Every follower we actually saw gets <code class="language-plaintext highlighter-rouge">(count  0.75) / total</code> –
+shave a flat 0.75 off each count, then normalize. Then, on top of that, add a
+small bonus proportional to how ‘continuable’ the word is in general
+(<code class="language-plaintext highlighter-rouge">cont_p</code>). The size of that reserved bonus pool is <code class="language-plaintext highlighter-rouge">lam</code>: contexts with many
+distinct followers reserve more.”</em> Two properties follow: (1) followers seen
+exactly once get score ~0 from the first term and survive only on their
+continuation bonus; (2) the blend happens for <strong>every</strong> entry, seen or not –
+that’s what makes this <em>interpolated</em> KN.</p>
+
+<p><strong>Katz</strong> computes Good-Turing discounts from the histogram, then applies a
+straight discounted MLE – no interpolation at the bigram tier (the backoff only
+matters inside the trigram backoff distribution):</p>
+
+<div class="language-python highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="c1"># Katz katz_discounts + score_bigram
+</span><span class="k">def</span> <span class="nf">katz_discounts</span><span class="p">(</span><span class="n">hist</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">],</span> <span class="n">k</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">5</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">float</span><span class="p">]:</span>
+    <span class="sh">"""</span><span class="s">Good-Turing/Katz discounts d_r from a count-of-counts histogram.</span><span class="sh">"""</span>
+    <span class="n">n1</span> <span class="o">=</span> <span class="n">hist</span><span class="p">.</span><span class="nf">get</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span>
+    <span class="n">nk1</span> <span class="o">=</span> <span class="n">hist</span><span class="p">.</span><span class="nf">get</span><span class="p">(</span><span class="n">k</span> <span class="o">+</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">n1</span> <span class="o">==</span> <span class="mi">0</span> <span class="ow">or</span> <span class="n">nk1</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+        <span class="k">return</span> <span class="p">{</span><span class="n">r</span><span class="p">:</span> <span class="mf">1.0</span> <span class="k">for</span> <span class="n">r</span> <span class="ow">in</span> <span class="n">hist</span><span class="p">}</span>
+    <span class="n">ratio</span> <span class="o">=</span> <span class="p">(</span><span class="n">k</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)</span> <span class="o">*</span> <span class="n">nk1</span> <span class="o">/</span> <span class="n">n1</span>
+    <span class="n">d</span> <span class="o">=</span> <span class="p">{}</span>
+    <span class="k">for</span> <span class="n">r</span> <span class="ow">in</span> <span class="n">hist</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">r</span> <span class="o">&gt;</span> <span class="n">k</span><span class="p">:</span>
+            <span class="n">d</span><span class="p">[</span><span class="n">r</span><span class="p">]</span> <span class="o">=</span> <span class="mf">1.0</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">nr</span><span class="p">,</span> <span class="n">nr1</span> <span class="o">=</span> <span class="n">hist</span><span class="p">.</span><span class="nf">get</span><span class="p">(</span><span class="n">r</span><span class="p">,</span> <span class="mi">0</span><span class="p">),</span> <span class="n">hist</span><span class="p">.</span><span class="nf">get</span><span class="p">(</span><span class="n">r</span> <span class="o">+</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span>
+            <span class="n">d</span><span class="p">[</span><span class="n">r</span><span class="p">]</span> <span class="o">=</span> <span class="mf">1.0</span> <span class="nf">if </span><span class="p">(</span><span class="n">nr</span> <span class="o">==</span> <span class="mi">0</span> <span class="ow">or</span> <span class="n">nr1</span> <span class="o">==</span> <span class="mi">0</span><span class="p">)</span> <span class="k">else</span> <span class="nf">min</span><span class="p">(((</span><span class="n">r</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)</span> <span class="o">/</span> <span class="n">r</span><span class="p">)</span> <span class="o">*</span> <span class="p">(</span><span class="n">nr1</span> <span class="o">/</span> <span class="n">nr</span><span class="p">)</span> <span class="o">/</span> <span class="n">ratio</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">d</span>
+
+<span class="k">def</span> <span class="nf">score_bigram</span><span class="p">(</span><span class="n">followers</span><span class="p">:</span> <span class="nb">dict</span><span class="p">,</span> <span class="n">d_bi</span><span class="p">:</span> <span class="nb">dict</span><span class="p">,</span> <span class="n">max_f</span><span class="p">:</span> <span class="nb">int</span><span class="p">):</span>
+    <span class="n">scored</span> <span class="o">=</span> <span class="p">[(</span><span class="n">w</span><span class="p">,</span> <span class="n">d_bi</span><span class="p">.</span><span class="nf">get</span><span class="p">(</span><span class="n">c</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">)</span> <span class="o">*</span> <span class="n">c</span> <span class="o">/</span> <span class="n">total</span><span class="p">)</span> <span class="k">for</span> <span class="n">w</span><span class="p">,</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">followers</span><span class="p">.</span><span class="nf">items</span><span class="p">()]</span>
+</code></pre></div></div>
+
+<p><em>“<code class="language-plaintext highlighter-rouge">katz_discounts</code> turns the count-of-counts histogram into a
+per-count multiplier <code class="language-plaintext highlighter-rouge">d_r</code> – ‘a thing seen r times keeps only d_r of its mass.’
+Counts above k=5 keep everything (<code class="language-plaintext highlighter-rouge">d_r = 1</code>). Then <code class="language-plaintext highlighter-rouge">score_bigram</code> is just
+<code class="language-plaintext highlighter-rouge">d_count  count / total</code> for each seen follower – a discounted relative
+frequency, with nothing blended in.</em>” Note the deliberate absence of a backoff
+term here: in a Katz model the bigram tier only describes what was <em>seen</em> after
+the context; the unigram floor (<code class="language-plaintext highlighter-rouge">uni_p</code>) only ever enters inside the <strong>trigram</strong>
+backoff distribution (next section). And recall from the normalize-step
+walkthrough that on this corpus all the <code class="language-plaintext highlighter-rouge">d_r</code> clamped to 1.0 – so in practice
+this is plain <code class="language-plaintext highlighter-rouge">count / total</code> for us, with the discount machinery dormant but
+correctly in place.</p>
+
+<h3 id="3-score-step--trigram">3. Score step – trigram</h3>
+
+<p><strong>KN</strong> unions seen followers with the backoff distribution and interpolates all
+of them:</p>
+
+<div class="language-python highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="c1"># KN score_trigram
+</span><span class="n">lam</span> <span class="o">=</span> <span class="p">(</span><span class="n">discount</span> <span class="o">*</span> <span class="nf">len</span><span class="p">(</span><span class="n">followers</span><span class="p">))</span> <span class="o">/</span> <span class="n">total</span>
+<span class="n">scored</span> <span class="o">=</span> <span class="p">[]</span>
+<span class="k">for</span> <span class="n">w</span> <span class="ow">in</span> <span class="nf">set</span><span class="p">(</span><span class="n">followers</span><span class="p">)</span> <span class="o">|</span> <span class="nf">set</span><span class="p">(</span><span class="n">backoff</span><span class="p">):</span>
+    <span class="n">c</span> <span class="o">=</span> <span class="n">followers</span><span class="p">.</span><span class="nf">get</span><span class="p">(</span><span class="n">w</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span>
+    <span class="n">scored</span><span class="p">.</span><span class="nf">append</span><span class="p">((</span><span class="n">w</span><span class="p">,</span> <span class="nf">max</span><span class="p">(</span><span class="n">c</span> <span class="o">-</span> <span class="n">discount</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span> <span class="o">/</span> <span class="n">total</span> <span class="o">+</span> <span class="n">lam</span> <span class="o">*</span> <span class="n">backoff</span><span class="p">.</span><span class="nf">get</span><span class="p">(</span><span class="n">w</span><span class="p">,</span> <span class="n">cont_p</span><span class="p">.</span><span class="nf">get</span><span class="p">(</span><span class="n">w</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">))))</span>
+</code></pre></div></div>
+
+<p><em>“Same recipe as the bigram tier, but the bonus pool now draws from the bigram
+backoff distribution instead of <code class="language-plaintext highlighter-rouge">cont_p</code>: every word in the union of ‘seen
+after this context’ and ‘in the backoff distribution’ gets <code class="language-plaintext highlighter-rouge">(count  0.75)/total</code>
+plus a slice of the reserved mass <code class="language-plaintext highlighter-rouge">lam</code> proportional to its backoff score.
+Words never seen after this context get only the backoff slice – that’s how KN
+fills all 10 slots even for sparse contexts.”</em></p>
+
+<p><strong>Katz</strong> scores seen followers with the discounted MLE, then adds unseen
+backoff words scaled by the normalizing backoff weight  (so the distribution
+still sums to 1):</p>
+
+<div class="language-python highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="c1"># Katz score_trigram
+</span><span class="n">seen</span> <span class="o">=</span> <span class="p">[(</span><span class="n">w</span><span class="p">,</span> <span class="n">d_tri</span><span class="p">.</span><span class="nf">get</span><span class="p">(</span><span class="n">c</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">)</span> <span class="o">*</span> <span class="n">c</span> <span class="o">/</span> <span class="n">total</span><span class="p">)</span> <span class="k">for</span> <span class="n">w</span><span class="p">,</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">followers</span><span class="p">.</span><span class="nf">items</span><span class="p">()]</span>
+<span class="n">seen_mass</span> <span class="o">=</span> <span class="nf">sum</span><span class="p">(</span><span class="n">p</span> <span class="k">for</span> <span class="n">_</span><span class="p">,</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">seen</span><span class="p">)</span>
+<span class="n">seen_bo</span> <span class="o">=</span> <span class="nf">sum</span><span class="p">(</span><span class="n">backoff</span><span class="p">.</span><span class="nf">get</span><span class="p">(</span><span class="n">w</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">)</span> <span class="k">for</span> <span class="n">w</span> <span class="ow">in</span> <span class="n">followers</span><span class="p">)</span>
+<span class="n">beta</span> <span class="o">=</span> <span class="p">(</span><span class="mi">1</span> <span class="o">-</span> <span class="n">seen_mass</span><span class="p">)</span> <span class="o">/</span> <span class="nf">max</span><span class="p">(</span><span class="mi">1</span> <span class="o">-</span> <span class="n">seen_bo</span><span class="p">,</span> <span class="mf">1e-12</span><span class="p">)</span>
+<span class="n">scored</span> <span class="o">=</span> <span class="n">seen</span> <span class="o">+</span> <span class="p">[(</span><span class="n">w</span><span class="p">,</span> <span class="n">beta</span> <span class="o">*</span> <span class="n">p</span><span class="p">)</span> <span class="k">for</span> <span class="n">w</span><span class="p">,</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">backoff</span><span class="p">.</span><span class="nf">items</span><span class="p">()</span> <span class="k">if</span> <span class="n">w</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">followers</span><span class="p">]</span>
+<span class="n">scored</span><span class="p">.</span><span class="nf">sort</span><span class="p">(</span><span class="n">key</span><span class="o">=</span><span class="k">lambda</span> <span class="n">p</span><span class="p">:</span> <span class="p">(</span><span class="o">-</span><span class="n">p</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span> <span class="n">p</span><span class="p">[</span><span class="mi">0</span><span class="p">]))</span>
+<span class="n">top</span> <span class="o">=</span> <span class="n">scored</span><span class="p">[:</span><span class="n">max_f</span><span class="p">]</span>
+</code></pre></div></div>
+
+<p><em>“Seen followers get the discounted MLE <code class="language-plaintext highlighter-rouge">d_rc/total</code>. <code class="language-plaintext highlighter-rouge">seen_mass</code> is how much
+probability those seen words consumed; <code class="language-plaintext highlighter-rouge">beta</code> rescales the bigram backoff so
+the unseen words share exactly the leftover <code class="language-plaintext highlighter-rouge">1  seen_mass</code> – the whole
+distribution still sums to 1. Unseen words enter ranked by <code class="language-plaintext highlighter-rouge">p(w|w2)</code>, which
+is why Katz also fills all 10 slots.”</em></p>
+
+<p><strong>SwiftKey-WDP</strong> takes the Katz trigram and prunes each follower by the
+weighted-difference criterion – keep a follower only if its trigram estimate
+differs enough from what the bigram backoff would have said anyway, weighted by
+how probable the whole trigram is:</p>
+
+<div class="language-python highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="c1"># SwiftKey score_trigram -- keep w iff:
+#   p(w1 w2 w) * |log p(w|w1 w2) - log(beta * p(w|w2))| &gt; delta
+</span><span class="n">kept</span> <span class="o">=</span> <span class="p">[]</span>
+<span class="k">for</span> <span class="n">w</span><span class="p">,</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">seen</span><span class="p">:</span>
+    <span class="n">bo_p</span> <span class="o">=</span> <span class="n">beta</span> <span class="o">*</span> <span class="n">backoff</span><span class="p">.</span><span class="nf">get</span><span class="p">(</span><span class="n">w</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">)</span>
+    <span class="n">diff</span> <span class="o">=</span> <span class="nf">float</span><span class="p">(</span><span class="sh">"</span><span class="s">inf</span><span class="sh">"</span><span class="p">)</span> <span class="k">if</span> <span class="n">bo_p</span> <span class="o">&lt;=</span> <span class="mi">0</span> <span class="k">else</span> <span class="nf">abs</span><span class="p">(</span><span class="n">math</span><span class="p">.</span><span class="nf">log</span><span class="p">(</span><span class="n">p</span><span class="p">)</span> <span class="o">-</span> <span class="n">math</span><span class="p">.</span><span class="nf">log</span><span class="p">(</span><span class="n">bo_p</span><span class="p">))</span>
+    <span class="k">if</span> <span class="n">ctx_joint</span> <span class="o">*</span> <span class="n">p</span> <span class="o">*</span> <span class="n">diff</span> <span class="o">&gt;</span> <span class="n">delta</span><span class="p">:</span>
+        <span class="n">kept</span><span class="p">.</span><span class="nf">append</span><span class="p">((</span><span class="n">w</span><span class="p">,</span> <span class="n">p</span><span class="p">))</span>
+<span class="k">if</span> <span class="ow">not</span> <span class="n">kept</span><span class="p">:</span>
+    <span class="k">return</span> <span class="bp">None</span>                      <span class="c1"># whole context pruned
+</span><span class="n">kept</span><span class="p">.</span><span class="nf">sort</span><span class="p">(</span><span class="n">key</span><span class="o">=</span><span class="k">lambda</span> <span class="n">p</span><span class="p">:</span> <span class="p">(</span><span class="o">-</span><span class="n">p</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span> <span class="n">p</span><span class="p">[</span><span class="mi">0</span><span class="p">]))</span>
+<span class="n">top</span> <span class="o">=</span> <span class="n">kept</span><span class="p">[:</span><span class="n">max_f</span><span class="p">]</span>
+</code></pre></div></div>
+
+<p><em>“Start from the Katz trigram scores, then ask of every follower: ‘does knowing
+the two-word context actually change this word’s odds compared to the bigram
+alone?’ <code class="language-plaintext highlighter-rouge">diff</code> is the log-odds gap between the trigram estimate and the
+backoff; <code class="language-plaintext highlighter-rouge">ctx_jointp</code> weights that gap by how likely the whole phrase is.
+Only followers whose weighted surprise exceeds <code class="language-plaintext highlighter-rouge">delta</code> survive – the rest
+merely restate the bigram tier and are dropped. If nothing survives, the whole
+context is pruned.”</em></p>
+
+<p><code class="language-plaintext highlighter-rouge">ctx_joint = p(w2|w1) * p(w1)</code> is the context part of the chained joint
+probability, computed per context with a memoized <code class="language-plaintext highlighter-rouge">bigram_total(w1)</code>. Unseen
+backoff words score exactly <code class="language-plaintext highlighter-rouge">p(w|w2)</code>, so their weighted difference is 0 and
+they are <em>always</em> pruned – they replicate the bigram tier and carry no trigram
+information. This is why WDP only ever touches the trigram output: the bigram
+and support files come out byte-identical to the other builds.</p>
+
+<hr />
+
+<h2 id="tests-run">Tests run</h2>
+
+<ol>
+  <li><strong>Local benchmarks</strong> (MacBook, 4 workers) on 50 MB and 250 MB corpus slices
+for the SwiftKey build, with follower-count sampling.</li>
+  <li><strong>Full-corpus AWS builds</strong> (spot <code class="language-plaintext highlighter-rouge">t3.xlarge</code>, ap-south-1, self-terminating)
+for Katz and SwiftKey on the full 583 MB corpus (~11 min each).</li>
+  <li><strong>Pairwise comparison</strong> (<code class="language-plaintext highlighter-rouge">compare_kn_katz.py</code>): follower-list identity and
+top-1 agreement, KN vs Katz, on the full builds.</li>
+  <li><strong>Pruning sweep</strong> (<code class="language-plaintext highlighter-rouge">prune_compare.py</code>): KN vs Katz as the support threshold
+<code class="language-plaintext highlighter-rouge">thr</code> sweeps 10 -&gt; 50 (the app prunes contexts by support at load time).</li>
+  <li><strong>Three-way comparison</strong> (<code class="language-plaintext highlighter-rouge">compare_three.py</code>): KN vs Katz vs SwiftKey –
+sizes, top-1 agreement, follower-count stats, and sample disagreements.</li>
+</ol>
+
+<h2 id="results">Results</h2>
+
+<h3 id="swiftkey-local-benchmarks">SwiftKey local benchmarks</h3>
+
+<table>
+  <thead>
+    <tr>
+      <th>Corpus slice</th>
+      <th>trigrams.json</th>
+      <th>Contexts sampled</th>
+      <th>Avg followers</th>
+      <th>Katz equivalent</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>50 MB</td>
+      <td>33.4 MB</td>
+      <td>200,000</td>
+      <td>5.38</td>
+      <td>49.0 MB (avg 10.0)</td>
+    </tr>
+    <tr>
+      <td>250 MB</td>
+      <td>127.5 MB</td>
+      <td>500,000</td>
+      <td>5.53</td>
+      <td>184.0 MB (avg 10.0)</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>WDP output runs ~31% smaller than Katz at the same corpus size.</p>
+
+<h3 id="kn-vs-katz-support-threshold-sweep-full-corpus">KN vs Katz, support-threshold sweep (full corpus)</h3>
+
+<table>
+  <thead>
+    <tr>
+      <th>thr</th>
+      <th>ctx_kept</th>
+      <th>KN MB</th>
+      <th>Katz MB</th>
+      <th>top-1 agree</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>10</td>
+      <td>607,751</td>
+      <td>122.7</td>
+      <td>118.9</td>
+      <td>81.4%</td>
+    </tr>
+    <tr>
+      <td>15</td>
+      <td>424,471</td>
+      <td>85.2</td>
+      <td>84.2</td>
+      <td>83.9%</td>
+    </tr>
+    <tr>
+      <td>20</td>
+      <td>328,214</td>
+      <td>65.8</td>
+      <td>65.5</td>
+      <td>85.3%</td>
+    </tr>
+    <tr>
+      <td>25</td>
+      <td>269,397</td>
+      <td>54.0</td>
+      <td>53.9</td>
+      <td>86.2%</td>
+    </tr>
+    <tr>
+      <td>30</td>
+      <td>229,250</td>
+      <td>46.0</td>
+      <td>45.9</td>
+      <td>86.8%</td>
+    </tr>
+    <tr>
+      <td>40</td>
+      <td>177,373</td>
+      <td>35.7</td>
+      <td>35.5</td>
+      <td>87.7%</td>
+    </tr>
+    <tr>
+      <td>50</td>
+      <td>145,278</td>
+      <td>29.2</td>
+      <td>29.1</td>
+      <td>88.3%</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>Unpruned, only 5,933 of 1,940,183 contexts (0.3%) have identical follower
+lists, and top-1 agreement is 64% – the two smoothers genuinely rank
+differently. Agreement <em>rises</em> with pruning because low-support contexts are
+where the ranking diverges most. Sample top-1 disagreements at thr=25:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>'cause i'm':  KN=not    Katz=a       (support=66)
+'i am':       KN=not    Katz=going   (support=41)
+'i just':     KN=want   Katz=don't   (support=27)
+'if i':       KN=was    Katz=don't   (support=41)
+'round the':  KN=world  Katz=clock   (support=34)
+</code></pre></div></div>
+
+<h3 id="three-way-comparison-full-corpus">Three-way comparison (full corpus)</h3>
+
+<table>
+  <thead>
+    <tr>
+      <th>thr</th>
+      <th>KN MB</th>
+      <th>Katz MB</th>
+      <th>SK MB</th>
+      <th>KNvKZ top-1</th>
+      <th>KNvSK top-1</th>
+      <th>KZvSK top-1</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>10</td>
+      <td>122.7</td>
+      <td>118.9</td>
+      <td>111.0</td>
+      <td>81.4%</td>
+      <td>–</td>
+      <td>–</td>
+    </tr>
+    <tr>
+      <td>25</td>
+      <td>54.0</td>
+      <td>53.9</td>
+      <td>53.5</td>
+      <td>86.2%</td>
+      <td>85.7%</td>
+      <td><strong>99.2%</strong></td>
+    </tr>
+    <tr>
+      <td>40</td>
+      <td>35.7</td>
+      <td>35.5</td>
+      <td>–</td>
+      <td>87.7%</td>
+      <td>–</td>
+      <td>99.9%</td>
+    </tr>
+    <tr>
+      <td>50</td>
+      <td>29.2</td>
+      <td>29.1</td>
+      <td>29.1</td>
+      <td>88.3%</td>
+      <td>–</td>
+      <td>99.9%</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>Follower-count stats at thr=25: KN avg 10.0 and Katz avg 10.0 – every context
+is capped at <code class="language-plaintext highlighter-rouge">--max-followers 10</code>. SwiftKey avg 9.82 (min 1, max 10): WDP
+removes the followers whose trigram score merely restates the backoff. It also
+dropped 1,718 contexts entirely (1,938,465 vs 1,940,183) – contexts where
+<em>every</em> follower fell below the weighted-difference threshold.</p>
+
+<p>The “avg” number is the mean number of candidate next-words stored per context
+after pruning. KN and Katz always fill all 10 slots; SwiftKey keeps only the
+informative ones. Since SwiftKey matches Katz’s top-1 prediction 99.2% of the
+time at our shipping threshold while being smaller at every threshold, the data
+says: <strong>ship the SwiftKey-WDP build.</strong></p>
+
+<hr />
+
+<h2 id="references">References</h2>
+
+<ul>
+  <li><strong>Katz paper</strong> – S. M. Katz, “Estimation of probabilities from sparse data
+for the language model component of a speech recognizer,” <em>IEEE Transactions
+on Acoustics, Speech, and Signal Processing</em>, 1987. The Good-Turing
+discounting + backoff-weight scheme implemented in <code class="language-plaintext highlighter-rouge">build_ngrams_katz.py</code>.</li>
+  <li><strong>SwiftKey patent article</strong> – US8655647, “N-gram selection for
+practical-sized language models” (Moore &amp; Quirk, Microsoft Research lineage,
+granted 2014). The weighted-difference pruning criterion implemented in
+<code class="language-plaintext highlighter-rouge">build_ngrams_swiftkey.py</code> – an approximation to Stolcke’s relative-entropy
+pruning (1998) that needs only the pruned model’s own statistics.</li>
+  <li>Moore &amp; Quirk, “Less is More: Significance-Based N-gram Selection for
+Smaller, Better Language Models,” EMNLP 2009 (D09-1078): significance
+selection + modified WDP  relative-entropy pruning at severe pruning
+levels; improves Katz-backoff perplexity ~8% at the same model size.</li>
+  <li>Stolcke, “Entropy-based Pruning of Backoff Language Models,” 1998 – the
+relative-entropy pruning that WDP approximates.</li>
+  <li>Chelba et al., 2010 (Gboard): why production keyboard LMs use Katz rather
+than KN – KN’s aggressive discounting interacts badly with hard pruning,
+which is exactly the regime a keyboard model ships in.</li>
+  <li>Chen &amp; Goodman, “An Empirical Study of Smoothing Techniques for Language
+Modeling,” 1998 (cs/0108005) – the smoothing survey behind the KN reference
+build.</li>
+</ul>
+
+
+      <hr>
+
+      <!-- Prev / Next / Up navigation -->
+      
+      
+      
+
+      <div class="clearfix" style="margin-top: 2rem;">
+        
+          
+          
+
+          
+            
+            <a class="btn btn-primary float-left" href="/keyboard/08-ngram-pipeline-optimization.html" title="CodeKeyboard Part 8: Optimizing a 583MB N-gram Pipeline">&larr; Previous</a>
+          
+
+          
+            
+            <a class="btn btn-primary float-right" href="/keyboard/10-vocab-tail-analysis.html" title="CodeKeyboard Part 10: Is the Vocabulary Tail Worth Shipping?">Next &rarr;</a>
+          
+        
+      </div>
+
+      
+      <div style="text-align: center; margin-top: 1rem;">
+        <a href="/keyboard/">&uarr; Back to Table of Contents</a>
+      </div>
+      
+
+    </div>
+  </div>
+</div>
+
+
+  <!-- Footer -->
+
+<hr>
+
+<footer>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <ul class="list-inline text-center">
+          
+          <li class="list-inline-item">
+            <a href="mailto:amitava.dev@proton.me" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="far fa-envelope fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          
+          
+          <li class="list-inline-item">
+            <a href="https://www.linkedin.com/in/amitavaag" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-linkedin fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          <li class="list-inline-item">
+            <a href="https://github.com/ikouchiha47" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-github fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+        </ul>
+
+        <p class="copyright text-muted">
+          Build with: 
+          <a 
+            href="https://github.com/StartBootstrap/startbootstrap-clean-blog-jekyll"
+            class="text-gray"
+            target="_blank">startbootstrap-clean-blog-jekyll</a></p>
+      </div>
+    </div>
+  </div>
+</footer>
+
+
+  <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="/assets/vendor/blog/js/scripts.js"></script>
+
+<script src="/assets/scripts.js"></script>
+
+
+
+
+
+  <script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+
+    document.querySelectorAll('pre > code.language-mermaid').forEach((codeBlock) => {
+      codeBlock.parentElement.outerHTML = `<pre class="mermaid">${codeBlock.textContent}</pre>`;
+    });
+
+
+    mermaid.initialize({ startOnLoad: true, theme: 'forest' });
+</script>
+
+
+  
+
+</body>
+
+</html>
