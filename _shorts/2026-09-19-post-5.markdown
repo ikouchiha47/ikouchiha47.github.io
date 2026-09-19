@@ -1,0 +1,37 @@
+---
+date: 2026-09-19 00:29
+tags: [algorithms, struggles, invariants]
+---
+
+Well, I have come across the concepts on invariants.
+It sounds simple, but its not. I mean sometimes it is, but most times
+its tricky.
+
+> Invariant is a property, which has to remain true at any point during the execution
+
+But its tricky because, you can't just think of this invariant,
+it has to fit as well. Sometimes it might look like you have found it
+but it has to work for all cases.
+
+There are three parts:
+
+- Init: where the invariant gets initialized.
+- Body: add/remove things and check and make the invariant property true
+
+There has been two problems, or rather one problem. The brute force, I get it.
+But even if I kindof can think or feel about what the solution might look like.
+
+The structured way to fill up the blanks is getting difficult. However I have never
+thought about things in terms of language.
+
+I am more comfortable thinking in code, which seems to be a problem in interviews.
+The whole process is a mess for me.
+
+I have two ways I am trying to become human:
+
+1. letting the AI build me drills for converting english to code
+2. a codeforces blog says, just look at the solutions to a whole bunch of problems
+  and think about them.
+
+So `telescoping` and `immersion`. This is something I am really hating man,
+I wanted to be able to derieve things.

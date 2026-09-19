@@ -1,0 +1,6 @@
+---
+date: 2026-09-19 20:19
+tags: [algorithms, stack]
+---
+
+Never have I thought I will have to 

@@ -1,0 +1,29 @@
+---
+date: 2026-09-19 13:09
+tags: [algorthims, struggles]
+---
+
+This shorts and wall is proving effective. I can revise things, and write
+more in english.
+
+Two problems one of which could solve and one I couldn't.
+
+1. Longest Repeating Character Replacement
+2. Sliding Window Maximum
+
+Most of the substring problem require a window. Although its a trap, because
+sometimes its not a slider, the window-ing is there, but maybe some data can
+be reused later.
+
+1. Longest Repeating Character Replacement
+
+Here the property is within a given window, there would be some repeating
+characters, one of which will be the largest, and for the window to be valid
+the invariant would be:
+
+- length of the window - the maximum count of the unique character <= to k (given replacements allowed)
+
+- Init: window len = 0, max count = 0 so, w - m <= k, is true
+- Body: add characters to the window, computing the maxFreq, then make sure the invariant
+  is true, which is (w - m) > k, reduce the window, reducing the counter.
+- End: once the window is valid again, we compute the maxLen of the window

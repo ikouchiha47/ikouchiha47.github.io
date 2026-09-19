@@ -1,0 +1,71 @@
+---
+date: 2026-09-19 17:11
+tags: [algorithms, struggle]
+---
+
+2. Sliding window maximum
+
+I was really stuck at this problem, but not as much as the next greater element.
+
+Next greater element was a harrowing shameful experience, and its marked as easy.
+
+Looking the sliding window maximum, the brute force approach was easy:
+
+- Get slices of i to i+k, and compute the max.
+
+But computing max is also a loop, so, the complexity came down to O(n*m).
+Even with go-routines at 10^5 scale, LC gives us TLE.
+
+If I looked a bit close, and considered sliding window:
+
+1. Some maxes are getting recalculated, so some of these numbers in the window
+  can become the next maximum
+2. Once a value exits the window, there can be two cases:
+  a. the new number is smaller, in which case it can be a candidate for a future window
+  b. the new number is greater than the max of this window, in which case the present max
+    can no longer be the max
+  c. once a greater number leaves the window, it can no longer be considered as a
+    candidate for max
+
+
+I guess then, As the window moves, have a ordered list of candidates, and remove the items
+which can no longer be considered as possible maxes.
+
+Since an `invariant` is a property, we can say, the invariant
+
+> After processing each element, the candidate is an ordered list of elements which
+> contains every element that can still become the maximum after it.
+
+
+Easier said that done, it took me the rest of the day to figure out how to represent this.
+
+Agent says, I am skipping steps here, (which in hindsight is how my brain has worked, even
+in exams I have jumped steps - probably the only person to get marks deducted for jumping
+steps)
+
+So, one of the realizations is:
+
+```
+Anything to the left of the max value, can never become the greatest in the window.
+
+I am traversing the array from left to right, which means, any element in the candidate
+list which is smaller than the present value, can safetly be discarded.
+```
+
+Apart from that, we also need to maintain the index, so that we can discard of any value
+which is less than the window - ci < ni - k + 1 (lookback) can be discarded. Maintaining
+the index in the candidate list should be enough to give the value, instead of (ci, v)
+
+Idk, why this realisation took me the whole day, maybe I am too dumb. The agent is built
+in a way, that it is supposed to always ask me meta question, not give the answer. It did
+ask the question, but the answers came to me after a real long time.
+
+With this I guess, what we can do is, to the candidate list:
+
+- pop the items from the front, which are no longer in the window
+  because, front has max items, by default, and we are moving from left to right
+- pop items which are less than the present value (and has/will have a bigger index than
+prev)
+- insert the present index in the candidate list
+- the answer for the window is the value at candidate_list[0]
+

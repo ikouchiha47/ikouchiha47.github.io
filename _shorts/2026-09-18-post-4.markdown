@@ -1,0 +1,32 @@
+---
+date: 2026-09-18 23:57
+tags: [algorithms, struggles]
+---
+
+What I want to achieve is not like solve leetcode, but a fundamental way/shift
+in my thinking patterns.
+
+I don't really care, if some interview demands if I have studied and memorized
+some tricks and tips of leetcode question. I care more about how do I shift
+my thought process to be more structured, that this becomes second nature.
+
+I have build this agent to kindof help me out, in solving questions.
+After a couple of interractions, the problem it figures, and I hope its right,
+I am trying to jump or fit structures rather than solving the problem.
+
+I guess this comes mostly from my fear - the bad kind, the **anxiety** to just get it
+right, or appear like I am able to use some combination of the handful of datastructures
+I know.
+
+I gotta be honest, my brain feels fucking fuzzy. I barely solve 1 question a day, doesn't
+matter its a hard one or an easy one. I have spent a day equally on solving:
+
+- Maximum length of repeating characters with K replacements
+- Maximum number in a given window
+- Next greater element I
+
+From 12pm to 2am. No help.
+
+People say reason from first principles, but it only works out for them.
+Anyone can lookup the actual price of building a rocket, its not really that rocket sciency.
+

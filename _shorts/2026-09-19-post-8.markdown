@@ -1,0 +1,41 @@
+---
+date: 2026-09-19 19:01
+tags: [algorithms, struggles, structures]
+---
+
+One of the things I have realised, from codeforces and a bit of help from jipit,
+structures are not data strucutres, they are more like properties/behaviours.
+
+Here goes the list:
+
+```
+Does something only increase/decrease?
+        → monotonicity
+
+Does something become permanently irrelevant?
+        → dominance
+
+Do slopes/marginal gains increase/decrease?
+        → convexity/concavity
+
+Does something repeat?
+        → DP / memoization
+
+Does a quantity accumulate?
+        → prefix sums
+
+Does only odd/even matter?
+        → parity
+
+Does ordering matter?
+        → sorting / binary search / sweep line
+
+Can candidates be eliminated permanently?
+        → greedy / monotonic structure
+
+Does the same state appear again?
+        → dynamic programming
+
+Does the problem have a graph/tree structure?
+        → graph algorithms
+```
