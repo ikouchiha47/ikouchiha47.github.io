@@ -7,7 +7,7 @@ tags: [algorithms, struggle]
 
 I was really stuck at this problem, but not as much as the next greater element.
 
-Next greater element was a harrowing shameful experience, and its marked as easy.
+Next greater element was a harrowing shameful experience, and its marked as easy.
 
 Looking the sliding window maximum, the brute force approach was easy:
 

@@ -1,0 +1,26 @@
+---
+date: 2026-09-20 11:14
+tags: [algorithms, stack, struggles]
+---
+
+One eternity later.
+
+Since its to the right, and the nums1 is a subset of nums2. there might be a way
+where we are able to store the some candidates which can be greater,
+and we would want to iterate over nums2.
+
+Also it greater to the right, maybe we want to iterate from the back of the
+list.
+
+```
+nums2 = [5, 3, 4]
+```
+
+Observations:
+
+- Values in either arrays are unique
+- We can keep a map of the greater element to the right
+- We need to keep a ordered candidate list for possible greater elements
+- candaidate list then can be de-scending
+- ideally elements which are lower than any value in the nums1 can be discarded
+

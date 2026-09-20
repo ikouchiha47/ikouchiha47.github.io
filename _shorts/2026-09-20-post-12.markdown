@@ -1,0 +1,29 @@
+---
+date: 2026-09-20 14:04
+tags: [algorithms, struggles]
+---
+
+Given that sliding window and next greater were new concepts, I guess its better
+to related this to real world.
+
+Sliding window maximum real world usecases are in gauges, here one would be
+tracking changes over time, to answer question like:
+
+> What is the change in highest usage over a given time-window?
+
+like : cpu or memory usages over time, latencies, temperature changes etc.
+
+In such problems, the data is a stream, and the answer is demanding for an
+answer within a window.
+
+For example:
+If the cpu usage metrics looks: `[10, 40, 30, 20, 70, 90]`, measured every ms
+window. Then to get the max every `3ms` window, one would keep a canidate list
+where:
+
+- 10 can be discarded in the first window
+- 30 can be kept in candidate list
+- 40 can be discarded in the next window
+- 30 then becomes the new max
+- 20 can be kept in candidate list, since its after 30
+- and, on the next window both 30 and 20 gets discarded b/o 70

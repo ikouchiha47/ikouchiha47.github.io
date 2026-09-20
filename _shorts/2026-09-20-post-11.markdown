@@ -1,0 +1,113 @@
+---
+date: 2026-09-20 13:39
+tags: [algorithms, stack, struggles]
+---
+
+I think we should look at the solution, memorize all the problems using stack, a
+couple from each of easy, medium, hard?
+
+Tbh, I have been waiting on this for so long, and I have a similar feeling while
+solving the sliding window maximum, I am afraid that whatever I derieved as to
+when to discard candidates, might go out of my internal memory.
+
+The answer had kindof dawned on me, after a day of thinking and staring at
+nothingess and visualizing the array.
+
+I should say: I do have a temporary photographic memory.
+
+There are two things that happen to me:
+
+1. I spend so much time or understanding behind something, or sometimes things
+   just click, and those knowledge become a part of me. I do not reach for the
+  brute-force type of solution anymore.
+2. I seem to remember things when its realted to daily events - for me its
+   writing code
+3. I can see and remember things, to an extent, like anatomy of a frog, and I
+   can recreate it from memory, only to forget it, after the requirement is
+  over.
+
+For the sliding window here are key things:
+- A new element entering the window can either be greater or smaller than the
+  present max
+- If its greater, then no element can be greater then no older element in the
+  window can ever be greater than the new element
+- If not, any one of the element lower than the present max in present window,
+  and **appears after the persent max**.
+  can become the max in future window
+
+The candidate list, is to maintain this possible greater element. The candidates
+get permanently discarded once we see an element greater than the elements in
+the candidate list.
+
+---
+
+Going back to the AI agent, I asked:
+
+> Instead of waiting things to dawn on me, how should I approach the last part
+> of things.
+
+It has given me a step by step, somewhat. I am not sure if it can be
+generalized - we will see going later.
+
+1. Take the smallest possible thing.
+2. Add/remove things to it, see changes in relationships
+3. State what changed on doing so
+4. Either nothing happens, or something changes in the relationship
+5. State/write the relationship, what became true, what became false
+6. See if any of monotonicty, dominance, convex/cav, etc matter
+7. See if things are getting added or discarded.
+
+```
+current_state -> event -> what_changed -> why
+```
+
+Fuuccckkkinggg hell shitfuck. God fuck, with an interview in 3 more days, I
+haven't been able to complete 100crore leetcode, and I have somehow subjected
+myself to this shit.
+
+Where William Lin spends an hour to solve the entire 4week challange, I am
+spending 2 weeks to barely solve 4.
+
+> Fucking entrance exams after entrance exams to write some fucking code to earn
+> money.
+
+
+----
+
+Step 1:
+
+- `nums = [5]`
+
+Step 2:
+
+- `[5, 3]`
+
+5>3, but 3 can be a possible max.
+
+Step 3:
+
+- `[5, 3]` + `[4]`
+- `[5, 3]` + `[2]`
+- `[5, 3]` + `[6]`
+
+- case 1: 4 > 3 and its the next adjacent, so can be removed from candidate
+- case 2: 2 < 3, but there could be something more coming in, so it stays
+- case 3: 6 > 3, and 6 > 5, but the indices aren't adjacent, so 5, 6 stays.
+
+This just looks like the candidate list operation is like the sliding window,
+for any candidate numbers, preserve the numbers in candidate list, if
+candidates.last() > new_item, otherwise pop them.
+
+What the actual fuckkkkkkk....
+
+Then I guess, the algorithm is like:
+
+- for each item in nums2 build the map for the next greater element
+- for each item in nums1, use the map to get the result.
+- have a defaultdict with -1, for items that have nothing in map
+
+now to build the map:
+
+- when poping tems from the stack, map {clist.last(): current_item}, until the
+  loop stops
+- once done, add the current_item to array/stack

@@ -3,4 +3,31 @@ date: 2026-09-19 20:19
 tags: [algorithms, stack]
 ---
 
-Never have I thought I will have to 
+Never have I thought I will have to struggle with stacks. I have done things
+like: matching parens. I had done rain-water trapping before, but now it seems
+like an impossible feat.
+
+The problem I am stuck at is the Next Greater Element:
+
+```
+Given distinct arrays nums1 (subset) and nums2.
+
+- nums1=[4,1,2], nums2=[1,3,4,2] → [-1,3,-1]
+- nums1=[2,4], nums2=[1,2,3,4] → [3,-1]
+
+Its not the next greater value, but the immediate one
+to the right
+
+- nums1=[2,4], nums2=[1,2,4,3] → [4,-1]
+
+```
+
+The brute force can be like:
+
+- Have a nums2_map with { num: index }
+- for each num in nums1, find the value in the map
+- and find the highest value within \[index:n\]
+
+I don't see much, here.
+
+
