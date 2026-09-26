@@ -1,0 +1,61 @@
+---
+date: 2026-09-26 18:12
+tags: [interviews, fails]
+---
+
+Had an interview with arctic wolf today. I think i have given my worst interview
+till day.
+
+Mostly because of talking.
+
+First question was designing LFU. I have designed LRU before, didn't practice it
+before interview. Its a simple struct with two things: `cache of key to item`
+and `freq of int(freq) to a linked list of items`.
+
+First mess-up was agreing on having to traverse list to get the frequency and
+update to the newer freq line. And I resorted to using a map to find. It was in
+the end, I realized the list is a **pointer** of item.
+
+The mistake was not writing out the `Get` and engage in a discussion, the
+`cache[key]` would give back the item, and item being a `doubly linked node`,
+the delete is always `O(1)`
+
+---
+
+The worst part was on the system design round. The ask was simple:
+
+```
+Ingestor and Processing pipeline and alerts with AI metrics and summarization.
+```
+
+The FR and Non-FR were produced on a screen. This was generally a drift in-terms
+of how I have practiced.
+In here, I would figure out the flow, and list the FR/Non-FR and then try and do
+the normal design to satisfy the Non-FR.
+
+What went wrong was:
+
+- Things started off with a deviation
+  - I should have written down the FR seperately on the board
+- I looked the FR and tried to dump everything from memory
+- This led me to drawing incomplete structures, loosely connecting ideas, no
+explanation on the lines drawn
+- In General I would go one FR at a time, drilling into failures and non-FR for
+  each component in the FR.
+- The interview-er kept prompting to complete the requirements one at a time
+- **In my head I was trying, to figure out what's going wrong, rather than
+recalibrating**
+- While discussing infra, I missed addressing how to scale servers, rather I
+completely failed to discuss component failure, because I never drew the right
+components.
+
+Solutions:
+- Practice the already practiced problems from various angles and find a way to
+  get to the flow we know for us.
+- Think about the thoughts that are leading to freeze-up and find problems
+around it
+- Shadown practice thinking about interview situation on-line and on-board.
+
+Each of these interviews are a very costly learning experience. The number of
+accepts is so less, like 1 in 50-60 would probably turn up.
+

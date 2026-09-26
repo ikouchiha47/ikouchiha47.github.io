@@ -1,0 +1,130 @@
+---
+date: 2026-09-21 00:17
+tags: [algorithms, stack, struggles]
+---
+
+We are to handle two LC hards:
+
+1. Trapping rain water
+2. Largest Rectangle in histogram
+
+
+Rain water trapping:
+
+- height = [0,1,0,2,1,0,1,3,2,1,2,1] → 6
+
+Lets try out step by step:
+
+1. smallest thing
+2. current state and relationship
+3. add items and events
+4. observe change in relationship (preserve/discard/compound)
+
+- The question involves and array, and asks to query for aggregate.
+- Water can overflow or be contained, which means some values can be preserved
+  and some can be discarded
+
+`h = [0]`
+
+nothing here
+
+---
+
+`h = [0] + [1]`
+
+- water would overflow on left
+- so h[0] can be discarded
+
+---
+
+`h = [1] + [0]`
+
+- water would flow to the right
+- but there could be a higher value on the right
+
+---
+
+`h = [1, 0] + [2]`
+
+- water can be contained
+- running amount contained would be `min(h[1], h[3]) * (gap) = 2`
+- I guess from here, we can discard 1 and 0, because both are less than new max
+  and can not be used in a way walls are submerged
+
+---
+
+`h = [2] + [1] + [0]`
+
+- water overflows, but from 1 to rest there can be bigger wall
+- running max is 2
+- I am thinking at this point we just keep acumulating index than values
+
+---
+
+`h = [2, 1, 0, 1] + [3]`
+
+- again we encounter a number greater
+- get rid of all values less < current max (3)
+
+---
+
+`h = [3] + [2] + [1] + [2]`
+
+
+I think I should have started with general observations and not smallest thing.
+Or rather I shouldn;t have used the full example.
+
+The general observation is, A pocket can be formed, when:
+- the left tower > right tower, but there is a gap
+- the right tower > left tower, but there is a gap
+- towers of same height, but there is a gap
+
+So,
+
+- `[5, 0, 6]`
+- `[6, 0, 5]`
+- `[2, 0, 2]`, and a curve
+- `[4, 1, 5]`
+
+We made an error in step 5, we didn't account for displacement made by `1`.
+
+---
+
+- `h = [5]`, nothing
+- next element can either be higher or smaller
+- `h = [5] + [1]`, holding water possible, but need to wait until next element
+  to be greater or equal to 5
+- `h = [5] + [6]`, holding water not possible, because there is nothing on the
+  left, and 5 could be discarded, because we already have a higher tower
+
+- `h = [5, 1] + [2]`, or `h = [5, 1] + [6]` or (`h = [5, 1] + [0]` and `[5,1,0] + [6]`)
+- last case, we don't do anything, if its not the end.
+- but in other cases, since `1` is < 2 or 6, it qualifies for a pocket
+- for 5, 1, 2 - 1 can be discarded for ever, but 5 and 2 can remain
+- for 5, 1, 6 - 5 and 1 can be discarded, since 6 will always tower
+- for 5,1,0 - none can be discarded because its waiting for either end of arr or
+  next element >=
+
+so anytime an incoming element becomes greater than the last seen element, we
+compute the units. where units of water covered is equal to height * width,
+where
+
+- height is the min of the difference in height of left and right side
+- width is r - l - 1 (derieved manually)
+
+- so when we calculate hight at 6 for (5,1,2,6), for 5 and 2 the (1,2) is
+computed
+- then for (5,2,6), the upper rectangle is calculated, the previous sum
+contains the contribution caused by 1.
+
+```
+   _______█
+  █       █
+  █   2   █
+  █_______█
+  █ 1  █  █
+  █ █  █  █
+  └────────
+  5 1  2  6
+```
+█

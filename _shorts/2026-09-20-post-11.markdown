@@ -58,7 +58,7 @@ generalized - we will see going later.
 7. See if things are getting added or discarded.
 
 ```
-current_state -> event -> what_changed -> why
+smallest_thing -> current_state -> event -> what_changed -> why
 ```
 
 Fuuccckkkinggg hell shitfuck. God fuck, with an interview in 3 more days, I
