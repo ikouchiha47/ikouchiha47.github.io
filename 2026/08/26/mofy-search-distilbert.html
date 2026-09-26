@@ -1,0 +1,603 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+  <title>
+    Making a Small Language Model Actually Useful in Movie Search - iko&#39;s logs
+    
+  </title>
+
+  <meta name="description" content="Mofy is a personal, offline-first movie app with no cloud API calls. Making search understand human-like queries meant ruling out generative models after four failed attempts, and fine-tuning a 66M-parameter DistilBERT encoder instead, small enough to ship ...">
+  <meta property="og:description" content="Mofy is a personal, offline-first movie app with no cloud API calls. Making search understand human-like queries meant ruling out generative models after fou...">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Making a Small Language Model Actually Useful i...">
+  <meta property="og:url" content="https://ikouchiha47.github.io/2026/08/26/mofy-search-distilbert.html">
+
+  
+
+  <link href='https://fonts.googleapis.com/css?family=Lora:400,700,400italic,700italic' rel='stylesheet' type='text/css'>
+  <link href='https://fonts.googleapis.com/css?family=Open+Sans:300italic,400italic,600italic,700italic,800italic,400,300,600,700,800' rel='stylesheet' type='text/css'>
+
+  <!-- <script src="https://use.fontawesome.com/releases/v5.15.3/js/all.js" crossorigin="anonymous"></script> -->
+  <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.15.4/css/all.css" integrity="sha384-DyZ88mC6Up2uqS4h/KRgHuoeGwBcD4Ng9SiP4dIRy0EXTlnuz47vAwmeGwVChigm" crossorigin="anonymous"/>
+
+  <link rel="stylesheet" href="/assets/main.css">
+  <link rel="canonical" href="https://ikouchiha47.github.io/2026/08/26/mofy-search-distilbert.html">
+  <link rel="alternate" type="application/rss+xml" title="iko&#39;s logs" href="/feed.xml">
+
+  <meta name="google-site-verification" content="lWkg6gIxJgzEKX_5XnhcxCtPE9QknaimFWWos_dTvPM" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fira+Sans:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Inconsolata:wght@200..900&family=Jersey+25&family=Kanit:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Merriweather+Sans:ital,wght@0,300..800;1,300..800&family=Nanum+Gothic+Coding&family=Space+Grotesk:wght@300..700&family=Titillium+Web:ital,wght@0,200;0,300;0,400;0,600;0,700;0,900;1,200;1,300;1,400;1,600;1,700&display=swap" rel="stylesheet">
+
+</head>
+
+
+<body>
+
+  <!-- Navigation -->
+<nav class="navbar navbar-expand-lg navbar-light fixed-top" id="mainNav">
+  <div class="container">
+    <a class="navbar-brand" href="/">iko&#39;s logs</a>
+    <button class="navbar-toggler navbar-toggler-right" type="button" data-toggle="collapse" data-target="#navbarResponsive" aria-controls="navbarResponsive" aria-expanded="false" aria-label="Toggle navigation">
+      Menu
+      <i class="fa fa-bars"></i>
+    </button>
+    <div class="collapse navbar-collapse" id="navbarResponsive">
+      <ul class="navbar-nav ml-auto">
+        <li class="nav-item">
+          <a class="nav-link" href="/">Home</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/about">About</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/posts">Posts</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/wall/">Wall</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/contact">Contact</a>
+        </li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+
+  <!-- Page Header -->
+
+<header class="masthead" style="background: linear-gradient(135deg, #1e1b4b 0%, #4c1d95 50%, #6d28d9 100%)">
+
+  <div class="overlay"></div>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <div class="post-heading">
+          <h1>Making a Small Language Model Actually Useful in Movie Search</h1>
+          
+          <h2 class="subheading">Why we landed on a 66-million-parameter encoder instead of a much larger generative model, to understand natural, human-like search queries</h2>
+          
+          <span class="meta">Posted by
+            <a href="#">ikouchiha47</a>
+            on August 26, 2026 &middot; <span class="reading-time" title="Estimated read time">
+  
+   49 mins  read </span>
+
+          </span>
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="container space-grotesk">
+  <div class="row">
+    <div class="col-lg-8 col-md-10 mx-auto">
+
+      <h2 id="what-mofy-is">What Mofy is</h2>
+
+<p>Mofy is a personal movie and TV library app for Android. Point it at the folders where your media lives, or let it match torrents you already have, and it builds a local catalog with posters, overviews, genres, ratings, the works - pulled from TMDB once, cached forever after. It plays what you own, resumes where you left off, and lets you watch something with someone else in a different room, in sync, over a room code.</p>
+
+<p>None of this touches a server you don’t control, and none of it ever will: it’s not going on an app store, so there was never a pressure to phone home for analytics, ads, or a subscription check. That constraint sounds like a limitation. It turned out to be the most useful constraint in the whole project, because it ruled out the easy answer to the one hard problem the app has: search.</p>
+
+<p>Everyone who has actually managed a personal media library knows the boring version of this problem. You have three hundred movies. You do not remember which folder “that one with the guy who loses his memory” is in. Typing “memento” works, if you remember it’s called Memento. Typing “a guy loses his memory every day and writes notes to himself” should also work, and on Mofy, it does - that query correctly surfaces Memento as the top result. Getting there is the subject of this post.</p>
+
+<h2 id="the-two-shapes-of-a-search-query-and-why-one-api-call-cant-cleanly-do-both">The two shapes of a search query, and why one API call can’t cleanly do both</h2>
+
+<p>Sit with real queries for a minute and they split into two families that want completely different handling:</p>
+
+<ul>
+  <li><strong>Structured queries</strong>: “90s highly rated action”, “dark thriller from the 80s under 2 hours”, “download inception 2010 1080p”. These have facets - a date range, a genre, a runtime ceiling, a rating floor - that are either right or wrong. There’s no partial credit for guessing 1985 when the user meant “the 90s.”</li>
+  <li><strong>Vibe queries</strong>: “feeling nostalgic”, “something to watch when I don’t want to think”, “a guy loses his memory every day and writes notes to himself”. These have no correct discrete answer. They want <em>similar</em>, not <em>equal</em>.</li>
+</ul>
+
+<p>The naive move is to throw the whole query at an LLM and ask it to return both - hand back a JSON blob with <code class="language-plaintext highlighter-rouge">genre</code>, <code class="language-plaintext highlighter-rouge">date_range</code>, <code class="language-plaintext highlighter-rouge">mood_embedding_hint</code>, done. That’s the shape every hosted-API tutorial reaches for, and it’s the first thing that was off the table here, for a reason that had nothing to do with model quality:</p>
+
+<blockquote>
+  <p>No API-based LLM calls, anywhere in the app, no exceptions.</p>
+</blockquote>
+
+<p>A personal media app that ships nothing to a store has no business making its search feature depend on someone else’s uptime, someone else’s rate limit, or someone else’s server logging every query a user types. If it can’t run on the phone with the network off, it doesn’t belong in the app.</p>
+
+<p>So the real question was never “which API.” It was: how much of “understand what the user meant” can actually run inside a Compose app on a mid-range Android phone, with no server on the other end of it.</p>
+
+<p>The answer turned out to be two separate small models doing two separate small jobs, not one model doing everything. This post is about how that split got found, including the part where the first several attempts at the structured half were quietly, confidently wrong in a way that a loss curve does not tell you about.</p>
+
+<pre><code class="language-mermaid">flowchart LR
+    Q["free-text query"] --&gt; S{"split"}
+    S --&gt;|"structured slots"| F["facet classifier\n(this post)"]
+    S --&gt;|"leftover text"| E["EmbeddingGemma\nvector search"]
+    F --&gt; R["ranking"]
+    E --&gt; R
+    R --&gt; O["results"]
+</code></pre>
+
+<p>Next: why the vibe half was the easy half, and why the obvious move for the structured half - just generate JSON - turned out to be a dead end worth documenting in detail.</p>
+
+<h2 id="the-vibe-half-embeddings-run-entirely-on-the-phone">The vibe half: embeddings, run entirely on the phone</h2>
+
+<p>Start with the part that turned out to be simpler than expected, because it sets the baseline the rest of the post keeps referring back to.</p>
+
+<p>An embedding model turns a sentence into a fixed-length vector - a few hundred numbers - such that sentences with similar meaning end up as vectors that point in similar directions. “A guy loses his memory every day” and Memento’s actual plot summary don’t share many words, but they point roughly the same way in that space. Cosine similarity between two vectors gives you a single number for “how alike,” and that’s the entire mechanism behind “search by vibe”: embed the query once, embed every movie’s overview once (offline, ahead of time), and rank movies by how close their vector lands to the query’s.</p>
+
+<p>Two decisions made this work fully offline:</p>
+
+<p><strong>The model</strong>: <a href="https://ai.google.dev/gemma/docs/embeddinggemma">EmbeddingGemma-300M</a>, a sub-<code class="language-plaintext highlighter-rouge">500M</code>-parameter embedding model from Google that leads its size class on MTEB (the standard embedding benchmark), shipped as a ready-made <code class="language-plaintext highlighter-rouge">.tflite</code> file that runs through LiteRT, Google’s on-device inference runtime. No conversion pipeline to build - Google already did the export.</p>
+
+<p>The same checkpoint runs twice: once offline in Python to embed the entire movie catalog ahead of time, and once on-device to embed whatever the user types. Query and catalog vectors have to come from the exact same model and the exact same prompt template, or the comparison is meaningless - more on that below.</p>
+
+<p><strong>The storage</strong>: plain SQLite BLOB columns, one float32 array per movie, about <code class="language-plaintext highlighter-rouge">3KB</code> per vector. That sounds almost too simple for a “vector database,” and that’s deliberate - Google’s own AI Edge RAG Library ships the identical pattern (<code class="language-plaintext highlighter-rouge">SqliteVectorStore</code>) for exactly this reason. The alternative, a native <code class="language-plaintext highlighter-rouge">vec0</code> virtual table via the <code class="language-plaintext highlighter-rouge">sqlite-vec</code> extension, needs a custom SQLite driver loaded underneath Room, Android’s usual database layer, and Room’s default driver doesn’t support that.</p>
+
+<p>At a personal-library scale - hundreds to a few thousand titles - a brute-force scan comparing the query vector against every stored vector is fast enough that the native extension buys nothing but integration risk. Retrieval is a streaming top-K scan with a min-heap, so the whole catalog never has to sit in memory at once, just the heap and whichever row is currently being decoded.</p>
+
+<p>One detail that looked cosmetic and wasn’t: EmbeddingGemma doesn’t take a raw sentence. It expects a fixed prefix depending on what you’re embedding - <code class="language-plaintext highlighter-rouge">task: search result | query: {text}</code> for a search query, <code class="language-plaintext highlighter-rouge">title: {title} | text: {text}</code> for a document.</p>
+
+<p>These are literal strings baked into the model’s own <code class="language-plaintext highlighter-rouge">config_sentence_transformers.json</code>, the file <code class="language-plaintext highlighter-rouge">sentence-transformers</code> reads at load time. Skip the prefix, or reformat it as <code class="language-plaintext highlighter-rouge">{title}: {text}</code> because that reads more naturally, and the model gets an input shape it was never fine-tuned to see, which quietly degrades retrieval quality without throwing any error you’d notice.</p>
+
+<p>That’s the trap with a lot of “the model card says X” claims: docs drift from what a release actually ships, so it’s worth pulling the config the model itself loads and reading the literal keys rather than trusting the paraphrase. With the correct templates, a plain title search like “the dark knight” correctly ranks the exact title first, and the Memento plot query ranks Memento first - the retrieval-tuned prompt pair working as documented, not just documented.</p>
+
+<p>That’s the whole vibe path: embed, store as a blob, brute-force cosine similarity, rank. No training, no labeled data, no classifier - just a general-purpose sentence encoder pointed at overview text. It handles “feeling nostalgic” and “a guy loses his memory every day” equally well, because neither of those has a <em>correct</em> discrete answer, only a <em>closer</em> one.</p>
+
+<p>It does not, however, know what “under 2 hours” means. Ask it and it will happily return movies with no relationship to runtime at all, because nothing in a 768-dimensional similarity space encodes an inequality. That’s a different kind of problem, and it needed a completely different kind of model.</p>
+
+<h2 id="the-other-half-of-the-vibe-problem-getting-text-worth-embedding-at-all">The other half of the vibe problem: getting text worth embedding at all</h2>
+
+<p>None of the retrieval mechanism above matters if the overview text it’s embedding is thin or missing. The catalog is <code class="language-plaintext highlighter-rouge">31,785</code> titles filtered from IMDb’s public datasets, and combining a static Kaggle movie dataset with scoped TMDB API calls got real overview text for <code class="language-plaintext highlighter-rouge">63.2%</code> of them. TMDB’s API is generous about rate limits, free tier included, so calling it wasn’t the bottleneck; TMDB simply doesn’t have overview text for every title in its database, particularly older, lower-profile, or less mainstream ones. That gap is a coverage limit of the source itself, not a throttling problem, and it left roughly <code class="language-plaintext highlighter-rouge">11,700</code> titles with no usable text: no overview at all, or a degenerate one (empty, the title copied verbatim into the overview field, or a “No overview found.” sentinel).</p>
+
+<p>Direct bulk-scraping imdb.com is against IMDb’s own terms of service, and it was already ruled out for that reason during the catalog build. What’s fine, and what this used, is driving a real browser session through pages one at a time, the same way a person clicking through IMDb would, using <a href="https://browsermcp.io">Browser MCP</a>, a Chrome extension that exposes an MCP-shaped interface to a real Chrome tab.</p>
+
+<p>The stock extension is built to be driven by an actual MCP server over a WebSocket handshake. That layer wasn’t needed here, so <code class="language-plaintext highlighter-rouge">ml/scripts/05_fetch_imdb_plots.py</code> skips it and speaks the extension’s plain JSON protocol directly: it opens a WebSocket listener on <code class="language-plaintext highlighter-rouge">localhost:9009</code>, the extension dials into it, and the script drives it title by title, navigating to each <code class="language-plaintext highlighter-rouge">imdb.com/title/{id}/plotsummary/</code> page and pulling the Plot Summaries and Synopsis text out of the page’s accessibility snapshot.</p>
+
+<p>Two problems showed up running this at the actual scale needed, and both needed a small patch to the extension itself (vendored into <code class="language-plaintext highlighter-rouge">vendor/browser-mcp-extension/</code>, not just used as-is from the Chrome Web Store):</p>
+
+<ul>
+  <li><strong>Chrome kills the extension’s background service worker after about 30 seconds of idle, and an open WebSocket does not keep it alive.</strong> The connection just dies with the worker, silently, mid-run. The patch adds a <code class="language-plaintext highlighter-rouge">chrome.alarms</code> wake every 30 seconds that revives the worker and re-establishes the socket, so a dropped connection reconnects within roughly a second instead of stranding the run.</li>
+  <li><strong>The stock extension can only read the page, not run arbitrary JavaScript in it</strong>, which matters for pages where the useful text isn’t in a clean accessibility-tree label. The patch adds a <code class="language-plaintext highlighter-rouge">browser_evaluate</code> tool that runs a JS expression in the connected tab via the already-attached debugger connection and returns the result directly.</li>
+</ul>
+
+<p>Even patched, this wasn’t fast: real page loads, a deliberate wait between titles to look like a human browsing rather than a script hammering the site, and the reconnect handling above every time Chrome decided to nap the worker mid-batch. The whole run to fetch <code class="language-plaintext highlighter-rouge">9,311</code> titles took on the order of <strong>30 hours</strong>, most of it just waiting on page loads and reconnects rather than doing any real work per title. It also checkpoints after every single title to a JSONL file (atomic rewrite, not appended-and-hope), so a run interrupted at hour 20 resumes at title 9,000-something rather than starting over, and a <code class="language-plaintext highlighter-rouge">--skip-existing</code> flag distinguishes titles that actually succeeded from ones tagged <code class="language-plaintext highlighter-rouge">failed</code> for retry on the next pass.</p>
+
+<p>Thirty hours of a script babysitting a browser tab is not a glamorous part of the pipeline. But EmbeddingGemma’s retrieval quality is only as good as the text it’s given to embed, and a plot query like “a guy loses his memory every day and writes notes to himself” resolving correctly to Memento depends on that title actually having real synopsis text in the catalog in the first place, not a sentinel string. The unglamorous scraping stint is what the “vibe half” of this whole post is quietly standing on.</p>
+
+<h2 id="the-structured-half-why-just-generate-json-doesnt-work">The structured half: why “just generate JSON” doesn’t work</h2>
+
+<p>“Under 2 hours” is a number. “The 80s” is a range. “Highly rated” is a threshold. None of these are vibes to get <em>close to</em> - they’re predicates a movie either satisfies or doesn’t, and the only acceptable failure mode is “didn’t extract it,” never “extracted the wrong year and silently filtered out the right movie.” That distinction, approximate is fine for vibes, wrong is not fine for facets, is what ruled out reusing the embedding approach here.</p>
+
+<p>It’s worth actually testing before assuming it, since “embeddings can do everything” is a seductive idea. The test: take six facet types (date, genre, rating, popularity, runtime, mood), write two or three example phrases for each, embed all of them with EmbeddingGemma’s classification prompt, and see whether a new query fragment lands closest to the right bucket by nearest neighbor.</p>
+
+<p>Genre, date, rating, popularity, and runtime routed correctly with decent margins. But <code class="language-plaintext highlighter-rouge">nostalgic</code> landed closest to the <em>date</em> anchors, not mood, because nostalgia is semantically entangled with “the past,” and an embedding space that was never asked to separate those two things won’t separate them for you.</p>
+
+<p>That’s a real, reproducible failure mode, and it’s exactly the kind of quietly-wrong-but-plausible-looking result a hard filter cannot tolerate: mood queries would get mistakenly hard-filtered by year and silently return nothing. Embeddings are the right tool for “how similar,” and the wrong tool for “which exact year range.”</p>
+
+<p>So facets needed something that outputs a fixed, typed structure, correctly. The instinctive approach - and the one that got tried first, several different ways - was to lean on a small generative model and just ask it to produce JSON.</p>
+
+<ul>
+  <li>
+    <p><strong>Attempt 1 - flan-t5-small, generate JSON spans directly.</strong> Feed it the query, ask it to emit something like <code class="language-plaintext highlighter-rouge">{"type": "genre", "span": "thriller"}</code>. This broke for a reason that had nothing to do with the model’s reasoning: T5’s tokenizer, built on SentencePiece, doesn’t have <code class="language-plaintext highlighter-rouge">{</code> or <code class="language-plaintext highlighter-rouge">}</code> as tokens it was trained to use fluently for structured output. The model emitted garbled fragments like <code class="language-plaintext highlighter-rouge">s"pan:…type:mod</code>, malformed text that no downstream parser could recover, rather than anything close to valid JSON.</p>
+  </li>
+  <li>
+    <p><strong>Attempt 2 - switch formats, not architecture.</strong> The instinct at this point was “the format is the problem,” so the code switched to TANL-style spans (<code class="language-plaintext highlighter-rouge">[ span | type | norm ]</code>, the augmented natural language format from an AWS entity-tagging writeup, built for exactly this kind of information-extraction task) instead of JSON, on the theory that a simpler flat grammar would be easier for a small seq2seq model to reproduce reliably. It wasn’t - the underlying checkpoint had already been trained toward JSON-shaped outputs, so the model kept reverting to its old shape regardless of what the training data now looked like. Still free-form generation, still needing a brittle string parser to turn output back into a structure, just with a different string to fail at.</p>
+  </li>
+</ul>
+
+<p>A handful of other output formats got weighed at the same time, on paper, before deciding none of them were worth a full training run:</p>
+
+<ul>
+  <li><strong>S-expressions</strong> (<code class="language-plaintext highlighter-rouge">(genre thriller) (date 1980 1989)</code>) - same bracket-tokenization risk as JSON, if the base tokenizer doesn’t treat <code class="language-plaintext highlighter-rouge">(</code> and <code class="language-plaintext highlighter-rouge">)</code> as first-class tokens.</li>
+  <li><strong>BIO tagging</strong> (<code class="language-plaintext highlighter-rouge">B-GENRE I-GENRE O O</code>) - a solid format for sequence labeling, but it assumes the model is tagging each input token, not generating output text. Doesn’t fit a seq2seq decoder without a different architecture entirely.</li>
+  <li><strong>Pipe-delimited fields</strong> (<code class="language-plaintext highlighter-rouge">genre=thriller|date=1980-1989</code>) - sidesteps the bracket problem, but it’s still free-form text generation underneath, with the same failure mode as TANL: nothing stops the model from emitting a value that isn’t in the schema, or dropping a field silently.</li>
+</ul>
+
+<p>Every one of these is a better string format than raw JSON. None of them changes the actual problem: a decoder generating output token by token has no built-in notion of “this field must be one of these 27 genres.” That constraint lives only in the training data’s shape, not in the model’s output space, so it can be violated as easily as followed.</p>
+
+<ul>
+  <li>
+    <p><strong>Attempt 3 - few-shot prompting, smaller models.</strong> Gemma 270M and Qwen 0.5B, prompted with a handful of examples instead of fine-tuned, asked to emit either JSON or a simpler binary “which facets are present” answer. Open-ended generation from a model that size, with only a few examples in context, is unreliable - and even where it worked, binary presence detection only answers “is there a date facet in this query,” not “what is the actual year range,” which is the part that matters for filtering.</p>
+  </li>
+  <li>
+    <p><strong>Attempt 4 - DSPy chain-of-thought span typing.</strong> Qwen variants, prompted to reason step by step about each span before typing it. Same failure family: parse errors on the output, and the model inventing span types that were never in the schema in the first place - the model isn’t being unreasonable, it’s doing exactly what generative models do when the output space isn’t constrained, which is produce something plausible-looking rather than something valid.</p>
+  </li>
+</ul>
+
+<p>The pattern across all four is the same one, and it’s the real lesson to take from this whole detour:</p>
+
+<blockquote>
+  <p>A low training loss on any of these did not mean usable output.</p>
+</blockquote>
+
+<p><code class="language-plaintext highlighter-rouge">flan-t5-small</code>’s cross-entropy loss looked fine in every one of these runs. Loss measures “did the model get closer to predicting the next token the training data expects,” and every one of these checkpoints did that.</p>
+
+<p>None of them measures “if I now run this output through a real parser, does it come out as a valid, correct structure.” That number, measured by actually decoding real outputs rather than reading a training curve, was bad in every attempt.</p>
+
+<p>The lesson that survived all four attempts: small generative models are bad at freestyle structure, and they are fine at classification into a schema that’s fixed in advance. Those are different problems, and only one of them was actually being asked here.</p>
+
+<h2 id="what-actually-worked-stop-generating-start-classifying">What actually worked: stop generating, start classifying</h2>
+
+<p>The reframe that ended the JSON detour came from, of all places, a conversation with Grok - asked to sanity-check the whole “small model outputs structured facets” problem from scratch, it was the one that pushed back on generation entirely and suggested going the classification-head route instead of trying yet another output grammar. Worth crediting plainly, because the four failed attempts above all shared the same unexamined assumption - “the model needs to produce the structure as text” - and it took an outside prompt to actually question that assumption rather than iterate on top of it.</p>
+
+<p>The reframe: don’t ask a model to write down a genre name character by character and hope it spells “Sci-Fi” correctly. Ask it “is Sci-Fi one of the genres in this query, yes or no” - for every genre the catalog has, all at once, in a single forward pass. That’s a classification problem, and classification problems don’t have a parsing step, because the output is a fixed vector of numbers, not text.</p>
+
+<p>The architecture is one shared encoder - BERT-family, reads the query once, produces one <code class="language-plaintext highlighter-rouge">[CLS]</code> vector - with a small linear layer, a <strong>head</strong>, hanging off that same vector for each slot the schema needs.</p>
+
+<p>One detail worth being precise about: this is a genuine fine-tune, not a frozen-encoder linear probe. The training loop hands DistilBERT’s own weights to the optimizer alongside the heads (<code class="language-plaintext highlighter-rouge">AdamW(model.parameters(), ...)</code>, no <code class="language-plaintext highlighter-rouge">requires_grad = False</code> anywhere), so gradients flow back through the whole 66M-parameter encoder on every step, not just through the small classification layers bolted on top of fixed embeddings. That’s a heavier training job than a linear probe, but it’s also why a much smaller encoder like BERT-tiny genuinely can’t be patched around later: the representations themselves are shaped by training, not just the heads reading them.</p>
+
+<pre><code class="language-mermaid">flowchart TB
+    Q["\"dark psychological thriller\nfrom the 80s under 2 hours\""] --&gt; ENC["shared encoder\n(DistilBERT, one CLS vector)"]
+    ENC --&gt; G["genre head\n27-way multi-label"]
+    ENC --&gt; D["date head\nhas_date + year range"]
+    ENC --&gt; RT["runtime head\nhas_runtime + max minutes"]
+    ENC --&gt; RA["rating head\nhas_rating + min rating"]
+    ENC --&gt; P["popularity head\nnone / niche / mainstream"]
+    ENC --&gt; M["title / mood / other\nbinary presence"]
+</code></pre>
+
+<p>Every head reads the same 768-dim CLS vector; nothing is generated token by token, so there’s no parser and no malformed-output failure mode - the output is always the same seven keys, always the same types, whether the query is empty, garbled, or perfectly formed. That validity guarantee comes directly from the architecture, not from any extra checking layered on top: a linear layer followed by a sigmoid or softmax cannot emit <code class="language-plaintext highlighter-rouge">{</code> mistranslated as <code class="language-plaintext highlighter-rouge">&lt;unk&gt;</code>, because it never emits characters at all.</p>
+
+<p>The genre head is multi-label (<code class="language-plaintext highlighter-rouge">27</code> catalog genres, sigmoid per class, since a movie and a query can both carry more than one genre at once), with a <code class="language-plaintext highlighter-rouge">pos_weight</code> term capped at <code class="language-plaintext highlighter-rouge">20x</code> so that a plausible catch-all genre like Drama doesn’t dominate every prediction just because it’s overrepresented in the training data. With 27 unevenly-sized classes, an unweighted loss will happily learn “always predict Drama” and call that a local minimum.</p>
+
+<p>Date, runtime, and rating are two-part heads: a “does this slot exist at all” binary flag, plus a regression value that’s masked out of the loss entirely for the majority of examples where the slot doesn’t apply, so the model isn’t penalized for a runtime guess on a query that never mentioned runtime.</p>
+
+<p>Popularity is a plain three-way softmax (none / niche / mainstream). Title, mood, and “other”, meaning leftover tokens like “1080p” or “download” that belong to neither structured facets nor vibe search, are simple yes/no presence flags. The actual text for these is handled downstream by catalog full-text search and format-token matching, not by the encoder.</p>
+
+<h2 id="a-second-dead-end-one-step-earlier-generating-the-training-data-itself">A second dead end, one step earlier: generating the training data itself</h2>
+
+<p>Before any of the four generation attempts above got to a training run, there was a smaller, earlier problem: where do 4,200 labeled queries even come from. Nobody has a public dataset of “search box text mapped to genre/date/runtime facets” lying around, so the training data had to be generated, and the first approach to generating it hit its own version of the same wall the T5 experiments hit later - it looked fine up close and broke down at scale.</p>
+
+<p><strong>First attempt: free-floating persona prompts.</strong> Describe a persona (“a Grazer looking for a mood-based comedy”) and ask an LLM (Gemma, then a larger model) to write plausible search queries for that persona, over and over, to build up volume. This works fine for the first few dozen examples. Past a few hundred, it stops working in a specific, boring way: the model runs out of genuinely different things to say about the same abstract persona and starts recycling phrasing - not exact copies, but near-duplicates close enough that they teach the classifier nothing it didn’t already learn from the first one. A hundred rephrasings of “something funny and lighthearted” is a hundred rows in the file and one effective training example.</p>
+
+<p><strong>The fix, and it’s the same fix as the vibe-search half of this whole post: point an embedding layer at the problem of “how similar are these two things.”</strong> Every newly generated query gets embedded with the same EmbeddingGemma checkpoint already doing retrieval elsewhere in the pipeline, deliberately reusing it rather than standing up a second embedding setup just for data QA.</p>
+
+<p>Each new query is then checked for near-duplicates against the existing pool: scoped first by persona and genre (a mood query and a structured-facet query are never meaningfully “similar” to each other regardless of embedding distance), and only then compared by cosine similarity within that narrowed set, rather than a brute-force compare against the entire accumulated pool as it grows into the thousands. Past a threshold, a candidate gets flagged as a near-duplicate and either dropped or used as a signal that the generator needs steering somewhere else.</p>
+
+<p>That “somewhere else” needed its own answer, because “reject duplicates” alone just produces fewer examples, not more diverse ones. The approach borrowed from <a href="https://resources.nvidia.com/en-us-financial-services-industry/synthetic-data-generation-for-financial-ai-research-with-nvidia-nemo">NVIDIA’s writeup on synthetic data generation with NeMo Curator</a>, a case study on generating half a million unique financial news headlines that hit the identical wall for the identical reason: their naive first batch of <code class="language-plaintext highlighter-rouge">50,000</code> headlines came back <code class="language-plaintext highlighter-rouge">65%</code> near-duplicates, because a single large generation run against a fixed set of few-shot examples just repeats the same handful of phrasings at scale, no matter how big the batch is.</p>
+
+<p>Their fix is an iterative loop rather than one large run:</p>
+
+<ol>
+  <li>Generate a batch.</li>
+  <li>Deduplicate it against the <em>entire accumulated corpus so far</em> (not just the new batch), using embeddings and k-means clustering.</li>
+  <li>Pull few-shot examples for the next round from whichever generated headline sits farthest from its own cluster’s centroid, the most atypical phrasing in that cluster, not the generic center-of-mass one.</li>
+  <li>Reject any of those candidate examples that are too similar to one already used in a previous round, so the steering set itself doesn’t go stale.</li>
+</ol>
+
+<p>Their own numbers make the shape of the problem concrete: yield dropped from about <code class="language-plaintext highlighter-rouge">35%</code> net-new headlines per batch early on to about <code class="language-plaintext highlighter-rouge">15%</code> by the time the corpus passed <code class="language-plaintext highlighter-rouge">100,000</code>, because every new headline has to be distinct from an ever-larger accumulated pool, not just from the current batch. That’s the same mechanism applied here, just clustering within a persona’s query pool instead of within a financial-headline corpus.</p>
+
+<p><strong>A more predictable step past that: stop asking for queries about an abstract persona, and ground each one in real catalog data instead.</strong> Pick two or three real movies that share a genre, show the model their actual titles, overviews, and ratings, and ask it to write a query a person might type looking for something like those. The title itself is deliberately never shown, so the generated query reflects real plot and tone signal rather than word-association off a title the model already recognizes. A handful of real, specific movies is inherently more varied input than one abstract sentence describing a persona, giving the model something concrete to react to instead of an empty room to free-associate in.</p>
+
+<p>For the facets that don’t need any of this, genre, date, rating, popularity, title, all things a real catalog row already has ground truth for, a separate, fully deterministic script builds queries straight from string templates filled with real catalog values. No model call, no dedup step, because the label is correct by construction rather than something that has to be checked.</p>
+
+<p>The shape of the lesson repeats from the facet-classification story, just one layer earlier in the pipeline: the expensive-looking, more “AI-native” approach (open-ended generation from an abstract prompt) quietly degraded in a way that only showed up at scale, and a cheap, boring measurement step, embedding similarity, is what fixed it, applied on top of the thing that was already unreliable on its own.</p>
+
+<p>Training ran on roughly <code class="language-plaintext highlighter-rouge">4,200</code> labeled queries (hand-seeded examples plus scaled-up synthetic templates) on <a href="https://modal.com">Modal</a>, a serverless GPU platform: an <code class="language-plaintext highlighter-rouge">L4</code> instance for a few dollars an hour, spun up on demand and torn down when the run finishes, rather than provisioning and babysitting a persistent box for something that trains in minutes.</p>
+
+<p>Three model sizes went through the same training script on that L4 before settling on one: <code class="language-plaintext highlighter-rouge">BERT-tiny</code> (<code class="language-plaintext highlighter-rouge">4.4M</code> parameters, 2 layers, 128 hidden units) first, as the cheapest possible thing to test the pipeline against; a mid-size BERT variant next, to see whether something between “tiny” and “full DistilBERT” would close the gap; and <code class="language-plaintext highlighter-rouge">DistilBERT</code> (<code class="language-plaintext highlighter-rouge">66M</code> parameters, the standard distillation of BERT-base) last, 8 epochs, which is what actually closed it.</p>
+
+<p>The training script and the quantization step both live in <code class="language-plaintext highlighter-rouge">ml/</code>, so the same command that trains a checkpoint on the L4 also runs it back through <code class="language-plaintext highlighter-rouge">torchao</code>’s <code class="language-plaintext highlighter-rouge">Int8WeightOnlyConfig</code> afterward. The entire round trip, from labeled queries to an int8 checkpoint ready to export, is one pipeline rather than a training step and a separate manual compression step bolted on later.</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>Metric</th>
+      <th>DistilBERT</th>
+      <th>BERT-tiny</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>genre F1</td>
+      <td><strong>0.85</strong></td>
+      <td>0.38</td>
+    </tr>
+    <tr>
+      <td>popularity accuracy</td>
+      <td>0.93</td>
+      <td>0.91</td>
+    </tr>
+    <tr>
+      <td>has_date F1</td>
+      <td>0.99</td>
+      <td>0.98</td>
+    </tr>
+    <tr>
+      <td>has_runtime F1</td>
+      <td>0.95</td>
+      <td>0.92</td>
+    </tr>
+    <tr>
+      <td>has_rating F1</td>
+      <td>0.91</td>
+      <td>0.86</td>
+    </tr>
+    <tr>
+      <td>has_mood F1</td>
+      <td>0.94</td>
+      <td>0.89</td>
+    </tr>
+    <tr>
+      <td>date error (years)</td>
+      <td>~5.5</td>
+      <td>~7</td>
+    </tr>
+    <tr>
+      <td>runtime error (minutes)</td>
+      <td>~14</td>
+      <td>~16</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>The table only shows the two ends of the size range, but the mid-size BERT variant tried in between is what made the comparison worth trusting rather than assuming: it landed closer to BERT-tiny’s genre collapse than to DistilBERT’s 0.85, confirming this wasn’t a smooth “bigger is linearly better” curve where any mid-point model would do - genre F1 held basically flat until DistilBERT’s extra depth and hidden size, then jumped. That’s the actual reason three sizes went through the same training run on Modal instead of stopping at two: a two-point comparison can’t tell you whether the gap is a cliff or a slope, and here it was a cliff.</p>
+
+<p>The binary presence flags - “is there a date in this query at all” - are close between the two extremes shown, both comfortably above 0.9 F1. The gap is entirely in genre: 0.85 versus 0.38. A BERT-tiny genre head effectively collapses under that gap, either over-firing on common genres or missing rarer ones, because 27-way multi-label classification with meaningful class imbalance needs more representational capacity than 4.4M parameters and two transformer layers give you. DistilBERT shipped as the quality model on the strength of that one number.</p>
+
+<p>A few honest weak spots came out of this, worth stating plainly rather than rounding off:</p>
+
+<ul>
+  <li><strong>Decades land approximately, not exactly</strong> - “80s” resolves to something centered near the 80s but with roughly 5 years of slop, because the regression head is learning a continuous year value from a discrete decade phrase. Explicit numeric years (“2012”) and regex-extractable decade patterns are handled by rules ahead of the model, with the head as a fallback rather than the primary path for date.</li>
+  <li><strong>Genre bleed</strong> - the model occasionally adds an extra genre, usually Drama, and rarer genres are still weaker than common ones, which tracks with training-data frequency more than anything architectural.</li>
+  <li><strong>Title extraction is the weakest head</strong> (F1 ~0.75) - titles make up only about 7% of the training data, and title-in-query is exactly the kind of thing that catalog full-text search already does well, so the model doesn’t need to carry that weight alone.</li>
+  <li><strong>Mood is presence-only</strong> - the head answers “does this query have mood language,” not “which mood.” The actual mood text still flows to EmbeddingGemma as residual, which is the right split anyway: mood is a similarity problem, not a classification problem, per the earlier section.</li>
+</ul>
+
+<p>A follow-up test suite (38 tests spanning every head, including excluded-genre phrasing like “not a horror movie” and negation handling) locked in the decode behavior once the training data itself started covering those cases, so a future retrain can’t silently regress a head that used to work.</p>
+
+<h2 id="winning-the-benchmark-doesnt-mean-it-fits-on-the-phone">Winning the benchmark doesn’t mean it fits on the phone</h2>
+
+<p>DistilBERT’s checkpoint, saved as a plain PyTorch state dict straight off the Modal L4, is about <code class="language-plaintext highlighter-rouge">253MB</code> in fp32. That number matters a lot more here than it would for a server-side model, because it has to sit on a phone next to EmbeddingGemma, which is already budgeted at under <code class="language-plaintext highlighter-rouge">500MB</code> for the whole on-device model story.</p>
+
+<p>This is the actual constraint that shaped every decision in this section, stated plainly:</p>
+
+<blockquote>
+  <p>Two models, one phone, one storage and RAM budget shared with everything else the app does.</p>
+</blockquote>
+
+<p>There’s no server to offload either model to, so whatever ships has to fit on a mid-range Android device alongside posters, a local catalog database, and the rest of the app, not just fit inside some abstract “model size” line item.</p>
+
+<p>fp32 at 253MB doesn’t fit that budget comfortably next to EmbeddingGemma, so quantization decides whether this ships at all, not just how tidy the build is. The pipeline runs it as the last step of the same Modal job that does training: <code class="language-plaintext highlighter-rouge">torchao</code>’s <code class="language-plaintext highlighter-rouge">Int8WeightOnlyConfig</code> applied to the trained checkpoint, weights collapsed from float32 to int8, before the result gets pulled back down from the L4 instance.</p>
+
+<p>int8 weight-only quantization typically lands a model like this in the <code class="language-plaintext highlighter-rouge">60-70MB</code> range, the same ballpark as an earlier int8 plan that had been considered for the T5 experiments, before those got dropped for the tokenizer and generation problems described above. A second ~60-70MB encoder alongside EmbeddingGemma is a reasonable footprint on a phone; a 250MB unquantized PyTorch checkpoint is not, and the fp32 checkpoint never had a real path to shipping on its own.</p>
+
+<p>BERT-tiny, for reference, quantizes down to <code class="language-plaintext highlighter-rouge">5-8MB</code>, genuinely tiny, but as the size comparison above shows, it isn’t shipping for genre until either more training data or distillation from the DistilBERT checkpoint closes that <code class="language-plaintext highlighter-rouge">0.85</code>-vs-<code class="language-plaintext highlighter-rouge">0.38</code> gap.</p>
+
+<h2 id="putting-the-pieces-back-together">Putting the pieces back together</h2>
+
+<p>There are actually three retrieval mechanisms running here, not two, and none of them runs alone at query time - a query gets split, and the pieces feed three different signals that only get reconciled at the very end:</p>
+
+<pre><code class="language-mermaid">flowchart TB
+    Q["free-text query"] --&gt; RULES["deterministic rules first\n(explicit years, decade regex)"]
+    RULES --&gt; FACETS["DistilBERT facet heads\ngenre / date / runtime / rating / popularity"]
+    FACETS --&gt; HC{"high\nconfidence?"}
+    HC --&gt;|"yes"| HARD["hard filter\n(exclude non-matches)"]
+    HC --&gt;|"no / mood-only"| SOFT["soft boost, never exclude"]
+    FACETS --&gt; RESID["residual text\n(mood + leftover words)"]
+    RESID --&gt; EMBED["EmbeddingGemma\nvector similarity"]
+    Q --&gt; FTS["FTS4 keyword match\n+ spellfix1 typo fallback"]
+    HARD --&gt; RANK["combine\n(reciprocal rank fusion)"]
+    SOFT --&gt; RANK
+    EMBED --&gt; RANK
+    FTS --&gt; RANK
+    RANK --&gt; RESULTS["ranked results"]
+</code></pre>
+
+<p>The third path, running independently of both models, is a plain SQLite <code class="language-plaintext highlighter-rouge">FTS4</code> virtual table over title, overview, and original-title fields, doing ordinary keyword and prefix matching, the same kind of search that’s existed in relational databases for decades, no model involved. It’s there because embeddings and a facet classifier both answer “what does this query <em>mean</em>,” and neither one is the right tool for “the user typed a title with one letter wrong.”</p>
+
+<p>FTS4’s prefix match handles the common case. When that misses entirely, a <code class="language-plaintext highlighter-rouge">spellfix1</code>-backed fallback tries typo-tolerant suggestions per token before giving up, so “the dark knigt” still finds The Dark Knight without needing either model to have ever seen that misspelling. Titles saved into the library before this indexing existed get backfilled once, in the background, in batches, rather than needing a full re-scan on every app launch.</p>
+
+<p>All three signals, the facet-filtered/boosted set, the embedding-similarity set, and the FTS4 keyword set, get combined with <strong>reciprocal rank fusion</strong> (<code class="language-plaintext highlighter-rouge">RRF</code>): each item’s final score is the sum of <code class="language-plaintext highlighter-rouge">1 / (k + rank)</code> across whichever of the three lists it appears in, so an item that shows up near the top of two different signals outranks an item that’s merely the single best match on one.</p>
+
+<p>That’s a deliberately simple combination rule, chosen over trying to hand-tune relative weights between three signals with very different score distributions. A BM25-ish FTS score, a cosine similarity, and a facet-match boolean don’t live on comparable scales, but rank position always does.</p>
+
+<p>The rule that governs the facet side of this diagram is one sentence:</p>
+
+<blockquote>
+  <p>A high-confidence structured facet becomes a hard filter. Everything else is a soft signal that can boost a result but never silently drops one.</p>
+</blockquote>
+
+<p>That asymmetry is deliberate, not an oversight, and it’s the direct fix for the “nostalgic gets classified as a date” failure mode from earlier.</p>
+
+<p>A genuinely ambiguous signal degrading to “rank slightly higher” is recoverable if it’s wrong. A genuinely ambiguous signal degrading to “excluded from results entirely” is not, and the user has no way to tell the difference between “nothing matched” and “the wrong thing got filtered out before it had a chance to match.”</p>
+
+<p>That’s also why explicit numeric years and decade phrases go through regex first, ahead of the DistilBERT date head - a rule either matches “2012” exactly or it doesn’t, with zero ambiguity, while the head’s ~5-year slop is a reasonable fallback for phrasing a regex can’t anticipate, not a reasonable primary path for a case regex handles perfectly.</p>
+
+<h2 id="what-mofys-search-can-actually-answer-today">What Mofy’s search can actually answer today</h2>
+
+<p>Concretely, this is the range of query a single search box handles now, resolved through the split above rather than through separate search modes the user has to pick between:</p>
+
+<ul>
+  <li><strong>Structured, single facet</strong>: “action movies”, “movies from the 90s”, “highly rated”, “under 90 minutes” - a single head fires, the rest of the pipeline is a no-op.</li>
+  <li><strong>Structured, compound</strong>: “dark psychological thriller from the 80s under 2 hours” - genre, date, and runtime heads all fire in the same forward pass, combined as hard filters.</li>
+  <li><strong>Pure vibe</strong>: “feeling nostalgic”, “something to watch when I don’t want to think” - no facet head fires with confidence, the whole query flows to EmbeddingGemma as residual text.</li>
+  <li><strong>Plot description with no title given</strong>: “a guy loses his memory every day and writes notes to himself” - resolves via embedding similarity to Memento’s stored overview vector, with no genre or date filtering involved at all.</li>
+  <li><strong>Mixed structured and vibe in one sentence</strong>: “something dark from the 2000s” - date resolves as a hard range filter, “dark” survives as residual text into the semantic search, and the two signals combine at ranking time rather than one silently overriding the other.</li>
+  <li><strong>Format/logistics queries</strong>: “download inception 2010 1080p” - title and date heads fire, “1080p” and “download” are caught by the “other” presence flag and handled by catalog matching rather than the encoder, since that’s a lookup problem, not a language-understanding one.</li>
+</ul>
+
+<p>Two things it deliberately still skips:</p>
+
+<ul>
+  <li>It folds all mood language into one similarity search, rather than resolving an exact mood vocabulary (“cozy” vs. “melancholic” as distinct, structured categories).</li>
+  <li>It never runs a generative model on-device to paraphrase or expand a query.</li>
+</ul>
+
+<p>Both are staged as later, optional work: an on-device small language model for richer multi-aspect query decomposition, and a ColBERT-style multi-vector upgrade if single-vector retrieval ever turns out to be an actual bottleneck rather than a hypothetical one. Deferred specifically because the three-signal split above already covers the real query traffic without needing either.</p>
+
+<h2 id="the-actual-lesson">The actual lesson</h2>
+
+<p>None of this needed a frontier model. It needed the query correctly split into the things it actually is - a small number of exact facts, a fuzzy remainder, and plain keyword lookup for when the user already knows the title - and then a genuinely boring approach applied to each: a 66M-parameter encoder doing seven small classification jobs at once, a sub-300M embedding model doing nearest-neighbor lookup, and a SQLite feature that’s existed since before either model was trained.</p>
+
+<p>The expensive, interesting-looking approach, generate structured JSON with a small LLM, failed four different ways before a classification reframe fixed it, and every one of those failures looked, from the training loss alone, like it was working. What actually mattered was what came out the other end of a real parser, on a real device, with the network off, and that only shows up if you go check.</p>
+
+
+
+      <hr>
+      <div class="row mb-5 mt-5">
+  <div class="col-md-6 d-flex align-items-end ">
+    <span>Thanks. <i>mind sharing?</i></span>
+  </div>
+
+  <!-- Right Column with Social Media Icons (on the right for larger screens, on bottom for smaller screens) -->
+  <div class="col-md-6 order-md-2 order-1 text-md-right text-center mt-3 mt-md-0">
+    <div>
+
+      <a
+          href="https://www.linkedin.com/sharing/share-offsite?url=ikouchiha47.github.io/2026/08/26/mofy-search-distilbert.html"
+          onclick="window.open(this.href, 'pop-up', 'left=20,top=20,width=500,height=500,toolbar=1,resizable=0'); return false;"
+          class="d-inline-block mr-2"
+       >
+        <span class="fa-stack fa-lg" style="color: #0077b5;">
+          <i class="fas fa-square fa-stack-2x"></i>
+          <i class="fab fa-linkedin fa-stack-1x fa-inverse"></i>
+        </span>
+      </a>
+
+      <a
+          href="https://twitter.com/intent/tweet?text=Making a Small Language Model Actually Useful in Movie Search&url=ikouchiha47.github.io/2026/08/26/mofy-search-distilbert.html"
+          onclick="window.open(this.href, 'pop-up', 'left=20,top=20,width=500,height=500,toolbar=1,resizable=0'); return false;"
+          class="d-inline-block mr-2">
+        <span class="fa-stack fa-lg" style="color: #1DA1F2;">
+          <i class="fas fa-square fa-stack-2x"></i>
+          <i class="fab fa-twitter fa-stack-1x fa-inverse"></i>
+        </span>
+      </a>
+
+      <a
+          href="http://www.reddit.com/submit?url=ikouchiha47.github.io/2026/08/26/mofy-search-distilbert.html"
+          onclick="window.open(this.href, 'pop-up', 'left=20,top=20,width=500,height=500,toolbar=1,resizable=0'); return false;"
+          class="d-inline-block mr-2">
+        <span class="fa-stack fa-lg" style="color: #FF4500;">
+          <i class="fas fa-square fa-stack-2x"></i>
+          <i class="fab fa-reddit fa-stack-1x fa-inverse"></i>
+        </span>
+      </a>
+    </div>
+  </div>
+</div>
+
+<hr/>
+
+
+      <div class="clearfix">
+
+        
+        <a class="btn btn-primary float-left" href="/2026/08/12/concurrency-and-gc.html" data-toggle="tooltip" data-placement="top" title="A Quick rundown on concurrency and gc">&larr; Previous<span class="d-none d-md-inline">
+            Post</span></a>
+        
+        
+
+      </div>
+
+    </div>
+  </div>
+</div>
+
+
+  <!-- Footer -->
+
+<hr>
+
+<footer>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <ul class="list-inline text-center">
+          
+          <li class="list-inline-item">
+            <a href="mailto:amitava.dev@proton.me" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="far fa-envelope fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          
+          
+          <li class="list-inline-item">
+            <a href="https://www.linkedin.com/in/amitavaag" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-linkedin fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          <li class="list-inline-item">
+            <a href="https://github.com/ikouchiha47" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-github fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+        </ul>
+
+        <p class="copyright text-muted">
+          Build with: 
+          <a 
+            href="https://github.com/StartBootstrap/startbootstrap-clean-blog-jekyll"
+            class="text-gray"
+            target="_blank">startbootstrap-clean-blog-jekyll</a></p>
+      </div>
+    </div>
+  </div>
+</footer>
+
+
+  <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="/assets/vendor/blog/js/scripts.js"></script>
+
+<script src="/assets/scripts.js"></script>
+
+
+
+
+
+  <script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+
+    document.querySelectorAll('pre > code.language-mermaid').forEach((codeBlock) => {
+      codeBlock.parentElement.outerHTML = `<pre class="mermaid">${codeBlock.textContent}</pre>`;
+    });
+
+
+    mermaid.initialize({ startOnLoad: true, theme: 'forest' });
+</script>
+
+
+  
+
+</body>
+
+</html>

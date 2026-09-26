@@ -1,0 +1,397 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+  <title>
+    Shrinking a Materials Database from 11GB to 266MB Without Losing the Answer - iko&#39;s logs
+    
+  </title>
+
+  <meta name="description" content="materialsDB is a small Go API serving 145,923 materials from the Materials Project, backed by a single SQLite file. Live at materials-db.fly.dev.">
+  <meta property="og:description" content="materialsDB is a small Go API serving 145,923 materials from the Materials Project, backed by a single SQLite file. Live at materials-db.fly.dev.">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Shrinking a Materials Database from 11GB to 266...">
+  <meta property="og:url" content="https://ikouchiha47.github.io/2026/08/05/materialsdb-11gb-to-266mb.html">
+
+  
+
+  <link href='https://fonts.googleapis.com/css?family=Lora:400,700,400italic,700italic' rel='stylesheet' type='text/css'>
+  <link href='https://fonts.googleapis.com/css?family=Open+Sans:300italic,400italic,600italic,700italic,800italic,400,300,600,700,800' rel='stylesheet' type='text/css'>
+
+  <!-- <script src="https://use.fontawesome.com/releases/v5.15.3/js/all.js" crossorigin="anonymous"></script> -->
+  <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.15.4/css/all.css" integrity="sha384-DyZ88mC6Up2uqS4h/KRgHuoeGwBcD4Ng9SiP4dIRy0EXTlnuz47vAwmeGwVChigm" crossorigin="anonymous"/>
+
+  <link rel="stylesheet" href="/assets/main.css">
+  <link rel="canonical" href="https://ikouchiha47.github.io/2026/08/05/materialsdb-11gb-to-266mb.html">
+  <link rel="alternate" type="application/rss+xml" title="iko&#39;s logs" href="/feed.xml">
+
+  <meta name="google-site-verification" content="lWkg6gIxJgzEKX_5XnhcxCtPE9QknaimFWWos_dTvPM" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fira+Sans:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Inconsolata:wght@200..900&family=Jersey+25&family=Kanit:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Merriweather+Sans:ital,wght@0,300..800;1,300..800&family=Nanum+Gothic+Coding&family=Space+Grotesk:wght@300..700&family=Titillium+Web:ital,wght@0,200;0,300;0,400;0,600;0,700;0,900;1,200;1,300;1,400;1,600;1,700&display=swap" rel="stylesheet">
+
+</head>
+
+
+<body>
+
+  <!-- Navigation -->
+<nav class="navbar navbar-expand-lg navbar-light fixed-top" id="mainNav">
+  <div class="container">
+    <a class="navbar-brand" href="/">iko&#39;s logs</a>
+    <button class="navbar-toggler navbar-toggler-right" type="button" data-toggle="collapse" data-target="#navbarResponsive" aria-controls="navbarResponsive" aria-expanded="false" aria-label="Toggle navigation">
+      Menu
+      <i class="fa fa-bars"></i>
+    </button>
+    <div class="collapse navbar-collapse" id="navbarResponsive">
+      <ul class="navbar-nav ml-auto">
+        <li class="nav-item">
+          <a class="nav-link" href="/">Home</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/about">About</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/posts">Posts</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/wall/">Wall</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/contact">Contact</a>
+        </li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+
+  <!-- Page Header -->
+
+<header class="masthead" style="background: #0d1117">
+
+  <div class="overlay"></div>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <div class="post-heading">
+          <h1>Shrinking a Materials Database from 11GB to 266MB Without Losing the Answer</h1>
+          
+          <h2 class="subheading">What a 1.58M-row trajectory dataset actually needs to become a sub-500ms lookup API</h2>
+          
+          <span class="meta">Posted by
+            <a href="#">ikouchiha47</a>
+            on August 05, 2026 &middot; <span class="reading-time" title="Estimated read time">
+  
+   10 mins  read </span>
+
+          </span>
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="container space-grotesk">
+  <div class="row">
+    <div class="col-lg-8 col-md-10 mx-auto">
+
+      <p><a href="https://github.com/ikouchiha47/materialsDB">materialsDB</a> is a small Go API serving 145,923 materials from the Materials Project, backed by a single SQLite file. Live at <a href="https://materials-db.fly.dev/">materials-db.fly.dev</a>.</p>
+
+<p>The source data is <strong>11.35GB</strong>. The database it actually runs on is <strong>266MB</strong>. This is the story of what happens in between, and why most of that 11GB was never something the API needed in the first place.</p>
+
+<hr />
+
+<h2 id="whats-actually-in-the-dataset">What’s Actually in the Dataset</h2>
+
+<p>The source is <a href="https://figshare.com/articles/dataset/Materials_Project_Trjectory_MPtrj_Dataset/23713842">MPtrj</a> — the Materials Project Trajectory dataset. One file, <code class="language-plaintext highlighter-rouge">MPtrj_2022.9_full.json</code>, 11.35GB. It’s the training corpus behind <strong>CHGNet</strong>, a machine-learned interatomic potential that predicts energy, force, and stress for arbitrary atomic arrangements.</p>
+
+<p>That’s the detail that explains everything else in this post: CHGNet’s whole job is predicting energy, force, and stress for <em>any</em> atomic arrangement, not just the relaxed ground state — that’s what makes it useful for running new relaxations on structures nobody’s computed yet. To train a model that generalizes across the energy landscape, you need labeled examples away from the minimum too: high-pressure configurations, partially-relaxed intermediate steps, structures that are “wrong” by various amounts. That’s exactly what a material’s other relaxation tasks are — points along a trajectory at different pressures and energies, each one a training example teaching the model “here’s what the forces look like when the structure is bent this way.”</p>
+
+<p>So the dataset isn’t 1.58M rows because someone was sloppy about deduplication. It’s 1.58M rows because each material’s relaxation run gets sampled at several points, and every point is a valid (structure, energy, force, stress) training tuple for the model this data was built for.</p>
+
+<h2 id="the-mp-149-example">The mp-149 Example</h2>
+
+<p>Concretely — material <code class="language-plaintext highlighter-rouge">mp-149</code> (silicon) has 7 tasks in the dataset:</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>task_id</th>
+      <th>energy/atom (eV)</th>
+      <th>pressure (GPa)</th>
+      <th>structure kept?</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">mp-655585-0-0</code></td>
+      <td>-5.4253</td>
+      <td>-0.13</td>
+      <td><strong>yes</strong></td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">mp-149-1-1</code></td>
+      <td>-5.4243</td>
+      <td>-11.87</td>
+      <td>no</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">mp-149-1-0</code></td>
+      <td>-5.4228</td>
+      <td>19.25</td>
+      <td>no</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">mp-11721-1-1</code></td>
+      <td>-5.4205</td>
+      <td>-24.46</td>
+      <td>no</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">mp-11721-1-0</code></td>
+      <td>-5.4149</td>
+      <td>40.82</td>
+      <td>no</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">mp-1057366-1-1</code></td>
+      <td>-5.2118</td>
+      <td>-116.43</td>
+      <td>no</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">mp-1057366-1-0</code></td>
+      <td>-5.0935</td>
+      <td>311.51</td>
+      <td>no</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>Seven snapshots of the same material under different amounts of strain, all valid CHGNet training data. materialsDB keeps the structure for exactly one of them — the lowest-energy task — because its job is “what does silicon’s ground state actually look like,” not “teach a neural network the shape of silicon’s energy surface.” Six structures get discarded per material, on average, for a job that was never asking for them.</p>
+
+<h2 id="what-gets-thrown-away-and-why-thats-a-real-cost">What Gets Thrown Away, and Why That’s a Real Cost</h2>
+
+<p>Worth being honest about this rather than calling it free cleanup: those six structures are a real loss, not redundant data.</p>
+
+<p>The schema keeps <code class="language-plaintext highlighter-rouge">max_force</code> — a single scalar, the largest force magnitude across all atoms in that task. It does not keep the full per-atom force vectors, and it doesn’t keep the structure those forces were computed against. That’s the actual damage: a force value only means something in reference to which atom sat where. <code class="language-plaintext highlighter-rouge">max_force</code> with no structure attached is a diagnostic number. It can’t be replayed into a training loop, can’t be used to fine-tune a potential, can’t reconstruct the energy surface’s curvature around the minimum, can’t be reused the next time someone wants to benchmark a newer model against MPtrj’s reference structures.</p>
+
+<p>So this isn’t “we pruned redundant data.” It’s “we discarded scientifically real training value that MPtrj was built to provide, because this API’s job — look up a material’s ground-state properties — never needed it.” A legitimate scope decision. Not a free lunch.</p>
+
+<h2 id="dedup-the-first-20x">Dedup: The First ~20x</h2>
+
+<p>The first and biggest reduction happens before any compression, in the ingest step:</p>
+
+<div class="language-sql highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">WITH</span> <span class="n">ranked</span> <span class="k">AS</span> <span class="p">(</span>
+    <span class="k">SELECT</span> <span class="o">*</span><span class="p">,</span>
+        <span class="n">ROW_NUMBER</span><span class="p">()</span> <span class="n">OVER</span> <span class="p">(</span>
+            <span class="k">PARTITION</span> <span class="k">BY</span> <span class="n">material_id</span>
+            <span class="k">ORDER</span> <span class="k">BY</span> <span class="n">energy_per_atom</span> <span class="k">ASC</span> <span class="n">NULLS</span> <span class="k">LAST</span>
+        <span class="p">)</span> <span class="k">AS</span> <span class="n">rn</span>
+    <span class="k">FROM</span> <span class="n">raw</span>
+<span class="p">)</span>
+<span class="k">SELECT</span> <span class="p">...</span> <span class="k">FROM</span> <span class="n">ranked</span> <span class="k">WHERE</span> <span class="n">rn</span> <span class="o">=</span> <span class="mi">1</span>
+</code></pre></div></div>
+
+<p>One structure per material, picked by lowest energy. Every other task keeps its five scalar properties in a separate <code class="language-plaintext highlighter-rouge">material_tasks</code> table — cheap, no JSON, no BLOB — but loses its structure. That single decision takes the dataset from 11.35GB down to roughly <strong>592MB</strong>: a ~20x reduction, and it happens purely from deciding what the API needs to answer, before a single byte gets compressed.</p>
+
+<h2 id="compression-592mb--266mb">Compression: 592MB → 266MB</h2>
+
+<p>The remaining 592MB is ~96% <code class="language-plaintext highlighter-rouge">structure_json</code> — one pymatgen <code class="language-plaintext highlighter-rouge">Structure</code> blob per material. Two more things happen to it.</p>
+
+<p><strong>Strip before compressing.</strong> Raw pymatgen JSON is verbose — <code class="language-plaintext highlighter-rouge">{"species":[{"element":"Si","occu":1}],"abc":[0,0,0]}</code> per site. A benchmark script (<code class="language-plaintext highlighter-rouge">scripts/bench_encoding.py</code>) compared four encodings head to head — raw JSON, zlib-only, stripped-JSON-only, stripped+zlib — by sampling 1,000 random structures and measuring both size and decode latency. Stripped-then-compressed won: verbose JSON key names don’t compress as well relative to their size as a compact positional array does. The on-disk shape is:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>{"l":[[...]],"s":[["Si",0,0,0,1],["Si",0.25,0.25,0.25,1]]}
+</code></pre></div></div>
+
+<p><code class="language-plaintext highlighter-rouge">l</code> = lattice matrix, <code class="language-plaintext highlighter-rouge">s</code> = sites as <code class="language-plaintext highlighter-rouge">[element, a, b, c, occupancy]</code> arrays. Then zlib on top of that.</p>
+
+<p><strong>Version the wire format, don’t do a hard cutover.</strong> Each blob gets a 4-byte header — magic byte, version, codec id, reserved — before the payload:</p>
+
+<div class="language-go highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="n">header</span> <span class="o">:=</span> <span class="p">[</span><span class="m">4</span><span class="p">]</span><span class="kt">byte</span><span class="p">{</span><span class="m">0x53</span><span class="p">,</span> <span class="n">version</span><span class="p">,</span> <span class="n">codecByte</span><span class="p">,</span> <span class="m">0x00</span><span class="p">}</span>
+</code></pre></div></div>
+
+<p>A <code class="language-plaintext highlighter-rouge">Registry</code> decodes by dispatching on the version byte, and legacy uncompressed rows (no magic byte at the front) get returned as-is instead of erroring. That’s what let the actual production database get migrated in place with a one-time script, rather than requiring a full re-ingest or a moment where old and new rows couldn’t coexist.</p>
+
+<p>End result: 592MB → <strong>266MB</strong>. Combined with the dedup step, that’s roughly a <strong>97.7% reduction</strong> from the original 11.35GB source file.</p>
+
+<pre><code class="language-mermaid">graph LR
+    A["MPtrj source&lt;br/&gt;11.35GB"] --&gt; B["Dedup: one structure&lt;br/&gt;per material — ~592MB"]
+    B --&gt; C["Strip + zlib,&lt;br/&gt;versioned codec — 266MB"]
+    C --&gt; D["Served: WAL + mmap,&lt;br/&gt;sub-500ms warm"]
+    style A fill:#f3f4f6,stroke:#6366f1,color:#111827
+    style D fill:#eef2ff,stroke:#6366f1,color:#111827
+</code></pre>
+
+<h2 id="serving-it-fast">Serving It Fast</h2>
+
+<p>None of the size work matters if queries are slow, so the serving side gets its own set of decisions:</p>
+
+<ul>
+  <li><strong>WAL mode + 1GB mmap</strong> — at 266MB, the entire database fits comfortably inside a single mmap region, so reads hit page cache instead of disk after the first touch.</li>
+  <li><strong>A channel-based pool of read-only connections</strong>, sized to <code class="language-plaintext highlighter-rouge">GOMAXPROCS</code>, each one running warmup queries against the key indexes (primary key, formula, bandgap, the material→task foreign key) on boot — so the <em>first</em> real request isn’t also the <em>first</em> time an index gets touched.</li>
+  <li><strong>Singleflight</strong> collapses concurrent identical requests into one query — 100 requests for the same material in flight becomes one SQLite call, replayed to all 100 callers.</li>
+  <li><strong>An LRU cache</strong> in front of both material lookups and search results, since the data is static — no invalidation logic needed.</li>
+</ul>
+
+<p>Worth stating the honest caveat rather than only the good number: this is all <em>warm-path</em> performance. On a 512MB Fly.io VM, the very first request after a cold start pays the cost of mmap page-fault warmup against a 266MB file — 15 to 24 seconds. Every request after that is sub-500ms. That tradeoff is a property of running on a small VM with a memory-mapped file, not something the caching layers paper over — it’s worth knowing about if you’re the one hitting the API first after a deploy.</p>
+
+<h2 id="what-it-adds-up-to">What It Adds Up To</h2>
+
+<p>Most of the size reduction here didn’t come from a clever encoding trick — it came from asking what the API actually needed to answer, and being honest that the answer to “do we need the other six structures” was no, even though those structures were genuinely valuable for the job the dataset was originally built for. The compression work (266MB from 592MB) is the smaller, more mechanical half of the story. The bigger number (592MB from 11.35GB) came from a single <code class="language-plaintext highlighter-rouge">ROW_NUMBER()</code> and a decision about scope.</p>
+
+
+      <hr>
+      <div class="row mb-5 mt-5">
+  <div class="col-md-6 d-flex align-items-end ">
+    <span>Thanks. <i>mind sharing?</i></span>
+  </div>
+
+  <!-- Right Column with Social Media Icons (on the right for larger screens, on bottom for smaller screens) -->
+  <div class="col-md-6 order-md-2 order-1 text-md-right text-center mt-3 mt-md-0">
+    <div>
+
+      <a
+          href="https://www.linkedin.com/sharing/share-offsite?url=ikouchiha47.github.io/2026/08/05/materialsdb-11gb-to-266mb.html"
+          onclick="window.open(this.href, 'pop-up', 'left=20,top=20,width=500,height=500,toolbar=1,resizable=0'); return false;"
+          class="d-inline-block mr-2"
+       >
+        <span class="fa-stack fa-lg" style="color: #0077b5;">
+          <i class="fas fa-square fa-stack-2x"></i>
+          <i class="fab fa-linkedin fa-stack-1x fa-inverse"></i>
+        </span>
+      </a>
+
+      <a
+          href="https://twitter.com/intent/tweet?text=Shrinking a Materials Database from 11GB to 266MB Without Losing the Answer&url=ikouchiha47.github.io/2026/08/05/materialsdb-11gb-to-266mb.html"
+          onclick="window.open(this.href, 'pop-up', 'left=20,top=20,width=500,height=500,toolbar=1,resizable=0'); return false;"
+          class="d-inline-block mr-2">
+        <span class="fa-stack fa-lg" style="color: #1DA1F2;">
+          <i class="fas fa-square fa-stack-2x"></i>
+          <i class="fab fa-twitter fa-stack-1x fa-inverse"></i>
+        </span>
+      </a>
+
+      <a
+          href="http://www.reddit.com/submit?url=ikouchiha47.github.io/2026/08/05/materialsdb-11gb-to-266mb.html"
+          onclick="window.open(this.href, 'pop-up', 'left=20,top=20,width=500,height=500,toolbar=1,resizable=0'); return false;"
+          class="d-inline-block mr-2">
+        <span class="fa-stack fa-lg" style="color: #FF4500;">
+          <i class="fas fa-square fa-stack-2x"></i>
+          <i class="fab fa-reddit fa-stack-1x fa-inverse"></i>
+        </span>
+      </a>
+    </div>
+  </div>
+</div>
+
+<hr/>
+
+
+      <div class="clearfix">
+
+        
+        <a class="btn btn-primary float-left" href="/millionrps/" data-toggle="tooltip" data-placement="top" title="Chasing 1 Million RPS">&larr; Previous<span class="d-none d-md-inline">
+            Post</span></a>
+        
+        
+        <a class="btn btn-primary float-right" href="/keyboard/" data-toggle="tooltip" data-placement="top" title="CodeKeyboard Rebuild Notes">Next<span class="d-none d-md-inline">
+            Post</span> &rarr;</a>
+        
+
+      </div>
+
+    </div>
+  </div>
+</div>
+
+
+  <!-- Footer -->
+
+<hr>
+
+<footer>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <ul class="list-inline text-center">
+          
+          <li class="list-inline-item">
+            <a href="mailto:amitava.dev@proton.me" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="far fa-envelope fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          
+          
+          <li class="list-inline-item">
+            <a href="https://www.linkedin.com/in/amitavaag" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-linkedin fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          <li class="list-inline-item">
+            <a href="https://github.com/ikouchiha47" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-github fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+        </ul>
+
+        <p class="copyright text-muted">
+          Build with: 
+          <a 
+            href="https://github.com/StartBootstrap/startbootstrap-clean-blog-jekyll"
+            class="text-gray"
+            target="_blank">startbootstrap-clean-blog-jekyll</a></p>
+      </div>
+    </div>
+  </div>
+</footer>
+
+
+  <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="/assets/vendor/blog/js/scripts.js"></script>
+
+<script src="/assets/scripts.js"></script>
+
+
+
+
+
+  <script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+
+    document.querySelectorAll('pre > code.language-mermaid').forEach((codeBlock) => {
+      codeBlock.parentElement.outerHTML = `<pre class="mermaid">${codeBlock.textContent}</pre>`;
+    });
+
+
+    mermaid.initialize({ startOnLoad: true, theme: 'forest' });
+</script>
+
+
+  
+
+</body>
+
+</html>
