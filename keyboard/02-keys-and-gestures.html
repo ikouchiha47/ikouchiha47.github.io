@@ -1,0 +1,405 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+  <title>
+    CodeKeyboard Part 2: Keys, Dual Layout, Gestures - iko&#39;s logs
+    
+  </title>
+
+  <meta name="description" content="">
+  <meta property="og:description" content="">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="CodeKeyboard Part 2: Keys, Dual Layout, Gestures">
+  <meta property="og:url" content="https://ikouchiha47.github.io/keyboard/02-keys-and-gestures.html">
+
+  
+
+  <link href='https://fonts.googleapis.com/css?family=Lora:400,700,400italic,700italic' rel='stylesheet' type='text/css'>
+  <link href='https://fonts.googleapis.com/css?family=Open+Sans:300italic,400italic,600italic,700italic,800italic,400,300,600,700,800' rel='stylesheet' type='text/css'>
+
+  <!-- <script src="https://use.fontawesome.com/releases/v5.15.3/js/all.js" crossorigin="anonymous"></script> -->
+  <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.15.4/css/all.css" integrity="sha384-DyZ88mC6Up2uqS4h/KRgHuoeGwBcD4Ng9SiP4dIRy0EXTlnuz47vAwmeGwVChigm" crossorigin="anonymous"/>
+
+  <link rel="stylesheet" href="/assets/main.css">
+  <link rel="canonical" href="https://ikouchiha47.github.io/keyboard/02-keys-and-gestures.html">
+  <link rel="alternate" type="application/rss+xml" title="iko&#39;s logs" href="/feed.xml">
+
+  <meta name="google-site-verification" content="lWkg6gIxJgzEKX_5XnhcxCtPE9QknaimFWWos_dTvPM" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fira+Sans:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Inconsolata:wght@200..900&family=Jersey+25&family=Kanit:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Merriweather+Sans:ital,wght@0,300..800;1,300..800&family=Nanum+Gothic+Coding&family=Space+Grotesk:wght@300..700&family=Titillium+Web:ital,wght@0,200;0,300;0,400;0,600;0,700;0,900;1,200;1,300;1,400;1,600;1,700&display=swap" rel="stylesheet">
+
+</head>
+
+
+<body>
+
+  <!-- Navigation -->
+<nav class="navbar navbar-expand-lg navbar-light fixed-top" id="mainNav">
+  <div class="container">
+    <a class="navbar-brand" href="/">iko&#39;s logs</a>
+    <button class="navbar-toggler navbar-toggler-right" type="button" data-toggle="collapse" data-target="#navbarResponsive" aria-controls="navbarResponsive" aria-expanded="false" aria-label="Toggle navigation">
+      Menu
+      <i class="fa fa-bars"></i>
+    </button>
+    <div class="collapse navbar-collapse" id="navbarResponsive">
+      <ul class="navbar-nav ml-auto">
+        <li class="nav-item">
+          <a class="nav-link" href="/">Home</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/about">About</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/posts">Posts</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/wall/">Wall</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/contact">Contact</a>
+        </li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+
+  <!-- Page Header -->
+
+<header class="masthead" style="background: #16213e">
+
+  <div class="overlay"></div>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <div class="post-heading">
+          <h1>CodeKeyboard Part 2: Keys, Dual Layout, Gestures</h1>
+          
+          <h2 class="subheading">Canvas keys, dual layout, hold-tap, TapMachine</h2>
+          
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="container space-grotesk">
+  <div class="row">
+    <div class="col-lg-8 col-md-10 mx-auto">
+
+      <!-- Breadcrumb -->
+      <nav aria-label="breadcrumb" style="margin-bottom: 1.5rem;">
+        <ol class="breadcrumb" style="background: transparent; padding: 0;">
+          
+            <li class="breadcrumb-item"><a href="/keyboard/">CodeKeyboard Rebuild Notes</a></li>
+          
+          
+          <li class="breadcrumb-item active" aria-current="page">CodeKeyboard Part 2: Keys, Dual Layout, Gestures</li>
+        </ol>
+      </nav>
+
+      <h2 id="canvas-keyboard">Canvas keyboard</h2>
+
+<p><code class="language-plaintext highlighter-rouge">NativeKeyboardView</code> extends <code class="language-plaintext highlighter-rouge">View</code>. It does not inflate a grid of buttons from XML.</p>
+
+<ul>
+  <li><code class="language-plaintext highlighter-rouge">setKeys(keys, state, heightPx)</code> stores <code class="language-plaintext highlighter-rouge">List&lt;PositionedKey&gt;</code> and requests layout.</li>
+  <li><code class="language-plaintext highlighter-rouge">onDraw</code> fills <code class="language-plaintext highlighter-rouge">#111111</code> and draws each key as a round rect with label paint.</li>
+  <li>Active modifiers and layers change fill color and a bottom accent bar.</li>
+  <li><code class="language-plaintext highlighter-rouge">onMeasure</code> uses the height from the layout computer when set.</li>
+</ul>
+
+<p>Geometry comes from <code class="language-plaintext highlighter-rouge">SofleLayoutComputer</code> (implements <code class="language-plaintext highlighter-rouge">KeyboardLayoutComputer</code>): given width and layer name, it returns positioned keys. Snap distance for misses between keys uses <code class="language-plaintext highlighter-rouge">maxSafeSnapPx</code> from that computer when width is known.</p>
+
+<h2 id="dual-layout-rule">Dual layout rule</h2>
+
+<p>Two independent definitions must stay in sync by hand:</p>
+
+<ol>
+  <li><code class="language-plaintext highlighter-rouge">src/keyboard/Layout.ts</code> - RN preview / settings</li>
+  <li><code class="language-plaintext highlighter-rouge">android/.../SofleKeyData.kt</code> - IME (source of truth for typing)</li>
+</ol>
+
+<p>The IME never reads Layout.ts at runtime. <code class="language-plaintext highlighter-rouge">CLAUDE.md</code> documents this. If you change one file only, preview and typing diverge. History includes a fix that added the emoji key to the native layout after it existed only on the RN side.</p>
+
+<h2 id="layers-and-hold-annotations">Layers and hold annotations</h2>
+
+<p>Layer names in data: <code class="language-plaintext highlighter-rouge">base</code>, <code class="language-plaintext highlighter-rouge">lower</code>, <code class="language-plaintext highlighter-rouge">raise</code>, <code class="language-plaintext highlighter-rouge">adj</code>, <code class="language-plaintext highlighter-rouge">func</code>.</p>
+
+<p><code class="language-plaintext highlighter-rouge">SofleKeyData</code> comments describe V5 structure: top row, left 4x5, right 4x5.</p>
+
+<p>Hold annotations on base (from the file, not from memory):</p>
+
+<ul>
+  <li>Home row: <code class="language-plaintext highlighter-rouge">a</code> ctrl, <code class="language-plaintext highlighter-rouge">s</code> meta, <code class="language-plaintext highlighter-rouge">d</code> alt, <code class="language-plaintext highlighter-rouge">f</code> shift; <code class="language-plaintext highlighter-rouge">h</code> shift, <code class="language-plaintext highlighter-rouge">j</code> alt, <code class="language-plaintext highlighter-rouge">k</code> meta, <code class="language-plaintext highlighter-rouge">l</code> ctrl (timer path).</li>
+  <li>Thumb spaces: hold lower / raise (timer path).</li>
+  <li>Dedicated Shift, Ctrl, Alt, LWR, RSE, FUNC, ADJ: <code class="language-plaintext highlighter-rouge">holdAction</code> set; touch path treats them as activate-on-down.</li>
+</ul>
+
+<h2 id="hit-testing">Hit testing</h2>
+
+<p>Constants in <code class="language-plaintext highlighter-rouge">NativeKeyboardView</code> companion:</p>
+
+<div class="language-kotlin highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">private</span> <span class="k">const</span> <span class="kd">val</span> <span class="py">HIT_EXPAND_DP</span> <span class="p">=</span> <span class="mf">2.5f</span>
+</code></pre></div></div>
+
+<p><code class="language-plaintext highlighter-rouge">hitTest</code> first checks expanded bounds (<code class="language-plaintext highlighter-rouge">hitExpandPx = density * 2.5</code>). If none hit, nearest key within <code class="language-plaintext highlighter-rouge">snapThresholdPx * snapThresholdPx</code> wins. Drawing still uses the unexpanded rect.</p>
+
+<h2 id="gesture-matrix">Gesture matrix</h2>
+
+<p>Authoritative design notes: <code class="language-plaintext highlighter-rouge">GESTURE_ARCHITECTURE.md</code>. Runtime: <code class="language-plaintext highlighter-rouge">NativeKeyboardView.onTouchEvent</code> + <code class="language-plaintext highlighter-rouge">KeyboardState</code> + <code class="language-plaintext highlighter-rouge">TapMachine</code>.</p>
+
+<h3 id="constants-verified">Constants (verified)</h3>
+
+<table>
+  <thead>
+    <tr>
+      <th>Name</th>
+      <th style="text-align: right">Value</th>
+      <th>Where</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>TAPPING_TERM_MS</td>
+      <td style="text-align: right">150</td>
+      <td>NativeKeyboardView</td>
+    </tr>
+    <tr>
+      <td>REPEAT_INITIAL_DELAY_MS</td>
+      <td style="text-align: right">400</td>
+      <td>NativeKeyboardView</td>
+    </tr>
+    <tr>
+      <td>REPEAT_INTERVAL_MS</td>
+      <td style="text-align: right">50</td>
+      <td>NativeKeyboardView</td>
+    </tr>
+    <tr>
+      <td>TapMachine doubleTapMs</td>
+      <td style="text-align: right">300 (default)</td>
+      <td>TapMachine.kt</td>
+    </tr>
+  </tbody>
+</table>
+
+<h3 id="normal-keys">Normal keys</h3>
+
+<p>DOWN: haptic, <code class="language-plaintext highlighter-rouge">onKeyTapped</code> immediately. If action is backspace/delete, also arm repeat timer (400ms then 50ms). MOVE off key cancels repeat. UP cancels repeat.</p>
+
+<h3 id="hold-tap-home-row-letters-thumb-space">Hold-tap (home row letters, thumb space)</h3>
+
+<p>DOWN when <code class="language-plaintext highlighter-rouge">holdAction != null</code> and action not in dedicated-mod set:</p>
+
+<ul>
+  <li>start 150ms timer</li>
+  <li>UP before fire: <code class="language-plaintext highlighter-rouge">onKeyTapped</code> (type letter/space)</li>
+  <li>timer fires: <code class="language-plaintext highlighter-rouge">onKeyHeld</code> -&gt; <code class="language-plaintext highlighter-rouge">KeyboardState.applyHold</code></li>
+  <li>UP after hold: <code class="language-plaintext highlighter-rouge">onKeyReleased</code> -&gt; <code class="language-plaintext highlighter-rouge">releaseHold</code></li>
+  <li>MOVE off key: same as UP resolution (tap if not fired, else release)</li>
+</ul>
+
+<h3 id="dedicated-modifiers">Dedicated modifiers</h3>
+
+<p>Set in view: <code class="language-plaintext highlighter-rouge">shift</code>, <code class="language-plaintext highlighter-rouge">ctrl</code>, <code class="language-plaintext highlighter-rouge">alt</code>, <code class="language-plaintext highlighter-rouge">lower</code>, <code class="language-plaintext highlighter-rouge">raise</code>, <code class="language-plaintext highlighter-rouge">func</code>, <code class="language-plaintext highlighter-rouge">adj</code>.</p>
+
+<p>DOWN: <code class="language-plaintext highlighter-rouge">onKeyHeld</code> immediately, remember pointer, <code class="language-plaintext highlighter-rouge">modHoldOtherKeyPressed = false</code>.</p>
+
+<p>Other key DOWN while held: set <code class="language-plaintext highlighter-rouge">modHoldOtherKeyPressed = true</code>.</p>
+
+<p>UP:</p>
+
+<div class="language-kotlin highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="kd">val</span> <span class="py">wasQuickTap</span> <span class="p">=</span> <span class="p">!</span><span class="n">otherPressed</span> <span class="p">&amp;&amp;</span>
+    <span class="p">(</span><span class="n">now</span> <span class="p">-</span> <span class="n">modHoldStartTime</span><span class="p">)</span> <span class="p">&lt;</span> <span class="nc">TAPPING_TERM_MS</span>
+<span class="nf">onKeyReleased</span><span class="p">(</span><span class="n">key</span><span class="p">)</span>
+<span class="k">if</span> <span class="p">(</span><span class="n">wasQuickTap</span><span class="p">)</span> <span class="nf">onKeyTapped</span><span class="p">(</span><span class="n">key</span><span class="p">)</span>  <span class="c1">// cycle latch/lock</span>
+</code></pre></div></div>
+
+<p>MOVE does not cancel dedicated holds (comment in source: drift while holding LWR is expected).</p>
+
+<h3 id="keyboardstate">KeyboardState</h3>
+
+<ul>
+  <li>Latch map for shift/ctrl/alt/caps: NONE, LATCHED, LOCKED</li>
+  <li>Hold set for ctrl/shift/alt/meta; <code class="language-plaintext highlighter-rouge">layerHeld</code> for layer holds</li>
+  <li><code class="language-plaintext highlighter-rouge">effectiveLayer = layerHeld ?: layer</code></li>
+  <li><code class="language-plaintext highlighter-rouge">isShiftActive</code> = latch or hold on <strong>shift only</strong> (not caps)</li>
+  <li><code class="language-plaintext highlighter-rouge">isCapsActive</code> = caps latch not NONE</li>
+  <li>Letter case in <code class="language-plaintext highlighter-rouge">resolveLabel</code>: upper if <code class="language-plaintext highlighter-rouge">(shift &amp;&amp; !caps) || (!shift &amp;&amp; caps)</code></li>
+  <li><code class="language-plaintext highlighter-rouge">onCharCommitted</code>: clear LATCHED mods and latched layer; reset TapMachines; does not clear holds</li>
+  <li>Double-tap via <code class="language-plaintext highlighter-rouge">TapMachine.check</code> on modifier/layer cycle</li>
+</ul>
+
+<h3 id="multi-touch">Multi-touch</h3>
+
+<p>Repeat and hold track pointer ids. Second finger can type while a mod is held.</p>
+
+<hr />
+
+<h2 id="verification-part-2">Verification (part 2)</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>Claim</th>
+      <th>Evidence</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>HIT_EXPAND 2.5, tap 150, repeat 400/50</td>
+      <td>NativeKeyboardView companion</td>
+    </tr>
+    <tr>
+      <td>doubleTap 300</td>
+      <td>TapMachine default</td>
+    </tr>
+    <tr>
+      <td>Dedicated mod set</td>
+      <td>DEDICATED_MOD_ACTIONS in NativeKeyboardView</td>
+    </tr>
+    <tr>
+      <td>Home row hold map</td>
+      <td>SofleKeyData BASE left/right rows</td>
+    </tr>
+    <tr>
+      <td>isShiftActive excludes caps</td>
+      <td>KeyboardState.kt lines for isShiftActive / resolveLabel</td>
+    </tr>
+    <tr>
+      <td>Dual layout rule</td>
+      <td>CLAUDE.md; Layout.ts vs SofleKeyData.kt</td>
+    </tr>
+    <tr>
+      <td>Canvas view not RN for IME keys</td>
+      <td>NativeKeyboardView; CodeKeyboardIME.onCreateInputView</td>
+    </tr>
+  </tbody>
+</table>
+
+
+      <hr>
+
+      <!-- Prev / Next / Up navigation -->
+      
+      
+      
+
+      <div class="clearfix" style="margin-top: 2rem;">
+        
+          
+          
+
+          
+            
+            <a class="btn btn-primary float-left" href="/keyboard/01-why-and-architecture.html" title="CodeKeyboard Part 1: Why, and the Three Layers">&larr; Previous</a>
+          
+
+          
+            
+            <a class="btn btn-primary float-right" href="/keyboard/03-composing.html" title="CodeKeyboard Part 3: Composing, Selection, Recompose">Next &rarr;</a>
+          
+        
+      </div>
+
+      
+      <div style="text-align: center; margin-top: 1rem;">
+        <a href="/keyboard/">&uarr; Back to Table of Contents</a>
+      </div>
+      
+
+    </div>
+  </div>
+</div>
+
+
+  <!-- Footer -->
+
+<hr>
+
+<footer>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <ul class="list-inline text-center">
+          
+          <li class="list-inline-item">
+            <a href="mailto:amitava.dev@proton.me" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="far fa-envelope fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          
+          
+          <li class="list-inline-item">
+            <a href="https://www.linkedin.com/in/amitavaag" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-linkedin fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          <li class="list-inline-item">
+            <a href="https://github.com/ikouchiha47" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-github fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+        </ul>
+
+        <p class="copyright text-muted">
+          Build with: 
+          <a 
+            href="https://github.com/StartBootstrap/startbootstrap-clean-blog-jekyll"
+            class="text-gray"
+            target="_blank">startbootstrap-clean-blog-jekyll</a></p>
+      </div>
+    </div>
+  </div>
+</footer>
+
+
+  <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="/assets/vendor/blog/js/scripts.js"></script>
+
+<script src="/assets/scripts.js"></script>
+
+
+
+
+
+  <script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+
+    document.querySelectorAll('pre > code.language-mermaid').forEach((codeBlock) => {
+      codeBlock.parentElement.outerHTML = `<pre class="mermaid">${codeBlock.textContent}</pre>`;
+    });
+
+
+    mermaid.initialize({ startOnLoad: true, theme: 'forest' });
+</script>
+
+
+  
+
+</body>
+
+</html>

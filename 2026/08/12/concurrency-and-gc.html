@@ -1,0 +1,2307 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+  <title>
+    A Quick rundown on concurrency and gc - iko&#39;s logs
+    
+  </title>
+
+  <meta name="description" content="How Go, Kotlin coroutines, and BEAM handle preemption safely, why GC safe-points exist, and a source-grounded tour of tricolor GC, G1, ZGC, Shenandoah, C4, and more.">
+  <meta property="og:description" content="How Go, Kotlin coroutines, and BEAM handle preemption safely, why GC safe-points exist, and a source-grounded tour of tricolor GC, G1, ZGC, Shenandoah, C4, a...">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="A Quick rundown on concurrency and gc">
+  <meta property="og:url" content="https://ikouchiha47.github.io/2026/08/12/concurrency-and-gc.html">
+
+  
+
+  <link href='https://fonts.googleapis.com/css?family=Lora:400,700,400italic,700italic' rel='stylesheet' type='text/css'>
+  <link href='https://fonts.googleapis.com/css?family=Open+Sans:300italic,400italic,600italic,700italic,800italic,400,300,600,700,800' rel='stylesheet' type='text/css'>
+
+  <!-- <script src="https://use.fontawesome.com/releases/v5.15.3/js/all.js" crossorigin="anonymous"></script> -->
+  <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.15.4/css/all.css" integrity="sha384-DyZ88mC6Up2uqS4h/KRgHuoeGwBcD4Ng9SiP4dIRy0EXTlnuz47vAwmeGwVChigm" crossorigin="anonymous"/>
+
+  <link rel="stylesheet" href="/assets/main.css">
+  <link rel="canonical" href="https://ikouchiha47.github.io/2026/08/12/concurrency-and-gc.html">
+  <link rel="alternate" type="application/rss+xml" title="iko&#39;s logs" href="/feed.xml">
+
+  <meta name="google-site-verification" content="lWkg6gIxJgzEKX_5XnhcxCtPE9QknaimFWWos_dTvPM" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fira+Sans:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Inconsolata:wght@200..900&family=Jersey+25&family=Kanit:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Merriweather+Sans:ital,wght@0,300..800;1,300..800&family=Nanum+Gothic+Coding&family=Space+Grotesk:wght@300..700&family=Titillium+Web:ital,wght@0,200;0,300;0,400;0,600;0,700;0,900;1,200;1,300;1,400;1,600;1,700&display=swap" rel="stylesheet">
+
+</head>
+
+
+<body>
+
+  <!-- Navigation -->
+<nav class="navbar navbar-expand-lg navbar-light fixed-top" id="mainNav">
+  <div class="container">
+    <a class="navbar-brand" href="/">iko&#39;s logs</a>
+    <button class="navbar-toggler navbar-toggler-right" type="button" data-toggle="collapse" data-target="#navbarResponsive" aria-controls="navbarResponsive" aria-expanded="false" aria-label="Toggle navigation">
+      Menu
+      <i class="fa fa-bars"></i>
+    </button>
+    <div class="collapse navbar-collapse" id="navbarResponsive">
+      <ul class="navbar-nav ml-auto">
+        <li class="nav-item">
+          <a class="nav-link" href="/">Home</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/about">About</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/posts">Posts</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/wall/">Wall</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/contact">Contact</a>
+        </li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+
+  <!-- Page Header -->
+
+<header class="masthead">
+
+  <div class="overlay"></div>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <div class="post-heading">
+          <h1>A Quick rundown on concurrency and gc</h1>
+          
+          <h2 class="subheading">Go, Kotlin, BEAM, JVM/HotSpot, GraalVM, and the GC algorithms underneath them</h2>
+          
+          <span class="meta">Posted by
+            <a href="#">ikouchiha47</a>
+            on August 12, 2026 &middot; <span class="reading-time" title="Estimated read time">
+  
+   114 mins  read </span>
+
+          </span>
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="container space-grotesk">
+  <div class="row">
+    <div class="col-lg-8 col-md-10 mx-auto">
+
+      <p>Related: 001_usage_of_signals_in_language_runtime.md, 006_other_reading_materials.md, 007_concurrency_comparison.md</p>
+
+<h2 id="abstract">Abstract</h2>
+
+<p>Three languages — Go, Kotlin, and Erlang/Elixir (running on BEAM) — solve the
+same problem (run many logical tasks on few OS threads) with three different
+answers to one question: <strong>who controls the switch between tasks, and what
+does that controller need to know to do it safely?</strong></p>
+
+<p>The answer to that question determines everything downstream: whether the
+model is cooperative or preemptive, whether GC pauses one thread or the whole
+process, and whether a crash is contained or catastrophic.</p>
+
+<p>This document derives each model from its constraints rather than describing
+it as a list of features. Each section ends with a checkpoint question you
+should be able to answer before moving to the next section.</p>
+
+<hr />
+
+<h2 id="background-the-problem-all-three-are-solving">Background: the problem all three are solving</h2>
+
+<p>A CPU core runs one instruction stream at a time. OS threads are the
+kernel’s abstraction for time-slicing a core across many instruction
+streams, but they are expensive:</p>
+
+<ul>
+  <li>~8MB stack per thread (Linux default)</li>
+  <li>A context switch saves/restores the full register file and disturbs the
+cache and TLB</li>
+  <li>10,000 OS threads means gigabytes of stack space before any work is done</li>
+</ul>
+
+<p>So every runtime that wants cheap concurrency builds an <strong>M:N scheduler</strong>:
+M logical tasks multiplexed onto N OS threads (typically N ≈ number of
+cores). The three systems below are three different M:N schedulers, and
+they differ because they made different decisions about who owns the
+switching logic.</p>
+
+<p><strong>Checkpoint:</strong> before continuing, state in one sentence why an OS thread is
+too expensive to use one-per-logical-task at scale.</p>
+
+<hr />
+
+<h2 id="part-1--go">Part 1 — Go</h2>
+
+<p>Sources read directly for this section (not paraphrased from memory):
+<code class="language-plaintext highlighter-rouge">src/runtime/preempt.go</code>, <code class="language-plaintext highlighter-rouge">src/runtime/signal_unix.go</code>, <code class="language-plaintext highlighter-rouge">src/runtime/proc.go</code>,
+<code class="language-plaintext highlighter-rouge">src/runtime/mgc.go</code> — golang/go, master branch, fetched from
+raw.githubusercontent.com.</p>
+
+<h3 id="11-key-concept-this-is-csp-not-fork-join">1.1 Key concept: this is CSP, not fork-join</h3>
+
+<p>Go’s concurrency model is explicitly an implementation of Hoare’s
+<strong>Communicating Sequential Processes (CSP, 1978)</strong> — independent sequential
+processes that interact <em>only</em> through message passing over channels, not
+shared mutable state accessed via locks. This is a design lineage, stated
+directly in Go’s own materials: “Don’t communicate by sharing memory;
+share memory by communicating.”</p>
+
+<p><strong>Where CSP itself came from.</strong> Tony Hoare published “Communicating
+Sequential Processes” in <em>Communications of the ACM</em>, 1978. The problem he
+was working on wasn’t concurrency in the modern web-service sense — it was
+correctness of concurrent programs at a time when shared-variable
+concurrency (semaphores, monitors) was the dominant model and was proving
+extremely hard to reason about formally: with shared mutable state, the
+number of possible interleavings of two processes explodes, and proving a
+program correct meant proving it correct under <em>all</em> of them.</p>
+
+<p>Hoare’s move was to make the <em>only</em> interaction between processes an
+explicit, synchronous, named event — a process names who it’s sending
+to/receiving from, and the send/receive pair is the entire synchronization
+primitive, with no separate lock needed. This has a real mathematical
+payoff: because processes share nothing, you can reason about each process
+in isolation and about the communication events between them as a
+separate, much smaller problem — closer to algebra than to exhaustive
+case analysis of shared-memory interleavings. CSP was formalized further
+into a full process algebra in Hoare’s own later work and independently
+alongside Robin Milner’s CCS (Calculus of Communicating Systems, also late
+1970s) — the two are usually cited together as the origin of process
+algebras generally.</p>
+
+<p>Go’s designers (Rob Pike, in particular, who had earlier worked on
+Newsqueak and Alef — direct experimental predecessors that already used
+CSP-style channels) took the <em>communication primitive</em> from CSP —
+synchronous, named-channel message passing — without adopting Hoare’s full
+formal process algebra or his original synchronous-only restriction (Go’s
+buffered channels allow asynchronous sends up to the buffer size, which
+Hoare’s original calculus didn’t have). So “Go implements CSP” is accurate
+at the level of the core idea — channels as the unit of synchronization,
+not locks — and imprecise if taken to mean Go implements the full formal
+calculus.</p>
+
+<p>This matters because it’s easy to conflate with two other models that are
+<em>not</em> what Go does:</p>
+
+<ul>
+  <li><strong>Fork-join</strong> (Java’s <code class="language-plaintext highlighter-rouge">ForkJoinPool</code>, Cilk, OpenMP): a task explicitly
+splits into subtasks, waits for all of them, then joins. The parallelism
+is structured around a single computation’s divide-and-conquer shape.
+Go has nothing built into the language for this — you’d hand-roll it
+with a <code class="language-plaintext highlighter-rouge">sync.WaitGroup</code>. Goroutines are not spawned with an implicit
+join; <code class="language-plaintext highlighter-rouge">go f()</code> returns immediately and nothing waits for it unless you
+add that synchronization yourself.</li>
+  <li><strong>Shared-memory threading with locks</strong> (raw pthreads, Java <code class="language-plaintext highlighter-rouge">synchronized</code>):
+the default coordination primitive is a shared address space guarded by
+mutual exclusion. Go supports this too (<code class="language-plaintext highlighter-rouge">sync.Mutex</code> exists and is used
+heavily inside the runtime itself), but it’s not the idiomatic surface
+the language pushes you toward.</li>
+</ul>
+
+<p>Channels (<code class="language-plaintext highlighter-rouge">chan</code>) are the CSP primitive: a goroutine sends a value into a
+channel, another receives it, and the transfer itself is the
+synchronization point — no separate lock is needed for that handoff.</p>
+
+<p><strong>Checkpoint:</strong> if goroutines don’t implicitly join, what actually
+guarantees a <code class="language-plaintext highlighter-rouge">go f()</code> call’s side effects are visible before <code class="language-plaintext highlighter-rouge">main()</code>
+returns? (Answer: nothing, by default — this is why programs that don’t
+explicitly wait via a channel or <code class="language-plaintext highlighter-rouge">WaitGroup</code> can exit before spawned
+goroutines finish; it’s a common bug source, not a language guarantee.)</p>
+
+<h3 id="12-the-gmp-scheduler">1.2 The GMP scheduler</h3>
+
+<p>From <code class="language-plaintext highlighter-rouge">proc.go</code>’s own top-of-file doc comment (line ~24 onward):</p>
+
+<blockquote>
+  <p>The scheduler’s job is to distribute ready-to-run goroutines over worker
+threads.
+G - goroutine.
+M - worker thread, or machine.
+P - processor, a resource that is required to execute Go code. M must
+have an associated P to execute Go code, however it can be blocked or in
+a syscall w/o an associated P.
+Design doc at https://golang.org/s/go11sched.</p>
+</blockquote>
+
+<p>This is the go11sched design (Dmitry Vyukov, 2012) — the M:N:P model exists
+specifically to solve the problem of per-P local run queues: without P as a
+separate scheduling resource, every M contending for work would need to hit
+a global queue, which doesn’t scale past a few cores. Each P owns a local
+run queue; an M must acquire a P to run Go code at all, which is why a
+goroutine blocked in a syscall releases its P for another M to pick up
+(<code class="language-plaintext highlighter-rouge">handoffp</code> in <code class="language-plaintext highlighter-rouge">proc.go</code>) rather than leaving a core idle.</p>
+
+<h3 id="13-preemption-how-it-evolved-and-why-gc-is-the-reason-it-changed-at-all">1.3 Preemption: how it evolved, and why GC is the reason it changed at all</h3>
+
+<p><strong>Go ≤1.10 — cooperative, at function prologues.</strong> Every function call
+checked a “please yield” flag (implemented by poisoning the stack-bound
+check, per <code class="language-plaintext highlighter-rouge">preempt.go</code>’s header comment: “Synchronous safe-points are
+implemented by overloading the stack bound check in function prologues”).
+A goroutine with no function calls in its loop body (<code class="language-plaintext highlighter-rouge">for {}</code>) never
+triggered that check and could never be preempted this way.</p>
+
+<p><strong>Why this is a GC problem, specifically, and not just a scheduling
+fairness problem:</strong> <code class="language-plaintext highlighter-rouge">mgc.go</code> calls <code class="language-plaintext highlighter-rouge">stopTheWorldWithSema</code> at both mark
+termination and sweep termination (<code class="language-plaintext highlighter-rouge">gcMarkTermination</code>, <code class="language-plaintext highlighter-rouge">gcStart</code> —
+<code class="language-plaintext highlighter-rouge">mgc.go</code> lines ~835, ~1066 in the current source). STW literally means
+every goroutine must reach a state the GC considers safe before the GC
+phase can proceed — the mark/sweep transition cannot begin with even one
+goroutine still running arbitrary code, because the GC needs a globally
+consistent view of what’s reachable. A goroutine stuck in a tight loop
+with no function calls blocked this indefinitely. This was the actual,
+measured production problem that motivated the 2019 proposal
+(golang/proposal <code class="language-plaintext highlighter-rouge">24543-non-cooperative-preemption.md</code>) — not a general
+desire for “fair” scheduling.</p>
+
+<p><strong>Go 1.14 — non-cooperative, signal-based.</strong> <code class="language-plaintext highlighter-rouge">preempt.go</code>’s own comment
+distinguishes three safe-point categories precisely:</p>
+
+<ol>
+  <li><strong>Blocked safe-points</strong> — a goroutine descheduled, blocked on sync, or
+in a syscall. Cheap: the runtime already has full knowledge of its stack.</li>
+  <li><strong>Synchronous safe-points</strong> — a running goroutine voluntarily checks for
+a pending preemption request (the stack-bound-check trick above).</li>
+  <li><strong>Asynchronous safe-points</strong> — <em>any</em> instruction in user code where a
+conservative stack/register scan can still find all roots. The runtime
+can stop a goroutine here using a signal, without the goroutine’s
+cooperation.</li>
+</ol>
+
+<p><code class="language-plaintext highlighter-rouge">signal_unix.go</code> (lines 44–74) states the SIGURG rationale directly, as
+four numbered criteria the signal had to satisfy:</p>
+
+<ol>
+  <li>Must be a signal debuggers pass through by default (on Linux: <code class="language-plaintext highlighter-rouge">SIGALRM</code>,
+<code class="language-plaintext highlighter-rouge">SIGURG</code>, <code class="language-plaintext highlighter-rouge">SIGCHLD</code>, <code class="language-plaintext highlighter-rouge">SIGIO</code>, <code class="language-plaintext highlighter-rouge">SIGVTALRM</code>, <code class="language-plaintext highlighter-rouge">SIGPROF</code>, <code class="language-plaintext highlighter-rouge">SIGWINCH</code>).</li>
+  <li>Must not be claimed internally by libc in mixed Go/C binaries (rules out
+<code class="language-plaintext highlighter-rouge">SIGCANCEL</code>, <code class="language-plaintext highlighter-rouge">SIGSETXID</code>).</li>
+  <li>Must be safe to receive spuriously — ruling out <code class="language-plaintext highlighter-rouge">SIGALRM</code> (ambiguous
+cause) and <code class="language-plaintext highlighter-rouge">SIGUSR1</code>/<code class="language-plaintext highlighter-rouge">SIGUSR2</code> (commonly used by applications for real
+things).</li>
+  <li>Must exist on platforms without real-time signals (rules out macOS’s
+missing RT signal range).</li>
+</ol>
+
+<p><code class="language-plaintext highlighter-rouge">SIGURG</code> won because out-of-band TCP data is essentially unused in
+practice, the signal doesn’t even report which socket triggered it (making
+it nearly useless for its literal purpose), and any correctly-written
+application already has to tolerate a spurious <code class="language-plaintext highlighter-rouge">SIGURG</code>.</p>
+
+<p>The mechanism, traced through the actual call path:
+<code class="language-plaintext highlighter-rouge">suspendG</code> (<code class="language-plaintext highlighter-rouge">preempt.go</code>) drives a goroutine toward suspension — if it’s
+<code class="language-plaintext highlighter-rouge">_Grunning</code>, it sets <code class="language-plaintext highlighter-rouge">gp.preemptStop</code>/<code class="language-plaintext highlighter-rouge">gp.preempt</code> and calls <code class="language-plaintext highlighter-rouge">preemptM</code>,
+which calls <code class="language-plaintext highlighter-rouge">signalM(mp, sigPreempt)</code> (<code class="language-plaintext highlighter-rouge">signal_unix.go</code> line ~386) to
+deliver <code class="language-plaintext highlighter-rouge">SIGURG</code> to that specific OS thread. The signal handler
+(<code class="language-plaintext highlighter-rouge">doSigPreempt</code>, <code class="language-plaintext highlighter-rouge">signal_unix.go</code> line ~342) inspects the interrupted PC
+and only acts if it lands on a recognized async safe-point; if not, it
+leaves the goroutine to continue and retries. Once accepted, the handler
+rewrites the signal context so execution resumes at <code class="language-plaintext highlighter-rouge">asyncPreempt</code>, which
+spills all potentially-pointer-holding registers to the stack before
+handing off to the scheduler — this is what makes the stack scannable by
+the GC afterward.</p>
+
+<p>An intermediate fix — inserting checks at loop back-edges so tight loops
+without function calls would still hit synchronous safe-points — was
+measured and <strong>rejected</strong>: 7.8% throughput regression, considered too
+expensive to pay unconditionally across all Go programs just to close this
+gap. Signal-based async preemption was strictly cheaper because it costs
+nothing until actually invoked.</p>
+
+<p><strong>Tracing it through a concrete example:</strong></p>
+
+<div class="language-go highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">func</span> <span class="n">main</span><span class="p">()</span> <span class="p">{</span>
+    <span class="k">go</span> <span class="k">func</span><span class="p">()</span> <span class="p">{</span>
+        <span class="k">for</span> <span class="p">{}</span> <span class="c">// spin forever, no function calls</span>
+    <span class="p">}()</span>
+    <span class="n">time</span><span class="o">.</span><span class="n">Sleep</span><span class="p">(</span><span class="n">time</span><span class="o">.</span><span class="n">Second</span><span class="p">)</span>
+    <span class="n">runtime</span><span class="o">.</span><span class="n">GC</span><span class="p">()</span>
+<span class="p">}</span>
+</code></pre></div></div>
+
+<p>On Go ≤1.10, <code class="language-plaintext highlighter-rouge">runtime.GC()</code> here would never return. <code class="language-plaintext highlighter-rouge">runtime.GC()</code> forces
+a stop-the-world GC cycle, which calls <code class="language-plaintext highlighter-rouge">stopTheWorldWithSema</code> — every
+goroutine, including the spinning one, must reach a safe-point first. The
+spinning goroutine calls no functions, so it never hits the stack-bound
+check the old synchronous mechanism relied on. It spins forever; the GC
+waits forever; the program hangs.</p>
+
+<p>On Go ≥1.14, the same program’s GC call succeeds. <code class="language-plaintext highlighter-rouge">stopTheWorldWithSema</code>
+calls <code class="language-plaintext highlighter-rouge">suspendG</code> on the spinning goroutine; since it’s <code class="language-plaintext highlighter-rouge">_Grunning</code> with no
+pending suspend, <code class="language-plaintext highlighter-rouge">suspendG</code> calls <code class="language-plaintext highlighter-rouge">preemptM</code>, which sends <code class="language-plaintext highlighter-rouge">SIGURG</code> to the
+OS thread running it. The signal interrupts the <code class="language-plaintext highlighter-rouge">for {}</code> loop mid-flight —
+at literally any instruction, since the compiler’s stack maps cover every
+async safe-point in the loop body, even one with zero function calls. The
+signal handler rewrites execution to resume at <code class="language-plaintext highlighter-rouge">asyncPreempt</code>, which
+spills registers to the stack, and the goroutine parks. GC proceeds. This
+exact scenario — an infinite loop with no calls — is the textbook case the
+2019 proposal was written to fix.</p>
+
+<h3 id="13a-the-actual-gc-algorithm-tricolor-mark-sweep-with-a-hybrid-write-barrier">1.3a The actual GC algorithm: tricolor mark-sweep with a hybrid write barrier</h3>
+
+<p>Everything above (1.3) covers <em>when</em> goroutines get stopped for GC. This
+subsection covers what the GC is actually doing — read directly from
+<a href="https://github.com/golang/go/blob/master/src/runtime/mgc.go"><code class="language-plaintext highlighter-rouge">src/runtime/mgc.go</code></a>
+(top-of-file doc comment) and
+<a href="https://github.com/golang/go/blob/master/src/runtime/mbarrier.go"><code class="language-plaintext highlighter-rouge">src/runtime/mbarrier.go</code></a>
+(top-of-file doc comment), not summarized from memory.</p>
+
+<p><strong>What <code class="language-plaintext highlighter-rouge">mgc.go</code> states directly, line for line:</strong></p>
+
+<div class="language-go highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="c">// The GC runs concurrently with mutator threads, is type accurate (aka precise), allows multiple</span>
+<span class="c">// GC threads to run in parallel. It is a concurrent mark and sweep that uses a write barrier. It is</span>
+<span class="c">// non-generational and non-compacting.</span>
+</code></pre></div></div>
+
+<p><strong>Takeaway:</strong></p>
+<ul>
+  <li>“concurrent mark and sweep” — the mark phase (finding live objects) and
+sweep phase (reclaiming dead ones) both run alongside your program’s own
+goroutines, not just alongside each other.</li>
+  <li>“non-generational” — Go’s GC does <em>not</em> separate young/old objects into
+different heaps swept at different rates, unlike HotSpot’s G1 or the
+young/old generation split most JVM/V8 GCs use. Every GC cycle scans the
+whole live set. This is a stated design tradeoff, not an oversight; the
+source doesn’t give the rationale for the choice.</li>
+  <li>“non-compacting” — dead objects are freed in place; Go doesn’t move
+live objects around to defragment the heap the way a compacting
+collector does. This is also why Go’s stack-map / pointer-tracking
+machinery (Part 1.3) doesn’t need to handle objects moving mid-flight —
+one less category of complexity than a moving collector like ZGC.</li>
+</ul>
+
+<p><strong>The three-color abstraction, sourced from the mark-phase walkthrough
+(<code class="language-plaintext highlighter-rouge">mgc.go</code>, steps 2b–2d) plus the explicit invariant comment further down
+the same file:</strong></p>
+
+<div class="language-go highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="c">// At this point all Ps have enabled the write</span>
+<span class="c">// barrier, thus maintaining the no white to</span>
+<span class="c">// black invariant.</span>
+</code></pre></div></div>
+
+<p>Objects are conceptually white (not yet visited — presumed garbage),
+grey (visited, but its own pointers not yet scanned), or black (visited
+<em>and</em> all its pointers scanned). The mark phase’s job is to walk grey
+objects until none remain — at that point everything reachable is black,
+everything still white is garbage. The <strong>invariant being protected</strong> —
+“no white to black” — is: a black object (already fully scanned) must
+never gain a pointer directly to a white object without that white object
+getting shaded first. If that invariant were violated, the GC could finish
+marking, still see the object as white, and free something the mutator
+(your running program) still holds a live reference to. That’s the
+correctness property the write barrier mechanism below exists to uphold.</p>
+
+<p><strong>The write barrier itself, from <code class="language-plaintext highlighter-rouge">mbarrier.go</code>’s pseudocode:</strong></p>
+
+<div class="language-go highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="c">// Go uses a hybrid barrier that combines a Yuasa-style deletion</span>
+<span class="c">// barrier—which shades the object whose reference is being</span>
+<span class="c">// overwritten—with Dijkstra insertion barrier—which shades the object</span>
+<span class="c">// whose reference is being written.</span>
+<span class="c">//</span>
+<span class="c">//     writePointer(slot, ptr):</span>
+<span class="c">//         shade(*slot)</span>
+<span class="c">//         if current stack is grey:</span>
+<span class="c">//             shade(ptr)</span>
+<span class="c">//         *slot = ptr</span>
+</code></pre></div></div>
+
+<p>And the reasoning for why <em>both</em> halves are needed, stated as three
+numbered cases in the source:</p>
+
+<div class="language-go highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="c">// 1. shade(*slot) prevents a mutator from hiding an object by moving</span>
+<span class="c">// the sole pointer to it from the heap to its stack.</span>
+<span class="c">// 2. shade(ptr) prevents a mutator from hiding an object by moving</span>
+<span class="c">// the sole pointer to it from its stack into a black object in the heap.</span>
+<span class="c">// 3. Once a goroutine's stack is black, the shade(ptr) becomes</span>
+<span class="c">// unnecessary.</span>
+</code></pre></div></div>
+
+<p>That’s the pseudocode from the file’s doc comment. The actual code that
+runs it — <code class="language-plaintext highlighter-rouge">typedmemmove</code>, the function every pointer-containing struct
+copy in Go goes through — shows the same idea gated by a real runtime
+check, not just documented intent:</p>
+
+<div class="language-go highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="c">//go:linkname typedmemmove</span>
+<span class="c">//go:nosplit</span>
+<span class="k">func</span> <span class="n">typedmemmove</span><span class="p">(</span><span class="n">typ</span> <span class="o">*</span><span class="n">abi</span><span class="o">.</span><span class="n">Type</span><span class="p">,</span> <span class="n">dst</span><span class="p">,</span> <span class="n">src</span> <span class="n">unsafe</span><span class="o">.</span><span class="n">Pointer</span><span class="p">)</span> <span class="p">{</span>
+	<span class="k">if</span> <span class="n">dst</span> <span class="o">==</span> <span class="n">src</span> <span class="p">{</span>
+		<span class="k">return</span>
+	<span class="p">}</span>
+	<span class="k">if</span> <span class="n">writeBarrier</span><span class="o">.</span><span class="n">enabled</span> <span class="o">&amp;&amp;</span> <span class="n">typ</span><span class="o">.</span><span class="n">Pointers</span><span class="p">()</span> <span class="p">{</span>
+		<span class="c">// This always copies a full value of type typ so it's safe</span>
+		<span class="c">// to pass typ along as an optimization. See the comment on</span>
+		<span class="c">// bulkBarrierPreWrite.</span>
+		<span class="n">bulkBarrierPreWrite</span><span class="p">(</span><span class="kt">uintptr</span><span class="p">(</span><span class="n">dst</span><span class="p">),</span> <span class="kt">uintptr</span><span class="p">(</span><span class="n">src</span><span class="p">),</span> <span class="n">typ</span><span class="o">.</span><span class="n">PtrBytes</span><span class="p">,</span> <span class="n">typ</span><span class="p">)</span>
+	<span class="p">}</span>
+	<span class="c">// There's a race here: if some other goroutine can write to</span>
+	<span class="c">// src, it may change some pointer in src after we've</span>
+	<span class="c">// performed the write barrier but before we perform the</span>
+	<span class="c">// memory copy. This safe because the write performed by that</span>
+	<span class="c">// other goroutine must also be accompanied by a write</span>
+	<span class="c">// barrier, so at worst we've unnecessarily greyed the old</span>
+	<span class="c">// pointer that was in src.</span>
+	<span class="n">memmove</span><span class="p">(</span><span class="n">dst</span><span class="p">,</span> <span class="n">src</span><span class="p">,</span> <span class="n">typ</span><span class="o">.</span><span class="n">Size_</span><span class="p">)</span>
+<span class="p">}</span>
+</code></pre></div></div>
+
+<p>Two things this shows that the pseudocode alone doesn’t: the check is
+<code class="language-plaintext highlighter-rouge">writeBarrier.enabled &amp;&amp; typ.Pointers()</code> — the barrier only runs at all if
+the type being copied actually contains pointers, so copying a struct of
+plain integers pays nothing. And the barrier call (<code class="language-plaintext highlighter-rouge">bulkBarrierPreWrite</code>,
+which does the <code class="language-plaintext highlighter-rouge">shade(*slot)</code>/<code class="language-plaintext highlighter-rouge">shade(ptr)</code> work from the pseudocode above)
+happens strictly <em>before</em> the <code class="language-plaintext highlighter-rouge">memmove</code> that performs the real copy — the
+comment directly under it explains why a race on <code class="language-plaintext highlighter-rouge">src</code> between the
+barrier and the copy is still safe: the other goroutine’s own write to
+<code class="language-plaintext highlighter-rouge">src</code> would have gone through its own barrier already, so at worst an
+object gets greyed unnecessarily, never missed.</p>
+
+<p><strong>Takeaway:</strong> a write barrier is code the compiler inserts around
+<em>every</em> pointer write during the concurrent mark phase — not a hardware
+mechanism like the JVM’s poll page (Part 3.5.2), but a software
+instrumentation cost paid only while <code class="language-plaintext highlighter-rouge">gcphase == _GCmark</code> (confirmed by
+<code class="language-plaintext highlighter-rouge">mgc.go</code>’s phase-transition code, which flips <code class="language-plaintext highlighter-rouge">gcBlackenEnabled</code>/enables
+the barrier at mark start and disables it at sweep start). The two halves
+guard the two directions an object could otherwise get “lost”: deleting
+the only pointer to it from an already-scanned (black) part of the heap
+(case 1, Yuasa-style), or the mutator itself moving a pointer from its own
+unscanned stack into a black object before the GC ever sees it (case 2,
+Dijkstra-style). Case 3 is the source explaining its own optimization —
+once a goroutine’s <em>whole stack</em> has been scanned (turned black), the
+insertion half becomes redundant, because nothing on that stack can be
+hiding an unshaded pointer anymore.</p>
+
+<p><strong>Open question:</strong> the mark-work-stealing/distributed-termination
+algorithm in <code class="language-plaintext highlighter-rouge">gcMarkDone</code> (mentioned but not shown above), and the
+concurrent sweep’s per-span locking scheme — not covered by these two
+files.</p>
+
+<h3 id="14-checkpoint">1.4 Checkpoint</h3>
+
+<p>Trace the actual failure this fixed: before 1.14, <code class="language-plaintext highlighter-rouge">for {}</code> with no
+function calls inside it. What specifically blocked, and for how long?
+(Answer: any <code class="language-plaintext highlighter-rouge">stopTheWorldWithSema</code> call in <code class="language-plaintext highlighter-rouge">mgc.go</code> — i.e. every GC mark
+or sweep termination phase — blocked indefinitely, because the goroutine
+never reached the stack-bound check that synchronous preemption relies on.
+This wasn’t a latency inconvenience; it was an unbounded stall.)</p>
+
+<hr />
+
+<h2 id="part-2--kotlin">Part 2 — Kotlin</h2>
+
+<p>Sources read directly for this section: <code class="language-plaintext highlighter-rouge">kotlin.coroutines.Continuation</code>
+and <code class="language-plaintext highlighter-rouge">kotlin.coroutines.intrinsics</code> (JetBrains/kotlin, stdlib — this part is
+<strong>language-level</strong>), and <code class="language-plaintext highlighter-rouge">kotlinx.coroutines.CoroutineDispatcher</code> /
+<code class="language-plaintext highlighter-rouge">kotlinx.coroutines.scheduling.CoroutineScheduler</code> (Kotlin/kotlinx.coroutines
+— this part is a <strong>library</strong>, not the compiler or the language spec).</p>
+
+<p>This split is the correction from the previous draft: <code class="language-plaintext highlighter-rouge">suspend</code> and the
+CPS transform are compiler + stdlib. <code class="language-plaintext highlighter-rouge">Dispatchers</code>, <code class="language-plaintext highlighter-rouge">Job</code>,
+<code class="language-plaintext highlighter-rouge">CoroutineScope</code>, structured concurrency, and the actual thread-pool
+scheduler are <strong>kotlinx.coroutines</strong>, a library published by JetBrains but
+not part of Kotlin itself — you can write <code class="language-plaintext highlighter-rouge">suspend</code> functions with zero
+dependency on kotlinx.coroutines; it only becomes necessary once you want
+dispatchers, structured cancellation, <code class="language-plaintext highlighter-rouge">async</code>/<code class="language-plaintext highlighter-rouge">await</code>-style builders, or
+<code class="language-plaintext highlighter-rouge">Flow</code>.</p>
+
+<h3 id="21-compiler--stdlib-layer-what-suspend-actually-is">2.1 Compiler + stdlib layer: what <code class="language-plaintext highlighter-rouge">suspend</code> actually is</h3>
+
+<p>Kotlin runs primarily on the JVM. It cannot change the JVM’s thread model —
+JVM threads are OS threads. The lever available is using fewer of them,
+which means: don’t let a suspended computation hold a thread’s stack.</p>
+
+<p>The mechanism is CPS (Continuation-Passing Style), and the actual
+interface it compiles against is <code class="language-plaintext highlighter-rouge">kotlin.coroutines.Continuation</code>, defined
+in stdlib:</p>
+
+<div class="language-kotlin highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">public</span> <span class="kd">interface</span> <span class="nc">Continuation</span><span class="p">&lt;</span><span class="k">in</span> <span class="nc">T</span><span class="p">&gt;</span> <span class="p">{</span>
+    <span class="k">public</span> <span class="kd">val</span> <span class="py">context</span><span class="p">:</span> <span class="nc">CoroutineContext</span>
+    <span class="k">public</span> <span class="k">fun</span> <span class="nf">resumeWith</span><span class="p">(</span><span class="n">result</span><span class="p">:</span> <span class="nc">Result</span><span class="p">&lt;</span><span class="nc">T</span><span class="p">&gt;)</span>
+<span class="p">}</span>
+</code></pre></div></div>
+
+<p>That’s the entire primitive. A <code class="language-plaintext highlighter-rouge">suspend</code> function, at the ABI level, is a
+regular JVM method that takes an extra trailing <code class="language-plaintext highlighter-rouge">Continuation</code> parameter
+and returns <code class="language-plaintext highlighter-rouge">Any?</code> — either the real result, or the sentinel
+<code class="language-plaintext highlighter-rouge">COROUTINE_SUSPENDED</code> (defined in <code class="language-plaintext highlighter-rouge">kotlin.coroutines.intrinsics</code>,
+stdlib) if it suspended. <code class="language-plaintext highlighter-rouge">suspendCoroutineUninterceptedOrReturn</code> is the
+stdlib intrinsic that exposes the raw continuation to library authors
+building suspension primitives on top.</p>
+
+<p>The compiler transforms a <code class="language-plaintext highlighter-rouge">suspend</code> function’s body into a state machine
+object implementing <code class="language-plaintext highlighter-rouge">Continuation</code>, with a <code class="language-plaintext highlighter-rouge">label</code> field tracking progress
+and local variables lifted into fields, roughly:</p>
+
+<div class="language-kotlin highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">suspend</span> <span class="k">fun</span> <span class="nf">fetchAndProcess</span><span class="p">()</span> <span class="p">{</span>
+    <span class="kd">val</span> <span class="py">data</span> <span class="p">=</span> <span class="nf">fetch</span><span class="p">()</span>
+    <span class="kd">val</span> <span class="py">result</span> <span class="p">=</span> <span class="nf">process</span><span class="p">(</span><span class="n">data</span><span class="p">)</span>
+    <span class="nf">save</span><span class="p">(</span><span class="n">result</span><span class="p">)</span>
+<span class="p">}</span>
+</code></pre></div></div>
+
+<div class="language-kotlin highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="kd">class</span> <span class="nc">FetchAndProcessContinuation</span><span class="p">(</span><span class="kd">val</span> <span class="py">completion</span><span class="p">:</span> <span class="nc">Continuation</span><span class="p">&lt;</span><span class="nc">Unit</span><span class="p">&gt;)</span> <span class="p">:</span> <span class="nc">Continuation</span><span class="p">&lt;</span><span class="nc">Any</span><span class="p">?&gt;</span> <span class="p">{</span>
+    <span class="kd">var</span> <span class="py">label</span> <span class="p">=</span> <span class="mi">0</span>
+    <span class="kd">var</span> <span class="py">data</span><span class="p">:</span> <span class="nc">Data</span><span class="p">?</span> <span class="p">=</span> <span class="k">null</span>
+
+    <span class="k">override</span> <span class="k">fun</span> <span class="nf">resumeWith</span><span class="p">(</span><span class="n">result</span><span class="p">:</span> <span class="nc">Result</span><span class="p">&lt;</span><span class="nc">Any</span><span class="p">?&gt;)</span> <span class="p">{</span>
+        <span class="k">when</span> <span class="p">(</span><span class="n">label</span><span class="p">)</span> <span class="p">{</span>
+            <span class="mi">0</span> <span class="p">-&gt;</span> <span class="p">{</span> <span class="n">label</span> <span class="p">=</span> <span class="mi">1</span><span class="p">;</span> <span class="nf">fetch</span><span class="p">(</span><span class="k">this</span><span class="p">)</span> <span class="p">}</span>
+            <span class="mi">1</span> <span class="p">-&gt;</span> <span class="p">{</span> <span class="n">data</span> <span class="p">=</span> <span class="n">result</span><span class="p">.</span><span class="nf">getOrThrow</span><span class="p">()</span> <span class="k">as</span> <span class="nc">Data</span><span class="p">;</span> <span class="n">label</span> <span class="p">=</span> <span class="mi">2</span><span class="p">;</span> <span class="nf">process</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="k">this</span><span class="p">)</span> <span class="p">}</span>
+            <span class="mi">2</span> <span class="p">-&gt;</span> <span class="p">{</span> <span class="nf">save</span><span class="p">(</span><span class="n">result</span><span class="p">.</span><span class="nf">getOrThrow</span><span class="p">()</span> <span class="k">as</span> <span class="nc">Result</span><span class="p">);</span> <span class="n">completion</span><span class="p">.</span><span class="nf">resumeWith</span><span class="p">(</span><span class="nc">Result</span><span class="p">.</span><span class="nf">success</span><span class="p">(</span><span class="nc">Unit</span><span class="p">))</span> <span class="p">}</span>
+        <span class="p">}</span>
+    <span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div></div>
+
+<p>The function returns (freeing the thread) instead of blocking; the
+continuation object on the heap carries the state needed to resume. All of
+this — <code class="language-plaintext highlighter-rouge">Continuation</code>, the CPS transform, <code class="language-plaintext highlighter-rouge">suspend</code> as a keyword — is
+<strong>part of the Kotlin language and compiler</strong>, independent of any
+concurrency library. This is why <code class="language-plaintext highlighter-rouge">suspend</code> functions work fine in, say, a
+minimal environment with no kotlinx.coroutines dependency at all, as long
+as something implements <code class="language-plaintext highlighter-rouge">Continuation</code> to drive them.</p>
+
+<p><strong>Tracing it through <code class="language-plaintext highlighter-rouge">launch</code>, which resolves the open question from
+2.4a about where <code class="language-plaintext highlighter-rouge">DispatchedContinuation</code> gets constructed:</strong></p>
+
+<div class="language-kotlin highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">fun</span> <span class="nf">main</span><span class="p">()</span> <span class="p">=</span> <span class="nf">runBlocking</span> <span class="p">{</span>
+    <span class="nf">launch</span> <span class="p">{</span>
+        <span class="nf">println</span><span class="p">(</span><span class="s">"A"</span><span class="p">)</span>
+        <span class="nf">delay</span><span class="p">(</span><span class="mi">1000</span><span class="p">)</span>   <span class="c1">// suspend point</span>
+        <span class="nf">println</span><span class="p">(</span><span class="s">"B"</span><span class="p">)</span>
+    <span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div></div>
+
+<p><code class="language-plaintext highlighter-rouge">launch</code> (a kotlinx.coroutines builder, library-layer) takes the lambda,
+which the compiler has already turned into a <code class="language-plaintext highlighter-rouge">Continuation</code>-implementing
+state machine roughly like:</p>
+
+<div class="language-kotlin highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="kd">class</span> <span class="nc">LambdaContinuation</span> <span class="p">:</span> <span class="nc">Continuation</span><span class="p">&lt;</span><span class="nc">Unit</span><span class="p">&gt;</span> <span class="p">{</span>
+    <span class="kd">var</span> <span class="py">label</span> <span class="p">=</span> <span class="mi">0</span>
+    <span class="k">override</span> <span class="k">fun</span> <span class="nf">resumeWith</span><span class="p">(</span><span class="n">result</span><span class="p">:</span> <span class="nc">Result</span><span class="p">&lt;</span><span class="nc">Unit</span><span class="p">&gt;)</span> <span class="p">{</span>
+        <span class="k">when</span> <span class="p">(</span><span class="n">label</span><span class="p">)</span> <span class="p">{</span>
+            <span class="mi">0</span> <span class="p">-&gt;</span> <span class="p">{</span> <span class="nf">println</span><span class="p">(</span><span class="s">"A"</span><span class="p">);</span> <span class="n">label</span> <span class="p">=</span> <span class="mi">1</span><span class="p">;</span> <span class="nf">delay</span><span class="p">(</span><span class="mi">1000</span><span class="p">,</span> <span class="k">this</span><span class="p">)</span> <span class="p">}</span> <span class="c1">// returns here</span>
+            <span class="mi">1</span> <span class="p">-&gt;</span> <span class="p">{</span> <span class="nf">println</span><span class="p">(</span><span class="s">"B"</span><span class="p">)</span> <span class="p">}</span>
+        <span class="p">}</span>
+    <span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div></div>
+
+<p><code class="language-plaintext highlighter-rouge">launch</code> wraps that state machine in a <code class="language-plaintext highlighter-rouge">DispatchedContinuation</code> (Part 2.4a)
+before ever calling it. When execution reaches <code class="language-plaintext highlighter-rouge">delay(1000)</code>, the function
+returns immediately — the thread is free, not blocked — and a timer is
+armed. When the timer fires 1000ms later, something calls <code class="language-plaintext highlighter-rouge">resumeWith</code> on
+the <em>same</em> <code class="language-plaintext highlighter-rouge">DispatchedContinuation</code> object; its <code class="language-plaintext highlighter-rouge">resumeWith</code> override (Part
+2.4a) checks <code class="language-plaintext highlighter-rouge">dispatcher.safeIsDispatchNeeded</code> and routes the resume
+through the dispatcher’s thread pool if needed, which then calls the
+wrapped continuation’s <code class="language-plaintext highlighter-rouge">resumeWith</code>, landing back in <code class="language-plaintext highlighter-rouge">label = 1</code> and
+printing “B” — possibly on a completely different thread than the one
+that printed “A”.</p>
+
+<p>The cooperative part: the compiler only inserted a resumable point at
+<code class="language-plaintext highlighter-rouge">delay</code>, because <code class="language-plaintext highlighter-rouge">delay</code> is a <code class="language-plaintext highlighter-rouge">suspend</code> call. A <code class="language-plaintext highlighter-rouge">launch { while (true) {} }</code>
+with no suspend calls inside the loop has no state machine transition
+anywhere in the loop body — nothing for any dispatcher to interrupt into,
+unlike Go’s <code class="language-plaintext highlighter-rouge">for {}</code> example above, which the runtime can still signal
+into from outside regardless of what the loop body does.</p>
+
+<h3 id="22-why-this-makes-suspension-cooperative">2.2 Why this makes suspension cooperative</h3>
+
+<p>The compiler must know, at compile time, every point where execution might
+suspend — that’s the entire reason <code class="language-plaintext highlighter-rouge">suspend</code> is a keyword rather than a
+runtime annotation. If a coroutine body never calls a suspend function
+inside a loop, the compiler never inserts a state-machine transition
+there, so there is no return/yield point to force. There’s no external
+mechanism analogous to Go’s <code class="language-plaintext highlighter-rouge">SIGURG</code> that could interrupt it, because
+nothing external to the continuation object was ever created to interrupt
+<em>into</em> — the compiler-generated state machine, not raw thread register
+state, is the unit of suspension, and it only exists at points the source
+code actually marked as suspendable.</p>
+
+<h3 id="23-library-layer-kotlinxcoroutines-and-what-it-adds">2.3 Library layer: kotlinx.coroutines and what it adds</h3>
+
+<p>Continuation alone gives you suspension; it gives you nothing about <em>where</em>
+code resumes, cancellation, or structured lifetimes. That’s what
+kotlinx.coroutines is for:</p>
+
+<ul>
+  <li><strong><code class="language-plaintext highlighter-rouge">CoroutineDispatcher</code></strong> implements <code class="language-plaintext highlighter-rouge">ContinuationInterceptor</code> — it’s
+what decides <em>which thread</em> a continuation resumes on.
+<code class="language-plaintext highlighter-rouge">Dispatchers.Default</code> and <code class="language-plaintext highlighter-rouge">Dispatchers.IO</code> are the common ones.</li>
+  <li><strong><code class="language-plaintext highlighter-rouge">CoroutineScheduler</code></strong> (<code class="language-plaintext highlighter-rouge">kotlinx-coroutines-core/jvm/.../scheduling/</code>)
+is the actual thread pool behind <code class="language-plaintext highlighter-rouge">Dispatchers.Default</code>/<code class="language-plaintext highlighter-rouge">IO</code>. Its own doc
+comment is explicit about the design lineage:
+    <blockquote>
+      <p>“The original idea with a single-slot LIFO buffer comes from Golang
+runtime scheduler by D. Vyukov. It was proven to be ‘fair enough’,
+performant and generally well accepted and initially was a significant
+inspiration source for the coroutine scheduler.”</p>
+    </blockquote>
+
+    <p>Concretely: per-worker local run queues, work-stealing when a worker’s
+queue empties, and a global queue for tasks submitted from outside the
+pool — the same shape as Go’s per-P local run queues plus work-stealing
+(<code class="language-plaintext highlighter-rouge">findRunnable</code> in <code class="language-plaintext highlighter-rouge">proc.go</code>). This is convergent evolution <em>by direct
+admission</em>, not independent design — Kotlin’s authors read Go’s
+scheduler and reused the shape for a completely different substrate (JVM
+threads instead of goroutines).</p>
+
+    <p>The actual <code class="language-plaintext highlighter-rouge">dispatch</code> function, not just the doc comment describing it:</p>
+
+    <div class="language-kotlin highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">fun</span> <span class="nf">dispatch</span><span class="p">(</span><span class="n">block</span><span class="p">:</span> <span class="nc">Runnable</span><span class="p">,</span> <span class="n">taskContext</span><span class="p">:</span> <span class="nc">TaskContext</span> <span class="p">=</span> <span class="nc">NonBlockingContext</span><span class="p">,</span> <span class="n">fair</span><span class="p">:</span> <span class="nc">Boolean</span> <span class="p">=</span> <span class="k">false</span><span class="p">)</span> <span class="p">{</span>
+    <span class="nf">trackTask</span><span class="p">()</span> <span class="c1">// this is needed for virtual time support</span>
+    <span class="kd">val</span> <span class="py">task</span> <span class="p">=</span> <span class="nf">createTask</span><span class="p">(</span><span class="n">block</span><span class="p">,</span> <span class="n">taskContext</span><span class="p">)</span>
+    <span class="kd">val</span> <span class="py">isBlockingTask</span> <span class="p">=</span> <span class="n">task</span><span class="p">.</span><span class="n">isBlocking</span>
+    <span class="kd">val</span> <span class="py">stateSnapshot</span> <span class="p">=</span> <span class="k">if</span> <span class="p">(</span><span class="n">isBlockingTask</span><span class="p">)</span> <span class="nf">incrementBlockingTasks</span><span class="p">()</span> <span class="k">else</span> <span class="mi">0</span>
+    <span class="c1">// try to submit the task to the local queue and act depending on the result</span>
+    <span class="kd">val</span> <span class="py">currentWorker</span> <span class="p">=</span> <span class="nf">currentWorker</span><span class="p">()</span>
+    <span class="kd">val</span> <span class="py">notAdded</span> <span class="p">=</span> <span class="n">currentWorker</span><span class="p">.</span><span class="nf">submitToLocalQueue</span><span class="p">(</span><span class="n">task</span><span class="p">,</span> <span class="n">fair</span><span class="p">)</span>
+    <span class="k">if</span> <span class="p">(</span><span class="n">notAdded</span> <span class="p">!=</span> <span class="k">null</span><span class="p">)</span> <span class="p">{</span>
+        <span class="k">if</span> <span class="p">(!</span><span class="nf">addToGlobalQueue</span><span class="p">(</span><span class="n">notAdded</span><span class="p">))</span> <span class="p">{</span>
+            <span class="k">throw</span> <span class="nc">RejectedExecutionException</span><span class="p">(</span><span class="s">"$schedulerName was terminated"</span><span class="p">)</span>
+        <span class="p">}</span>
+    <span class="p">}</span>
+    <span class="k">if</span> <span class="p">(</span><span class="n">isBlockingTask</span><span class="p">)</span> <span class="p">{</span>
+        <span class="nf">signalBlockingWork</span><span class="p">(</span><span class="n">stateSnapshot</span><span class="p">)</span>
+    <span class="p">}</span> <span class="k">else</span> <span class="p">{</span>
+        <span class="nf">signalCpuWork</span><span class="p">()</span>
+    <span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div>    </div>
+
+    <p>This is the local-queue-first, global-queue-as-overflow policy the doc
+comment describes, made concrete: <code class="language-plaintext highlighter-rouge">submitToLocalQueue</code> tries the calling
+worker’s own queue first (the cheap, no-contention path); only if that
+fails (<code class="language-plaintext highlighter-rouge">notAdded != null</code> — the local queue is full) does the task fall
+back to <code class="language-plaintext highlighter-rouge">addToGlobalQueue</code>, the shared, contended queue every idle
+worker also checks. The blocking-vs-CPU distinction
+(<code class="language-plaintext highlighter-rouge">signalBlockingWork</code>/<code class="language-plaintext highlighter-rouge">signalCpuWork</code>) is Kotlin-specific — Go’s GMP
+model has no equivalent split, since a goroutine that blocks in a
+syscall just releases its P (Part 1.2) rather than being classified
+ahead of time by the scheduler.</p>
+  </li>
+  <li><strong><code class="language-plaintext highlighter-rouge">Job</code>, <code class="language-plaintext highlighter-rouge">CoroutineScope</code>, structured concurrency</strong> — the parent/child
+cancellation tree that ensures a scope can’t complete while children are
+still running, and that cancelling a parent cancels all children. This
+is the closest thing Kotlin has to fork-join semantics, but it’s opt-in
+library behavior layered on top of continuations, not a language feature.</li>
+</ul>
+
+<h3 id="24-gc-consequence">2.4 GC consequence</h3>
+
+<p>Kotlin/JVM’s GC is whatever the underlying JVM GC is (G1, ZGC, etc.).
+Coroutines don’t change the GC algorithm — they change what’s running on a
+given OS thread at a given moment, and they add continuation objects to
+the heap (one allocation per suspend point per invocation, though the JVM
+JIT can sometimes eliminate short-lived ones). Suspension does not create
+a GC safe-point problem analogous to Go’s, because JVM safe-points are a
+separate, JIT-inserted polling mechanism entirely orthogonal to coroutine
+suspension — see Part 4 for how HotSpot’s safepoint polling actually works,
+which is the real GC-relevant mechanism on this stack, not the coroutine
+machinery itself.</p>
+
+<h3 id="24a-continuation-and-dispatchedcontinuation-from-source">2.4a Continuation and DispatchedContinuation, from source</h3>
+
+<p>Read directly:
+<a href="https://github.com/JetBrains/kotlin/blob/master/libraries/stdlib/src/kotlin/coroutines/Continuation.kt"><code class="language-plaintext highlighter-rouge">kotlin/libraries/stdlib/src/kotlin/coroutines/Continuation.kt</code></a>,
+<a href="https://github.com/JetBrains/kotlin/blob/master/libraries/stdlib/src/kotlin/coroutines/intrinsics/Intrinsics.kt"><code class="language-plaintext highlighter-rouge">kotlin/libraries/stdlib/src/kotlin/coroutines/intrinsics/Intrinsics.kt</code></a>,
+<a href="https://github.com/Kotlin/kotlinx.coroutines/blob/master/kotlinx-coroutines-core/common/src/internal/DispatchedContinuation.kt"><code class="language-plaintext highlighter-rouge">kotlinx.coroutines/kotlinx-coroutines-core/common/src/internal/DispatchedContinuation.kt</code></a>.</p>
+
+<p><strong><code class="language-plaintext highlighter-rouge">Continuation.kt</code>, the entire interface, quoted in full because it’s short
+enough that summarizing it would lose information:</strong></p>
+
+<div class="language-kotlin highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">public</span> <span class="kd">interface</span> <span class="nc">Continuation</span><span class="p">&lt;</span><span class="k">in</span> <span class="nc">T</span><span class="p">&gt;</span> <span class="p">{</span>
+    <span class="k">public</span> <span class="kd">val</span> <span class="py">context</span><span class="p">:</span> <span class="nc">CoroutineContext</span>
+    <span class="k">public</span> <span class="k">fun</span> <span class="nf">resumeWith</span><span class="p">(</span><span class="n">result</span><span class="p">:</span> <span class="nc">Result</span><span class="p">&lt;</span><span class="nc">T</span><span class="p">&gt;)</span>
+<span class="p">}</span>
+</code></pre></div></div>
+
+<p><strong>Takeaway:</strong> the stdlib’s contract for “a suspended computation” is
+exactly two things — a context bag, and one method to call when a result
+is ready. Nothing here mentions threads, dispatchers, or scheduling:
+thread placement is not a compiler-level concern, since the interface the
+compiler generates against has no slot for it.</p>
+
+<p><strong><code class="language-plaintext highlighter-rouge">Intrinsics.kt</code>, the actual suspension primitive:</strong></p>
+
+<div class="language-kotlin highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">public</span> <span class="k">suspend</span> <span class="k">inline</span> <span class="k">fun</span> <span class="p">&lt;</span><span class="nc">T</span><span class="p">&gt;</span> <span class="nf">suspendCoroutineUninterceptedOrReturn</span><span class="p">(</span>
+    <span class="k">crossinline</span> <span class="n">block</span><span class="p">:</span> <span class="p">(</span><span class="nc">Continuation</span><span class="p">&lt;</span><span class="nc">T</span><span class="p">&gt;)</span> <span class="p">-&gt;</span> <span class="nc">Any</span><span class="p">?</span>
+<span class="p">):</span> <span class="nc">T</span> <span class="p">{</span>
+    <span class="nf">contract</span> <span class="p">{</span> <span class="nf">callsInPlace</span><span class="p">(</span><span class="n">block</span><span class="p">,</span> <span class="nc">InvocationKind</span><span class="p">.</span><span class="nc">EXACTLY_ONCE</span><span class="p">)</span> <span class="p">}</span>
+    <span class="k">throw</span> <span class="nc">NotImplementedError</span><span class="p">(</span><span class="s">"Implementation of suspendCoroutineUninterceptedOrReturn is intrinsic"</span><span class="p">)</span>
+<span class="p">}</span>
+</code></pre></div></div>
+
+<p><strong>Takeaway:</strong> the body is a <code class="language-plaintext highlighter-rouge">throw</code> — this function has no real
+implementation in Kotlin source at all. The comment above it in the file
+(not reproduced above) states the implementation is intrinsic: the
+compiler recognizes this specific function by name and replaces the call
+with generated bytecode directly. The CPS transform is not a library
+trick built on top of ordinary language features — the compiler has
+special-cased knowledge of this function.</p>
+
+<p><strong>Open question:</strong> the compiler’s codegen for the intrinsic itself is not
+visible from this file — only the signature and doc-comment stating that
+special-casing happens.</p>
+
+<p><strong><code class="language-plaintext highlighter-rouge">DispatchedContinuation.kt</code>, confirming the wrapping claim from
+checkpoint 2.5:</strong></p>
+
+<div class="language-kotlin highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">internal</span> <span class="kd">class</span> <span class="nc">DispatchedContinuation</span><span class="p">&lt;</span><span class="k">in</span> <span class="nc">T</span><span class="p">&gt;(</span>
+    <span class="nd">@JvmField</span> <span class="k">internal</span> <span class="kd">val</span> <span class="py">dispatcher</span><span class="p">:</span> <span class="nc">CoroutineDispatcher</span><span class="p">,</span>
+    <span class="nd">@JvmField</span> <span class="kd">val</span> <span class="py">continuation</span><span class="p">:</span> <span class="nc">Continuation</span><span class="p">&lt;</span><span class="nc">T</span><span class="p">&gt;</span>
+<span class="p">)</span> <span class="p">:</span> <span class="nc">DispatchedTask</span><span class="p">&lt;</span><span class="nc">T</span><span class="p">&gt;(</span><span class="nc">MODE_UNINITIALIZED</span><span class="p">),</span> <span class="nc">CoroutineStackFrame</span><span class="p">,</span> <span class="nc">Continuation</span><span class="p">&lt;</span><span class="nc">T</span><span class="p">&gt;</span> <span class="k">by</span> <span class="nf">continuation</span> <span class="p">{</span>
+</code></pre></div></div>
+
+<p><strong>Takeaway:</strong> <code class="language-plaintext highlighter-rouge">DispatchedContinuation</code> holds both a <code class="language-plaintext highlighter-rouge">dispatcher</code> field and
+the original compiler-generated <code class="language-plaintext highlighter-rouge">continuation</code> as a delegate
+(<code class="language-plaintext highlighter-rouge">Continuation&lt;T&gt; by continuation</code>). It wraps the compiler’s continuation
+rather than replacing it — the compiler produces the plain <code class="language-plaintext highlighter-rouge">Continuation</code>;
+kotlinx.coroutines wraps it in a dispatcher-aware class before anything
+calls <code class="language-plaintext highlighter-rouge">resumeWith</code>.</p>
+
+<p>The actual dispatch decision — where the thread-hop the field declarations
+above only imply actually happens — is <code class="language-plaintext highlighter-rouge">DispatchedContinuation</code>’s own
+<code class="language-plaintext highlighter-rouge">resumeWith</code> override:</p>
+
+<div class="language-kotlin highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">override</span> <span class="k">fun</span> <span class="nf">resumeWith</span><span class="p">(</span><span class="n">result</span><span class="p">:</span> <span class="nc">Result</span><span class="p">&lt;</span><span class="nc">T</span><span class="p">&gt;)</span> <span class="p">{</span>
+    <span class="kd">val</span> <span class="py">state</span> <span class="p">=</span> <span class="n">result</span><span class="p">.</span><span class="nf">toState</span><span class="p">()</span>
+    <span class="k">if</span> <span class="p">(</span><span class="n">dispatcher</span><span class="p">.</span><span class="nf">safeIsDispatchNeeded</span><span class="p">(</span><span class="n">context</span><span class="p">))</span> <span class="p">{</span>
+        <span class="n">_state</span> <span class="p">=</span> <span class="n">state</span>
+        <span class="n">resumeMode</span> <span class="p">=</span> <span class="nc">MODE_ATOMIC</span>
+        <span class="n">dispatcher</span><span class="p">.</span><span class="nf">safeDispatch</span><span class="p">(</span><span class="n">context</span><span class="p">,</span> <span class="k">this</span><span class="p">)</span>
+    <span class="p">}</span> <span class="k">else</span> <span class="p">{</span>
+        <span class="nf">executeUnconfined</span><span class="p">(</span><span class="n">state</span><span class="p">,</span> <span class="nc">MODE_ATOMIC</span><span class="p">)</span> <span class="p">{</span>
+            <span class="nf">withCoroutineContext</span><span class="p">(</span><span class="n">context</span><span class="p">,</span> <span class="n">countOrElement</span><span class="p">)</span> <span class="p">{</span>
+                <span class="n">continuation</span><span class="p">.</span><span class="nf">resumeWith</span><span class="p">(</span><span class="n">result</span><span class="p">)</span>
+            <span class="p">}</span>
+        <span class="p">}</span>
+    <span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div></div>
+
+<p>Every time the wrapped operation completes, this is what actually runs
+(not the plain <code class="language-plaintext highlighter-rouge">Continuation.resumeWith</code> interface method from stdlib,
+Part 2.4a). It asks the dispatcher <code class="language-plaintext highlighter-rouge">safeIsDispatchNeeded(context)</code> — if
+the current thread is already the right one (e.g. an unconfined
+dispatcher, or resuming on the same thread that’s already correct), it
+calls straight through to the wrapped <code class="language-plaintext highlighter-rouge">continuation.resumeWith(result)</code>
+in place, no thread hop. Otherwise it stashes the result in <code class="language-plaintext highlighter-rouge">_state</code> and
+calls <code class="language-plaintext highlighter-rouge">dispatcher.safeDispatch(context, this)</code>, which schedules this same
+object onto the dispatcher’s thread pool (Part 2.3’s <code class="language-plaintext highlighter-rouge">CoroutineScheduler</code>)
+to be resumed there. This is the concrete mechanism behind “the dispatcher
+decides what thread to resume on” (checkpoint 2.5’s answer) — a runtime
+branch inside <code class="language-plaintext highlighter-rouge">resumeWith</code>, not something the compiler’s state machine
+knows anything about.</p>
+
+<p><strong>Open question:</strong> the literal source line inside kotlinx.coroutines’
+<code class="language-plaintext highlighter-rouge">launch</code>/<code class="language-plaintext highlighter-rouge">async</code> implementation where a <code class="language-plaintext highlighter-rouge">DispatchedContinuation</code> gets
+constructed — Part 2.1’s <code class="language-plaintext highlighter-rouge">launch</code>/<code class="language-plaintext highlighter-rouge">delay</code> walkthrough traces the mechanism
+conceptually (what gets wrapped, when it resumes, which thread), but the
+actual builder source file itself hasn’t been read to confirm the
+construction call site line-for-line.</p>
+
+<h3 id="25-checkpoint">2.5 Checkpoint</h3>
+
+<p>Two continuations exist for a suspending coroutine call: the compiler
+generates one automatically. Where does the <em>dispatcher</em> decide what
+thread to resume on — inside <code class="language-plaintext highlighter-rouge">Continuation.resumeWith</code>, or somewhere
+kotlinx.coroutines wraps around it? (Answer: kotlinx.coroutines wraps the
+compiler-generated continuation with <code class="language-plaintext highlighter-rouge">ContinuationInterceptor.interceptContinuation</code>,
+producing a <code class="language-plaintext highlighter-rouge">DispatchedContinuation</code> that routes the actual <code class="language-plaintext highlighter-rouge">resumeWith</code>
+call through the dispatcher’s thread pool. The compiler’s state machine
+has no thread-affinity logic of its own — that’s entirely library-layer.)</p>
+
+<hr />
+
+<h2 id="part-3--beam">Part 3 — BEAM</h2>
+
+<p>Sources read directly for this section:
+<a href="https://github.com/erlang/otp/blob/master/erts/emulator/beam/erl_process.c"><code class="language-plaintext highlighter-rouge">erts/emulator/beam/erl_process.c</code></a>,
+<a href="https://github.com/erlang/otp/blob/master/erts/emulator/beam/erl_vm.h"><code class="language-plaintext highlighter-rouge">erts/emulator/beam/erl_vm.h</code></a>,
+<a href="https://github.com/erlang/otp/blob/master/erts/emulator/beam/emu/beam_emu.c"><code class="language-plaintext highlighter-rouge">erts/emulator/beam/emu/beam_emu.c</code></a>,
+<a href="https://github.com/erlang/otp/blob/master/erts/emulator/beam/erl_gc.c"><code class="language-plaintext highlighter-rouge">erts/emulator/beam/erl_gc.c</code></a>
+— erlang/otp, master branch.</p>
+
+<h3 id="31-constraint">3.1 Constraint</h3>
+
+<p>Erlang’s original design question (Joe Armstrong) was not about
+performance — it was: how do you build a system that can run essentially
+forever without going down? The answer: faults must be contained, which
+requires isolation, which requires sharing nothing.</p>
+
+<h3 id="32-design-per-process-heap-no-shared-memory">3.2 Design: per-process heap, no shared memory</h3>
+
+<p>BEAM processes (VM-managed, not OS processes) share no memory. Each has
+its own heap and its own GC. <code class="language-plaintext highlighter-rouge">beam_emu.c</code>’s <code class="language-plaintext highlighter-rouge">process_main</code> makes this
+concrete — the interpreter loop’s registers are literally per-process
+state, not per-OS-thread:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="cm">/* Pointer to X registers: x(0)..x(N). */</span>
+<span class="k">register</span> <span class="n">Eterm</span><span class="o">*</span> <span class="n">reg</span> <span class="n">REG_xregs</span> <span class="o">=</span> <span class="nb">NULL</span><span class="p">;</span>
+
+<span class="cm">/* Top of heap (next free location); grows upwards. */</span>
+<span class="k">register</span> <span class="n">Eterm</span><span class="o">*</span> <span class="n">HTOP</span> <span class="n">REG_htop</span> <span class="o">=</span> <span class="nb">NULL</span><span class="p">;</span>
+
+<span class="cm">/* Stack pointer. Grows downwards; points
+ * to last item pushed (normally a saved
+ * continuation pointer). */</span>
+<span class="k">register</span> <span class="n">Eterm</span><span class="o">*</span> <span class="n">E</span> <span class="n">REG_stop</span> <span class="o">=</span> <span class="nb">NULL</span><span class="p">;</span>
+</code></pre></div></div>
+
+<p>Each process being swapped onto a scheduler thread brings its own heap
+pointer (<code class="language-plaintext highlighter-rouge">HTOP</code>), its own stack pointer (<code class="language-plaintext highlighter-rouge">E</code>), and its own register file
+(<code class="language-plaintext highlighter-rouge">reg</code>) — nothing here is shared across processes the way a JVM heap or Go
+heap is shared across threads/goroutines. Sending a message to another
+process copies the data into the target’s heap (large binaries are the
+exception — reference-counted in a shared binary heap to avoid the copy).</p>
+
+<p>Because no process can see another’s stack or heap, there’s no shared
+safe-point problem: the scheduler never needs to reason about pointer
+validity in <em>another</em> process’s memory to preempt one process, which is
+exactly the constraint Go’s stack maps (Part 1.3) and HotSpot’s poll pages
+(Part 3.5) both exist to satisfy and BEAM structurally doesn’t need to.</p>
+
+<h3 id="33-key-concept-what-a-reduction-actually-is">3.3 Key concept: what a reduction actually is</h3>
+
+<p>Before the mechanism, the term itself. “Reduction” is not BEAM-specific
+jargon invented for scheduling — it comes from <strong>term rewriting /
+reduction semantics</strong> in programming language theory: evaluating an
+expression is a sequence of “reduction steps,” each rewriting the term
+closer to a final value (the same root sense as “beta reduction” in lambda
+calculus — Erlang’s interpreter is, structurally, a term-rewriting
+machine, and BEAM is literally short for “Bogdan/Björn’s Erlang Abstract
+Machine,” an abstract machine executing that rewriting). A BEAM reduction
+is the <em>scheduling</em> projection of that idea: one accounting unit charged
+per unit of interpreter work — approximately one function call, one BIF
+(built-in function) call, or one comparable primitive operation — deducted
+from a process’s budget every time the interpreter dispatches one.</p>
+
+<p>It is deliberately <strong>not</strong> a fixed wall-clock unit. It’s an abstraction
+that lets the scheduler compare “how much work has this process done”
+across processes without needing a hardware timer interrupt (contrast Part
+0’s OS timer-interrupt preemption) — the interpreter itself is the thing
+counting, inline, as part of doing the work. That’s what makes it cheap:
+there’s no separate polling instruction (contrast HotSpot’s poll page,
+Part 3.5.2) or external interrupt (contrast Go’s SIGURG, Part 1.3) —
+the decrement is folded into instruction dispatch that was happening
+anyway.</p>
+
+<p>Confirming this isn’t purely a scheduling-only concept, <code class="language-plaintext highlighter-rouge">erl_process.h</code>
+also uses reductions as a genuine unit of measurement, converting elapsed
+wall-clock time into an equivalent reduction count (used, among other
+things, to charge a process for time spent blocked so the scheduler’s
+accounting stays consistent):</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="n">ErtsMonotonicTime</span> <span class="n">time</span> <span class="o">=</span> <span class="n">end</span> <span class="o">-</span> <span class="n">start</span><span class="p">;</span>
+<span class="p">...</span>
+<span class="n">time</span> <span class="o">=</span> <span class="n">ERTS_MONOTONIC_TO_USEC</span><span class="p">(</span><span class="n">time</span><span class="p">);</span>
+<span class="k">if</span> <span class="p">(</span><span class="n">time</span> <span class="o">==</span> <span class="mi">0</span><span class="p">)</span>
+    <span class="k">return</span> <span class="p">(</span><span class="n">Sint64</span><span class="p">)</span> <span class="mi">1</span><span class="p">;</span> <span class="cm">/* At least one reduction */</span>
+<span class="cm">/* Currently two reductions per micro second */</span>
+<span class="n">time</span> <span class="o">*=</span> <span class="p">(</span><span class="n">CONTEXT_REDS</span><span class="o">-</span><span class="mi">1</span><span class="p">)</span><span class="o">/</span><span class="mi">1000</span> <span class="o">+</span> <span class="mi">1</span><span class="p">;</span>
+<span class="k">return</span> <span class="p">(</span><span class="n">Sint64</span><span class="p">)</span> <span class="n">time</span><span class="p">;</span>
+</code></pre></div></div>
+
+<p>And the process struct itself (<code class="language-plaintext highlighter-rouge">erl_process.h</code>) documents <code class="language-plaintext highlighter-rouge">fcalls</code>
+precisely as the live budget:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="n">Sint32</span> <span class="n">fcalls</span><span class="p">;</span>   <span class="cm">/* Number of reductions left to execute.
+                  * Only valid for the current process while it
+                  * is executing. */</span>
+</code></pre></div></div>
+
+<p>So: a reduction is BEAM’s unit of “work done,” inherited in name from
+term-rewriting theory, made concrete as roughly one function/BIF call in
+the interpreter, and used both to decide <em>when to preempt</em> (3.3 below) and
+to convert real elapsed time into comparable scheduling accounting.</p>
+
+<h3 id="33a-reduction-vs-safepoint">3.3a Reduction vs. safepoint</h3>
+
+<p>They answer different questions, and that difference is exactly why the
+comparison is useful:</p>
+
+<ul>
+  <li>A <strong>safepoint</strong> (Go, Part 1.3; JVM, Part 3.5) answers <em>“where in the
+code is it valid to inspect/pause this thread’s state?”</em> — a spatial
+question. Most instructions are <em>not</em> safe-points; the compiler/runtime
+has to specially mark or detect the few that are, because in a
+shared-heap, register-based execution model most points mid-instruction
+don’t have a fully-known, GC-inspectable machine state.</li>
+  <li>A <strong>reduction</strong> answers <em>“has this process done enough work that it
+should yield?”</em> — a budget question, not a location question.</li>
+</ul>
+
+<p>The reason reductions don’t need a <em>separate</em> safepoint concept is that in
+BEAM’s interpreter, <strong>every reduction boundary already is a valid
+safepoint</strong> — process state (heap pointer, stack pointer, registers) is
+always fully known and consistent between BEAM instructions, because the
+interpreter loop (<code class="language-plaintext highlighter-rouge">process_main</code>, 3.2) never leaves execution in a
+partially-updated state across an instruction dispatch. There’s no
+“mid-instruction, a pointer is briefly stored as a raw integer” hazard
+(Go’s <code class="language-plaintext highlighter-rouge">unsafe.Pointer</code>→<code class="language-plaintext highlighter-rouge">uintptr</code> case, Part 1.3) to guard against, because
+there’s no equivalent unsafe low-level escape hatch in normal BEAM
+bytecode execution the way there is in compiled machine code.</p>
+
+<p>So the precise relationship is: <strong>in Go and the JVM, safe-points are a
+sparse subset of execution points, specially constructed at compile time
+because most points aren’t safe. In BEAM, every point between instructions
+is already safe, so the only remaining question is scheduling policy — how
+often to actually act on that safety — and that’s exactly what the
+reduction counter answers.</strong> Reduction counting is the “when to act”
+policy layered on top of an execution model where “where is it safe to
+act” was never a hard problem to begin with. This is a direct consequence
+of Part 3.2’s isolation constraint: shared, GC-managed memory is what
+makes “where is it safe” hard in the first place, and BEAM opted out of
+that at the memory-model level, not at the scheduling level.</p>
+
+<h3 id="331-preemption-reduction-counting-with-the-actual-constant">3.3.1 Preemption: reduction counting, with the actual constant</h3>
+
+<p><code class="language-plaintext highlighter-rouge">erl_vm.h</code> defines the budget directly:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="cp">#define CONTEXT_REDS 4000            </span><span class="cm">/* Swap process out after this number */</span><span class="cp">
+</span></code></pre></div></div>
+
+<p>(Note: this is the current source value. Older Erlang documentation and
+blog posts commonly cite ~2000 reductions — that number is stale; always
+check the constant in the version you’re targeting rather than trusting a
+remembered figure, including this document a year from now.)</p>
+
+<p>The decrement mechanism is the interpreter’s own reduction counter,
+<code class="language-plaintext highlighter-rouge">FCALLS</code>, documented directly at its declaration in <code class="language-plaintext highlighter-rouge">process_main</code>:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="cm">/* Number of reductions left.  This function
+ * returns to the scheduler when FCALLS reaches zero. */</span>
+<span class="k">register</span> <span class="n">Sint</span> <span class="n">FCALLS</span> <span class="n">REG_fcalls</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span>
+</code></pre></div></div>
+
+<p>Every BEAM instruction (roughly: one function call, one comparable unit of
+work) decrements <code class="language-plaintext highlighter-rouge">FCALLS</code>. When it hits zero, <code class="language-plaintext highlighter-rouge">process_main</code> returns
+control to the scheduler, which calls <code class="language-plaintext highlighter-rouge">erts_schedule</code> with the reduction
+count actually consumed:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="n">reds_used</span> <span class="o">=</span> <span class="n">REDS_IN</span><span class="p">(</span><span class="n">c_p</span><span class="p">)</span> <span class="o">-</span> <span class="n">FCALLS</span><span class="p">;</span>
+<span class="p">...</span>
+<span class="n">c_p</span> <span class="o">=</span> <span class="n">erts_schedule</span><span class="p">(</span><span class="nb">NULL</span><span class="p">,</span> <span class="n">c_p</span><span class="p">,</span> <span class="n">reds_used</span><span class="p">);</span>
+</code></pre></div></div>
+
+<p><code class="language-plaintext highlighter-rouge">erl_process.c</code> also derives several scheduler tuning constants directly
+from <code class="language-plaintext highlighter-rouge">CONTEXT_REDS</code> — e.g. <code class="language-plaintext highlighter-rouge">ERTS_RUNQ_CHECK_BALANCE_REDS_PER_SCHED
+(2000*CONTEXT_REDS)</code> for load-balancing cadence between run queues, and
+<code class="language-plaintext highlighter-rouge">ERTS_PROC_MIN_CONTEXT_SWITCH_REDS_COST (CONTEXT_REDS/10)</code> — confirming
+reductions are the scheduler’s universal unit of “how much work happened,”
+not just a preemption trigger.</p>
+
+<p>There is no signal, no stack map, no poll page: preemption here is a
+plain integer counter checked as part of every instruction dispatch, cheap
+because it’s already inline in the interpreter’s hot loop, not a bolted-on
+external mechanism.</p>
+
+<p><strong>Tracing it through a concrete example:</strong></p>
+
+<div class="language-erlang highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="nf">loop</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="nf">loop</span><span class="p">().</span>
+
+<span class="nf">main</span><span class="p">()</span> <span class="o">-&gt;</span>
+    <span class="nb">spawn</span><span class="p">(</span><span class="k">fun</span> <span class="n">loop</span><span class="o">/</span><span class="mi">0</span><span class="p">),</span>
+    <span class="nb">spawn</span><span class="p">(</span><span class="k">fun</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="nn">io</span><span class="p">:</span><span class="nf">format</span><span class="p">(</span><span class="s">"still runs fine</span><span class="si">~n</span><span class="s">"</span><span class="p">)</span> <span class="k">end</span><span class="p">).</span>
+</code></pre></div></div>
+
+<p><code class="language-plaintext highlighter-rouge">spawn(fun loop/0)</code> starts a process that never returns — the BEAM
+equivalent of Go’s <code class="language-plaintext highlighter-rouge">for {}</code>. Unlike Go pre-1.14, this doesn’t hang the
+system: <code class="language-plaintext highlighter-rouge">process_main</code>’s interpreter loop dispatches <code class="language-plaintext highlighter-rouge">loop/0</code>’s call to
+itself as one reduction, decrementing <code class="language-plaintext highlighter-rouge">FCALLS</code> (Part 3.3.1) each time.
+When <code class="language-plaintext highlighter-rouge">FCALLS</code> hits zero — after <code class="language-plaintext highlighter-rouge">CONTEXT_REDS</code> (4000, by default)
+dispatched calls — <code class="language-plaintext highlighter-rouge">process_main</code> returns control to <code class="language-plaintext highlighter-rouge">erts_schedule</code>
+(Part 3.5a), which puts the looping process back on the run queue and
+picks the next ready process. The second <code class="language-plaintext highlighter-rouge">spawn</code>, printing “still runs
+fine,” gets scheduled and runs to completion on the same core without
+ever waiting on the infinite loop. No signal was sent to interrupt
+<code class="language-plaintext highlighter-rouge">loop/0</code>; it was never running long enough at a stretch to need one — the
+counter reaching zero <em>is</em> the interruption, already built into every
+single call the loop makes.</p>
+
+<p>Because each process owns its heap exclusively, <code class="language-plaintext highlighter-rouge">erl_gc.c</code> runs GC
+per-process — a GC pause for one process is invisible to every other
+process running concurrently on other scheduler threads. There is no
+whole-VM stop-the-world equivalent to Go’s <code class="language-plaintext highlighter-rouge">stopTheWorldWithSema</code> (Part
+1.3) or HotSpot’s global safepoint synchronization (Part 3.5.1): BEAM
+never needs “every process frozen at once,” because nothing GC-relevant is
+ever shared across processes to make that necessary.</p>
+
+<h3 id="35-fault-model-as-a-consequence-not-a-philosophy">3.5 Fault model as a consequence, not a philosophy</h3>
+
+<p>Because processes are isolated, a crash is just a process exiting — it
+cannot corrupt another process’s state by construction. This is why “let
+it crash” is viable: supervisors restart failed processes and the
+remaining system is provably unaffected, because isolation was the
+starting constraint everything else (per-process GC, reduction-counted
+preemption, copy-on-send messaging) follows from, not an afterthought
+layered on top.</p>
+
+<h3 id="35a-erts_schedule-the-deschedulingreschedule-handoff">3.5a <code class="language-plaintext highlighter-rouge">erts_schedule</code>: the descheduling/reschedule handoff</h3>
+
+<p>Read directly:
+<a href="https://github.com/erlang/otp/blob/master/erts/emulator/beam/erl_process.c"><code class="language-plaintext highlighter-rouge">erts/emulator/beam/erl_process.c</code></a>,
+<code class="language-plaintext highlighter-rouge">Process *erts_schedule(...)</code>.</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="n">Process</span> <span class="o">*</span><span class="nf">erts_schedule</span><span class="p">(</span><span class="n">ErtsSchedulerData</span> <span class="o">*</span><span class="n">esdp</span><span class="p">,</span> <span class="n">Process</span> <span class="o">*</span><span class="n">p</span><span class="p">,</span> <span class="kt">int</span> <span class="n">calls</span><span class="p">)</span>
+<span class="p">{</span>
+    <span class="p">...</span>
+    <span class="k">if</span> <span class="p">(</span><span class="n">ERTS_USE_MODIFIED_TIMING</span><span class="p">())</span> <span class="p">{</span>
+        <span class="n">context_reds</span> <span class="o">=</span> <span class="n">ERTS_MODIFIED_TIMING_CONTEXT_REDS</span><span class="p">;</span>
+    <span class="p">}</span>
+    <span class="k">else</span> <span class="p">{</span>
+        <span class="n">context_reds</span> <span class="o">=</span> <span class="n">CONTEXT_REDS</span><span class="p">;</span>
+    <span class="p">}</span>
+    <span class="p">...</span>
+    <span class="cm">/*
+     * Clean up after the process being scheduled out.
+     */</span>
+    <span class="k">if</span> <span class="p">(</span><span class="o">!</span><span class="n">p</span><span class="p">)</span> <span class="p">{</span>  <span class="cm">/* NULL in the very first schedule() call */</span>
+        <span class="n">is_normal_sched</span> <span class="o">=</span> <span class="o">!</span><span class="n">esdp</span><span class="p">;</span>
+        <span class="p">...</span>
+        <span class="n">rq</span> <span class="o">=</span> <span class="n">erts_get_runq_current</span><span class="p">(</span><span class="n">esdp</span><span class="p">);</span>
+        <span class="n">actual_reds</span> <span class="o">=</span> <span class="n">reds</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span>
+        <span class="n">erts_runq_lock</span><span class="p">(</span><span class="n">rq</span><span class="p">);</span>
+    <span class="p">}</span>
+    <span class="k">else</span> <span class="p">{</span>
+</code></pre></div></div>
+
+<p><strong>Takeaway:</strong> this is the function <code class="language-plaintext highlighter-rouge">process_main</code> (3.3.1) calls once
+<code class="language-plaintext highlighter-rouge">FCALLS</code> hits zero — <code class="language-plaintext highlighter-rouge">erts_schedule</code> both cleans up the process being
+descheduled and picks and returns the next one, in a single function (the
+<code class="language-plaintext highlighter-rouge">if (!p)</code> branch is the bootstrap case with no previous process). The
+<code class="language-plaintext highlighter-rouge">ERTS_USE_MODIFIED_TIMING()</code> branch means <code class="language-plaintext highlighter-rouge">CONTEXT_REDS</code> (4000) is not
+always the literal number used — there’s a “modified timing” mode with a
+different constant. The 4000 figure in 3.3.1 is the default, not an
+unconditional constant.</p>
+
+<p><strong>Open question:</strong> what <code class="language-plaintext highlighter-rouge">ERTS_USE_MODIFIED_TIMING()</code> gates, and the
+next-process-selection logic inside <code class="language-plaintext highlighter-rouge">erts_schedule</code> past the cleanup
+section shown above (priority levels, run-queue migration) — only the
+function’s opening is covered here.</p>
+
+<h3 id="36-checkpoint">3.6 Checkpoint</h3>
+
+<p>Given <code class="language-plaintext highlighter-rouge">CONTEXT_REDS = 4000</code> and one reduction ≈ one function call: can a
+single BEAM process still starve the scheduler the way a Go goroutine
+could pre-1.14? Look at what triggers the check. (Answer: no in the same
+way — the check is baked into every instruction dispatch inside
+<code class="language-plaintext highlighter-rouge">process_main</code>’s interpreter loop, not gated behind reaching a function
+call boundary the way Go’s old stack-bound check was; there is no BEAM
+equivalent of <code class="language-plaintext highlighter-rouge">for {}</code> with literally zero dispatched instructions, since
+even an infinite loop’s body is instructions being dispatched and
+decrementing <code class="language-plaintext highlighter-rouge">FCALLS</code>. The one thing that <em>can</em> still block a scheduler
+thread is a genuinely blocking NIF/native call that doesn’t yield control
+back to the VM — the moral equivalent of a goroutine in a blocking syscall
+without releasing its P.)</p>
+
+<hr />
+
+<h2 id="part-35--jvm-safepoints-the-mechanism-kotlin-sits-on-top-of-and-gos-real-point-of-contrast">Part 3.5 — JVM Safepoints (the mechanism Kotlin sits on top of, and Go’s real point of contrast)</h2>
+
+<p>Sources read directly for this section:
+<a href="https://github.com/openjdk/jdk/blob/master/src/hotspot/share/runtime/safepoint.hpp"><code class="language-plaintext highlighter-rouge">src/hotspot/share/runtime/safepoint.hpp</code></a>,
+<a href="https://github.com/openjdk/jdk/blob/master/src/hotspot/share/runtime/safepointMechanism.hpp"><code class="language-plaintext highlighter-rouge">src/hotspot/share/runtime/safepointMechanism.hpp</code></a>,
+openjdk/jdk, master branch. Also relevant as an applied-engineering account
+(not a primary source, but a good “what this looks like in production”
+companion): Sunny Srinidhi, <a href="https://medium.com/software-under-the-hood/under-the-hood-java-peak-safepoints-dd45af07d766">“Under the Hood: Java Peak Safepoints”</a>.</p>
+
+<p>This section was missing entirely from the previous draft even though it’s
+the actual mechanism Part 2.4 waved at, and it’s the correct point of
+contrast for Go’s approach — not an optional aside.</p>
+
+<h3 id="351-what-a-safepoint-is-precisely-in-hotspots-own-words">3.5.1 What a safepoint is, precisely, in HotSpot’s own words</h3>
+
+<p><code class="language-plaintext highlighter-rouge">safepoint.hpp</code>’s header comment:</p>
+
+<div class="language-cpp highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="c1">// The VMThread uses the SafepointSynchronize::begin/end</span>
+<span class="c1">// methods to enter/exit a safepoint region. The begin method will roll</span>
+<span class="c1">// all JavaThreads forward to a safepoint.</span>
+<span class="c1">//</span>
+<span class="c1">// JavaThreads must use the ThreadSafepointState abstraction (defined in</span>
+<span class="c1">// thread.hpp) to indicate that that they are at a safepoint.</span>
+<span class="c1">//</span>
+<span class="c1">// The Mutex/Condition variable and ObjectLocker classes calls the enter/</span>
+<span class="c1">// exit safepoint methods, when a thread is blocked/restarted. Hence, all</span>
+<span class="c1">// mutex enter/exit points *must* be at a safepoint.</span>
+</code></pre></div></div>
+
+<p>And the three-state enum that drives the whole mechanism:</p>
+
+<div class="language-cpp highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">enum</span> <span class="n">SynchronizeState</span> <span class="p">{</span>
+    <span class="n">_not_synchronized</span> <span class="o">=</span> <span class="mi">0</span><span class="p">,</span>   <span class="c1">// Threads not synchronized at a safepoint. Keep this value 0.</span>
+    <span class="n">_synchronizing</span>    <span class="o">=</span> <span class="mi">1</span><span class="p">,</span>   <span class="c1">// Synchronizing in progress</span>
+    <span class="n">_synchronized</span>     <span class="o">=</span> <span class="mi">2</span>    <span class="c1">// All Java threads are running in native, blocked in OS</span>
+                              <span class="c1">// or stopped at safepoint. VM thread and any NonJavaThread</span>
+                              <span class="c1">// may be running.</span>
+<span class="p">};</span>
+</code></pre></div></div>
+
+<p>This confirms the GC-adjacent framing directly: a safepoint isn’t
+GC-specific in HotSpot — it’s the general mechanism the VM uses any time it
+needs every Java thread frozen in a known state (GC, deoptimization,
+biased-lock revocation, thread dumps, class redefinition). GC is the most
+frequent consumer, not the only one.</p>
+
+<h3 id="352-the-poll-page-mechanism--how-threads-notice-they-should-stop">3.5.2 The poll-page mechanism — how threads notice they should stop</h3>
+
+<p>Unlike Go’s synchronous safe-points (stack-bound-check poisoning) or async
+safe-points (signal delivery), HotSpot’s classic mechanism is <strong>memory
+polling</strong>. From <code class="language-plaintext highlighter-rouge">safepointMechanism.hpp</code>:</p>
+
+<div class="language-cpp highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">class</span> <span class="nc">SafepointMechanism</span> <span class="o">:</span> <span class="k">public</span> <span class="n">AllStatic</span> <span class="p">{</span>
+  <span class="p">...</span>
+  <span class="k">static</span> <span class="kt">uintptr_t</span> <span class="n">_poll_page_armed_value</span><span class="p">;</span>
+  <span class="k">static</span> <span class="kt">uintptr_t</span> <span class="n">_poll_page_disarmed_value</span><span class="p">;</span>
+  <span class="k">static</span> <span class="n">address</span>   <span class="n">_polling_page</span><span class="p">;</span>
+  <span class="p">...</span>
+  <span class="k">struct</span> <span class="nc">ThreadData</span> <span class="p">{</span>
+    <span class="k">volatile</span> <span class="kt">uintptr_t</span> <span class="n">_polling_word</span><span class="p">;</span>
+    <span class="k">volatile</span> <span class="kt">uintptr_t</span> <span class="n">_polling_page</span><span class="p">;</span>
+    <span class="p">...</span>
+  <span class="p">};</span>
+
+  <span class="c1">// Call this method to see if this thread should block for a safepoint</span>
+  <span class="c1">// or process handshake.</span>
+  <span class="k">static</span> <span class="kr">inline</span> <span class="kt">bool</span> <span class="nf">should_process</span><span class="p">(</span><span class="n">JavaThread</span><span class="o">*</span> <span class="kr">thread</span><span class="p">,</span> <span class="kt">bool</span> <span class="n">allow_suspend</span> <span class="o">=</span> <span class="nb">true</span><span class="p">);</span>
+</code></pre></div></div>
+
+<p>The JIT compiler emits, at method entry and loop back-edges, a memory read
+from <code class="language-plaintext highlighter-rouge">_polling_page</code>. Normally this page is mapped read-only-but-armable
+and the read is nearly free (a single load the CPU can pipeline away). To
+request a safepoint, the VM thread <strong>unmaps or protects the polling page</strong>
+(the “armed” state). The next thread that executes its poll instruction
+triggers a trap — a real page fault the OS delivers as a signal/exception
+— which HotSpot’s fault handler intercepts and redirects into safepoint
+processing.</p>
+
+<p>This is the crucial contrast with Go: HotSpot’s mechanism is cooperative
+in mechanism (a thread must execute its own poll instruction to notice) but
+made cheap and <em>effectively involuntary</em> by tying the poll to a hardware
+trap instead of a branch — a thread genuinely cannot skip past an armed
+poll once it executes one, but a thread that never reaches a poll point at
+all (analogous to Go’s pre-1.14 tight-loop problem) still can’t be stopped.
+This is exactly the “time to safe-point” (TTSP) latency the linked Medium
+piece measures in production — the gap between the VM thread arming the
+page and the last straggler thread actually hitting its poll and blocking.
+JIT-compiled code has poll points at loop back-edges and method returns/calls
+(the compiler decides placement per-method based on loop structure);
+interpreter frames check a flag on every bytecode dispatch, which is why
+interpreted code reaches safepoints faster but runs slower generally.</p>
+
+<h3 id="352a-exact-poll-placement-and-the-safepointblocked-distinction">3.5.2a Exact poll placement, and the safepoint/blocked distinction</h3>
+
+<p>Additional sources for this subsection (secondary, but precise and
+attributed): Gil Tene’s account on the mechanical-sympathy mailing list, as
+reproduced at <a href="http://psy-lob-saw.blogspot.com/2015/12/safepoints.html">Nitsan Wakart, “Safepoints: Meaning, Side Effects and Overheads”</a>;
+also <a href="http://chriskirk.blogspot.com/2013/09/what-is-java-safepoint.html">chriskirk.blogspot.com, “What is a Java Safepoint?”</a>
+and <a href="http://jpbempel.blogspot.com/2013/03/safety-first-safepoints.html">jpbempel.blogspot.com, “Safety First: Safepoints”</a>.</p>
+
+<p>HotSpot doesn’t poll unconditionally everywhere — poll placement is a
+deliberate tradeoff, because “on top of the cost of the flag check itself,
+maintaining a ‘known state’ adds significant complexity to the
+implementation of certain optimizations,” so keeping safepoints further
+apart widens the scope for optimization. The actual poll locations:</p>
+
+<ul>
+  <li>Effectively <strong>between any two bytecodes</strong> while running in the interpreter</li>
+  <li>On <strong>non-counted loop back-edges</strong> in C1/C2-compiled code (a “counted”
+loop — bounds known at compile time — can skip the poll, since the JIT
+can prove it terminates)</li>
+  <li>At <strong>method entry/exit</strong> in compiled code (entry on Zing, exit on
+OpenJDK) — and the compiler removes these polls entirely when a method
+gets inlined, since the caller’s own poll covers it</li>
+</ul>
+
+<p>You can find the actual poll instructions in <code class="language-plaintext highlighter-rouge">-XX:+PrintAssembly</code> output
+by searching for <code class="language-plaintext highlighter-rouge">{poll}</code> or <code class="language-plaintext highlighter-rouge">{poll return}</code> in the instruction comments —
+this is directly checkable on a running JVM, not just a claim from a blog.</p>
+
+<p>A second correction worth stating precisely: <strong>“at a safepoint” does not
+mean “blocked.”</strong> JNI code, for instance, runs <em>at</em> a safepoint (its Java
+state representation is frozen and safe to inspect) without being
+descheduled. “Being blocked always happens at a safepoint, but being at a
+safepoint doesn’t require being blocked” — this is exactly analogous to
+Go’s distinction between “blocked safe-points” and the state a goroutine
+sits in during a syscall (Part 1.3, category 1): the state is
+GC-inspectable without the thread being paused by anything external.</p>
+
+<p>Two further points that generalize the model correctly:</p>
+
+<ul>
+  <li><strong>Global vs. per-thread safepoints.</strong> The page-protection trick (3.5.2)
+is a <em>global</em> mechanism — OpenJDK brings all threads to a safepoint
+together for STW work. Some JVMs (Azul’s Zing, via what it calls
+“Checkpoints”) can bring an <em>individual</em> thread to a safepoint-like state
+without a global pause, for short per-thread operations. This is the
+same axis Go and BEAM sit on opposite ends of: Go’s STW GC phases are
+global by necessity (Part 1.3), BEAM’s per-process GC is inherently
+per-thread already (Part 3) — Zing’s Checkpoints are HotSpot borrowing
+the BEAM-shaped idea onto a shared-heap runtime.</li>
+  <li><strong>Unsafe code and safepoint density.</strong> Because a safepoint can occur
+between any two bytecodes by default, JNI/Unsafe code that wants to run
+long stretches without a safepoint (e.g. a large <code class="language-plaintext highlighter-rouge">Unsafe.copyMemory</code>)
+must opt in to periodic safepoint opportunities itself — otherwise a
+long native call can inflate the “time to safe-point” the VM thread
+waits on before starting STW work, which is precisely the TTSP latency
+the linked “Java Peak Safepoints” article measures in production.</li>
+</ul>
+
+<h3 id="352b-safepointcpps-begin-function">3.5.2b <code class="language-plaintext highlighter-rouge">safepoint.cpp</code>’s <code class="language-plaintext highlighter-rouge">begin()</code> function</h3>
+
+<p>Read directly:
+<a href="https://github.com/openjdk/jdk/blob/master/src/hotspot/share/runtime/safepoint.cpp"><code class="language-plaintext highlighter-rouge">src/hotspot/share/runtime/safepoint.cpp</code></a>,
+<code class="language-plaintext highlighter-rouge">SafepointSynchronize::begin()</code>.</p>
+
+<div class="language-cpp highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="kt">void</span> <span class="n">SafepointSynchronize</span><span class="o">::</span><span class="n">begin</span><span class="p">()</span> <span class="p">{</span>
+  <span class="n">assert</span><span class="p">(</span><span class="n">Thread</span><span class="o">::</span><span class="n">current</span><span class="p">()</span><span class="o">-&gt;</span><span class="n">is_VM_thread</span><span class="p">(),</span> <span class="s">"Only VM thread may execute a safepoint"</span><span class="p">);</span>
+  <span class="p">...</span>
+  <span class="n">log_trace</span><span class="p">(</span><span class="n">safepoint</span><span class="p">)(</span><span class="s">"Blocking threads from starting/exiting"</span><span class="p">);</span>
+  <span class="n">Threads_lock</span><span class="o">-&gt;</span><span class="n">lock</span><span class="p">();</span>
+  <span class="p">...</span>
+  <span class="n">_waiting_to_block</span> <span class="o">=</span> <span class="n">nof_threads</span><span class="p">;</span>
+  <span class="p">...</span>
+  <span class="n">log_trace</span><span class="p">(</span><span class="n">safepoint</span><span class="p">)(</span><span class="s">"Arming safepoint using %s wait barrier"</span><span class="p">,</span> <span class="n">_wait_barrier</span><span class="o">-&gt;</span><span class="n">description</span><span class="p">());</span>
+  <span class="n">arm_safepoint</span><span class="p">();</span>
+  <span class="p">...</span>
+  <span class="k">if</span> <span class="p">(</span><span class="n">SafepointTimeout</span><span class="p">)</span> <span class="p">{</span>
+    <span class="n">safepoint_limit_time</span> <span class="o">=</span> <span class="n">SafepointTracing</span><span class="o">::</span><span class="n">start_of_safepoint</span><span class="p">()</span>
+        <span class="o">+</span> <span class="p">(</span><span class="n">jlong</span><span class="p">)(</span><span class="n">SafepointTimeoutDelay</span> <span class="o">*</span> <span class="n">NANOSECS_PER_MILLISEC</span><span class="p">);</span>
+  <span class="p">}</span>
+</code></pre></div></div>
+
+<p>and further down, what happens if a thread doesn’t reach the poll in time:</p>
+
+<div class="language-cpp highlighter-rouge"><div class="highlight"><pre class="highlight"><code>  <span class="k">if</span> <span class="p">(</span><span class="n">AbortVMOnSafepointTimeout</span> <span class="o">&amp;&amp;</span> <span class="p">(</span><span class="n">os</span><span class="o">::</span><span class="n">elapsedTime</span><span class="p">()</span> <span class="o">*</span> <span class="n">MILLIUNITS</span> <span class="o">&gt;</span> <span class="n">AbortVMOnSafepointTimeoutDelay</span><span class="p">))</span> <span class="p">{</span>
+    <span class="k">for</span> <span class="p">(</span><span class="n">JavaThreadIteratorWithHandle</span> <span class="n">jtiwh</span><span class="p">;</span> <span class="n">JavaThread</span> <span class="o">*</span><span class="n">cur_thread</span> <span class="o">=</span> <span class="n">jtiwh</span><span class="p">.</span><span class="n">next</span><span class="p">();</span> <span class="p">)</span> <span class="p">{</span>
+      <span class="k">if</span> <span class="p">(</span><span class="n">cur_thread</span><span class="o">-&gt;</span><span class="n">safepoint_state</span><span class="p">()</span><span class="o">-&gt;</span><span class="n">is_running</span><span class="p">())</span> <span class="p">{</span>
+        <span class="n">VMError</span><span class="o">::</span><span class="n">set_safepoint_timed_out_thread</span><span class="p">(</span><span class="n">cur_thread</span><span class="p">);</span>
+        <span class="k">if</span> <span class="p">(</span><span class="o">!</span><span class="n">os</span><span class="o">::</span><span class="n">signal_thread</span><span class="p">(</span><span class="n">cur_thread</span><span class="p">,</span> <span class="n">SIGILL</span><span class="p">,</span> <span class="s">"blocking a safepoint"</span><span class="p">))</span> <span class="p">{</span>
+          <span class="k">break</span><span class="p">;</span>
+        <span class="p">}</span>
+</code></pre></div></div>
+
+<p><strong>Takeaway:</strong> <code class="language-plaintext highlighter-rouge">begin()</code> grabs <code class="language-plaintext highlighter-rouge">Threads_lock</code> so no thread can start or exit
+mid-arming, then calls <code class="language-plaintext highlighter-rouge">arm_safepoint()</code> (the page-protect operation from
+3.5.2), and waits, tracked via <code class="language-plaintext highlighter-rouge">_waiting_to_block</code>. HotSpot also ships a
+built-in watchdog (<code class="language-plaintext highlighter-rouge">SafepointTimeout</code>/<code class="language-plaintext highlighter-rouge">AbortVMOnSafepointTimeoutDelay</code>)
+that, past a configurable delay, forcibly sends <code class="language-plaintext highlighter-rouge">SIGILL</code> to whichever
+thread hasn’t reached its poll — a thread can, in production, simply fail
+to reach a safepoint in reasonable time, and the VM’s answer is to crash
+that thread deliberately rather than hang forever. This is the closest
+direct JVM analogue to the Go pre-1.14 failure mode (Part 1.3): HotSpot
+has an explicit, source-visible failsafe for it, while Go’s answer was to
+change the preemption mechanism so the stuck case couldn’t occur at all.</p>
+
+<p><strong>Open question:</strong> what <code class="language-plaintext highlighter-rouge">arm_safepoint()</code>’s wait-barrier implementation
+does at the OS level (mentioned as <code class="language-plaintext highlighter-rouge">_wait_barrier-&gt;description()</code> but not
+read here) — the next step to fully trace the mechanism from “STW
+requested” to “all threads confirmed parked.”</p>
+
+<h3 id="353-why-go-didnt-reuse-this-approach">3.5.3 Why Go didn’t reuse this approach</h3>
+
+<p>Go’s runtime doesn’t have a JIT emitting per-loop poll instructions the way
+HotSpot’s C1/C2 compilers do — Go compiles ahead-of-time, and the
+project’s own tried-and-rejected loop-back-edge check (Part 1.3) is
+functionally the <em>interpreter-style</em> version of HotSpot’s mechanism minus
+the page-fault trick: an explicit conditional branch at every loop
+iteration, not a trap-backed memory read. That 7.8% regression is
+consistent with paying interpreter-tier overhead in what should be
+compiled-tier code — HotSpot avoids this cost by making the poll a load
+the branch predictor and speculative execution can mostly hide, and by only
+weaponizing it into an actual trap at the moment a safepoint is requested,
+not on every iteration unconditionally. Go’s signal-based async safe-points
+sidestep the problem differently: instead of a poll executed by the
+goroutine itself, the OS interrupts the thread from outside, at zero
+steady-state cost, and the runtime only pays for stack-map lookups on the
+rare occasions a preemption is actually requested.</p>
+
+<h3 id="354-checkpoint">3.5.4 Checkpoint</h3>
+
+<p>Both HotSpot’s polling and Go’s pre-1.14 back-edge checks impose steady-state
+cost on every loop iteration. What’s the qualitative difference in <em>how</em>
+they impose it, and why does that explain why one shipped and the other
+was measured at 7.8% and rejected? (Answer: HotSpot’s poll is a single
+memory load against a page the CPU can usually predict/cache — cheap even
+paid unconditionally, and JIT-compiled so it’s tuned per hot loop; Go’s
+back-edge check was a comparison-and-branch against a stack guard variable,
+inserted by a non-JIT ahead-of-time compiler across <em>all</em> loops uniformly,
+without HotSpot’s runtime profiling to place it selectively.)</p>
+
+<hr />
+
+<h2 id="part-4--comparison-the-safe-point-problem-side-by-side">Part 4 — Comparison: the safe-point problem, side by side</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th> </th>
+      <th>Go</th>
+      <th>Kotlin (JVM)</th>
+      <th>BEAM</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Concurrency unit</td>
+      <td>Goroutine (runtime-managed stack)</td>
+      <td>Coroutine (compiler-transformed continuation)</td>
+      <td>Process (VM-managed, isolated heap)</td>
+    </tr>
+    <tr>
+      <td>Who controls switching</td>
+      <td>Go runtime scheduler (GMP)</td>
+      <td>Compiler-generated state machine + dispatcher</td>
+      <td>BEAM scheduler (per-core)</td>
+    </tr>
+    <tr>
+      <td>Preemption style</td>
+      <td>Non-cooperative (signal, SIGURG) constrained by safe-points</td>
+      <td>Cooperative (suspend points only)</td>
+      <td>Non-cooperative (reduction counting)</td>
+    </tr>
+    <tr>
+      <td>Memory model</td>
+      <td>Shared heap across goroutines</td>
+      <td>Shared heap across coroutines (same JVM heap)</td>
+      <td>Isolated heap per process</td>
+    </tr>
+    <tr>
+      <td>GC scope</td>
+      <td>Whole-process; STW phases need all goroutines at a safe-point</td>
+      <td>Whatever JVM GC is running; safe-points are a separate JIT-polling mechanism unrelated to coroutines</td>
+      <td>Per-process; one process’s GC pause never affects others</td>
+    </tr>
+    <tr>
+      <td>What can go wrong if preempted incorrectly</td>
+      <td>GC sees stale/invalid pointer, collects live object</td>
+      <td>N/A — nothing is force-preempted</td>
+      <td>N/A — no shared state to corrupt</td>
+    </tr>
+    <tr>
+      <td>Fault containment</td>
+      <td>A panic in one goroutine can crash the process unless recovered</td>
+      <td>An exception in one coroutine can propagate per structured-concurrency scope</td>
+      <td>A crash is isolated to one process by construction</td>
+    </tr>
+  </tbody>
+</table>
+
+<p><strong>The one-sentence unification:</strong> the safe-point problem exists exactly
+where preemption is non-cooperative <em>and</em> memory is shared — Go has both
+and pays for it with stack maps and signal handling; BEAM has non-cooperative
+preemption but no shared memory, so no safe-point problem exists; Kotlin has
+shared memory but no non-cooperative preemption of coroutines, so it also
+sidesteps the problem, at the cost of coroutines being unable to preempt
+themselves out of a runaway loop.</p>
+
+<hr />
+
+<h2 id="part-5--graalvm-does-its-safepoint-mechanism-actually-differ-from-hotspots">Part 5 — GraalVM: does its safepoint mechanism actually differ from HotSpot’s?</h2>
+
+<p>Source read directly:
+<a href="https://github.com/oracle/graal/blob/master/substratevm/src/com.oracle.svm.core/src/com/oracle/svm/core/thread/Safepoint.java"><code class="language-plaintext highlighter-rouge">oracle/graal</code> → <code class="language-plaintext highlighter-rouge">substratevm/src/com.oracle.svm.core/.../thread/Safepoint.java</code></a>.</p>
+
+<p>GraalVM Native Image (SubstrateVM) does ahead-of-time compilation of JVM
+bytecode to a native binary, replacing HotSpot entirely. It changes startup
+time and memory footprint substantially, and removes JIT-recompilation-
+triggered safepoints (no JIT running concurrently). It does <strong>not</strong> change
+the Kotlin coroutine suspension model — the CPS transform happens in the
+Kotlin compiler before GraalVM ever sees bytecode (Part 2). But the
+safepoint mechanism itself — the thing Part 3.5 covered for HotSpot — is
+genuinely different in SubstrateVM, not just a reimplementation of the same
+idea, which is worth being precise about since it’s easy to assume “still
+the JVM, so still a poll page.”</p>
+
+<p><strong><code class="language-plaintext highlighter-rouge">Safepoint.java</code>’s own class-level doc comment, quoted because the
+mechanism it describes is the whole finding:</strong></p>
+
+<div class="language-java highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="cm">/**
+ * Manages the initiation of safepoints. A safepoint is a global state where all Java threads,
+ * except one, are paused so that invasive operations (such as a garbage collection) can execute
+ * without interferences.
+ *
+ * When a safepoint is requested, one Java thread (the master) acquires the
+ * {@link VMThreads#SAFEPOINT_MUTEX}. The master notifies all other threads about the pending
+ * safepoint by modifying each thread's {@link SafepointCheckCounter} thread-local.
+ *
+ * Each Java threads periodically checks the value of its {@link SafepointCheckCounter}. If a
+ * safepoint is pending, the thread enters the safepoint slowpath and blocks on the mutex that the
+ * master is holding.
+ */</span>
+</code></pre></div></div>
+
+<p>And the actual arming operation, which negates rather than page-protects:</p>
+
+<div class="language-java highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="n">value</span> <span class="o">=</span> <span class="nc">SafepointCheckCounter</span><span class="o">.</span><span class="na">getVolatile</span><span class="o">(</span><span class="n">thread</span><span class="o">);</span>
+<span class="o">}</span> <span class="k">while</span> <span class="o">(!</span><span class="nc">SafepointCheckCounter</span><span class="o">.</span><span class="na">compareAndSet</span><span class="o">(</span><span class="n">thread</span><span class="o">,</span> <span class="n">value</span><span class="o">,</span> <span class="o">-</span><span class="n">value</span><span class="o">));</span>
+</code></pre></div></div>
+
+<p><strong>Takeaway:</strong> HotSpot arms a safepoint by protecting a shared
+<em>memory page</em> (Part 3.5.2) — every thread’s poll is a load against the same
+address, and the trap is a hardware page fault. SubstrateVM arms a
+safepoint by <strong>negating each thread’s own counter value</strong> via CAS — there
+is no shared page, no page fault, no signal involved in the common path at
+all. Each compiled method decrements its thread-local
+<code class="language-plaintext highlighter-rouge">SafepointCheckCounter</code> periodically (mirroring HotSpot’s loop-back-edge/
+method-entry poll <em>placement</em> from Part 3.5.2a, but checking a counter
+going negative instead of reading a protected page); when a thread notices
+its own counter went negative, it takes the slowpath and blocks on
+<code class="language-plaintext highlighter-rouge">SAFEPOINT_MUTEX</code>. This is architecturally closer to BEAM’s reduction
+counting (Part 3.3) than to HotSpot’s own poll-page trap — a per-thread
+software counter, not a shared trap-triggering memory region — even though
+SubstrateVM is still fundamentally a JVM-semantics runtime, not a
+process-isolated one. It’s a genuine mechanism swap under the same
+“safepoint” name, not a cosmetic difference.</p>
+
+<p><strong>Open question:</strong> why Oracle’s SubstrateVM engineers chose a per-thread
+counter over reusing HotSpot’s poll-page approach — the file doesn’t
+state the rationale. Plausible candidates (avoiding <code class="language-plaintext highlighter-rouge">mprotect</code> syscalls
+per arm/disarm cycle, better behavior under isolates/multi-tenant native
+images) are not confirmed by the source.</p>
+
+<p><strong>Checkpoint:</strong> if your bottleneck is coroutine scheduling latency, does
+GraalVM help? (Answer: no — that’s a compile-time property of the Kotlin
+coroutine transform, orthogonal to which VM executes the resulting
+bytecode.) Separately: does GraalVM’s safepoint mechanism reduce
+“time to safepoint” compared to HotSpot’s for the same reason BEAM’s does?
+(Answer: not for the same reason — BEAM’s advantage is structural, no
+shared memory to protect at all; SubstrateVM still has a shared heap and
+still needs a global stop, it’s only changed <em>how</em> each thread notices
+the request, not the fact that all threads must eventually be stopped
+together.)</p>
+
+<hr />
+
+<h2 id="part-6--the-gc-algorithms-behind-the-flags">Part 6 — The GC algorithms behind the flags</h2>
+
+<p>The copy of <em>The Garbage Collection Handbook</em> at <code class="language-plaintext highlighter-rouge">~/Documents/Books_on_vm/</code>
+is the <strong>2023 second edition</strong>, and it covers G1, ZGC, and Shenandoah by
+name with dedicated sections. What follows is read directly from that PDF
+(page numbers are the book’s own page numbers, printed in each page
+header — the PDF file’s own page index has a fixed +37 offset from these,
+front matter accounts for the difference).</p>
+
+<h3 id="61-the-tricolor-abstraction-base-algorithm-before-the-formal-invariant">6.1 The tricolor abstraction: base algorithm before the formal invariant</h3>
+
+<p>Source: Robert Nystrom, <a href="https://craftinginterpreters.com/garbage-collection.html"><em>Crafting Interpreters</em>, “Garbage Collection”</a>
+(also read in this research thread — see <code class="language-plaintext highlighter-rouge">003_research.md</code> in this
+directory). Nystrom’s chapter gives the base mark-sweep tricolor algorithm
+in intuitive terms, before the GC Handbook’s formal correctness theorem
+below:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>1. Start off with all objects white.
+2. Find all the roots and mark them gray.
+3. Repeat as long as there are still gray objects:
+    a. Pick a gray object. Turn any white objects that the object
+       mentions to gray.
+    b. Mark the original gray object black.
+</code></pre></div></div>
+
+<p>The “gray wavefront” image: roots turn gray, each gray object’s neighbors
+turn gray while the object itself turns black, and the wavefront advances
+through the graph leaving reached (black) objects behind it, sweeping
+white-and-untouched objects up as garbage once no gray objects remain.</p>
+
+<p><img src="/img/posts/concurrency-and-gc_tricolor-trace.png" alt="tricolor mark-sweep wavefront" style="width: 100%; object-fit: contain;" /></p>
+
+<p><em>Image: Robert Nystrom, Crafting Interpreters, “Garbage Collection”
+(craftinginterpreters.com/garbage-collection.html), used here per the
+site’s stated terms for educational reference.</em></p>
+
+<h3 id="61a-the-formal-version-of-the-same-invariant">6.1a The formal version of the same invariant</h3>
+
+<p>The Go runtime’s own version of this invariant, from
+<a href="https://github.com/golang/go/blob/master/src/runtime/mgc.go"><code class="language-plaintext highlighter-rouge">src/runtime/mgc.go</code></a>,
+<code class="language-plaintext highlighter-rouge">gcStart</code>’s STW-to-mark-phase transition — the full sequence, not just the
+one line:</p>
+
+<div class="language-go highlighter-rouge"><div class="highlight"><pre class="highlight"><code>	<span class="c">// Enter concurrent mark phase and enable</span>
+	<span class="c">// write barriers.</span>
+	<span class="c">//</span>
+	<span class="c">// Because the world is stopped, all Ps will</span>
+	<span class="c">// observe that write barriers are enabled by</span>
+	<span class="c">// the time we start the world and begin</span>
+	<span class="c">// scanning.</span>
+	<span class="c">//</span>
+	<span class="c">// Write barriers must be enabled before assists are</span>
+	<span class="c">// enabled because they must be enabled before</span>
+	<span class="c">// any non-leaf heap objects are marked. Since</span>
+	<span class="c">// allocations are blocked until assists can</span>
+	<span class="c">// happen, we want to enable assists as early as</span>
+	<span class="c">// possible.</span>
+	<span class="n">setGCPhase</span><span class="p">(</span><span class="n">_GCmark</span><span class="p">)</span>
+
+	<span class="n">gcBgMarkPrepare</span><span class="p">()</span> <span class="c">// Must happen before assists are enabled.</span>
+	<span class="n">gcPrepareMarkRoots</span><span class="p">()</span>
+
+	<span class="c">// Mark all active tinyalloc blocks. Since we're</span>
+	<span class="c">// allocating from these, they need to be black like</span>
+	<span class="c">// other allocations. The alternative is to blacken</span>
+	<span class="c">// the tiny block on every allocation from it, which</span>
+	<span class="c">// would slow down the tiny allocator.</span>
+	<span class="n">gcMarkTinyAllocs</span><span class="p">()</span>
+
+	<span class="c">// At this point all Ps have enabled the write</span>
+	<span class="c">// barrier, thus maintaining the no white to</span>
+	<span class="c">// black invariant. Enable mutator assists to</span>
+	<span class="c">// put back-pressure on fast allocating</span>
+	<span class="c">// mutators.</span>
+	<span class="n">atomic</span><span class="o">.</span><span class="n">Store</span><span class="p">(</span><span class="o">&amp;</span><span class="n">gcBlackenEnabled</span><span class="p">,</span> <span class="m">1</span><span class="p">)</span>
+</code></pre></div></div>
+
+<p>Read top to bottom, this is the actual order of operations at the start
+of a mark phase: (1) <code class="language-plaintext highlighter-rouge">setGCPhase(_GCmark)</code> flips the global phase while
+the world is still stopped, so every P will see the new phase the instant
+it resumes; (2) <code class="language-plaintext highlighter-rouge">gcBgMarkPrepare()</code> and <code class="language-plaintext highlighter-rouge">gcPrepareMarkRoots()</code> set up the
+background mark workers and root-scanning job queue <em>before</em> anything is
+allowed to mark, per the comment’s own stated ordering constraint (write
+barriers before assists, assists before marking); (3) <code class="language-plaintext highlighter-rouge">gcMarkTinyAllocs()</code>
+retroactively blackens small allocations already carved out of the tiny
+allocator, so they don’t need individual barrier coverage; (4) only then
+does <code class="language-plaintext highlighter-rouge">atomic.Store(&amp;gcBlackenEnabled, 1)</code> actually arm the write barrier
+Part 1.3a’s <code class="language-plaintext highlighter-rouge">mbarrier.go</code> checks — the comment’s “no white to black
+invariant” claim is true starting at this exact store, not before it.
+Everything above this line is setup that must complete first because the
+invariant would be violated if the barrier were armed before roots were
+prepared.</p>
+
+<p><strong>§15.1, “The tricolour abstraction, revisited”</strong> (p.331) restates this
+exact comment as a general, two-condition correctness theorem, attributed
+to Wilson [1994]:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>Condition 1: the mutator stores a pointer to a white object into a black object, and
+Condition 2: all paths from any grey objects to that white object are destroyed.
+</code></pre></div></div>
+
+<p><strong>Takeaway:</strong> an object only gets incorrectly collected if
+<em>both</em> conditions hold simultaneously — a black object gains a hidden
+white pointer, <em>and</em> every path the collector could have used to
+rediscover that white object independently gets cut. Break either
+condition and the collector stays correct. This immediately generalizes
+into two named invariants, quoted directly:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>The weak tricolour invariant: All white objects pointed to by a black
+object are grey protected (that is, reachable from some grey object,
+either directly or through a chain of white objects).
+
+The strong tricolour invariant: There are no pointers from black
+objects to white objects.
+</code></pre></div></div>
+
+<p><strong>Takeaway:</strong> Go’s hybrid barrier (Yuasa deletion + Dijkstra insertion) is
+an example of a barrier that enforces something between these two — Go’s
+comment said “no white to black,” which is the strong invariant stated
+for Go’s specific non-moving collector. Non-moving collectors like Go’s
+can get away with only the weak invariant (“white pointers in black
+objects are not a problem because their grey protected white targets are
+eventually shaded”), while concurrent copying collectors must preserve
+the strong invariant, because a moving collector discards the fromspace
+white copy entirely at cycle end — a black tospace object still pointing
+at a discarded fromspace address is a dangling pointer, not just a late
+mark. This is the precise reason ZGC/Shenandoah (both moving) and Go
+(non-moving) need structurally different barrier strength.</p>
+
+<h3 id="62-116--the-vendor-agnostic-version-of-part-35">6.2 §11.6 — the vendor-agnostic version of Part 3.5</h3>
+
+<p><strong>§11.6, “GC safe-points and mutator suspension”</strong> (p.198) makes a
+distinction Part 3.5 didn’t have a name for: <strong>GC safe-points vs. GC
+check-points.</strong></p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>Many systems make the opposite choice and only allow garbage collection
+at certain restricted safe-points, and only produce maps for those
+points. The minimal set of safe-points needed for correctness includes
+each allocation ... and each call of a routine in which there may be
+allocation or which may cause the thread to suspend in a wait.
+</code></pre></div></div>
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>Since these additional safe-points do not do anything that actually can
+trigger a garbage collection, they need to have an added check for
+whether garbage collection is needed/requested, so we call them GC
+check-points.
+</code></pre></div></div>
+
+<p><strong>Takeaway:</strong> a safe-point is <em>any</em> point where the machine
+state is GC-inspectable; a check-point is the (much smaller) subset where
+the runtime has also inserted code to actually test “should I stop right
+now.” HotSpot’s poll-page instructions (Part 3.5.2) are check-points in
+this vocabulary — they’re placed at loop back-edges and method entries,
+which the book independently identifies as the correct minimal placement
+(“there needs to be a safe-point in each loop; a simple rule is to place a
+safe-point at each backwards branch in a function… in addition there
+needs to be a safe-point in each function entry or each return”). This is
+the same placement rule Gil Tene’s account (Part 3.5.2a) gave for HotSpot
+specifically — the book states it as the general principle HotSpot (and
+Go’s old back-edge check, and SubstrateVM’s counter) are all independent
+instances of.</p>
+
+<p>The book also names the exact two mechanisms this document found in two
+different runtimes and treats them as one general dichotomy, citing
+Agesen [1998]:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>Agesen [1998] compared two ways of causing a thread to suspend at a
+GC-point. One is polling ... The other technique is patching, which
+involves modifying the code at the next GC-point(s) of the thread.
+</code></pre></div></div>
+
+<p><strong>Takeaway:</strong> HotSpot’s poll-page (Part 3.5.2) is “polling.”
+Go’s pre-1.14 stack-bound-check poisoning (Part 1.3) is closer to
+“patching” in spirit — the runtime rewrites <code class="language-plaintext highlighter-rouge">stackguard0</code> so the <em>existing</em>
+bound check becomes a trap, rather than adding a new check. Go’s post-1.14
+<code class="language-plaintext highlighter-rouge">SIGURG</code> mechanism is neither in Agesen’s original two-way split — it’s a
+third strategy (async external interrupt) the 1998 taxonomy predates,
+which is a useful thing to know precisely: SIGURG isn’t a variant of
+polling or patching, it’s a genuinely later addition to the design space.</p>
+
+<h3 id="63-g1--the-actual-phase-list-not-just-the-region-idea">6.3 G1 — the actual phase list, not just the region idea</h3>
+
+<p><strong>§16.5, “Garbage-First: collecting young and old regions”</strong> (p.354)
+gives OpenJDK 20’s actual mixed-collection phase sequence, not just the
+region-prioritization idea Part 6’s original version described. Quoting
+the phase list directly (abridged):</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>Start: This stop-the-world phase is piggy-backed on a 'young only'
+collection that seeds the roots for concurrent marking. ... G1 sets a
+Top At Mark Start (TAMS) variable for each region; any objects allocated
+at addresses above the TAMS for a region will be considered implicitly
+live/marked.
+
+Concurrent Mark From Roots: ... using a snapshot-at-the-beginning
+algorithm, with mutators using a deletion barrier ... G1 marking threads
+... Each thread first claims a region to mark by atomically advancing a
+global 'finger' to the right.
+</code></pre></div></div>
+
+<p><strong>Takeaway:</strong> TAMS is the mechanism that lets G1 avoid
+marking newly-allocated objects at all — anything allocated after
+marking starts in a region is <em>assumed</em> live by address comparison alone,
+no barrier or scan needed for it. This is a genuinely different strategy
+from Go’s approach (Part 1.3a), where new allocations are marked black
+immediately via <code class="language-plaintext highlighter-rouge">gcBlackenEnabled</code>-gated behavior — G1’s TAMS threshold
+achieves a similar goal (don’t waste work on new objects) through a
+different mechanism (an address comparison per region, not a global
+allocation-color flag). The book also names G1’s barrier as a <strong>deletion</strong>
+barrier specifically (snapshot-at-the-beginning), which is the Yuasa half
+only, not Go’s hybrid Yuasa+Dijkstra combination — a real algorithmic
+difference between the two collectors’ barriers not visible from the JEP
+alone.</p>
+
+<h3 id="64-zgc--colored-pointers-confirmed-with-the-actual-bit-layout">6.4 ZGC — colored pointers, confirmed with the actual bit layout</h3>
+
+<p><strong>§17.5</strong> describes ZGC [Lidén, 2018] and gives the actual pointer bit
+layout (Figure 17.4) rather than just naming “colored pointers” as a
+concept:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>ZGC uses tagged pointers and self-healing load barriers. ... A group of
+four higher-order bits determine a colour. The four bits are named F
+(finalisable), R (relocated), M1 and M0 (marked). A given pointer will
+have only one of R, M0 and M1 set ... At any given time, only one of R,
+M0 or M1 is the good colour; loading pointers of other colours forces a
+load barrier slow path.
+</code></pre></div></div>
+
+<p><strong>Takeaway:</strong> “colored pointer” isn’t metaphorical — it’s four specific
+bits (F/R/M0/M1) living in the unused high bits of a 64-bit pointer, on a
+system where the actual address only needs 47 bits (the address bits span
+roughly bit 46 down to 0, leaving room above for tag bits). Self-healing:
+when a thread loads a pointer with a stale colour, the load barrier fixes
+the colour in place via the barrier’s slow path, so subsequent loads of
+that same memory location by the same thread don’t re-trigger the slow
+path. This is a materially different mechanism from both Go’s write
+barrier (fires on writes, not reads) and G1’s deletion barrier (also
+write-side) — ZGC’s barrier fires on reads.</p>
+
+<h3 id="65-shenandoah">6.5 Shenandoah</h3>
+
+<p><strong>§17.5, “Shenandoah”</strong> (p.401) gives both the algorithm and, notably, a
+sentence where the cited authors question their own earlier design
+argument:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>In 2016 Flood et al. argued that programs such as web caches hold onto
+objects just long enough to defeat generational collectors so, instead,
+Shenandoah focuses its effort on regions with fewer live objects...
+They also argued that generational collection requires some kind of
+remembered set... However, it is not clear that these concerns still
+hold and implementation of a generational version of Shenandoah is in
+progress.
+</code></pre></div></div>
+
+<p><strong>Takeaway:</strong> as of 2023, Shenandoah’s own foundational 2016 design
+argument (why not to be generational) is under active reconsideration by
+its own authors, with a generational variant in progress — a different
+picture than a static “Shenandoah is non-generational, ZGC is
+non-generational” fact would give; the field is mid-revision on this
+point, not settled.</p>
+
+<p>The self-healing load barrier itself, given as actual pseudocode
+(Algorithm 17.12), is worth comparing line-by-line against ZGC’s:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>Read(src, i):
+    addr ← &amp;src[i]
+    obj ← *addr
+    if not isGCactive()             /* fast path: accesses thread-local flag */
+        return obj
+    if not isInCollectionSet(obj)
+        return obj
+    fwd = resolveForwardee(obj)     /* access forwarding pointer, if one */
+    if obj ≠ fwd
+        CAS(addr, fwd, obj)         /* self-heal */
+        return fwd
+</code></pre></div></div>
+
+<p><strong>Takeaway:</strong> Shenandoah’s self-healing works by CAS-ing the
+<em>forwarding pointer</em> back into the original slot once discovered — a
+different self-healing mechanism than ZGC’s colored-pointer remap, but the
+same goal (pay the barrier cost once per location, not once per access).
+The <code class="language-plaintext highlighter-rouge">isGCactive()</code> fast-path check is functionally the same shape as G1’s
+<code class="language-plaintext highlighter-rouge">gcBlackenEnabled</code> and Go’s <code class="language-plaintext highlighter-rouge">gcphase == _GCmark</code> gating (Part 1.3a) — all
+three collectors pay for their respective barrier machinery only during an
+active cycle, confirmed independently now in three different codebases and
+this one textbook description.</p>
+
+<h3 id="66-compressor-and-pauselessc4-page-protection-vs-tagged-pointers">6.6 Compressor and Pauseless/C4: page protection vs. tagged pointers</h3>
+
+<p><strong>§17.5, “Compressor”</strong> (p.386) and <strong>“Pauseless and C4”</strong> (p.387–388).</p>
+
+<p>Compressor’s mechanism, from the book’s own category list:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>Live: pages containing (mostly) live objects
+Condemned: pages containing some live objects, but mostly dead ones
+Free: pages currently free but available for allocation
+New Live: pages in which copied live objects have been allocated but not yet copied
+Dead: unmapped pages that can be recycled once there are no pointers to them
+</code></pre></div></div>
+
+<p><strong>Takeaway:</strong> Compressor drives compaction entirely through page
+protection — it <code class="language-plaintext highlighter-rouge">mprotect</code>s tospace pages so any mutator access traps,
+and the trap handler performs forwarding/copying on demand. This is the
+same style of mechanism as HotSpot’s safepoint poll page (Part 3.5.2) —
+a hardware trap doing useful work, not just a stop signal — applied to
+compaction correctness rather than safepoint arrival: the same trick
+generalizes to enforcing GC invariants during copying, not just to
+synchronizing mutator suspension.</p>
+
+<p>Pauseless/C4’s mechanism, by contrast, avoids page protection almost
+entirely and uses <strong>tagged pointers</strong> instead — confirmed by the actual
+bit layout (Figure 17.2, p.388):</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>Pauseless steals one address bit from the 64-bit address space to use as
+a pointer tag. This Not-Marked-Through (NMT) bit is used by the LVB
+during the concurrent marking phase of the collector to decide whether
+the reference has previously been scanned by the collector.
+</code></pre></div></div>
+
+<p><strong>Takeaway:</strong> C4/Pauseless’s LVB (“Loaded Value Barrier”) is functionally
+the same idea as ZGC’s self-healing colored-pointer load barrier
+(Part 6.4) — both steal address bits, both self-heal on load. ZGC’s
+design (2018) comes after and builds on Azul’s Pauseless/C4 (2005/2011),
+not as an independent invention. C4’s generational extension steals an
+additional tag bit per pointer to track which generation the referent
+belongs to, letting young and old collections proceed independently
+without cross-checking a single global NMT value.</p>
+
+<p><strong>Open question:</strong> whether ZGC’s generational variant (Figure 17.4b) has
+an analogous bit-budget tradeoff to C4’s — not verified against ZGC’s
+generational tagged-pointer figure directly.</p>
+
+<h3 id="67-staccato">6.7 Staccato</h3>
+
+<p><strong>§19.7, “Staccato: best-effort compaction with mutator wait-freedom”</strong>
+(p.455) — the McCloskey et al. paper also referenced in
+<code class="language-plaintext highlighter-rouge">006_other_reading_materials.md</code> of this research directory.</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>Staccato [McCloskey et al., 2008] permits concurrent compaction without
+requiring the mutators to use locks or atomic operations like
+compare-and-swap in the common case, even on multiprocessors with weak
+memory ordering.
+</code></pre></div></div>
+
+<p>The mechanism, confirmed via the book’s own pseudocode (Algorithm 19.8):</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>copyObjects(candidates):
+    for each p in candidates
+        CompareAndSet(&amp;forwardingAddress(p), p, p | COPYING)
+        waitForRaggedSynch(writeFence; readFence)
+        ...
+</code></pre></div></div>
+
+<p><strong>Takeaway:</strong> “ragged synchronisation” is the general name for a pattern
+this document already touched via Collie’s “pre-compaction ragged
+handshake” (Part 6.6) and §15.3’s “Ragged phase changes”: instead of a
+single global stop-the-world rendezvous, each mutator independently
+performs a memory fence “at regular intervals (such as GC safe-points),”
+and the collector waits for all mutators to have crossed that fence
+individually, at their own pace — a distributed handshake rather than a
+synchronized barrier. This is a different STW-avoidance strategy than
+HotSpot’s single global <code class="language-plaintext highlighter-rouge">Threads_lock</code>-based rendezvous (Part 3.5.2b).</p>
+
+<h3 id="68-scope-note-and-further-reading">6.8 Scope note and further reading</h3>
+
+<p>Not covered above: Ch.14 (parallel GC internals — marking, copying,
+compaction algorithms), Tax-and-Spend (§19.6). Sapphire, Transactional
+Sapphire, Platinum, Metronome, Stopless, Chicken, and Clover are covered
+in the appendix below (§19.5–19.7), not in the numbered sections above.</p>
+
+<p>Vendor/JEP-level pointers, for the production-flag view rather than the
+algorithm view:</p>
+<ul>
+  <li><a href="https://openjdk.org/jeps/248">JEP 248 — Make G1 the Default Garbage Collector</a></li>
+  <li><a href="https://openjdk.org/jeps/439">JEP 439 — Generational ZGC</a></li>
+  <li><a href="https://openjdk.org/jeps/318">JEP 318 — Epsilon: A No-Op Garbage Collector</a></li>
+  <li><a href="https://wiki.openjdk.org/display/zgc/Main">OpenJDK ZGC wiki</a></li>
+  <li><a href="https://wiki.openjdk.org/display/shenandoah/Main">OpenJDK Shenandoah wiki</a></li>
+  <li><a href="https://github.com/oracle/graal/blob/master/docs/reference-manual/native-image/MemoryManagement.md">GraalVM Native Image <code class="language-plaintext highlighter-rouge">MemoryManagement.md</code></a> — <code class="language-plaintext highlighter-rouge">--gc=serial|G1|epsilon</code> flags</li>
+</ul>
+
+<h3 id="69-sapphire-platinum-metronome-stopless-chicken-clover">6.9 Sapphire, Platinum, Metronome, Stopless, Chicken, Clover</h3>
+
+<p><strong>Sapphire and Transactional Sapphire</strong> (§17.4, p.376–379) — a concurrent
+copying algorithm for shared-memory multiprocessors that lets one mutator
+thread at a time flip from reading fromspace to reading tospace, rather
+than stopping all threads to flip together. Transactional Sapphire
+extends this with parallel collector threads and hardware/software
+transactions for object copying, moving through four phase groups (Mark,
+Copy, Flip, Reclaim — Algorithm 17.4) with distinct write barriers per
+phase.</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>Flip: In this group, the collector forwards pointers in global variables
+and thread stacks and registers, flipping them one at a time into
+tospace. Unflipped mutator threads may hold references to both fromspace
+and tospace copies (even of the same object).
+</code></pre></div></div>
+
+<p><strong>Takeaway:</strong> incremental flipping (one thread at a time, rather than a
+single stop-the-world flip) is the mechanism’s whole point — it trades a
+more complex barrier (mutators may see both copies of the same object
+simultaneously) for a shorter window where any thread needs to block.</p>
+
+<p><strong>Platinum</strong> (§17.4, p.383–384) — mostly-concurrent, generational,
+replicating, aimed at long tail latencies. Uses fewer collector threads
+than cores and binds each to a specific core, and uses Intel’s memory
+protection keys (not a syscall-heavy <code class="language-plaintext highlighter-rouge">mprotect</code>, but a fast per-thread
+register) to give collector and mutator threads different access rights
+to the same pages without a full page-table change.</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>Platinum sets up two protection keys. During collection, one is
+associated with pages to which only the collector threads should have
+write access, and Platinum arranges that the mutators set their
+protection keys to disallow writes to these pages.
+</code></pre></div></div>
+
+<p><strong>Metronome</strong> (§19.5, p.439–441) — a time-based real-time collector for
+Java: an incremental mark-sweep collector with partial on-demand
+compaction, scheduled via fixed time quanta (500µs collector slices in a
+10ms window) to guarantee a minimum mutator utilization (MMU) target,
+commonly 70%.</p>
+
+<p><strong>Stopless</strong> (§19.7, p.454–455) — a lock-free concurrent compactor. Rather
+than requiring mutators to update both a fromspace and tospace copy of an
+object (as Sapphire does), Stopless enforces that exactly one copy is
+ever the definitive one, tracked via a double-word compare-and-swap on a
+“wide” intermediate copy with a status word per field
+(<code class="language-plaintext highlighter-rouge">inOriginal</code>/<code class="language-plaintext highlighter-rouge">inWide</code>/<code class="language-plaintext highlighter-rouge">inCopy</code>).</p>
+
+<p><strong>Chicken</strong> (§19.7, p.458) — architecturally close to Staccato (Part 6.7),
+developed independently, targeting x86/x86-64’s stronger memory model
+specifically. Because that architecture orders reads relative to atomics,
+only writes need to abort an in-progress copy, and the ragged
+synchronisation Staccato relies on doesn’t need the read-fence half.</p>
+
+<p><strong>Clover</strong> (§19.7, p.458–459) — guarantees compaction with lock-free
+mutator access in the common case by having the collector mark
+just-copied fields with a reserved sentinel value α (chosen to make
+collision with a real program value astronomically unlikely, using a
+128-bit compare-and-swap on modern x86-64). A mutator that reads α knows
+to reload the field through the forwarding pointer instead.</p>
+
+<hr />
+
+<h2 id="part-7--reading-this-material-in-passes-not-linearly">Part 7 — Reading this material in passes, not linearly</h2>
+
+<p>The framework below is applied selectively, not as a checklist run against
+every source uniformly — some of these materials don’t have all five
+properties (a rejected-alternatives section, an admitted weak spot), and
+forcing the framework onto a source that doesn’t have that structure would
+produce a false pattern rather than an honest one. Where a technique
+doesn’t fit a given source, it’s left out for that source rather than
+padded in.</p>
+
+<p><strong>The one dominant constraint</strong> applies cleanly to Go (GC needs pointer
+maps → constrains preemption, Part 1.3), to BEAM (shared-nothing →
+no safe-point problem, Part 3.2–3.3a), and to Kotlin (can’t modify the
+JVM → CPS transform is the only lever, Part 2.1). It applies less cleanly
+to the GC algorithms in Part 6 — G1, ZGC, and Shenandoah are all solving
+the <em>same</em> constraint (bound pause time independent of heap size) with
+different mechanisms, so for that cluster the useful move is comparing
+mechanisms against a shared constraint, not finding a different
+constraint for each.</p>
+
+<p><strong>An admitted weak spot / rejected path</strong> is present, concretely, in three
+places already surfaced in this document, not hypothetically: Go’s
+proposal rejecting loop-back-edge checks over a measured 7.8% regression
+(Part 1.3), HotSpot’s own <code class="language-plaintext highlighter-rouge">AbortVMOnSafepointTimeout</code> watchdog admitting a
+thread can simply fail to reach a safepoint in production (Part 3.5.2b),
+and Shenandoah’s authors’ 2023-dated uncertainty about their own 2016
+non-generational argument (Part 6.5). These three are the highest-value
+re-reads in the whole document if you only have time to revisit three
+things.</p>
+
+<h3 id="71-concept-mindmap--the-tension-map-not-a-fact-list">7.1 Concept mindmap — the tension map, not a fact list</h3>
+
+<pre><code class="language-mermaid">mindmap
+  root((Preempt a running&lt;br/&gt;task safely))
+    Who initiates preemption
+      OS timer interrupt
+        No cooperation needed
+        Thread has no say
+      Go: SIGURG signal
+        Async, external
+        Still gated by safe-point check
+      HotSpot: poll page
+        Thread checks itself
+        Trap turns it involuntary
+      SubstrateVM: counter CAS
+        Per-thread, no shared page
+      BEAM: reduction counter
+        Every instruction dispatch
+        No separate check needed
+    What makes a point unsafe
+      Shared GC-managed heap
+        Pointer vs raw int ambiguity
+        Go stack maps
+        HotSpot stack maps
+      No shared heap at all
+        BEAM sidesteps the question
+        Every point is already safe
+    GC correctness invariant
+      Weak tricolour
+        Non-moving OK
+        Go hybrid barrier
+      Strong tricolour
+        Required for moving GC
+        ZGC load barrier
+        Shenandoah load barrier
+        G1 deletion barrier
+    Concurrency unit
+      Go: goroutine, CSP channels
+      Kotlin: continuation, CPS
+        compiler layer
+        kotlinx.coroutines layer
+      BEAM: process, shared nothing
+</code></pre>
+
+<p><strong>What this diagram is arguing, in one sentence per branch:</strong> preemption
+mechanisms differ in <em>who</em> decides to stop a task; safety mechanisms
+differ in <em>whether</em> shared GC-managed memory makes most points unsafe to
+stop at; GC correctness reduces to which tricolour invariant a collector
+can afford to only weakly enforce, which is itself downstream of whether
+the collector moves objects. The three top-level branches are not
+independent — the “who initiates” answer each language chose was
+constrained by the “what makes a point unsafe” answer their memory model
+already committed them to.</p>
+
+<h3 id="72-reading-roadmap--four-passes-across-this-documents-actual-source-list">7.2 Reading roadmap — four passes across this document’s actual source list</h3>
+
+<pre><code class="language-mermaid">flowchart TD
+    subgraph P1["Pass 1 — Orient: what problem is being solved"]
+        direction LR
+        A1["Go proposal 24543&lt;br/&gt;abstract + problem statement"]
+        A2["mgc.go header comment&lt;br/&gt;(algorithm summary, lines 1-20)"]
+        A3["Safepoint.java class doc&lt;br/&gt;(GraalVM)"]
+        A4["GC Handbook §1.3&lt;br/&gt;Comparing GC algorithms"]
+    end
+
+    subgraph P2["Pass 2 — Find the one constraint"]
+        direction LR
+        B1["preempt.go safe-point&lt;br/&gt;categories comment"]
+        B2["signal_unix.go SIGURG&lt;br/&gt;4-criteria rationale"]
+        B3["Continuation.kt&lt;br/&gt;+ why suspend is compiler-level"]
+        B4["erl_process.h fcalls comment&lt;br/&gt;+ Part 3.2 shared-nothing"]
+        B5["GC Handbook §11.6&lt;br/&gt;safe-point vs check-point"]
+    end
+
+    subgraph P3["Pass 3 — Map rejected paths and tensions"]
+        direction LR
+        C1["Go: loop back-edge check,&lt;br/&gt;7.8% regression, rejected"]
+        C2["HotSpot: SafepointTimeout&lt;br/&gt;watchdog admits failure mode"]
+        C3["Shenandoah §17.5: authors&lt;br/&gt;question own 2016 argument"]
+        C4["Agesen 1998: polling vs&lt;br/&gt;patching vs SIGURG (3rd path)"]
+    end
+
+    subgraph P4["Pass 4 — Compress to one sentence per system"]
+        direction LR
+        D1["Go: non-cooperative,&lt;br/&gt;gated by pointer safety"]
+        D2["Kotlin: cooperative by&lt;br/&gt;construction, no interrupt exists"]
+        D3["BEAM: no unsafe points&lt;br/&gt;exist, only a budget"]
+        D4["JVM family: same constraint&lt;br/&gt;(bounded pause), different&lt;br/&gt;mechanism per collector"]
+    end
+
+    P1 --&gt; P2 --&gt; P3 --&gt; P4
+
+    A1 -.reread after.-&gt; C1
+    B2 -.reread after.-&gt; C4
+    B5 -.reread after.-&gt; C2
+</code></pre>
+
+<p><strong>How to actually use this roadmap:</strong> don’t read every box once in order —
+Pass 1 across all four sources first (just enough to know what problem
+each is solving), then Pass 2 across all four (find the load-bearing
+constraint in each), then Pass 3 only for the sources that have a rejected
+path or admitted gap (not all of them do — Continuation.kt, for instance,
+doesn’t have a “we tried X and rejected it” moment the way Go’s proposal
+or Shenandoah’s retrospective do), then Pass 4 forces you to write the
+one-sentence compression for each system, which is the actual test of
+whether the first three passes worked. If you can’t write Pass 4’s
+sentence for a system, that’s the signal to go back to Pass 2 for that
+system specifically, not to reread everything.</p>
+
+<hr />
+
+<h2 id="source-references-for-going-deeper-only-if-a-checkpoint-above-stumps-you">Source references for going deeper (only if a checkpoint above stumps you)</h2>
+
+<h3 id="primary-source-files-fetched-and-read-directly-for-this-document">Primary source files fetched and read directly for this document</h3>
+
+<p><strong>Go</strong> (golang/go, master):</p>
+<ul>
+  <li><a href="https://github.com/golang/go/blob/master/src/runtime/preempt.go"><code class="language-plaintext highlighter-rouge">src/runtime/preempt.go</code></a></li>
+  <li><a href="https://github.com/golang/go/blob/master/src/runtime/signal_unix.go"><code class="language-plaintext highlighter-rouge">src/runtime/signal_unix.go</code></a></li>
+  <li><a href="https://github.com/golang/go/blob/master/src/runtime/mgc.go"><code class="language-plaintext highlighter-rouge">src/runtime/mgc.go</code></a></li>
+  <li><a href="https://github.com/golang/go/blob/master/src/runtime/proc.go"><code class="language-plaintext highlighter-rouge">src/runtime/proc.go</code></a></li>
+  <li><a href="https://github.com/golang/go/blob/master/src/runtime/mbarrier.go"><code class="language-plaintext highlighter-rouge">src/runtime/mbarrier.go</code></a></li>
+</ul>
+
+<p><strong>Kotlin/kotlinx.coroutines</strong>:</p>
+<ul>
+  <li>JetBrains/kotlin → <a href="https://github.com/JetBrains/kotlin/blob/master/libraries/stdlib/src/kotlin/coroutines/Continuation.kt"><code class="language-plaintext highlighter-rouge">libraries/stdlib/src/kotlin/coroutines/Continuation.kt</code></a></li>
+  <li>JetBrains/kotlin → <a href="https://github.com/JetBrains/kotlin/blob/master/libraries/stdlib/src/kotlin/coroutines/intrinsics/Intrinsics.kt"><code class="language-plaintext highlighter-rouge">libraries/stdlib/src/kotlin/coroutines/intrinsics/Intrinsics.kt</code></a></li>
+  <li>Kotlin/kotlinx.coroutines → <a href="https://github.com/Kotlin/kotlinx.coroutines/blob/master/kotlinx-coroutines-core/common/src/CoroutineDispatcher.kt"><code class="language-plaintext highlighter-rouge">kotlinx-coroutines-core/common/src/CoroutineDispatcher.kt</code></a></li>
+  <li>Kotlin/kotlinx.coroutines → <a href="https://github.com/Kotlin/kotlinx.coroutines/blob/master/kotlinx-coroutines-core/jvm/src/scheduling/CoroutineScheduler.kt"><code class="language-plaintext highlighter-rouge">kotlinx-coroutines-core/jvm/src/scheduling/CoroutineScheduler.kt</code></a></li>
+  <li>Kotlin/kotlinx.coroutines → <a href="https://github.com/Kotlin/kotlinx.coroutines/blob/master/kotlinx-coroutines-core/common/src/internal/DispatchedContinuation.kt"><code class="language-plaintext highlighter-rouge">kotlinx-coroutines-core/common/src/internal/DispatchedContinuation.kt</code></a></li>
+  <li>(attempted, 404) <code class="language-plaintext highlighter-rouge">.../intrinsics/CoroutineIntrinsics.kt</code> — doesn’t exist at that path, discarded</li>
+</ul>
+
+<p><strong>OpenJDK/HotSpot</strong> (openjdk/jdk, master):</p>
+<ul>
+  <li><a href="https://github.com/openjdk/jdk/blob/master/src/hotspot/share/runtime/safepoint.hpp"><code class="language-plaintext highlighter-rouge">src/hotspot/share/runtime/safepoint.hpp</code></a></li>
+  <li><a href="https://github.com/openjdk/jdk/blob/master/src/hotspot/share/runtime/safepointMechanism.hpp"><code class="language-plaintext highlighter-rouge">src/hotspot/share/runtime/safepointMechanism.hpp</code></a></li>
+  <li><a href="https://github.com/openjdk/jdk/blob/master/src/hotspot/share/runtime/safepoint.cpp"><code class="language-plaintext highlighter-rouge">src/hotspot/share/runtime/safepoint.cpp</code></a></li>
+</ul>
+
+<p><strong>GraalVM/SubstrateVM</strong> (oracle/graal, master):</p>
+<ul>
+  <li><a href="https://github.com/oracle/graal/blob/master/substratevm/src/com.oracle.svm.core/src/com/oracle/svm/core/thread/Safepoint.java"><code class="language-plaintext highlighter-rouge">substratevm/src/com.oracle.svm.core/src/com/oracle/svm/core/thread/Safepoint.java</code></a></li>
+  <li><a href="https://github.com/oracle/graal/blob/master/docs/reference-manual/native-image/MemoryManagement.md"><code class="language-plaintext highlighter-rouge">docs/reference-manual/native-image/MemoryManagement.md</code></a> — official docs, <code class="language-plaintext highlighter-rouge">--gc=serial|G1|epsilon</code> flags and defaults</li>
+</ul>
+
+<h3 id="the-garbage-collection-handbook-2nd-ed-2023--read-directly-local-pdf">The Garbage Collection Handbook, 2nd ed. (2023) — read directly, local PDF</h3>
+
+<p><code class="language-plaintext highlighter-rouge">~/Documents/Books_on_vm/Jones, Richard - The Garbage Collection Handbook...pdf</code>
+(Jones, Hosking, Moss; Chapman and Hall/CRC, 2023). Sections read directly
+for Part 6: §11.6 “GC safe-points and mutator suspension” (p.198), §15.1
+“Correctness of concurrent collection” / tricolour invariants (p.331–334),
+§16.5 “Garbage-First: collecting young and old regions” (p.354), §17.4
+“Replication copying” — Sapphire, Transactional Sapphire, Platinum
+(p.376–384), §17.5 “Concurrent compaction” — Compressor (p.386),
+Pauseless/C4 (p.387–388), Collie (p.395), ZGC (p.396), Shenandoah (p.401),
+§19.5 “Metronome” (p.439–441), §19.7 “Controlling fragmentation” —
+Staccato, Stopless, Chicken, Clover (p.453–459). Not yet read directly:
+Ch.14 (parallel GC internals), §19.6 “Tax-and-Spend” (p.448).</p>
+
+<h3 id="gc-algorithms-part-6--not-read-as-source-cited-as-pointers-for-later-reading">GC algorithms (Part 6) — not read as source, cited as pointers for later reading</h3>
+
+<ul>
+  <li><a href="https://openjdk.org/jeps/248">JEP 248 — Make G1 the Default Garbage Collector</a></li>
+  <li><a href="https://openjdk.org/jeps/439">JEP 439 — Generational ZGC</a></li>
+  <li><a href="https://openjdk.org/jeps/318">JEP 318 — Epsilon: A No-Op Garbage Collector</a></li>
+  <li><a href="https://wiki.openjdk.org/display/zgc/Main">OpenJDK ZGC wiki</a></li>
+  <li><a href="https://wiki.openjdk.org/display/shenandoah/Main">OpenJDK Shenandoah wiki</a></li>
+  <li>Detlefs, Flood, Heller, Printezis, “Garbage-First Garbage Collection” (ISMM 2004) — search title, not linked directly</li>
+  <li>Flood, Ross, Shipilev et al., “Shenandoah: An Open-Source Concurrent Compacting Garbage Collector for OpenJDK” (2016) — search title, not linked directly</li>
+</ul>
+
+<p><strong>Erlang/OTP</strong> (erlang/otp, master):</p>
+<ul>
+  <li><a href="https://github.com/erlang/otp/blob/master/erts/emulator/beam/erl_process.c"><code class="language-plaintext highlighter-rouge">erts/emulator/beam/erl_process.c</code></a></li>
+  <li><a href="https://github.com/erlang/otp/blob/master/erts/emulator/beam/erl_process.h"><code class="language-plaintext highlighter-rouge">erts/emulator/beam/erl_process.h</code></a></li>
+  <li><a href="https://github.com/erlang/otp/blob/master/erts/emulator/beam/erl_vm.h"><code class="language-plaintext highlighter-rouge">erts/emulator/beam/erl_vm.h</code></a></li>
+  <li><a href="https://github.com/erlang/otp/blob/master/erts/emulator/beam/emu/beam_emu.c"><code class="language-plaintext highlighter-rouge">erts/emulator/beam/emu/beam_emu.c</code></a></li>
+  <li><a href="https://github.com/erlang/otp/blob/master/erts/emulator/beam/erl_gc.c"><code class="language-plaintext highlighter-rouge">erts/emulator/beam/erl_gc.c</code></a></li>
+  <li><a href="https://github.com/erlang/otp/blob/master/erts/emulator/beam/erl_bif_info.c"><code class="language-plaintext highlighter-rouge">erts/emulator/beam/erl_bif_info.c</code></a> (grep only, minimal use)</li>
+</ul>
+
+<h3 id="crafting-interpreters--read-directly-via-003_researchmd-this-directory">Crafting Interpreters — read directly (via <code class="language-plaintext highlighter-rouge">003_research.md</code>, this directory)</h3>
+
+<p>Robert Nystrom, <a href="https://craftinginterpreters.com/garbage-collection.html"><em>Crafting Interpreters</em>, “Garbage Collection”</a>
+— base mark-sweep and tricolor abstraction (Part 6.1); the tricolor
+wavefront image used in Part 6.1 is sourced from this chapter.</p>
+
+<h3 id="secondary-sources-pastedcited-not-independently-fetched-for-this-doc">Secondary sources (pasted/cited, not independently fetched for this doc)</h3>
+
+<ul>
+  <li>Sunny Srinidhi, <a href="https://medium.com/software-under-the-hood/under-the-hood-java-peak-safepoints-dd45af07d766">“Under the Hood: Java Peak Safepoints”</a></li>
+  <li>Nitsan Wakart / Gil Tene (mechanical-sympathy list), <a href="http://psy-lob-saw.blogspot.com/2015/12/safepoints.html">“Safepoints: Meaning, Side Effects and Overheads”</a></li>
+  <li><a href="http://chriskirk.blogspot.com/2013/09/what-is-java-safepoint.html">“What is a Java Safepoint?”</a></li>
+  <li><a href="http://jpbempel.blogspot.com/2013/03/safety-first-safepoints.html">“Safety First: Safepoints”</a></li>
+</ul>
+
+
+      <hr>
+      <div class="row mb-5 mt-5">
+  <div class="col-md-6 d-flex align-items-end ">
+    <span>Thanks. <i>mind sharing?</i></span>
+  </div>
+
+  <!-- Right Column with Social Media Icons (on the right for larger screens, on bottom for smaller screens) -->
+  <div class="col-md-6 order-md-2 order-1 text-md-right text-center mt-3 mt-md-0">
+    <div>
+
+      <a
+          href="https://www.linkedin.com/sharing/share-offsite?url=ikouchiha47.github.io/2026/08/12/concurrency-and-gc.html"
+          onclick="window.open(this.href, 'pop-up', 'left=20,top=20,width=500,height=500,toolbar=1,resizable=0'); return false;"
+          class="d-inline-block mr-2"
+       >
+        <span class="fa-stack fa-lg" style="color: #0077b5;">
+          <i class="fas fa-square fa-stack-2x"></i>
+          <i class="fab fa-linkedin fa-stack-1x fa-inverse"></i>
+        </span>
+      </a>
+
+      <a
+          href="https://twitter.com/intent/tweet?text=A Quick rundown on concurrency and gc&url=ikouchiha47.github.io/2026/08/12/concurrency-and-gc.html"
+          onclick="window.open(this.href, 'pop-up', 'left=20,top=20,width=500,height=500,toolbar=1,resizable=0'); return false;"
+          class="d-inline-block mr-2">
+        <span class="fa-stack fa-lg" style="color: #1DA1F2;">
+          <i class="fas fa-square fa-stack-2x"></i>
+          <i class="fab fa-twitter fa-stack-1x fa-inverse"></i>
+        </span>
+      </a>
+
+      <a
+          href="http://www.reddit.com/submit?url=ikouchiha47.github.io/2026/08/12/concurrency-and-gc.html"
+          onclick="window.open(this.href, 'pop-up', 'left=20,top=20,width=500,height=500,toolbar=1,resizable=0'); return false;"
+          class="d-inline-block mr-2">
+        <span class="fa-stack fa-lg" style="color: #FF4500;">
+          <i class="fas fa-square fa-stack-2x"></i>
+          <i class="fab fa-reddit fa-stack-1x fa-inverse"></i>
+        </span>
+      </a>
+    </div>
+  </div>
+</div>
+
+<hr/>
+
+
+      <div class="clearfix">
+
+        
+        <a class="btn btn-primary float-left" href="/2026/08/10/optimux-dynamic-scaler.html" data-toggle="tooltip" data-placement="top" title="Optimux: from a worker-pool tutorial to a DynamicScaler">&larr; Previous<span class="d-none d-md-inline">
+            Post</span></a>
+        
+        
+        <a class="btn btn-primary float-right" href="/2026/08/26/mofy-search-distilbert.html" data-toggle="tooltip" data-placement="top" title="Making a Small Language Model Actually Useful in Movie Search">Next<span class="d-none d-md-inline">
+            Post</span> &rarr;</a>
+        
+
+      </div>
+
+    </div>
+  </div>
+</div>
+
+
+  <!-- Footer -->
+
+<hr>
+
+<footer>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <ul class="list-inline text-center">
+          
+          <li class="list-inline-item">
+            <a href="mailto:amitava.dev@proton.me" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="far fa-envelope fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          
+          
+          <li class="list-inline-item">
+            <a href="https://www.linkedin.com/in/amitavaag" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-linkedin fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          <li class="list-inline-item">
+            <a href="https://github.com/ikouchiha47" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-github fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+        </ul>
+
+        <p class="copyright text-muted">
+          Build with: 
+          <a 
+            href="https://github.com/StartBootstrap/startbootstrap-clean-blog-jekyll"
+            class="text-gray"
+            target="_blank">startbootstrap-clean-blog-jekyll</a></p>
+      </div>
+    </div>
+  </div>
+</footer>
+
+
+  <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="/assets/vendor/blog/js/scripts.js"></script>
+
+<script src="/assets/scripts.js"></script>
+
+
+
+
+
+  <script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+
+    document.querySelectorAll('pre > code.language-mermaid').forEach((codeBlock) => {
+      codeBlock.parentElement.outerHTML = `<pre class="mermaid">${codeBlock.textContent}</pre>`;
+    });
+
+
+    mermaid.initialize({ startOnLoad: true, theme: 'forest' });
+</script>
+
+
+  
+
+</body>
+
+</html>

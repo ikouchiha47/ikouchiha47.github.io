@@ -1,0 +1,877 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+  <title>
+    CodeKeyboard Part 10: Is the Vocabulary Tail Worth Shipping? - iko&#39;s logs
+    
+  </title>
+
+  <meta name="description" content="">
+  <meta property="og:description" content="">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="CodeKeyboard Part 10: Is the Vocabulary Tail Wo...">
+  <meta property="og:url" content="https://ikouchiha47.github.io/keyboard/10-vocab-tail-analysis.html">
+
+  
+
+  <link href='https://fonts.googleapis.com/css?family=Lora:400,700,400italic,700italic' rel='stylesheet' type='text/css'>
+  <link href='https://fonts.googleapis.com/css?family=Open+Sans:300italic,400italic,600italic,700italic,800italic,400,300,600,700,800' rel='stylesheet' type='text/css'>
+
+  <!-- <script src="https://use.fontawesome.com/releases/v5.15.3/js/all.js" crossorigin="anonymous"></script> -->
+  <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.15.4/css/all.css" integrity="sha384-DyZ88mC6Up2uqS4h/KRgHuoeGwBcD4Ng9SiP4dIRy0EXTlnuz47vAwmeGwVChigm" crossorigin="anonymous"/>
+
+  <link rel="stylesheet" href="/assets/main.css">
+  <link rel="canonical" href="https://ikouchiha47.github.io/keyboard/10-vocab-tail-analysis.html">
+  <link rel="alternate" type="application/rss+xml" title="iko&#39;s logs" href="/feed.xml">
+
+  <meta name="google-site-verification" content="lWkg6gIxJgzEKX_5XnhcxCtPE9QknaimFWWos_dTvPM" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fira+Sans:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Inconsolata:wght@200..900&family=Jersey+25&family=Kanit:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Merriweather+Sans:ital,wght@0,300..800;1,300..800&family=Nanum+Gothic+Coding&family=Space+Grotesk:wght@300..700&family=Titillium+Web:ital,wght@0,200;0,300;0,400;0,600;0,700;0,900;1,200;1,300;1,400;1,600;1,700&display=swap" rel="stylesheet">
+
+</head>
+
+
+<body>
+
+  <!-- Navigation -->
+<nav class="navbar navbar-expand-lg navbar-light fixed-top" id="mainNav">
+  <div class="container">
+    <a class="navbar-brand" href="/">iko&#39;s logs</a>
+    <button class="navbar-toggler navbar-toggler-right" type="button" data-toggle="collapse" data-target="#navbarResponsive" aria-controls="navbarResponsive" aria-expanded="false" aria-label="Toggle navigation">
+      Menu
+      <i class="fa fa-bars"></i>
+    </button>
+    <div class="collapse navbar-collapse" id="navbarResponsive">
+      <ul class="navbar-nav ml-auto">
+        <li class="nav-item">
+          <a class="nav-link" href="/">Home</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/about">About</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/posts">Posts</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/wall/">Wall</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/contact">Contact</a>
+        </li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+
+  <!-- Page Header -->
+
+<header class="masthead" style="background: #1a1a2e">
+
+  <div class="overlay"></div>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <div class="post-heading">
+          <h1>CodeKeyboard Part 10: Is the Vocabulary Tail Worth Shipping?</h1>
+          
+          <h2 class="subheading">427K-word vocabulary capped every way, 64K wins</h2>
+          
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="container space-grotesk">
+  <div class="row">
+    <div class="col-lg-8 col-md-10 mx-auto">
+
+      <!-- Breadcrumb -->
+      <nav aria-label="breadcrumb" style="margin-bottom: 1.5rem;">
+        <ol class="breadcrumb" style="background: transparent; padding: 0;">
+          
+            <li class="breadcrumb-item"><a href="/keyboard/">CodeKeyboard Rebuild Notes</a></li>
+          
+          
+          <li class="breadcrumb-item active" aria-current="page">CodeKeyboard Part 10: Is the Vocabulary Tail Worth Shipping?</li>
+        </ol>
+      </nav>
+
+      <p>Our trigram model has a 427,651-word vocabulary – but 85% of those words
+appear fewer than 15 times in an 85-million-token corpus. The vocabulary
+follows Zipf’s law, and the tail is enormous and almost never used.</p>
+
+<p>This post measures what that tail is actually worth: we capped the model’s
+vocabulary at 16K / 32K / 64K / 128K words (by unigram frequency) and
+re-measured suggestion quality and file size at every cap.</p>
+
+<p><strong>Verdict up front: the vocabulary tail is worthless for both quality and
+size.</strong> Capping the model to 16K words (dropping 74% of its vocabulary)
+keeps 99.2% of top-1 suggestions intact and only saves ~3% of file size.
+The delta-pruner already does the tail’s job better than any frequency cap
+could.</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>Cap K</th>
+      <th>Model vocab kept</th>
+      <th>Top-1 agreement</th>
+      <th>Emptied contexts</th>
+      <th>Entries dropped</th>
+      <th>Size saved</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>16,000</td>
+      <td>26-51%</td>
+      <td>99.2-99.5%</td>
+      <td>13 (0.0%)</td>
+      <td>0.8-3.5%</td>
+      <td>0.8-3.3%</td>
+    </tr>
+    <tr>
+      <td>32,000</td>
+      <td>46-74%</td>
+      <td>99.7-99.9%</td>
+      <td>5 (0.0%)</td>
+      <td>0.3-1.7%</td>
+      <td>0.3-1.6%</td>
+    </tr>
+    <tr>
+      <td>64,000</td>
+      <td>68-91%</td>
+      <td>99.9-100.0%</td>
+      <td>0</td>
+      <td>0.1-0.8%</td>
+      <td>0.1-0.7%</td>
+    </tr>
+    <tr>
+      <td>128,000</td>
+      <td>86-98%</td>
+      <td>100.0%</td>
+      <td>0</td>
+      <td>0.3%</td>
+      <td>0.3%</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>Ranges are across the three smoothing variants (KN, Katz, SwiftKey-WDP);
+full per-variant tables below.</p>
+
+<hr />
+
+<h2 id="why-there-is-a-vocabulary-tail-at-all">Why there is a vocabulary tail at all</h2>
+
+<p>A keyboard LM predicts the next word given the previous two. For every
+context – <em>“i am __“</em>, <em>“the weather __”</em> – it stores a list of follower
+words with scores. The set of all words that ever appear as followers is
+the model’s vocabulary. On our corpus it is huge:</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>Vocabulary slice</th>
+      <th>% of all corpus tokens</th>
+      <th>Count threshold</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>top 16,000 words</td>
+      <td>95.63%</td>
+      <td>213 occurrences</td>
+    </tr>
+    <tr>
+      <td>top 32,000 words</td>
+      <td>97.78%</td>
+      <td>61</td>
+    </tr>
+    <tr>
+      <td>top 64,000 words</td>
+      <td>98.93%</td>
+      <td>15</td>
+    </tr>
+    <tr>
+      <td>top 128,000 words</td>
+      <td>99.50%</td>
+      <td>4</td>
+    </tr>
+    <tr>
+      <td>all 427,651 words</td>
+      <td>100.00%</td>
+      <td>1</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>Corpus: Coursera-SwiftKey capstone <code class="language-plaintext highlighter-rouge">en_US</code> (blogs + news + twitter),
+85,038,653 tokens. The 363,651 words beyond rank 64,000 appear 15 times
+<em>each</em> across the whole corpus and cover ~1% of all tokens.</p>
+
+<p>What does that tail look like? At the 16K boundary (count 213):</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>gowns  greenwood  groin  guacamole  huddled  itch  lois  mama's  marinade
+nationalist  netanyahu  nominating  overload  python  raul  scented ...
+</code></pre></div></div>
+
+<p>At the 64K boundary (count 15):</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>macgillivray  madson  magnolia's  maile  mailroom  maitake  makino  maksim
+malacca  malden  malfoy  malinda  mangwende  manhattans  manocchio
+mantelpiece  manzanita  margaritaville  margolin ...
+</code></pre></div></div>
+
+<p>Proper nouns, possessives (<code class="language-plaintext highlighter-rouge">dallas'</code>, <code class="language-plaintext highlighter-rouge">major's</code>), rare loanwords, and
+near-typos. 15.7% of words beyond rank 64K contain an apostrophe. This is
+the tail we’re deciding whether to ship.</p>
+
+<h2 id="how-we-tested-it">How we tested it</h2>
+
+<p>We wrote a streaming analyzer, <code class="language-plaintext highlighter-rouge">scripts/vocab_cap.py</code> (full walkthrough
+below), which:</p>
+
+<ol>
+  <li>Loads the unigram frequency list (already sorted by count descending).</li>
+  <li>For each cap K, builds the vocabulary = the top K words.</li>
+  <li>Streams the scored trigram model JSON – 230 MB to 1.9 GB, never loaded
+into memory – and for every context with support 25 (269,397
+contexts), deletes every follower entry whose word isn’t in the
+top-K vocabulary.</li>
+  <li>Measures, against the full (uncapped) model:
+    <ul>
+      <li><strong>top-1 agreement</strong> – how often the filtered model’s top suggestion
+still equals the uncapped model’s;</li>
+      <li><strong>emptied contexts</strong> – contexts where every follower got deleted;</li>
+      <li><strong>entries dropped</strong> – follower pairs removed;</li>
+      <li><strong>serialized size</strong> before/after, using exact byte-for-byte
+serialization matching the builder.</li>
+    </ul>
+  </li>
+</ol>
+
+<p>Run on AWS spot instances for all three smoothing variants (KN, Katz,
+SwiftKey-WDP) at caps 16K / 32K / 64K / 128K.</p>
+
+<hr />
+
+<h2 id="the-pipeline-behind-the-numbers-two-databases-one-cap">The pipeline behind the numbers: two databases, one cap</h2>
+
+<p>Before the tail test could mean anything, we had to be able to rebuild the
+model at any <em>follower</em> cap cheaply, on the same ground-truth counts. The
+build (<code class="language-plaintext highlighter-rouge">scripts/build_ngrams*.py</code>) runs in five stages, each reading only
+what the previous one wrote:</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>Stage</th>
+      <th>Input -&gt; Output</th>
+      <th>Contents</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>count</td>
+      <td>corpus byte-range slices -&gt; spilled TSV runs</td>
+      <td>raw unigram / bigram / trigram counts</td>
+    </tr>
+    <tr>
+      <td>reconcile</td>
+      <td>runs -&gt; <code class="language-plaintext highlighter-rouge">counts.sqlite</code></td>
+      <td><code class="language-plaintext highlighter-rouge">unigrams(w, count)</code>, <code class="language-plaintext highlighter-rouge">bigrams(ctx, w, count)</code>, <code class="language-plaintext highlighter-rouge">trigrams(ctx, w, count)</code></td>
+    </tr>
+    <tr>
+      <td>normalize</td>
+      <td><code class="language-plaintext highlighter-rouge">counts.sqlite</code> -&gt; <code class="language-plaintext highlighter-rouge">normalized.sqlite</code></td>
+      <td>smoothing helper values (KN: <code class="language-plaintext highlighter-rouge">cont_p</code> + <code class="language-plaintext highlighter-rouge">bigram_ctx</code>)</td>
+    </tr>
+    <tr>
+      <td>score</td>
+      <td>both DBs -&gt; <code class="language-plaintext highlighter-rouge">{variant}_tri_cap{N}.json</code></td>
+      <td>interpolated, normalized scores, truncated to <code class="language-plaintext highlighter-rouge">--max-followers</code></td>
+    </tr>
+  </tbody>
+</table>
+
+<p><code class="language-plaintext highlighter-rouge">counts.sqlite</code> is the <strong>raw-count database</strong> – 2.4 GB, byte-identical
+across all three variants (md5 <code class="language-plaintext highlighter-rouge">e1f86000a7efd07ae9b0a48fd61847dd</code>),
+because all three builds share the same counting code. <code class="language-plaintext highlighter-rouge">normalized.sqlite</code>
+is the <strong>variant-specific smoothing database</strong> (KN: continuation
+probabilities <code class="language-plaintext highlighter-rouge">cont_p(w, p)</code> plus per-bigram-context statistics
+<code class="language-plaintext highlighter-rouge">bigram_ctx(ctx, total, distinct_n)</code>; Katz/SwiftKey compute their own
+tables). Both are the expensive, reusable artifacts, so the user-data
+scripts upload them to S3 – <strong>variant-prefixed</strong> (<code class="language-plaintext highlighter-rouge">kn_</code>, <code class="language-plaintext highlighter-rouge">katz_</code>,
+<code class="language-plaintext highlighter-rouge">swiftkey_</code>) so parallel builds never overwrite each other – along with a
+frequency-ranked <code class="language-plaintext highlighter-rouge">unigrams.tsv</code> dumped straight from the counts table:</p>
+
+<div class="language-python highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="c1"># ng-userdata-*.sh, after the build completes
+</span><span class="n">conn</span> <span class="o">=</span> <span class="n">sqlite3</span><span class="p">.</span><span class="nf">connect</span><span class="p">(</span><span class="sh">"</span><span class="s">work/counts.sqlite</span><span class="sh">"</span><span class="p">)</span>
+<span class="k">with</span> <span class="nf">open</span><span class="p">(</span><span class="sh">"</span><span class="s">out/swiftkey_unigrams.tsv</span><span class="sh">"</span><span class="p">,</span> <span class="sh">"</span><span class="s">w</span><span class="sh">"</span><span class="p">,</span> <span class="n">encoding</span><span class="o">=</span><span class="sh">"</span><span class="s">utf-8</span><span class="sh">"</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+    <span class="k">for</span> <span class="n">w</span><span class="p">,</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">conn</span><span class="p">.</span><span class="nf">execute</span><span class="p">(</span><span class="sh">"</span><span class="s">SELECT w, count FROM unigrams ORDER BY count DESC</span><span class="sh">"</span><span class="p">):</span>
+        <span class="n">f</span><span class="p">.</span><span class="nf">write</span><span class="p">(</span><span class="sa">f</span><span class="sh">"</span><span class="si">{</span><span class="n">w</span><span class="si">}</span><span class="se">\t</span><span class="si">{</span><span class="n">c</span><span class="si">}</span><span class="se">\n</span><span class="sh">"</span><span class="p">)</span>
+<span class="n">conn</span><span class="p">.</span><span class="nf">close</span><span class="p">()</span>
+</code></pre></div></div>
+
+<h3 id="the-follower-cap-lives-in-the-score-stage">The follower cap lives in the score stage</h3>
+
+<p>The “cap” is <code class="language-plaintext highlighter-rouge">--max-followers N</code>. The score stage sorts each context’s
+interpolated follower scores and keeps only the top N:</p>
+
+<div class="language-python highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">def</span> <span class="nf">score_trigram</span><span class="p">(</span><span class="n">followers</span><span class="p">,</span> <span class="n">backoff</span><span class="p">,</span> <span class="n">cont_p</span><span class="p">,</span> <span class="n">discount</span><span class="p">,</span> <span class="n">max_f</span><span class="p">):</span>
+    <span class="bp">...</span>
+    <span class="n">scored</span><span class="p">.</span><span class="nf">sort</span><span class="p">(</span><span class="n">key</span><span class="o">=</span><span class="k">lambda</span> <span class="n">p</span><span class="p">:</span> <span class="p">(</span><span class="o">-</span><span class="n">p</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span> <span class="n">p</span><span class="p">[</span><span class="mi">0</span><span class="p">]))</span>
+    <span class="n">top</span> <span class="o">=</span> <span class="n">scored</span><span class="p">[:</span><span class="n">max_f</span><span class="p">]</span>              <span class="c1"># &lt;- the cap
+</span>    <span class="n">mx</span> <span class="o">=</span> <span class="n">top</span><span class="p">[</span><span class="mi">0</span><span class="p">][</span><span class="mi">1</span><span class="p">]</span> <span class="ow">or</span> <span class="mf">1.0</span>
+    <span class="k">return</span> <span class="p">{</span><span class="sh">"</span><span class="s">followers</span><span class="sh">"</span><span class="p">:</span> <span class="p">[[</span><span class="n">w</span><span class="p">,</span> <span class="nf">round</span><span class="p">(</span><span class="n">s</span> <span class="o">/</span> <span class="n">mx</span><span class="p">,</span> <span class="mi">4</span><span class="p">)]</span> <span class="k">for</span> <span class="n">w</span><span class="p">,</span> <span class="n">s</span> <span class="ow">in</span> <span class="n">top</span><span class="p">],</span>
+            <span class="sh">"</span><span class="s">support</span><span class="sh">"</span><span class="p">:</span> <span class="n">total</span><span class="p">}</span>          <span class="c1"># &lt;- raw count sum, from counts.sqlite
+</span></code></pre></div></div>
+
+<p><code class="language-plaintext highlighter-rouge">score</code> is the <em>only</em> stage that reads the cap, and the build uses <code class="language-plaintext highlighter-rouge">.done</code>
+markers, so re-running <code class="language-plaintext highlighter-rouge">--stage score --max-followers N</code> reuses the cached
+<code class="language-plaintext highlighter-rouge">counts.sqlite</code> + <code class="language-plaintext highlighter-rouge">normalized.sqlite</code> and only re-emits the JSON. That is
+what made the whole cap sweep cheap: 4 caps  3 variants, all scored
+against the same ground-truth counts.</p>
+
+<h3 id="was-the-cap-proper-comparing-against-the-original-counts">Was the cap proper? Comparing against the original counts</h3>
+
+<p>The cap question is: <em>does truncating every context to 10 followers change
+what the model would have predicted at 64?</em> We answered it two ways, both
+in <code class="language-plaintext highlighter-rouge">scripts/compare_ngrams.py</code> (a single streaming pass over 231-377 MB
+files, never loaded whole):</p>
+
+<ol>
+  <li><strong>Three-way merge</strong> (<code class="language-plaintext highlighter-rouge">three</code>): cap10 vs cap32 vs cap64 aligned by
+context key at support threshold 25, measuring per-pair top-1
+agreement, serialized size (exact builder serialization), and follower
+statistics.</li>
+  <li><strong>Pair compare</strong> (<code class="language-plaintext highlighter-rouge">pair</code>): cap10 vs cap64 directly, measuring top-1
+agreement and identical-follower-list rate across all ~1.9M shared
+contexts.</li>
+</ol>
+
+<p>The support value in every entry is the <em>raw count sum</em> pulled from
+<code class="language-plaintext highlighter-rouge">counts.sqlite</code> – so the “original counts” stay the ground truth for
+context retention throughout. The result: at thr=25, cap10’s top-1 agrees
+with cap64’s in 99.2-99.5% of contexts (SwiftKey 99.3%, KN 99.5%, Katz
+100.0%), and cap64 only grows the follower lists – the tail beyond 10
+almost never wins top-1. That’s what justified the follower cap in the
+first place; the vocabulary test in this post then asked the <em>next</em>
+question about the tail.</p>
+
+<h2 id="the-numbers-per-variant">The numbers, per variant</h2>
+
+<h3 id="swiftkey-wdp-the-variant-we-ship--60443-distinct-words-in-model">SwiftKey-WDP (the variant we ship) – 60,443 distinct words in model</h3>
+
+<table>
+  <thead>
+    <tr>
+      <th>K</th>
+      <th>Words beyond cap</th>
+      <th>Top-1 agree</th>
+      <th>Emptied</th>
+      <th>Entries dropped</th>
+      <th>Size</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>16,000</td>
+      <td>44,773 (74.1%)</td>
+      <td>99.2%</td>
+      <td>13 (0.0%)</td>
+      <td>3.5%</td>
+      <td>51.6 -&gt; 49.9 MB (3.3%)</td>
+    </tr>
+    <tr>
+      <td>32,000</td>
+      <td>32,537 (53.8%)</td>
+      <td>99.7%</td>
+      <td>5 (0.0%)</td>
+      <td>1.7%</td>
+      <td>51.6 -&gt; 50.7 MB (1.6%)</td>
+    </tr>
+    <tr>
+      <td>64,000</td>
+      <td>18,880 (31.2%)</td>
+      <td>99.9%</td>
+      <td>0</td>
+      <td>0.8%</td>
+      <td>51.6 -&gt; 51.2 MB (0.7%)</td>
+    </tr>
+    <tr>
+      <td>128,000</td>
+      <td>8,812 (14.6%)</td>
+      <td>100.0%</td>
+      <td>0</td>
+      <td>0.3%</td>
+      <td>51.6 -&gt; 51.4 MB (0.3%)</td>
+    </tr>
+  </tbody>
+</table>
+
+<h3 id="kn-kneser-ney--28452-distinct-words-in-model">KN (Kneser-Ney) – 28,452 distinct words in model</h3>
+
+<table>
+  <thead>
+    <tr>
+      <th>K</th>
+      <th>Words beyond cap</th>
+      <th>Top-1 agree</th>
+      <th>Emptied</th>
+      <th>Entries dropped</th>
+      <th>Size</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>16,000</td>
+      <td>13,897 (48.8%)</td>
+      <td>99.5%</td>
+      <td>0</td>
+      <td>0.8%</td>
+      <td>52.0 -&gt; 51.6 MB (0.8%)</td>
+    </tr>
+    <tr>
+      <td>32,000</td>
+      <td>6,933 (24.4%)</td>
+      <td>99.9%</td>
+      <td>0</td>
+      <td>0.3%</td>
+      <td>52.0 -&gt; 51.9 MB (0.3%)</td>
+    </tr>
+    <tr>
+      <td>64,000</td>
+      <td>2,525 (8.9%)</td>
+      <td>100.0%</td>
+      <td>0</td>
+      <td>0.1%</td>
+      <td>52.0 -&gt; 52.0 MB (0.1%)</td>
+    </tr>
+    <tr>
+      <td>128,000</td>
+      <td>667 (2.3%)</td>
+      <td>100.0%</td>
+      <td>0</td>
+      <td>0.0%</td>
+      <td>52.0 -&gt; 52.0 MB (0.0%)</td>
+    </tr>
+  </tbody>
+</table>
+
+<h3 id="katz--56500-distinct-words-in-model">Katz – 56,500 distinct words in model</h3>
+
+<table>
+  <thead>
+    <tr>
+      <th>K</th>
+      <th>Words beyond cap</th>
+      <th>Top-1 agree</th>
+      <th>Emptied</th>
+      <th>Entries dropped</th>
+      <th>Size</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>16,000</td>
+      <td>40,954 (72.5%)</td>
+      <td>99.3%</td>
+      <td>1 (0.0%)</td>
+      <td>3.1%</td>
+      <td>51.9 -&gt; 50.3 MB (3.0%)</td>
+    </tr>
+    <tr>
+      <td>32,000</td>
+      <td>29,317 (51.9%)</td>
+      <td>99.7%</td>
+      <td>1 (0.0%)</td>
+      <td>1.5%</td>
+      <td>51.9 -&gt; 51.1 MB (1.4%)</td>
+    </tr>
+    <tr>
+      <td>64,000</td>
+      <td>16,774 (29.7%)</td>
+      <td>99.9%</td>
+      <td>0</td>
+      <td>0.7%</td>
+      <td>51.9 -&gt; 51.5 MB (0.7%)</td>
+    </tr>
+    <tr>
+      <td>128,000</td>
+      <td>7,783 (13.8%)</td>
+      <td>100.0%</td>
+      <td>0</td>
+      <td>0.3%</td>
+      <td>51.9 -&gt; 51.7 MB (0.3%)</td>
+    </tr>
+  </tbody>
+</table>
+
+<hr />
+
+<h2 id="what-the-numbers-say-semantically">What the numbers say, semantically</h2>
+
+<p>Three things are going on, and it’s worth being honest about what each one
+means – and what it doesn’t.</p>
+
+<p><strong>1. Top-1 agreement is the wrong metric for keyboard suggestions – but that
+makes the result <em>stronger</em>, not weaker.</strong> A keyboard shows 3-5 suggestions
+and filters them by the prefix the user is typing, so the interesting
+question isn’t “is the #1 word the same?” but “did we lose any word that
+would have been the best <em>prefix-filtered</em> suggestion?” Capping the
+vocabulary can only <em>remove</em> followers – and we measured that removing
+74% of the vocabulary empties only 13 of 269,397 contexts. The tail isn’t
+just rare in the corpus; it’s rare <em>as a useful follower</em>. Words that
+survive the delta-pruner into a context are, by construction, the ones
+carrying phrase-level information – and those are overwhelmingly
+high-frequency words. (Gboard’s next-word decoder is a beam search over a
+composed FST – a different shape – but for <em>our</em> direct
+context-&gt;followers lookup, the follower list <em>is</em> the entire hypothesis
+space.)</p>
+
+<p><strong>2. The size saving is tiny because follower lists dominate the file, not
+the vocabulary.</strong> Cutting 74% of the vocabulary saved only 3.3% of bytes.
+The serialized model is dominated by context-&gt;follower structure (per-list
+counts and word IDs); the vocabulary table is a small fraction of it.
+Frequency-capping is a pruning strategy aimed at the wrong part of the
+data layout. The entries the tail contributes are only 0.3-3.5% of all
+follower entries – <em>and</em> those are precisely the entries the WDP pruner
+already removes where they carry no information.</p>
+
+<p><strong>3. The model self-selects a compact vocabulary.</strong> KN concentrates on
+just 28,452 distinct words (its <code class="language-plaintext highlighter-rouge">cont_p</code> backoff penalizes words that
+only ever continue one context – i.e., exactly the tail). SwiftKey-WDP and
+Katz land at ~56-60K. All three fit under the 64K ceiling the industry
+uses (Gboard: 64K n-gram vocabulary), <em>without</em> any explicit cap. The
+tail is not just useless – it essentially never survives our pipeline into
+a shipped context.</p>
+
+<p>Caveat, stated plainly: this measures <em>suggestion agreement with the
+uncapped model</em>, not <em>accuracy against ground truth</em>. It answers “does
+the cap change what we’d predict?” – not “are the predictions right?” If
+the uncapped model itself never surfaces tail words, capping can’t hurt;
+and since tail words are near-zero-frequency, the uncapped model has
+essentially no signal about them anyway. This is the right question to
+ask when deciding whether to ship a smaller model.</p>
+
+<h2 id="why-does-gboard-use-64k-then">Why does Gboard use 64K then?</h2>
+
+<p>Short answer: <strong>it’s a task + memory-budget design choice, not a consequence
+of 5-gram order or a 16-bit FST label ceiling.</strong></p>
+
+<p>Evidence (from Hellsten et al. 2017, Hard et al. 2018, Zhang et al. 2024,
+OpenFst source):</p>
+
+<ul>
+  <li>
+    <p><strong>Hellsten et al. 2017</strong> (the Gboard WFST decoder paper): “keyboard
+language models are typically low order n-grams over a limited vocabulary,
+e.g. 64K words” – presented as a <em>typical keyboard-LM design value</em>,
+independent of n-gram order. They tie it to the device memory envelope:
+“keyboard language models should not exceed 5 to 10 Mb, which typically
+allows them to model a couple hundred thousand words at most.” And to the
+task: the vocabulary is “hand-curated to eliminate misspellings, erroneous
+capitalizations…”</p>
+  </li>
+  <li>
+    <p><strong>Hard et al. 2018</strong>: Gboard’s static English LM is “a Katz smoothed
+Bayesian interpolated 5-gram LM containing 1.25 million n-grams, including
+164,000 unigrams.” The 64K is the <em>n-gram prediction vocabulary</em>; the
+full unigram lexicon is ~170K.</p>
+  </li>
+  <li>
+    <p><strong>Zhang et al. 2024 (EMNLP)</strong>: “G is a N-gram language FST containing
+<strong>64k words for n-grams and 170k words for uni-grams</strong>.” Their neural LM
+uses “a <strong>30k-word vocabulary (top words from Federated Counting)</strong>,
+while the full lexicon contains 170k words.”</p>
+  </li>
+  <li>
+    <p><strong>OpenFst NGramFst / CompactFst</strong>: labels are templated on <code class="language-plaintext highlighter-rouge">typename
+A::Label</code>; <code class="language-plaintext highlighter-rouge">StandardArc</code> uses <strong>int32</strong> labels. Nothing forces 16-bit /</p>
+    <ol>
+      <li>The LOUDS encoding stores labels in full 32-bit arrays. <strong>A 16-bit
+word-ID cap is not supported by the source.</strong></li>
+    </ol>
+  </li>
+</ul>
+
+<p>So the 64K is a round, hand-set size for the <em>curated prediction lexicon</em>
+(~5-10 MB model budget), not a bit-boundary artifact (30K and 170K also
+appear). Our 3-gram on 85M tokens naturally lands at ~28-60K distinct
+words – under that ceiling without any explicit cap. A 5-gram on Google-
+scale data would have more n-gram states referencing the tail, but the
+<em>vocabulary size</em> is a separate design knob.</p>
+
+<h3 id="two-caps-not-one">Two caps, not one</h3>
+
+<p>A reader might reasonably ask: “Google caps at 64K, you tested 16K – what’s
+the difference?” The answer is that these are two different caps doing two
+different jobs:</p>
+
+<ul>
+  <li><strong>Follower cap</strong> – how many candidate next-words a single context may
+list. We ship <code class="language-plaintext highlighter-rouge">--max-followers 10</code>. This bounds the <em>suggestion list</em>
+per context.</li>
+  <li><strong>Vocabulary cap</strong> – how many distinct words the model may predict at
+all. Google’s 64K is this kind: a deliberate ceiling on the <em>prediction
+lexicon</em>, sitting on top of a ~170K full unigram lexicon.</li>
+</ul>
+
+<p>Our production model has <strong>no vocabulary cap</strong>. The delta/WDP pruner
+already removes the noise tail, leaving a natural 28-60K distinct words –
+under Google’s 64K ceiling without any explicit cap. Our 16K test was a
+hypothetical tighter ceiling, and it barely moved the needle (99.2%+ top-1
+agreement) because the tail words are near-zero-frequency: the model has
+essentially no signal about them anyway.</p>
+
+<h3 id="why-googles-katz-needs-a-cap-and-our-wdp-doesnt">Why Google’s Katz needs a cap and our WDP doesn’t</h3>
+
+<p>There’s a second, subtler reason Google needs an explicit ceiling and we
+don’t. WDP (weighted difference pruning) is a pruning layer <em>on top of</em>
+Katz smoothing: it drops a follower when its trigram-conditioned
+probability is  its bigram backoff – i.e. when the context adds no
+information about that word. That removes the tail <em>inside the model</em>, so
+the vocabulary self-limits. Google’s Katz keeps every word it has ever
+seen, so they need the explicit 64K ceiling to hold the model to its
+5-10 MB budget.</p>
+
+<p>Two caveats keep this honest:</p>
+
+<ul>
+  <li><strong>Data scale is the dominant reason for the gap.</strong> Google trains on
+billions of tokens; we trained on 85M. A 5-gram on Google-scale data has
+far more n-gram states referencing the tail.</li>
+  <li><strong>The measured distinct-word counts are actually close</strong>: Katz 56,500 vs
+WDP 60,443. WDP’s win is in <em>entries</em> (231 MB vs 341 MB), not
+distinct-word count. The tail is a <em>storage</em> problem, not a <em>vocabulary</em>
+problem.</li>
+</ul>
+
+<hr />
+
+<h2 id="the-code-walked-through">The code, walked through</h2>
+
+<p><code class="language-plaintext highlighter-rouge">scripts/vocab_cap.py</code> – 320 lines, zero dependencies beyond stdlib.</p>
+
+<div class="language-bash highlighter-rouge"><div class="highlight"><pre class="highlight"><code>python3 scripts/vocab_cap.py <span class="se">\</span>
+  <span class="nt">--unigrams</span> swiftkey_unigrams.tsv <span class="se">\ </span>  <span class="c"># word&lt;TAB&gt;count, sorted by count DESC</span>
+  <span class="nt">--model</span> swiftkey_tri_cap10.json <span class="se">\ </span>   <span class="c"># scored trigram model (streamed)</span>
+  <span class="nt">--caps</span> 16000 32000 64000 128000 <span class="se">\</span>
+  <span class="nt">--thr</span> 25                             <span class="c"># support threshold for contexts kept</span>
+</code></pre></div></div>
+
+<p>Three pieces matter:</p>
+
+<h3 id="1-streaming-json-parser-stream_ngrams-lines-21-128">1. Streaming JSON parser (<code class="language-plaintext highlighter-rouge">stream_ngrams</code>, lines 21-128)</h3>
+
+<p>The model files are 230 MB (SwiftKey-WDP) to 1.9 GB (KN at cap 64) –
+<code class="language-plaintext highlighter-rouge">json.load</code> would need many GB of RAM. The parser reads byte-by-byte and
+tracks brace/bracket depth to slice out one <code class="language-plaintext highlighter-rouge">"ctx": {value}</code> pair at a
+time, then <code class="language-plaintext highlighter-rouge">json.loads</code> just that slice. It verifies the builder’s
+guarantee that top-level keys are lexicographically sorted, and it must
+track <code class="language-plaintext highlighter-rouge">in_string</code>/<code class="language-plaintext highlighter-rouge">in_escape</code> so braces inside quoted contexts don’t
+confuse the depth counter. (This is the same parser as
+<code class="language-plaintext highlighter-rouge">scripts/compare_ngrams.py</code>, reused.)</p>
+
+<div class="language-python highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">def</span> <span class="nf">stream_ngrams</span><span class="p">(</span><span class="n">filepath</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Iterator</span><span class="p">[</span><span class="n">NgramEntry</span><span class="p">]:</span>
+    <span class="bp">...</span>
+    <span class="c1"># read key, skip ':', then read value by tracking brace/bracket depth
+</span>    <span class="n">value_bytes</span> <span class="o">=</span> <span class="nf">bytearray</span><span class="p">(</span><span class="n">ch</span><span class="p">)</span>
+    <span class="n">depth_brace</span> <span class="o">=</span> <span class="mi">1</span> <span class="k">if</span> <span class="n">ch</span> <span class="o">==</span> <span class="sa">b</span><span class="sh">'</span><span class="s">{</span><span class="sh">'</span> <span class="k">else</span> <span class="mi">0</span>
+    <span class="bp">...</span>
+    <span class="k">while</span> <span class="n">depth_brace</span> <span class="o">==</span> <span class="mi">0</span> <span class="ow">and</span> <span class="n">depth_bracket</span> <span class="o">==</span> <span class="mi">0</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">in_string</span><span class="p">:</span>
+        <span class="k">break</span>
+    <span class="k">yield</span> <span class="nc">NgramEntry</span><span class="p">(</span><span class="n">ctx</span><span class="o">=</span><span class="n">ctx</span><span class="p">,</span> <span class="n">followers</span><span class="o">=</span><span class="n">value</span><span class="p">[</span><span class="sh">'</span><span class="s">followers</span><span class="sh">'</span><span class="p">],</span> <span class="n">support</span><span class="o">=</span><span class="n">value</span><span class="p">[</span><span class="sh">'</span><span class="s">support</span><span class="sh">'</span><span class="p">])</span>
+</code></pre></div></div>
+
+<h3 id="2-exact-size-accounting-serialize_entry-lines-131-136">2. Exact size accounting (<code class="language-plaintext highlighter-rouge">serialize_entry</code>, lines 131-136)</h3>
+
+<p>Size before/after must reflect the builder’s real output, so the analyzer
+re-serializes each filtered entry exactly as <code class="language-plaintext highlighter-rouge">build_ngrams*.py</code> does –
+<code class="language-plaintext highlighter-rouge">json.dumps(entry, ensure_ascii=False, separators=(",", ":"))</code> plus the
+context key and a comma between entries. That makes the “51.6 -&gt; 49.9 MB”
+numbers directly comparable to the JSON files we actually ship.</p>
+
+<div class="language-python highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">def</span> <span class="nf">serialize_entry</span><span class="p">(</span><span class="n">ctx</span><span class="p">,</span> <span class="n">followers</span><span class="p">,</span> <span class="n">support</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bytes</span><span class="p">:</span>
+    <span class="n">entry</span> <span class="o">=</span> <span class="p">{</span><span class="sh">"</span><span class="s">followers</span><span class="sh">"</span><span class="p">:</span> <span class="n">followers</span><span class="p">,</span> <span class="sh">"</span><span class="s">support</span><span class="sh">"</span><span class="p">:</span> <span class="n">support</span><span class="p">}</span>
+    <span class="n">ctx_json</span> <span class="o">=</span> <span class="n">json</span><span class="p">.</span><span class="nf">dumps</span><span class="p">(</span><span class="n">ctx</span><span class="p">,</span> <span class="n">ensure_ascii</span><span class="o">=</span><span class="bp">False</span><span class="p">)</span>
+    <span class="n">entry_json</span> <span class="o">=</span> <span class="n">json</span><span class="p">.</span><span class="nf">dumps</span><span class="p">(</span><span class="n">entry</span><span class="p">,</span> <span class="n">ensure_ascii</span><span class="o">=</span><span class="bp">False</span><span class="p">,</span> <span class="n">separators</span><span class="o">=</span><span class="p">(</span><span class="sh">"</span><span class="s">,</span><span class="sh">"</span><span class="p">,</span> <span class="sh">"</span><span class="s">:</span><span class="sh">"</span><span class="p">))</span>
+    <span class="nf">return </span><span class="p">(</span><span class="n">ctx_json</span> <span class="o">+</span> <span class="sh">"</span><span class="s">:</span><span class="sh">"</span> <span class="o">+</span> <span class="n">entry_json</span><span class="p">).</span><span class="nf">encode</span><span class="p">(</span><span class="sh">'</span><span class="s">utf-8</span><span class="sh">'</span><span class="p">)</span>
+</code></pre></div></div>
+
+<h3 id="3-single-pass-per-cap-analysis-analyze_cap-lines-156-232">3. Single-pass per-cap analysis (<code class="language-plaintext highlighter-rouge">analyze_cap</code>, lines 156-232)</h3>
+
+<p>For each cap we stream the model once and accumulate everything:
+contexts kept (support  thr), full vs filtered top-1, emptied contexts,
+dropped entries, and both serialized sizes – plus the set of distinct
+model words in vs out of the vocab. <code class="language-plaintext highlighter-rouge">distinct_words_in_model</code> is what
+tells us the model <em>actually</em> uses 28K-60K words of the 427K available.</p>
+
+<div class="language-python highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="n">filtered</span> <span class="o">=</span> <span class="p">[</span><span class="n">f</span> <span class="k">for</span> <span class="n">f</span> <span class="ow">in</span> <span class="n">entry</span><span class="p">.</span><span class="n">followers</span> <span class="k">if</span> <span class="n">f</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="ow">in</span> <span class="n">vocab</span><span class="p">]</span>
+<span class="bp">...</span>
+<span class="k">if</span> <span class="n">entry</span><span class="p">.</span><span class="n">followers</span><span class="p">:</span>
+    <span class="n">full_top1</span> <span class="o">=</span> <span class="n">entry</span><span class="p">.</span><span class="n">followers</span><span class="p">[</span><span class="mi">0</span><span class="p">][</span><span class="mi">0</span><span class="p">]</span>
+    <span class="k">if</span> <span class="n">filtered</span> <span class="ow">and</span> <span class="n">filtered</span><span class="p">[</span><span class="mi">0</span><span class="p">][</span><span class="mi">0</span><span class="p">]</span> <span class="o">==</span> <span class="n">full_top1</span><span class="p">:</span>
+        <span class="n">top1_agree</span> <span class="o">+=</span> <span class="mi">1</span>
+</code></pre></div></div>
+
+<p><code class="language-plaintext highlighter-rouge">main()</code> prints a per-cap block and a summary table. On AWS the three
+runs (one per variant) took a few minutes each on t3.xlarge spot
+instances, streaming the cap-10 model JSON.</p>
+
+<hr />
+
+<h2 id="how-to-reproduce">How to reproduce</h2>
+
+<div class="language-bash highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="c"># on a machine with the DBs and unigrams (see ngram-pipeline-optimization.md)</span>
+aws s3 <span class="nb">cp </span>s3://codekeyboard-ngrams-790762402508/output/swiftkey_tri_cap10.json <span class="nb">.</span>
+aws s3 <span class="nb">cp </span>s3://codekeyboard-ngrams-790762402508/output/swiftkey_unigrams.tsv <span class="nb">.</span>
+python3 scripts/vocab_cap.py <span class="nt">--unigrams</span> swiftkey_unigrams.tsv <span class="nt">--model</span> swiftkey_tri_cap10.json
+</code></pre></div></div>
+
+<p>The AWS orchestration (<code class="language-plaintext highlighter-rouge">gen_sweep_instances.sh</code>, user-data templates)
+used to run this at scale is in <code class="language-plaintext highlighter-rouge">scripts/</code>; each run emits
+<code class="language-plaintext highlighter-rouge">{variant}_vocab_report.txt</code> to S3.</p>
+
+<hr />
+
+<h2 id="what-we-decided-because-of-this">What we decided because of this</h2>
+
+<ul>
+  <li><strong>No frequency-based vocabulary cap in production.</strong> The delta-pruner is
+the right tail-management tool; it already produces a model whose
+effective vocabulary is ~28-60K words.</li>
+  <li><strong>The binary format stores exactly what the delta keeps</strong> – variable
+follower count per context, byte-quantized scores, u8 cap 255. No
+additional vocab culling at build or write time.</li>
+  <li>Follow-up: why 64K is the industry number, and whether a 5-gram model
+would change this answer (next post).</li>
+</ul>
+
+
+      <hr>
+
+      <!-- Prev / Next / Up navigation -->
+      
+      
+      
+
+      <div class="clearfix" style="margin-top: 2rem;">
+        
+          
+          
+
+          
+            
+            <a class="btn btn-primary float-left" href="/keyboard/09-ngram-smoothing-katz-swiftkey-wdp.html" title="CodeKeyboard Part 9: KN vs Katz vs SwiftKey WDP">&larr; Previous</a>
+          
+
+          
+        
+      </div>
+
+      
+      <div style="text-align: center; margin-top: 1rem;">
+        <a href="/keyboard/">&uarr; Back to Table of Contents</a>
+      </div>
+      
+
+    </div>
+  </div>
+</div>
+
+
+  <!-- Footer -->
+
+<hr>
+
+<footer>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <ul class="list-inline text-center">
+          
+          <li class="list-inline-item">
+            <a href="mailto:amitava.dev@proton.me" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="far fa-envelope fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          
+          
+          <li class="list-inline-item">
+            <a href="https://www.linkedin.com/in/amitavaag" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-linkedin fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          <li class="list-inline-item">
+            <a href="https://github.com/ikouchiha47" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-github fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+        </ul>
+
+        <p class="copyright text-muted">
+          Build with: 
+          <a 
+            href="https://github.com/StartBootstrap/startbootstrap-clean-blog-jekyll"
+            class="text-gray"
+            target="_blank">startbootstrap-clean-blog-jekyll</a></p>
+      </div>
+    </div>
+  </div>
+</footer>
+
+
+  <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="/assets/vendor/blog/js/scripts.js"></script>
+
+<script src="/assets/scripts.js"></script>
+
+
+
+
+
+  <script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+
+    document.querySelectorAll('pre > code.language-mermaid').forEach((codeBlock) => {
+      codeBlock.parentElement.outerHTML = `<pre class="mermaid">${codeBlock.textContent}</pre>`;
+    });
+
+
+    mermaid.initialize({ startOnLoad: true, theme: 'forest' });
+</script>
+
+
+  
+
+</body>
+
+</html>
