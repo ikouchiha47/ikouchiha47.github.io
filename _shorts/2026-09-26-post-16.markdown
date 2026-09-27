@@ -1,0 +1,30 @@
+---
+date: 2026-09-26 18:31
+tags: [c++, orderbook]
+---
+
+Today I have decided to start practicing a bit of c++ by diving straight into
+coding - an orderbook.
+
+Why not rust! Well a lot of the borrow, trait-ish semantics are present in c++.
+With `concept`s and `template`s it make dynamic dispatch possible without
+v-table.
+A lot of companies in this space works in C++, so is gpu kernel. Also rust's
+semantics adds an overhead, I have seen c++ and dealt with c before.
+
+I have got the nasdaq gz file, learned the structure for procressing. I am
+taking an AI assisted approach.
+
+It started off using conan to setup the repo, and then creating a skeleton for a
+proper project. Then was asked to prepare some skeleton code needed to know to
+build this.
+
+This led me to understand:
+
+- template
+- lambda expressions, `&`, `=`, `seen`, `&seen`
+- typename
+- constexpr
+
+Some of the concepts are understandable, sometime it looks more like rust. Some
+books on C++, start with borrowing and stuff.
