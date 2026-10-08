@@ -1,5 +1,6 @@
 ---
-active: false
+active: true
+group: small-databases
 layout: post
 title: "Supercharge a platform backed by sqlite"
 subtitle: "Partition, cleanup & backup your sqlite database"
@@ -273,3 +274,112 @@ and then also run "PRAGMA optimize;" periodically, perhaps once per day, or more
 
 
 ## DB management tools
+
+The subtitle promised partition, cleanup and backup. Here they are, in the order
+you will actually need them.
+
+### Backup
+
+Rule zero: never `cp` a live sqlite file and call it a backup. Under WAL mode a
+checkpoint can be mid-flight and you will copy a database plus half a thought.
+Use the backup API instead, which gives you a consistent snapshot even while
+writers are writing:
+
+```shell
+sqlite3 app.db ".backup main backup.db"
+```
+
+That `.backup` dot-command is a thin wrapper over `sqlite3_backup_init()` — it
+copies page by page inside a transaction, so readers keep reading and the one
+writer keeps writing. For a scheduled job, pair it with a checkpoint first so
+the WAL is folded in before the copy starts:
+
+```sql
+PRAGMA wal_checkpoint(TRUNCATE);
+```
+
+If what you want is a compacted copy rather than a verbatim one, `VACUUM INTO`
+(available since 3.27) rebuilds the database into a fresh file — backup plus
+defrag in one step:
+
+```sql
+VACUUM INTO 'backup.db';
+```
+
+Restore is the reverse and it is boring on purpose: checkpoint, close all
+connections, swap the file. If you outgrow file swaps, that is the moment to
+look at `litestream` — it tails the WAL and streams it to object storage, which
+turns "nightly backup" into "point-in-time restore." But for a single-node
+sqlite setup, `.backup` on a cron is embarrassingly far from the worst answer.
+
+### Cleanup
+
+Deletes in sqlite don't give space back to the OS by default. They push pages
+onto the freelist — free for reuse by future inserts, but the file never
+shrinks. That is the right default for a busy database (reusing a freelist page
+is cheaper than growing the file), and the wrong one for a database that just
+deleted half its rows forever.
+
+Check how much dead weight you are carrying:
+
+```sql
+PRAGMA freelist_count;
+PRAGMA page_count;
+```
+
+If the freelist is a large fraction of the page count, you have three knobs,
+in order of how much you should reach for them:
+
+1. **`PRAGMA incremental_vacuum;`** — reclaims freelist pages above the minimum
+   without rebuilding the whole file. Safe to run periodically, no full lock
+   drama.
+2. **`VACUUM;`** — rebuilds the entire database into a minimal file. Reclaims
+   everything, repacks everything, and holds an exclusive lock while doing it.
+   Fine on a maintenance window, rude at noon.
+3. **`PRAGMA auto_vacuum = INCREMENTAL;`** — set once, at database creation
+   time (it does nothing on an existing database until a `VACUUM` rebuilds it
+   into the new mode), and the freelist gets moved to the end of the file as it
+   grows, so `incremental_vacuum` has something cheap to trim. Note the fine
+   print: `auto_vacuum = FULL` moves pages on every delete, which fragments and
+   slows down exactly the workload you were trying to help. INCREMENTAL, with a
+   scheduled vacuum, is the boring correct choice.
+
+Related: if you created the database with the default 4KB page size and your
+rows are wide, consider `PRAGMA page_size = 8192;` before first write (it only
+takes effect after `VACUUM`). Bigger pages mean fewer B-tree levels for large
+rows and less pointer chasing per scan, at the cost of more read amplification
+for point lookups. There is no universal answer; there is only your row width.
+
+### Partition
+
+Honest answer first: sqlite has no native partitioning. No declarative
+partition pruning, no partition-wise joins. What it does have is
+`ATTACH DATABASE`, and that plus discipline covers most of what people
+actually want from partitioning.
+
+The common shape is time-range sharding — one file per month, say:
+
+```sql
+ATTACH DATABASE 'app_2024_11.db' AS nov;
+ATTACH DATABASE 'app_2024_12.db' AS dec;
+```
+
+Query across them with a `UNION ALL` view when you need history, and point the
+hot writes at only the current file. Dropping a whole month becomes a file
+delete instead of a million-row `DELETE` plus a `VACUUM` — which, given the
+cleanup section above, is the fastest vacuum strategy there is.
+
+Two caveats worth knowing before committing to this:
+
+- An `ATTACH`ed connection shares one page cache and one transaction across
+  all files, which is convenient until it isn't: a write transaction touching
+  two files holds the lock story of both. Keep cross-file writes rare.
+- The query planner can't prune `UNION ALL` branches the way Postgres prunes
+  partitions. If every query scans every file, you built slower sqlite with
+  extra steps. Route in the application layer — the app knows the date range,
+  so let it pick the file.
+
+When none of this fits — concurrent writers beyond one, data bigger than a
+single machine's disk, queries that genuinely need partition pruning — that is
+the database telling you it has outgrown embedded. The whole point of this
+series is knowing where that line is, not pretending it doesn't exist.

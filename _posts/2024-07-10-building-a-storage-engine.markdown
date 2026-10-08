@@ -1,8 +1,9 @@
 ---
 active: true
+group: small-databases
 layout: post
-title: "beetledb"
-subtitle: "A storage engine"
+title: "Notes toward a storage engine"
+subtitle: "sqlite internals, index theory, and the database that never got built"
 description: "Building a simple ondisk storage engine"
 date: 2024-07-10 00:00:00
 background: '/img/beetledb.jpg'
