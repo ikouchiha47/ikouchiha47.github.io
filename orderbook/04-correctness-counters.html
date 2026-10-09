@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+  <title>
+    The Counters That Save You - iko&#39;s logs
+    
+  </title>
+
+  <meta name="description" content="">
+  <meta property="og:description" content="">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="The Counters That Save You">
+  <meta property="og:url" content="https://ikouchiha47.github.io/orderbook/04-correctness-counters.html">
+
+  
+
+  <link href='https://fonts.googleapis.com/css?family=Lora:400,700,400italic,700italic' rel='stylesheet' type='text/css'>
+  <link href='https://fonts.googleapis.com/css?family=Open+Sans:300italic,400italic,600italic,700italic,800italic,400,300,600,700,800' rel='stylesheet' type='text/css'>
+
+  <!-- <script src="https://use.fontawesome.com/releases/v5.15.3/js/all.js" crossorigin="anonymous"></script> -->
+  <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.15.4/css/all.css" integrity="sha384-DyZ88mC6Up2uqS4h/KRgHuoeGwBcD4Ng9SiP4dIRy0EXTlnuz47vAwmeGwVChigm" crossorigin="anonymous"/>
+
+  <link rel="stylesheet" href="/assets/main.css">
+  <link rel="canonical" href="https://ikouchiha47.github.io/orderbook/04-correctness-counters.html">
+  <link rel="alternate" type="application/rss+xml" title="iko&#39;s logs" href="/feed.xml">
+
+  <meta name="google-site-verification" content="lWkg6gIxJgzEKX_5XnhcxCtPE9QknaimFWWos_dTvPM" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fira+Sans:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Inconsolata:wght@200..900&family=Jersey+25&family=Kanit:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Merriweather+Sans:ital,wght@0,300..800;1,300..800&family=Nanum+Gothic+Coding&family=Space+Grotesk:wght@300..700&family=Titillium+Web:ital,wght@0,200;0,300;0,400;0,600;0,700;0,900;1,200;1,300;1,400;1,600;1,700&display=swap" rel="stylesheet">
+
+</head>
+
+
+<body>
+
+  <!-- Navigation -->
+<nav class="navbar navbar-expand-lg navbar-light fixed-top" id="mainNav">
+  <div class="container">
+    <a class="navbar-brand" href="/">iko&#39;s logs</a>
+    <button class="navbar-toggler navbar-toggler-right" type="button" data-toggle="collapse" data-target="#navbarResponsive" aria-controls="navbarResponsive" aria-expanded="false" aria-label="Toggle navigation">
+      Menu
+      <i class="fa fa-bars"></i>
+    </button>
+    <div class="collapse navbar-collapse" id="navbarResponsive">
+      <ul class="navbar-nav ml-auto">
+        <li class="nav-item">
+          <a class="nav-link" href="/">Home</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/about">About</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/posts">Posts</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/wall/">Wall</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/contact">Contact</a>
+        </li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+
+  <!-- Page Header -->
+
+<header class="masthead">
+
+  <div class="overlay"></div>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <div class="post-heading">
+          <h1>The Counters That Save You</h1>
+          
+          <h2 class="subheading">or: how I learned to be paranoid about a book that runs fine</h2>
+          
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="container space-grotesk">
+  <div class="row">
+    <div class="col-lg-8 col-md-10 mx-auto">
+
+      <!-- Breadcrumb -->
+      <nav aria-label="breadcrumb" style="margin-bottom: 1.5rem;">
+        <ol class="breadcrumb" style="background: transparent; padding: 0;">
+          
+            <li class="breadcrumb-item"><a href="/orderbook/">Building an Order Book</a></li>
+          
+          
+          <li class="breadcrumb-item active" aria-current="page">The Counters That Save You</li>
+        </ol>
+      </nav>
+
+      <p>My book was reconstructing a full trading day correctly and I was proud of it. Then I spent an afternoon trying to break it on purpose, and built the three counters I now consider the most valuable lines in the project.</p>
+
+<p>A book can be wrong without ever crashing. That’s the scary part.</p>
+
+<h2 id="three-things-that-shouldnt-happen-but-do">Three things that shouldn’t happen, but do</h2>
+
+<p><strong>Unknown refs.</strong> An execution or cancel naming an order I never saw. This is real — hidden liquidity, a symbol I filtered out, or a message that arrived late. And here’s the trap: an <code class="language-plaintext highlighter-rouge">E</code> message carries no price. So when the ref is unknown, there is <em>no level to subtract from</em>. The only correct move is to count it and skip. Guess, and you corrupt a real level.</p>
+
+<p><strong>Over-takes.</strong> A reduce asking for more shares than are resting. Quantities are <code class="language-plaintext highlighter-rouge">uint32</code>, and subtracting past zero doesn’t go negative — it wraps to four billion. So you floor at zero and count it. I found this one by staring at a <code class="language-plaintext highlighter-rouge">uint32</code> and thinking “what happens if I subtract 50 from 25?” Nothing good.</p>
+
+<p><strong>Crossed books.</strong> Best bid ≥ best ask. This is impossible in a real market — the exchange would have matched those orders the instant they crossed. So if <em>my</em> reconstruction shows it, <em>my</em> view is wrong. Out-of-order messages, a dropped add, or a bug. It’s a transient, usually healed by the next message. Count it, don’t panic.</p>
+
+<h2 id="why-i-count-instead-of-ignore">Why I count instead of ignore</h2>
+
+<p>Because “silent” is what kills you. An unknown ref I ignore is a hole I’ll never see again. A wrapped quantity is a level claiming four billion shares. A crossed book means every quote I hand downstream is nonsense.</p>
+
+<p>The counter turns “invisible” into “a number I can watch.” And the number is the whole verdict:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>counters: unknown_ref=0  clamped=0  crossed=0
+</code></pre></div></div>
+
+<p>Over a full day, one symbol, that line says the reconstruction held. That’s a sentence I can actually stand behind.</p>
+
+<h2 id="the-duplicate-that-double-counts">The duplicate that double-counts</h2>
+
+<p>This one is nasty because it <em>looks</em> fine. A duplicate add — same ref, twice. The obvious code is:</p>
+
+<div class="language-cpp highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="n">orders</span><span class="p">[</span><span class="n">ref</span><span class="p">]</span> <span class="o">=</span> <span class="n">new_order</span><span class="p">;</span>   <span class="c1">// overwrite: looks fine</span>
+<span class="n">bids</span><span class="p">[</span><span class="n">price</span><span class="p">].</span><span class="n">total</span> <span class="o">+=</span> <span class="n">qty</span><span class="p">;</span>  <span class="c1">// ...but the OLD qty is still summed in here</span>
+</code></pre></div></div>
+
+<p>Overwriting the order entry is fine. The <em>level</em> is a separate sum, and it never got told the old order left. So it silently double-counts:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>add(ref7, 100)  → bids[10.50] = {100, 1}
+add(ref7,  50)  → orders[7] = {...50}, bids[10.50] = {150, 1}   ← ghost 100
+</code></pre></div></div>
+
+<p>The fix is to subtract the old contribution <em>before</em> filing the new. I went and checked how the open-source books handle this. Most of them don’t. Only <code class="language-plaintext highlighter-rouge">nautilus_trader</code> unwinds the old level. That was weirdly reassuring — the bug is easy, and ignoring it is the default.</p>
+
+<h2 id="prove-the-hot-path-doesnt-allocate">Prove the hot path doesn’t allocate</h2>
+
+<p>The last counter isn’t a market condition, it’s about my own code. I wanted “no allocation on the hot path” to be a <em>test</em>, not a comment. So I overrode <code class="language-plaintext highlighter-rouge">operator new</code> to count, warmed the book, snapshotted the count, ran a batch of reduce/best, and asserted the count hadn’t moved:</p>
+
+<div class="language-cpp highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">const</span> <span class="kt">uint64_t</span> <span class="n">before</span> <span class="o">=</span> <span class="n">g_allocs</span><span class="p">.</span><span class="n">load</span><span class="p">();</span>
+<span class="n">book</span><span class="p">.</span><span class="n">reduce</span><span class="p">(</span><span class="n">ref</span><span class="p">,</span> <span class="mi">10</span><span class="p">);</span>
+<span class="n">benchmark</span><span class="o">::</span><span class="n">DoNotOptimize</span><span class="p">(</span><span class="n">book</span><span class="p">.</span><span class="n">best</span><span class="p">());</span>
+<span class="k">const</span> <span class="kt">uint64_t</span> <span class="n">after</span> <span class="o">=</span> <span class="n">g_allocs</span><span class="p">.</span><span class="n">load</span><span class="p">();</span>
+<span class="n">EXPECT_EQ</span><span class="p">(</span><span class="n">after</span> <span class="o">-</span> <span class="n">before</span><span class="p">,</span> <span class="mi">0u</span><span class="p">);</span>
+</code></pre></div></div>
+
+<p>The honest caveat: adding a <em>new</em> price level does allocate a node. So the assertion is about the read/reduce path, not everything. Which is exactly the point — a test that says precisely what it proves is worth ten that wave in a general direction.</p>
+
+<p>My favourite kind of correctness work is the kind that catches nothing, because the alternative is the kind that catches something at 3am.</p>
+
+
+      <hr>
+
+      <!-- Prev / Next / Up navigation -->
+      
+      
+      
+
+      <div class="clearfix" style="margin-top: 2rem;">
+        
+          
+          
+
+          
+            
+            <a class="btn btn-primary float-left" href="/orderbook/03-order-book-model.html" title="An Order Book Is a Biography">&larr; Previous</a>
+          
+
+          
+            
+            <a class="btn btn-primary float-right" href="/orderbook/05-benchmarking-cpp.html" title="Benchmarking C++ Without Lying to Yourself">Next &rarr;</a>
+          
+        
+      </div>
+
+      
+      <div style="text-align: center; margin-top: 1rem;">
+        <a href="/orderbook/">&uarr; Back to Table of Contents</a>
+      </div>
+      
+
+    </div>
+  </div>
+</div>
+
+
+  <!-- Footer -->
+
+<hr>
+
+<footer>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <ul class="list-inline text-center">
+          
+          <li class="list-inline-item">
+            <a href="mailto:amitava.dev@proton.me" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="far fa-envelope fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          
+          
+          <li class="list-inline-item">
+            <a href="https://www.linkedin.com/in/amitavaag" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-linkedin fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          <li class="list-inline-item">
+            <a href="https://github.com/ikouchiha47" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-github fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+        </ul>
+
+        <p class="copyright text-muted">
+          Build with: 
+          <a 
+            href="https://github.com/StartBootstrap/startbootstrap-clean-blog-jekyll"
+            class="text-gray"
+            target="_blank">startbootstrap-clean-blog-jekyll</a></p>
+      </div>
+    </div>
+  </div>
+</footer>
+
+
+  <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="/assets/vendor/blog/js/scripts.js"></script>
+
+<script src="/assets/scripts.js"></script>
+
+
+
+
+
+  <script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+
+    document.querySelectorAll('pre > code.language-mermaid').forEach((codeBlock) => {
+      codeBlock.parentElement.outerHTML = `<pre class="mermaid">${codeBlock.textContent}</pre>`;
+    });
+
+
+    mermaid.initialize({ startOnLoad: true, theme: 'forest' });
+</script>
+
+
+  
+
+</body>
+
+</html>

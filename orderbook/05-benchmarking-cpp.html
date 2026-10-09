@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+  <title>
+    Benchmarking C++ Without Lying to Yourself - iko&#39;s logs
+    
+  </title>
+
+  <meta name="description" content="">
+  <meta property="og:description" content="">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Benchmarking C++ Without Lying to Yourself">
+  <meta property="og:url" content="https://ikouchiha47.github.io/orderbook/05-benchmarking-cpp.html">
+
+  
+
+  <link href='https://fonts.googleapis.com/css?family=Lora:400,700,400italic,700italic' rel='stylesheet' type='text/css'>
+  <link href='https://fonts.googleapis.com/css?family=Open+Sans:300italic,400italic,600italic,700italic,800italic,400,300,600,700,800' rel='stylesheet' type='text/css'>
+
+  <!-- <script src="https://use.fontawesome.com/releases/v5.15.3/js/all.js" crossorigin="anonymous"></script> -->
+  <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.15.4/css/all.css" integrity="sha384-DyZ88mC6Up2uqS4h/KRgHuoeGwBcD4Ng9SiP4dIRy0EXTlnuz47vAwmeGwVChigm" crossorigin="anonymous"/>
+
+  <link rel="stylesheet" href="/assets/main.css">
+  <link rel="canonical" href="https://ikouchiha47.github.io/orderbook/05-benchmarking-cpp.html">
+  <link rel="alternate" type="application/rss+xml" title="iko&#39;s logs" href="/feed.xml">
+
+  <meta name="google-site-verification" content="lWkg6gIxJgzEKX_5XnhcxCtPE9QknaimFWWos_dTvPM" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fira+Sans:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Inconsolata:wght@200..900&family=Jersey+25&family=Kanit:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Merriweather+Sans:ital,wght@0,300..800;1,300..800&family=Nanum+Gothic+Coding&family=Space+Grotesk:wght@300..700&family=Titillium+Web:ital,wght@0,200;0,300;0,400;0,600;0,700;0,900;1,200;1,300;1,400;1,600;1,700&display=swap" rel="stylesheet">
+
+</head>
+
+
+<body>
+
+  <!-- Navigation -->
+<nav class="navbar navbar-expand-lg navbar-light fixed-top" id="mainNav">
+  <div class="container">
+    <a class="navbar-brand" href="/">iko&#39;s logs</a>
+    <button class="navbar-toggler navbar-toggler-right" type="button" data-toggle="collapse" data-target="#navbarResponsive" aria-controls="navbarResponsive" aria-expanded="false" aria-label="Toggle navigation">
+      Menu
+      <i class="fa fa-bars"></i>
+    </button>
+    <div class="collapse navbar-collapse" id="navbarResponsive">
+      <ul class="navbar-nav ml-auto">
+        <li class="nav-item">
+          <a class="nav-link" href="/">Home</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/about">About</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/posts">Posts</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/wall/">Wall</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/contact">Contact</a>
+        </li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+
+  <!-- Page Header -->
+
+<header class="masthead">
+
+  <div class="overlay"></div>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <div class="post-heading">
+          <h1>Benchmarking C++ Without Lying to Yourself</h1>
+          
+          <h2 class="subheading">the compiler told me 0.98 nanoseconds and I believed it</h2>
+          
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="container space-grotesk">
+  <div class="row">
+    <div class="col-lg-8 col-md-10 mx-auto">
+
+      <!-- Breadcrumb -->
+      <nav aria-label="breadcrumb" style="margin-bottom: 1.5rem;">
+        <ol class="breadcrumb" style="background: transparent; padding: 0;">
+          
+            <li class="breadcrumb-item"><a href="/orderbook/">Building an Order Book</a></li>
+          
+          
+          <li class="breadcrumb-item active" aria-current="page">Benchmarking C++ Without Lying to Yourself</li>
+        </ol>
+      </nav>
+
+      <p>I almost shipped a benchmark that said parsing a NASDAQ message takes <strong>0.98 nanoseconds</strong>. That’s about three CPU cycles. For decoding sixteen bytes across three fields.</p>
+
+<p>I was proud of it for about ten minutes, which is exactly how long it took a friend to ask “why is it faster than a memory access?” Then I got suspicious, and then I got annoyed, because the compiler had been lying to me with a perfectly straight face and I’d been the one holding the pen.</p>
+
+<h2 id="the-trap-is-that-the-answer-looks-plausible">The trap is that the answer looks plausible</h2>
+
+<p>Google Benchmark works like Go’s <code class="language-plaintext highlighter-rouge">testing.B</code>. You write a loop, it decides how many iterations to run until it has enough samples. Mine ran ~163 million iterations and reported 0.98 ns.</p>
+
+<p>The number is wrong for a boring reason: <strong>the compiler deleted my parser.</strong></p>
+
+<p>I had written <code class="language-plaintext highlighter-rouge">DoNotOptimize(parse_A(d, out))</code>. That pins the <em>return value</em> — a <code class="language-plaintext highlighter-rouge">bool</code>. It says nothing about the struct the function filled in. So the compiler looked at the writes to <code class="language-plaintext highlighter-rouge">out</code>, saw nobody ever read them, and quietly removed the whole decode. I was benchmarking an empty loop.</p>
+
+<p>The fix is to pin the thing that matters — the output:</p>
+
+<div class="language-cpp highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="n">parsers</span><span class="o">::</span><span class="n">nasdaq</span><span class="o">::</span><span class="n">parse_A</span><span class="p">(</span><span class="n">d</span><span class="p">,</span> <span class="n">out</span><span class="p">);</span>
+<span class="n">benchmark</span><span class="o">::</span><span class="n">DoNotOptimize</span><span class="p">(</span><span class="n">out</span><span class="p">);</span>
+</code></pre></div></div>
+
+<p>Now the fields have to actually be computed. The number went up to a bizarrely large… 1.77 ns. Still fast. Still <em>real</em>.</p>
+
+<h2 id="and-then-a-second-lie">And then a second lie</h2>
+
+<p>Even with the output pinned, <code class="language-plaintext highlighter-rouge">d</code> was the same bytes every iteration, so the compiler computed the result once and reused it. Loop-invariant hoisting — the benchmark measured a register read.</p>
+
+<p>So I made the input move:</p>
+
+<div class="language-cpp highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="n">d</span><span class="p">[</span><span class="mi">19</span><span class="p">]</span> <span class="o">^=</span> <span class="mi">1</span><span class="p">;</span>   <span class="c1">// flip the side byte each iteration</span>
+</code></pre></div></div>
+
+<p>Now it can’t cache the answer. Honest number: <strong>1.77 ns.</strong> I trust it now, and honestly it’s <em>more</em> impressive than the fake one, because it’s true.</p>
+
+<h2 id="read-the-right-number">Read the right number</h2>
+
+<p>Here’s the shape of the output once you turn on repetitions:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>BM_BookReduce_median   3.42 ns
+BM_BookReduce_stddev   0.037 ns
+BM_BookReduce_cv       1.07 %
+</code></pre></div></div>
+
+<ul>
+  <li>Use the <strong>median</strong>, not the mean. Tails don’t move a median.</li>
+  <li>Watch the <strong>cv</strong> — under ~2% is stable, over ~5% means the machine was noisy and the number is fiction.</li>
+  <li>Compare <strong>Time</strong> and <strong>CPU</strong>. Equal means pure compute. If Time is much bigger, you’re waiting on I/O or a lock, and you’re measuring the wrong thing.</li>
+</ul>
+
+<h2 id="the-part-that-actually-humbled-me">The part that actually humbled me</h2>
+
+<p>I had a beautiful table of micro-benchmarks:</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>op</th>
+      <th>ns</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>parse A/F/X</td>
+      <td>1.7–2.0</td>
+    </tr>
+    <tr>
+      <td>best()</td>
+      <td>0.32</td>
+    </tr>
+    <tr>
+      <td>reduce</td>
+      <td>3.3</td>
+    </tr>
+    <tr>
+      <td>add / remove</td>
+      <td>14 / 18</td>
+    </tr>
+    <tr>
+      <td>depth(5)</td>
+      <td>42</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>And none of it was the point. When I profiled the <em>whole</em> replay, it ran at <strong>11 million messages per second</strong> — about 90 ns per message — and ~75% of that was gzip decompression. The order book I’d been micro-optimising was a rounding error in the real workload.</p>
+
+<p>That’s the lesson I keep failing to internalise: micro-benchmarks make the thing you measured look important. Only the macro run and a profiler tell you whether it actually is. The micro numbers are accurate. Accurate and irrelevant is the most expensive kind of result, because it’s so easy to act on.</p>
+
+
+      <hr>
+
+      <!-- Prev / Next / Up navigation -->
+      
+      
+      
+
+      <div class="clearfix" style="margin-top: 2rem;">
+        
+          
+          
+
+          
+            
+            <a class="btn btn-primary float-left" href="/orderbook/04-correctness-counters.html" title="The Counters That Save You">&larr; Previous</a>
+          
+
+          
+            
+            <a class="btn btn-primary float-right" href="/orderbook/06-profiling-the-replay.html" title="Where the Time Actually Goes">Next &rarr;</a>
+          
+        
+      </div>
+
+      
+      <div style="text-align: center; margin-top: 1rem;">
+        <a href="/orderbook/">&uarr; Back to Table of Contents</a>
+      </div>
+      
+
+    </div>
+  </div>
+</div>
+
+
+  <!-- Footer -->
+
+<hr>
+
+<footer>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <ul class="list-inline text-center">
+          
+          <li class="list-inline-item">
+            <a href="mailto:amitava.dev@proton.me" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="far fa-envelope fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          
+          
+          <li class="list-inline-item">
+            <a href="https://www.linkedin.com/in/amitavaag" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-linkedin fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          <li class="list-inline-item">
+            <a href="https://github.com/ikouchiha47" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-github fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+        </ul>
+
+        <p class="copyright text-muted">
+          Build with: 
+          <a 
+            href="https://github.com/StartBootstrap/startbootstrap-clean-blog-jekyll"
+            class="text-gray"
+            target="_blank">startbootstrap-clean-blog-jekyll</a></p>
+      </div>
+    </div>
+  </div>
+</footer>
+
+
+  <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="/assets/vendor/blog/js/scripts.js"></script>
+
+<script src="/assets/scripts.js"></script>
+
+
+
+
+
+  <script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+
+    document.querySelectorAll('pre > code.language-mermaid').forEach((codeBlock) => {
+      codeBlock.parentElement.outerHTML = `<pre class="mermaid">${codeBlock.textContent}</pre>`;
+    });
+
+
+    mermaid.initialize({ startOnLoad: true, theme: 'forest' });
+</script>
+
+
+  
+
+</body>
+
+</html>

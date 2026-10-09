@@ -1,0 +1,445 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+  <title>
+    CodeKeyboard Part 5: Bigram Next-Word Prediction - iko&#39;s logs
+    
+  </title>
+
+  <meta name="description" content="">
+  <meta property="og:description" content="">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="CodeKeyboard Part 5: Bigram Next-Word Prediction">
+  <meta property="og:url" content="https://ikouchiha47.github.io/keyboard/05-bigrams.html">
+
+  
+
+  <link href='https://fonts.googleapis.com/css?family=Lora:400,700,400italic,700italic' rel='stylesheet' type='text/css'>
+  <link href='https://fonts.googleapis.com/css?family=Open+Sans:300italic,400italic,600italic,700italic,800italic,400,300,600,700,800' rel='stylesheet' type='text/css'>
+
+  <!-- <script src="https://use.fontawesome.com/releases/v5.15.3/js/all.js" crossorigin="anonymous"></script> -->
+  <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.15.4/css/all.css" integrity="sha384-DyZ88mC6Up2uqS4h/KRgHuoeGwBcD4Ng9SiP4dIRy0EXTlnuz47vAwmeGwVChigm" crossorigin="anonymous"/>
+
+  <link rel="stylesheet" href="/assets/main.css">
+  <link rel="canonical" href="https://ikouchiha47.github.io/keyboard/05-bigrams.html">
+  <link rel="alternate" type="application/rss+xml" title="iko&#39;s logs" href="/feed.xml">
+
+  <meta name="google-site-verification" content="lWkg6gIxJgzEKX_5XnhcxCtPE9QknaimFWWos_dTvPM" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fira+Sans:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Inconsolata:wght@200..900&family=Jersey+25&family=Kanit:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Merriweather+Sans:ital,wght@0,300..800;1,300..800&family=Nanum+Gothic+Coding&family=Space+Grotesk:wght@300..700&family=Titillium+Web:ital,wght@0,200;0,300;0,400;0,600;0,700;0,900;1,200;1,300;1,400;1,600;1,700&display=swap" rel="stylesheet">
+
+</head>
+
+
+<body>
+
+  <!-- Navigation -->
+<nav class="navbar navbar-expand-lg navbar-light fixed-top" id="mainNav">
+  <div class="container">
+    <a class="navbar-brand" href="/">iko&#39;s logs</a>
+    <button class="navbar-toggler navbar-toggler-right" type="button" data-toggle="collapse" data-target="#navbarResponsive" aria-controls="navbarResponsive" aria-expanded="false" aria-label="Toggle navigation">
+      Menu
+      <i class="fa fa-bars"></i>
+    </button>
+    <div class="collapse navbar-collapse" id="navbarResponsive">
+      <ul class="navbar-nav ml-auto">
+        <li class="nav-item">
+          <a class="nav-link" href="/">Home</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/about">About</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/posts">Posts</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/wall/">Wall</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/contact">Contact</a>
+        </li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+
+  <!-- Page Header -->
+
+<header class="masthead" style="background: #0f2027">
+
+  <div class="overlay"></div>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <div class="post-heading">
+          <h1>CodeKeyboard Part 5: Bigram Next-Word Prediction</h1>
+          
+          <h2 class="subheading">Seed, user layer, librime decay, limits</h2>
+          
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="container space-grotesk">
+  <div class="row">
+    <div class="col-lg-8 col-md-10 mx-auto">
+
+      <!-- Breadcrumb -->
+      <nav aria-label="breadcrumb" style="margin-bottom: 1.5rem;">
+        <ol class="breadcrumb" style="background: transparent; padding: 0;">
+          
+            <li class="breadcrumb-item"><a href="/keyboard/">CodeKeyboard Rebuild Notes</a></li>
+          
+          
+          <li class="breadcrumb-item active" aria-current="page">CodeKeyboard Part 5: Bigram Next-Word Prediction</li>
+        </ol>
+      </nav>
+
+      <h2 id="gap">Gap</h2>
+
+<p>Prefix tries answer “what continues <code class="language-plaintext highlighter-rouge">th</code>?”. After the user commits <code class="language-plaintext highlighter-rouge">thank</code> and presses space, composing is empty. A pure prefix bar has nothing to query. Bigrams answer “what often follows <code class="language-plaintext highlighter-rouge">thank</code>?” (<code class="language-plaintext highlighter-rouge">you</code>, …).</p>
+
+<p>Design notes: <code class="language-plaintext highlighter-rouge">docs/bigram-prediction-design.md</code>, <code class="language-plaintext highlighter-rouge">docs/adr-001-bigram-prediction.md</code>.<br />
+Implementation: <code class="language-plaintext highlighter-rouge">BigramModel.kt</code>.<br />
+Seed builder: <code class="language-plaintext highlighter-rouge">scripts/extract_bigrams.py</code>.</p>
+
+<h2 id="two-layers">Two layers</h2>
+
+<h3 id="seed---assetsbigramsjson">Seed - assets/bigrams.json</h3>
+
+<p>Built from Norvig <code class="language-plaintext highlighter-rouge">count_2w.txt</code> (Google Web 1T style counts, MIT-licensed redistribution via Norvig).</p>
+
+<p>Script flow:</p>
+
+<ol>
+  <li>Parse <code class="language-plaintext highlighter-rouge">w1 w2 \t count</code> lines, keep clean lowercase words</li>
+  <li>Sort by count, take top N (<code class="language-plaintext highlighter-rouge">--top</code>, default 30000)</li>
+  <li>Group by w1, keep up to <code class="language-plaintext highlighter-rouge">--max-followers</code> (default 10)</li>
+  <li>Score inside each bucket: <code class="language-plaintext highlighter-rouge">log(count+1) / log(total+1)</code></li>
+  <li>Write compact JSON: <code class="language-plaintext highlighter-rouge">{ "want": [["to", 0.9822], ...], ... }</code></li>
+</ol>
+
+<p><strong>Measured shipped file</strong> (do not trust ADR “100k pairs” wording without measuring):</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>Metric</th>
+      <th style="text-align: right">Value</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Bytes</td>
+      <td style="text-align: right">633187 (~618 KiB)</td>
+    </tr>
+    <tr>
+      <td>Predecessors</td>
+      <td style="text-align: right">9287</td>
+    </tr>
+    <tr>
+      <td>Pairs</td>
+      <td style="text-align: right">34632</td>
+    </tr>
+    <tr>
+      <td>Avg followers</td>
+      <td style="text-align: right">3.73</td>
+    </tr>
+    <tr>
+      <td>Max followers</td>
+      <td style="text-align: right">10</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>Spot checks from file:</p>
+
+<ul>
+  <li><code class="language-plaintext highlighter-rouge">thank</code> -&gt; you, the, all, my, them</li>
+  <li><code class="language-plaintext highlighter-rouge">please</code> -&gt; contact, note, click, … (formal/web)</li>
+  <li><code class="language-plaintext highlighter-rouge">want</code> -&gt; to, it, a, the, …</li>
+  <li><code class="language-plaintext highlighter-rouge">i</code> has a full cap of followers (have, am, was, can, …)</li>
+</ul>
+
+<p>Loaded in <code class="language-plaintext highlighter-rouge">loadSeed()</code> into <code class="language-plaintext highlighter-rouge">Map&lt;String, List&lt;Pair&lt;String, Float&gt;&gt;&gt;</code>.</p>
+
+<h3 id="user---filesdiruser_bigramsjson">User - filesDir/user_bigrams.json</h3>
+
+<p>Format v2:</p>
+
+<div class="language-json highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="p">{</span><span class="w">
+  </span><span class="nl">"tick"</span><span class="p">:</span><span class="w"> </span><span class="mi">1234</span><span class="p">,</span><span class="w">
+  </span><span class="nl">"entries"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
+    </span><span class="nl">"want"</span><span class="p">:</span><span class="w"> </span><span class="p">[[</span><span class="s2">"to"</span><span class="p">,</span><span class="w"> </span><span class="mf">12.4</span><span class="p">,</span><span class="w"> </span><span class="mi">1230</span><span class="p">],</span><span class="w"> </span><span class="p">[</span><span class="s2">"a"</span><span class="p">,</span><span class="w"> </span><span class="mf">3.1</span><span class="p">,</span><span class="w"> </span><span class="mi">800</span><span class="p">]]</span><span class="w">
+  </span><span class="p">}</span><span class="w">
+</span><span class="p">}</span><span class="w">
+</span></code></pre></div></div>
+
+<p>Each triple: next word, <code class="language-plaintext highlighter-rouge">dee</code>, <code class="language-plaintext highlighter-rouge">lastTick</code>.<br />
+If file lacks <code class="language-plaintext highlighter-rouge">entries</code>, load returns empty (v1 wipe). Documented as intentional; no migration.</p>
+
+<p>Max followers per predecessor: <code class="language-plaintext highlighter-rouge">MAX_USER_FOLLOWERS = 20</code>.<br />
+Persist async after each <code class="language-plaintext highlighter-rouge">recordTransition</code>.</p>
+
+<h2 id="librime-decay">librime decay</h2>
+
+<p>Constants:</p>
+
+<div class="language-kotlin highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="nc">HALF_LIFE</span> <span class="p">=</span> <span class="mf">200.0</span>
+<span class="nc">DEE_AMPLITUDE</span> <span class="p">=</span> <span class="mf">1.0</span>
+<span class="nc">SCORE_CEIL</span> <span class="p">=</span> <span class="mf">1.0</span>
+<span class="nc">SCORE_FLOOR</span> <span class="p">=</span> <span class="mf">0.05</span>
+<span class="nc">KM</span> <span class="p">=</span> <span class="mf">1.0</span> <span class="p">/</span> <span class="p">(</span><span class="mf">1.0</span> <span class="p">-</span> <span class="nf">exp</span><span class="p">(-</span><span class="mf">0.005</span><span class="p">))</span>
+<span class="nc">SEED_WEIGHT</span> <span class="p">=</span> <span class="mf">0.4f</span>
+<span class="nc">USER_WEIGHT</span> <span class="p">=</span> <span class="mf">0.6f</span>
+</code></pre></div></div>
+
+<p><strong>formula_d</strong></p>
+
+<div class="language-kotlin highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="n">dee</span> <span class="p">+</span> <span class="nc">DEE_AMPLITUDE</span> <span class="p">*</span> <span class="nf">exp</span><span class="p">((</span><span class="n">lastTick</span> <span class="p">-</span> <span class="n">currentTick</span><span class="p">).</span><span class="nf">toDouble</span><span class="p">()</span> <span class="p">/</span> <span class="nc">HALF_LIFE</span><span class="p">)</span>
+</code></pre></div></div>
+
+<p><strong>formula_p</strong></p>
+
+<div class="language-kotlin highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="kd">val</span> <span class="py">m</span> <span class="p">=</span> <span class="nc">SCORE_CEIL</span> <span class="p">-</span> <span class="p">(</span><span class="nc">SCORE_CEIL</span> <span class="p">-</span> <span class="nc">SCORE_FLOOR</span><span class="p">)</span> <span class="p">*</span>
+        <span class="p">(</span><span class="mf">1.0</span> <span class="p">-</span> <span class="nf">exp</span><span class="p">(-</span><span class="n">globalTick</span> <span class="p">/</span> <span class="mf">10_000.0</span><span class="p">)).</span><span class="nf">pow</span><span class="p">(</span><span class="mi">10</span><span class="p">)</span>
+<span class="k">if</span> <span class="p">(</span><span class="n">dee</span> <span class="p">&lt;</span> <span class="mf">20.0</span><span class="p">)</span> <span class="n">m</span> <span class="p">+</span> <span class="p">(</span><span class="mf">0.5</span> <span class="p">-</span> <span class="n">m</span><span class="p">)</span> <span class="p">*</span> <span class="p">(</span><span class="n">dee</span> <span class="p">/</span> <span class="nc">KM</span><span class="p">)</span>
+<span class="k">else</span> <span class="n">m</span> <span class="p">+</span> <span class="p">(</span><span class="mf">1.0</span> <span class="p">-</span> <span class="n">m</span><span class="p">)</span> <span class="p">*</span> <span class="p">(</span><span class="mf">4.0</span><span class="p">.</span><span class="nf">pow</span><span class="p">(</span><span class="n">dee</span> <span class="p">/</span> <span class="nc">KM</span><span class="p">)</span> <span class="p">-</span> <span class="mf">1.0</span><span class="p">)</span> <span class="p">/</span> <span class="mf">3.0</span>
+</code></pre></div></div>
+
+<p><code class="language-plaintext highlighter-rouge">globalTick</code> increments on every <code class="language-plaintext highlighter-rouge">recordTransition</code> after the update, and is stored in JSON.</p>
+
+<p>Port source cited in code: librime <code class="language-plaintext highlighter-rouge">algo/dynamics.h</code>.</p>
+
+<h2 id="scoring-merge">Scoring merge</h2>
+
+<div class="language-kotlin highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="c1">// seed</span>
+<span class="n">scores</span><span class="p">[</span><span class="n">word</span><span class="p">]</span> <span class="p">+=</span> <span class="nc">SEED_WEIGHT</span> <span class="p">*</span> <span class="n">seedScore</span>
+<span class="c1">// user</span>
+<span class="n">scores</span><span class="p">[</span><span class="n">word</span><span class="p">]</span> <span class="p">+=</span> <span class="nc">USER_WEIGHT</span> <span class="p">*</span> <span class="nf">formulaP</span><span class="p">(</span><span class="n">dee</span><span class="p">).</span><span class="nf">toFloat</span><span class="p">()</span>
+<span class="c1">// filter prefix, sort desc, take n</span>
+</code></pre></div></div>
+
+<h2 id="call-sites">Call sites</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>Event</th>
+      <th>Action</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>flushComposing with non-empty word</td>
+      <td>recordTransition(prev, word); prev = word</td>
+    </tr>
+    <tr>
+      <td>suggestion tap</td>
+      <td>same; then nextWords(word) into bar</td>
+    </tr>
+    <tr>
+      <td>space after flush</td>
+      <td>nextWords(prevCommittedWord, n=5), update(“”, list)</td>
+    </tr>
+    <tr>
+      <td>mid-word suggest</td>
+      <td>suggest(prefix, k, context=prevCommittedWord) promotes bigram hits</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>Mixed Latin scripts: plain string keys. User layer learns <code class="language-plaintext highlighter-rouge">ami</code> -&gt; <code class="language-plaintext highlighter-rouge">tomake</code> without language IDs.</p>
+
+<h2 id="limits-accurate-framing">Limits (accurate framing)</h2>
+
+<ol>
+  <li>Seed coverage is thin (many preds have 1 follower; avg 3.7).</li>
+  <li>Norvig web register skews formal (<code class="language-plaintext highlighter-rouge">please contact</code>).</li>
+  <li>No unigram backoff if predecessor missing from both layers.</li>
+  <li>Seed hard-capped at 10 followers.</li>
+</ol>
+
+<p>Mid-word with empty bigram context still has Merged trie + BEVA.<br />
+After space with unknown prev and empty user layer, bar can be empty. Those are different failures.</p>
+
+<h2 id="upgrade-direction-detail-in-part-7">Upgrade direction (detail in part 7)</h2>
+
+<p>Replace densify seed (HeliBoard/AOSP <code class="language-plaintext highlighter-rouge">.combined</code> / <code class="language-plaintext highlighter-rouge">.dict</code>), keep user decay, add backoff. Do not throw away <code class="language-plaintext highlighter-rouge">BigramModel</code>’s two-layer shape.</p>
+
+<hr />
+
+<h2 id="verification-part-5">Verification (part 5)</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>Claim</th>
+      <th>Evidence</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>0.4 / 0.6 weights</td>
+      <td>BigramModel companion</td>
+    </tr>
+    <tr>
+      <td>MAX_USER 20, seed max 10</td>
+      <td>BigramModel; extract_bigrams default</td>
+    </tr>
+    <tr>
+      <td>formula_d / formula_p</td>
+      <td>BigramModel private methods</td>
+    </tr>
+    <tr>
+      <td>v2 JSON shape</td>
+      <td>loadUserBigrams / persistAsync</td>
+    </tr>
+    <tr>
+      <td>9287 / 34632 / 633187</td>
+      <td>measured bigrams.json</td>
+    </tr>
+    <tr>
+      <td>extract log-normalize</td>
+      <td>extract_bigrams.py scored append</td>
+    </tr>
+    <tr>
+      <td>BigramAware promote</td>
+      <td>SuggestionStrategy.kt</td>
+    </tr>
+    <tr>
+      <td>record on flush and tap</td>
+      <td>CodeKeyboardIME flushComposing, handleSuggestionTap</td>
+    </tr>
+  </tbody>
+</table>
+
+
+      <hr>
+
+      <!-- Prev / Next / Up navigation -->
+      
+      
+      
+
+      <div class="clearfix" style="margin-top: 2rem;">
+        
+          
+          
+
+          
+            
+            <a class="btn btn-primary float-left" href="/keyboard/04-suggestions-and-dictionaries.html" title="CodeKeyboard Part 4: Suggestion Bar, Strategy Stack, Tries, Learning">&larr; Previous</a>
+          
+
+          
+            
+            <a class="btn btn-primary float-right" href="/keyboard/06-fuzzy-emoji-snippets-decay.html" title="CodeKeyboard Part 6: Fuzzy Correction, Emoji, Snippets, Trie Decay">Next &rarr;</a>
+          
+        
+      </div>
+
+      
+      <div style="text-align: center; margin-top: 1rem;">
+        <a href="/keyboard/">&uarr; Back to Table of Contents</a>
+      </div>
+      
+
+    </div>
+  </div>
+</div>
+
+
+  <!-- Footer -->
+
+<hr>
+
+<footer>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <ul class="list-inline text-center">
+          
+          <li class="list-inline-item">
+            <a href="mailto:amitava.dev@proton.me" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="far fa-envelope fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          
+          
+          <li class="list-inline-item">
+            <a href="https://www.linkedin.com/in/amitavaag" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-linkedin fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          <li class="list-inline-item">
+            <a href="https://github.com/ikouchiha47" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-github fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+        </ul>
+
+        <p class="copyright text-muted">
+          Build with: 
+          <a 
+            href="https://github.com/StartBootstrap/startbootstrap-clean-blog-jekyll"
+            class="text-gray"
+            target="_blank">startbootstrap-clean-blog-jekyll</a></p>
+      </div>
+    </div>
+  </div>
+</footer>
+
+
+  <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="/assets/vendor/blog/js/scripts.js"></script>
+
+<script src="/assets/scripts.js"></script>
+
+
+
+
+
+  <script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+
+    document.querySelectorAll('pre > code.language-mermaid').forEach((codeBlock) => {
+      codeBlock.parentElement.outerHTML = `<pre class="mermaid">${codeBlock.textContent}</pre>`;
+    });
+
+
+    mermaid.initialize({ startOnLoad: true, theme: 'forest' });
+</script>
+
+
+  
+
+</body>
+
+</html>

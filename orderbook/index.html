@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+  <title>
+    Building an Order Book - iko&#39;s logs
+    
+  </title>
+
+  <meta name="description" content="I wanted a reason to write C++ that wasn’t a leetcode problem.">
+  <meta property="og:description" content="I wanted a reason to write C++ that wasn’t a leetcode problem.">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Building an Order Book">
+  <meta property="og:url" content="https://ikouchiha47.github.io/orderbook/">
+
+  
+
+  <link href='https://fonts.googleapis.com/css?family=Lora:400,700,400italic,700italic' rel='stylesheet' type='text/css'>
+  <link href='https://fonts.googleapis.com/css?family=Open+Sans:300italic,400italic,600italic,700italic,800italic,400,300,600,700,800' rel='stylesheet' type='text/css'>
+
+  <!-- <script src="https://use.fontawesome.com/releases/v5.15.3/js/all.js" crossorigin="anonymous"></script> -->
+  <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.15.4/css/all.css" integrity="sha384-DyZ88mC6Up2uqS4h/KRgHuoeGwBcD4Ng9SiP4dIRy0EXTlnuz47vAwmeGwVChigm" crossorigin="anonymous"/>
+
+  <link rel="stylesheet" href="/assets/main.css">
+  <link rel="canonical" href="https://ikouchiha47.github.io/orderbook/">
+  <link rel="alternate" type="application/rss+xml" title="iko&#39;s logs" href="/feed.xml">
+
+  <meta name="google-site-verification" content="lWkg6gIxJgzEKX_5XnhcxCtPE9QknaimFWWos_dTvPM" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fira+Sans:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Inconsolata:wght@200..900&family=Jersey+25&family=Kanit:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Merriweather+Sans:ital,wght@0,300..800;1,300..800&family=Nanum+Gothic+Coding&family=Space+Grotesk:wght@300..700&family=Titillium+Web:ital,wght@0,200;0,300;0,400;0,600;0,700;0,900;1,200;1,300;1,400;1,600;1,700&display=swap" rel="stylesheet">
+
+</head>
+
+
+<body>
+
+  <!-- Navigation -->
+<nav class="navbar navbar-expand-lg navbar-light fixed-top" id="mainNav">
+  <div class="container">
+    <a class="navbar-brand" href="/">iko&#39;s logs</a>
+    <button class="navbar-toggler navbar-toggler-right" type="button" data-toggle="collapse" data-target="#navbarResponsive" aria-controls="navbarResponsive" aria-expanded="false" aria-label="Toggle navigation">
+      Menu
+      <i class="fa fa-bars"></i>
+    </button>
+    <div class="collapse navbar-collapse" id="navbarResponsive">
+      <ul class="navbar-nav ml-auto">
+        <li class="nav-item">
+          <a class="nav-link" href="/">Home</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/about">About</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/posts">Posts</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/wall/">Wall</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/contact">Contact</a>
+        </li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+
+  <!-- Page Header -->
+
+<header class="masthead" style="background: linear-gradient(135deg, #0b1220 0%, #132033 55%, #1f3350 100%)">
+
+  <div class="overlay"></div>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <div class="post-heading">
+          <h1>Building an Order Book</h1>
+          
+          <h2 class="subheading">an unglamorous journal about binary feeds, lying benchmarks, and one very patient std::map</h2>
+          
+          <span class="meta">Posted by
+            <a href="#">ikouchiha47</a>
+            on October 08, 2026
+          </span>
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="container space-grotesk">
+  <div class="row">
+    <div class="col-lg-8 col-md-10 mx-auto">
+
+      <p>I wanted a reason to write C++ that wasn’t a leetcode problem.</p>
+
+<p>The vague goal was “get good enough at low-latency systems to be taken seriously.” The concrete version was: take a real NASDAQ order feed, rebuild its order book, and understand every byte and every nanosecond along the way. No tutorial. No framework. Just the feed and the code.</p>
+
+<p>This is the journal of that. It’s not a tutorial — I don’t know enough yet to write one, and half of these posts are me getting things wrong and finding out. It’s the stuff I’d want to remember: the byte that broke my parser, the benchmark that lied to me with a straight face, the afternoon I profiled my own code and found out 75% of the time wasn’t my code at all.</p>
+
+<p>The best part hasn’t been the code. It’s been the moment things snap into place — realising an order book is just millions of short biographies, or that the whole low-latency data-structure story reduces to one cache miss on one line. I wrote these down mostly so I don’t forget them.</p>
+
+<p>If you’re doing the same thing, this is the order I’d read them in. If you’re not, the one about the benchmark that said “0.98 nanoseconds” is a decent place to start.</p>
+
+
+      
+      <hr>
+
+      
+
+      
+      
+      
+
+      
+        
+        <h2>Table of Contents</h2>
+        <ol>
+        
+          <li><a href="/orderbook/01-reading-itch-bytes.html">Reading ITCH Bytes</a></li>
+        
+          <li><a href="/orderbook/02-parsing-binary-itch.html">Parsing Binary ITCH Without Lying to Yourself</a></li>
+        
+          <li><a href="/orderbook/03-order-book-model.html">An Order Book Is a Biography</a></li>
+        
+          <li><a href="/orderbook/04-correctness-counters.html">The Counters That Save You</a></li>
+        
+          <li><a href="/orderbook/05-benchmarking-cpp.html">Benchmarking C++ Without Lying to Yourself</a></li>
+        
+          <li><a href="/orderbook/06-profiling-the-replay.html">Where the Time Actually Goes</a></li>
+        
+          <li><a href="/orderbook/07-tree-vs-tick-ladder.html">std::map vs a Tick Ladder</a></li>
+        
+          <li><a href="/orderbook/08-building-an-exchange-jx.html">What Jane Street's Exchange Taught Me</a></li>
+        
+        </ol>
+      
+      
+
+    </div>
+  </div>
+</div>
+
+
+  <!-- Footer -->
+
+<hr>
+
+<footer>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <ul class="list-inline text-center">
+          
+          <li class="list-inline-item">
+            <a href="mailto:amitava.dev@proton.me" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="far fa-envelope fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          
+          
+          <li class="list-inline-item">
+            <a href="https://www.linkedin.com/in/amitavaag" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-linkedin fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          <li class="list-inline-item">
+            <a href="https://github.com/ikouchiha47" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-github fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+        </ul>
+
+        <p class="copyright text-muted">
+          Build with: 
+          <a 
+            href="https://github.com/StartBootstrap/startbootstrap-clean-blog-jekyll"
+            class="text-gray"
+            target="_blank">startbootstrap-clean-blog-jekyll</a></p>
+      </div>
+    </div>
+  </div>
+</footer>
+
+
+  <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="/assets/vendor/blog/js/scripts.js"></script>
+
+<script src="/assets/scripts.js"></script>
+
+
+
+
+
+  <script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+
+    document.querySelectorAll('pre > code.language-mermaid').forEach((codeBlock) => {
+      codeBlock.parentElement.outerHTML = `<pre class="mermaid">${codeBlock.textContent}</pre>`;
+    });
+
+
+    mermaid.initialize({ startOnLoad: true, theme: 'forest' });
+</script>
+
+
+  
+
+</body>
+
+</html>

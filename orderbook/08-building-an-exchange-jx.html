@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+  <title>
+    What Jane Street&#39;s Exchange Taught Me - iko&#39;s logs
+    
+  </title>
+
+  <meta name="description" content="">
+  <meta property="og:description" content="">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="What Jane Street&#39;s Exchange Taught Me">
+  <meta property="og:url" content="https://ikouchiha47.github.io/orderbook/08-building-an-exchange-jx.html">
+
+  
+
+  <link href='https://fonts.googleapis.com/css?family=Lora:400,700,400italic,700italic' rel='stylesheet' type='text/css'>
+  <link href='https://fonts.googleapis.com/css?family=Open+Sans:300italic,400italic,600italic,700italic,800italic,400,300,600,700,800' rel='stylesheet' type='text/css'>
+
+  <!-- <script src="https://use.fontawesome.com/releases/v5.15.3/js/all.js" crossorigin="anonymous"></script> -->
+  <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.15.4/css/all.css" integrity="sha384-DyZ88mC6Up2uqS4h/KRgHuoeGwBcD4Ng9SiP4dIRy0EXTlnuz47vAwmeGwVChigm" crossorigin="anonymous"/>
+
+  <link rel="stylesheet" href="/assets/main.css">
+  <link rel="canonical" href="https://ikouchiha47.github.io/orderbook/08-building-an-exchange-jx.html">
+  <link rel="alternate" type="application/rss+xml" title="iko&#39;s logs" href="/feed.xml">
+
+  <meta name="google-site-verification" content="lWkg6gIxJgzEKX_5XnhcxCtPE9QknaimFWWos_dTvPM" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fira+Sans:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Inconsolata:wght@200..900&family=Jersey+25&family=Kanit:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Merriweather+Sans:ital,wght@0,300..800;1,300..800&family=Nanum+Gothic+Coding&family=Space+Grotesk:wght@300..700&family=Titillium+Web:ital,wght@0,200;0,300;0,400;0,600;0,700;0,900;1,200;1,300;1,400;1,600;1,700&display=swap" rel="stylesheet">
+
+</head>
+
+
+<body>
+
+  <!-- Navigation -->
+<nav class="navbar navbar-expand-lg navbar-light fixed-top" id="mainNav">
+  <div class="container">
+    <a class="navbar-brand" href="/">iko&#39;s logs</a>
+    <button class="navbar-toggler navbar-toggler-right" type="button" data-toggle="collapse" data-target="#navbarResponsive" aria-controls="navbarResponsive" aria-expanded="false" aria-label="Toggle navigation">
+      Menu
+      <i class="fa fa-bars"></i>
+    </button>
+    <div class="collapse navbar-collapse" id="navbarResponsive">
+      <ul class="navbar-nav ml-auto">
+        <li class="nav-item">
+          <a class="nav-link" href="/">Home</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/about">About</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/posts">Posts</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/wall/">Wall</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/contact">Contact</a>
+        </li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+
+  <!-- Page Header -->
+
+<header class="masthead">
+
+  <div class="overlay"></div>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <div class="post-heading">
+          <h1>What Jane Street's Exchange Taught Me</h1>
+          
+          <h2 class="subheading">one box, multicast, and a 30%-on-one-line punchline</h2>
+          
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="container space-grotesk">
+  <div class="row">
+    <div class="col-lg-8 col-md-10 mx-auto">
+
+      <!-- Breadcrumb -->
+      <nav aria-label="breadcrumb" style="margin-bottom: 1.5rem;">
+        <ol class="breadcrumb" style="background: transparent; padding: 0;">
+          
+            <li class="breadcrumb-item"><a href="/orderbook/">Building an Order Book</a></li>
+          
+          
+          <li class="breadcrumb-item active" aria-current="page">What Jane Street's Exchange Taught Me</li>
+        </ol>
+      </nav>
+
+      <p>Somewhere in the middle of this project I watched Brian Nigito’s talk on JX, the crossing engine Jane Street built. I expected it to be over my head. Instead it made my little book feel like the first chapter of a much longer book — and it gave me the sentence I keep coming back to.</p>
+
+<p>Here’s what stuck.</p>
+
+<h2 id="they-run-it-on-one-machine">They run it on one machine</h2>
+
+<p>The matching engine — the thing every trade in the market goes through — runs on <strong>one commodity x86 box</strong>, with the whole book in memory. No sharding at the core. Everything that <em>can</em> be pushed out, is: scheduled cancels, auctions, trade reporting, market data. All separate.</p>
+
+<p>When they told a NASDAQ engineer this around 2002, he reportedly kept asking where the <em>real</em> system was. There wasn’t one. It was that box.</p>
+
+<h2 id="multicast-is-the-backbone">Multicast is the backbone</h2>
+
+<p>Every component — engine, client ports, market data — needs the <em>same</em> information at the <em>same</em> time. Sequential fan-out creates races. (He tells a great story about a naive connection list where, every morning at open, clients hammered the exchange just to be first in the list.) So they lean on <strong>multicast</strong>: the network replicates one packet to everyone at once.</p>
+
+<p>The price is that multicast is UDP — messages drop. So they add <strong>retransmitters</strong> that record the sequenced stream so anything missed can be recovered.</p>
+
+<h2 id="the-locking-idea-i-couldnt-stop-thinking-about">The locking idea I couldn’t stop thinking about</h2>
+
+<p>Every message has a <strong>topic</strong> — think of it as its own lock, with its own sequence number. A port <em>proposes</em> the next transaction on its topic; if it loses the race, it rolls back, applies the winner, and retries. That’s why each port keeps exactly <strong>one unacknowledged transaction in flight</strong>: rollback only ever has to remember one message.</p>
+
+<p>The engine is the only thing that writes across topics (a trade touches both sides), and stale proposals are silently <em>dropped</em>, not rejected. The sender eventually sees reality and tries again.</p>
+
+<h2 id="determinism-is-the-product">Determinism is the product</h2>
+
+<p>Every downstream app is written to apply the ordered stream deterministically, so any of them can be killed and rebuilt by replay in under thirty seconds. Failover is a human flicking a switch, not Paxos — consensus adds a round trip, and “I don’t know of any exchanges that use it.”</p>
+
+<p>The payoff he keeps returning to: <em>“I know exactly what I knew at every point in time.”</em> Testable, replayable, explainable. Determinism isn’t a side effect of the design — it’s the thing the design is <em>for</em>.</p>
+
+<h2 id="and-the-punchline">And the punchline</h2>
+
+<p>Here’s the bit I can’t shake. He says that in a fast matching engine, roughly <strong>30% of the time is spent on a single line</strong> — dereferencing the order’s index to find the order. It’s a cache miss. The machine spends a third of its life waiting for memory.</p>
+
+<p>Which is the same lesson as the tick ladder, arriving from the opposite direction. The hard part of low-latency systems isn’t clever algorithms. It’s arranging your data so the CPU doesn’t have to go fetch it. That’s why exchange engines use contiguous slots and array indices instead of pointers and trees — and why the little <code class="language-plaintext highlighter-rouge">std::map</code> in my toy book is, in miniature, exactly the thing they spent years engineering away from.</p>
+
+<h2 id="what-i-take-from-it">What I take from it</h2>
+
+<p>I’m not building an exchange. But the direction is the same at every scale:</p>
+
+<ul>
+  <li>index into preallocated slots, don’t chase pointers,</li>
+  <li>don’t allocate in the critical path,</li>
+  <li>make it deterministic so you can replay it,</li>
+  <li>and understand that <em>speed is what buys you simplicity</em>, not the other way around.</li>
+</ul>
+
+<p>I went back to my own code after the talk and understood why the next thing to build is a slab and a ladder. Not because a blog told me to. Because now I can see the cache miss.</p>
+
+
+      <hr>
+
+      <!-- Prev / Next / Up navigation -->
+      
+      
+      
+
+      <div class="clearfix" style="margin-top: 2rem;">
+        
+          
+          
+
+          
+            
+            <a class="btn btn-primary float-left" href="/orderbook/07-tree-vs-tick-ladder.html" title="std::map vs a Tick Ladder">&larr; Previous</a>
+          
+
+          
+        
+      </div>
+
+      
+      <div style="text-align: center; margin-top: 1rem;">
+        <a href="/orderbook/">&uarr; Back to Table of Contents</a>
+      </div>
+      
+
+    </div>
+  </div>
+</div>
+
+
+  <!-- Footer -->
+
+<hr>
+
+<footer>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <ul class="list-inline text-center">
+          
+          <li class="list-inline-item">
+            <a href="mailto:amitava.dev@proton.me" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="far fa-envelope fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          
+          
+          <li class="list-inline-item">
+            <a href="https://www.linkedin.com/in/amitavaag" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-linkedin fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          <li class="list-inline-item">
+            <a href="https://github.com/ikouchiha47" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-github fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+        </ul>
+
+        <p class="copyright text-muted">
+          Build with: 
+          <a 
+            href="https://github.com/StartBootstrap/startbootstrap-clean-blog-jekyll"
+            class="text-gray"
+            target="_blank">startbootstrap-clean-blog-jekyll</a></p>
+      </div>
+    </div>
+  </div>
+</footer>
+
+
+  <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="/assets/vendor/blog/js/scripts.js"></script>
+
+<script src="/assets/scripts.js"></script>
+
+
+
+
+
+  <script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+
+    document.querySelectorAll('pre > code.language-mermaid').forEach((codeBlock) => {
+      codeBlock.parentElement.outerHTML = `<pre class="mermaid">${codeBlock.textContent}</pre>`;
+    });
+
+
+    mermaid.initialize({ startOnLoad: true, theme: 'forest' });
+</script>
+
+
+  
+
+</body>
+
+</html>

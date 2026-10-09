@@ -1,0 +1,392 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+  <title>
+    Optimux: from a worker-pool tutorial to a DynamicScaler - iko&#39;s logs
+    
+  </title>
+
+  <meta name="description" content="The Job/Dispatcher worker pool from the famous &#39;1 Million Requests&#39; article is built for I/O-bound fan-out. Image processing is a mixed I/O+CPU pipeline, and pprof proved the difference. Here&#39;s the road from that pattern to a self-scaling worker pool.">
+  <meta property="og:description" content="The Job/Dispatcher worker pool from the famous &#39;1 Million Requests&#39; article is built for I/O-bound fan-out. Image processing is a mixed I/O+CPU pipeline, and...">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Optimux: from a worker-pool tutorial to a Dynam...">
+  <meta property="og:url" content="https://ikouchiha47.github.io/2026/08/10/optimux-dynamic-scaler.html">
+
+  
+
+  <link href='https://fonts.googleapis.com/css?family=Lora:400,700,400italic,700italic' rel='stylesheet' type='text/css'>
+  <link href='https://fonts.googleapis.com/css?family=Open+Sans:300italic,400italic,600italic,700italic,800italic,400,300,600,700,800' rel='stylesheet' type='text/css'>
+
+  <!-- <script src="https://use.fontawesome.com/releases/v5.15.3/js/all.js" crossorigin="anonymous"></script> -->
+  <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.15.4/css/all.css" integrity="sha384-DyZ88mC6Up2uqS4h/KRgHuoeGwBcD4Ng9SiP4dIRy0EXTlnuz47vAwmeGwVChigm" crossorigin="anonymous"/>
+
+  <link rel="stylesheet" href="/assets/main.css">
+  <link rel="canonical" href="https://ikouchiha47.github.io/2026/08/10/optimux-dynamic-scaler.html">
+  <link rel="alternate" type="application/rss+xml" title="iko&#39;s logs" href="/feed.xml">
+
+  <meta name="google-site-verification" content="lWkg6gIxJgzEKX_5XnhcxCtPE9QknaimFWWos_dTvPM" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fira+Sans:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Inconsolata:wght@200..900&family=Jersey+25&family=Kanit:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Merriweather+Sans:ital,wght@0,300..800;1,300..800&family=Nanum+Gothic+Coding&family=Space+Grotesk:wght@300..700&family=Titillium+Web:ital,wght@0,200;0,300;0,400;0,600;0,700;0,900;1,200;1,300;1,400;1,600;1,700&display=swap" rel="stylesheet">
+
+</head>
+
+
+<body>
+
+  <!-- Navigation -->
+<nav class="navbar navbar-expand-lg navbar-light fixed-top" id="mainNav">
+  <div class="container">
+    <a class="navbar-brand" href="/">iko&#39;s logs</a>
+    <button class="navbar-toggler navbar-toggler-right" type="button" data-toggle="collapse" data-target="#navbarResponsive" aria-controls="navbarResponsive" aria-expanded="false" aria-label="Toggle navigation">
+      Menu
+      <i class="fa fa-bars"></i>
+    </button>
+    <div class="collapse navbar-collapse" id="navbarResponsive">
+      <ul class="navbar-nav ml-auto">
+        <li class="nav-item">
+          <a class="nav-link" href="/">Home</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/about">About</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/posts">Posts</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/wall/">Wall</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/contact">Contact</a>
+        </li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+
+  <!-- Page Header -->
+
+<header class="masthead" style="background: linear-gradient(135deg, #0f172a 0%, #1e2937 50%, #334155 100%)">
+
+  <div class="overlay"></div>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <div class="post-heading">
+          <h1>Optimux: from a worker-pool tutorial to a DynamicScaler</h1>
+          
+          <h2 class="subheading">open-sourcing an on-the-fly image/video optimizer, and why the classic dispatcher pattern didn't fit</h2>
+          
+          <span class="meta">Posted by
+            <a href="#">ikouchiha47</a>
+            on August 10, 2026 &middot; <span class="reading-time" title="Estimated read time">
+  
+   25 mins  read </span>
+
+          </span>
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="container space-grotesk">
+  <div class="row">
+    <div class="col-lg-8 col-md-10 mx-auto">
+
+      <p><a href="https://github.com/go-batteries/optimux">optimux</a> is a Go service that resizes, re-encodes, and streams images and video on the fly — <code class="language-plaintext highlighter-rouge">/resize?image_url=...&amp;sizes=300x0&amp;format=webp&amp;quality=60</code>, done. It’s been running as an internal service for a while. I’m open-sourcing it now, AGPL-3.0, because the worker pool underneath it — the part that decides how many goroutines are doing image processing at any given moment — ended up being the most interesting thing in the codebase, and it deserves to exist somewhere other than a private repo.</p>
+
+<p>This is the story of how that worker pool got there, including the part where the pattern everyone starts with turned out to be actively wrong for this workload.</p>
+
+<h2 id="starting-point-the-jobdispatcher-pattern">Starting point: the Job/Dispatcher pattern</h2>
+
+<p>Like a lot of people who’ve had to build a Go job queue, I started from Marcio Castilho’s <a href="https://medium.com/smsjunk/handling-1-million-requests-per-minute-with-golang-f70ac505fcaa">Handling 1 Million Requests per Minute with Golang</a>. Worth being precise about what that article actually builds, because the mismatch with image processing turned out to matter a lot:</p>
+
+<ul>
+  <li>A <code class="language-plaintext highlighter-rouge">Job</code> struct wraps one unit of work (there, a POST payload headed to S3).</li>
+  <li>A buffered <code class="language-plaintext highlighter-rouge">JobQueue chan Job</code> receives incoming jobs.</li>
+  <li>A <code class="language-plaintext highlighter-rouge">Dispatcher</code> owns a <code class="language-plaintext highlighter-rouge">WorkerPool chan chan Job</code> — a <strong>channel of channels</strong>. Each <code class="language-plaintext highlighter-rouge">Worker</code> has its own <code class="language-plaintext highlighter-rouge">chan Job</code>, and the moment a worker finishes a job, it pushes its <em>own</em> channel back into the shared <code class="language-plaintext highlighter-rouge">WorkerPool</code>. The dispatcher’s loop just pulls one worker-channel off <code class="language-plaintext highlighter-rouge">WorkerPool</code> and hands it the next job.</li>
+  <li>No worker ever polls for work or reports “I’m free” via a flag — availability <em>is</em> “my channel is currently sitting in the pool.” <code class="language-plaintext highlighter-rouge">MAX_WORKERS</code> and <code class="language-plaintext highlighter-rouge">MAX_QUEUE</code> are env-configured, fixed for the process lifetime.</li>
+</ul>
+
+<p>The article’s numbers are genuinely good: they took a system that needed ~100 EC2 instances down to 4 <code class="language-plaintext highlighter-rouge">c4.Large</code> instances handling close to a million requests a minute, by replacing unbounded goroutine spawning with this bounded pool. But the workload is uploading JSON payloads to S3 — almost entirely I/O wait, barely any CPU. I built the same pattern, pointed it at image resizing instead, and it did not translate.</p>
+
+<h2 id="the-pattern-didnt-fit-and-pprof-proved-it">The pattern didn’t fit, and pprof proved it</h2>
+
+<p>I wired up the Job/Dispatcher pattern for image jobs and it was slow in a way that didn’t make sense from the throughput numbers alone. So I pulled a blocking profile, and it was unambiguous:</p>
+
+<blockquote>
+  <p>pprof blocking profile shows <strong>67.99%</strong> of total time spent waiting on <code class="language-plaintext highlighter-rouge">chanrecv1</code>.</p>
+</blockquote>
+
+<p>That’s workers blocked waiting for jobs, and the dispatcher blocked waiting for workers to hand their channel back — a pattern built for a workload where a worker is <em>cheap and fast</em> per unit (fire an S3 PUT, wait on the network, done) turns into mostly idle channel choreography when a unit of work is <em>hundreds of milliseconds of CPU-bound image processing</em> instead. The channel-of-channels handoff, the dispatcher loop, the per-job registration — all of that overhead is invisible when a worker’s actual job takes microseconds of your attention and the rest is network wait. It stops being invisible when the job itself is the bottleneck. Target throughput was <code class="language-plaintext highlighter-rouge">8.6rps</code>; no matter what I tuned in this shape, it sat at <code class="language-plaintext highlighter-rouge">2.0xrps</code>.</p>
+
+<p>So I threw it out. Not tuned, not patched — removed, and rebuilt from a synchronous baseline up, one variable at a time, so I’d actually know what each change bought me instead of tuning inside a pattern that was wrong from the start.</p>
+
+<h2 id="rebuilding-from-zero-one-variable-at-a-time">Rebuilding from zero, one variable at a time</h2>
+
+<p><strong>Synchronous baseline, no workers at all</strong> — inline resize, respond directly. <code class="language-plaintext highlighter-rouge">2.9rps</code>. Already ahead of the dispatcher pattern’s <code class="language-plaintext highlighter-rouge">2.0x</code>, which was the first sign the problem wasn’t “not enough workers,” it was the shape of the concurrency itself.</p>
+
+<p><strong>Single channel, single worker.</strong> The smallest thing that still queues — one goroutine pulling off one channel, closer to a single core churning a work list than to a “pool” in any real sense. <code class="language-plaintext highlighter-rouge">2.1rps</code> — <em>worse</em> than doing nothing concurrent at all. Concurrency has a floor cost, and this workload was paying it without buying anything back yet.</p>
+
+<p><strong>Single queue, 4 workers.</strong> <code class="language-plaintext highlighter-rouge">3.15rps</code>, average latency <code class="language-plaintext highlighter-rouge">1.37s</code>. First real win, and a small one.</p>
+
+<p><strong>Two queues — fetch and process, split apart — 4 workers each.</strong> <code class="language-plaintext highlighter-rouge">3.07rps</code>, marginally <em>lower</em> throughput than the single queue, but the latency distribution across percentiles visibly smoothed out. Tracing explained why: fetching a source image from tmpfs cost <code class="language-plaintext highlighter-rouge">40-100ms</code>; processing it (libvips, resizing a 3.1MB source down to a 120×240 webp) cost <code class="language-plaintext highlighter-rouge">~700ms</code>. Those are two stages with wildly different service times sharing a queue and worker pool — an impedance mismatch, where a burst of cheap fetches can queue up behind a slow processor, or the reverse.</p>
+
+<p><strong>Two queues, but weighted 2 fetchers / 4 processors</strong>, leaning into the imbalance on purpose. Performed <em>worse</em> than the even split, still around <code class="language-plaintext highlighter-rouge">3+rps</code>. My read at the time: this isn’t a batch pipeline where you can freely over-provision the expensive stage and let a queue absorb the mismatch — it’s a real-time request path where the caller is still on the other end of the HTTP connection waiting, so over-provisioning one stage just moves the queueing, it doesn’t remove it.</p>
+
+<p>I also tried a demand-driven producer/consumer setup along the way — closer to Elixir’s GenStage, where the consumer explicitly asks the producer for N items instead of the producer pushing whenever it has something. It didn’t pan out for this workload, and honestly the specifics didn’t survive in my notes — only the conclusion did: the demand/ack round-trip was adding coordination cost that a plain buffered channel already got for free, without a corresponding improvement in how work actually got scheduled.</p>
+
+<p>Separately, before any dynamic scaler existed, I added something orthogonal to worker count entirely: instead of buffering the whole encoded image and writing it in one response, the handler started flushing early and streaming bytes out as the encoder produced them. That alone moved the needle independent of worker shape — <code class="language-plaintext highlighter-rouge">3.28rps</code>, latency down to <code class="language-plaintext highlighter-rouge">1.31s</code>.</p>
+
+<h2 id="what-actually-generalizes-and-what-doesnt">What actually generalizes, and what doesn’t</h2>
+
+<p>Here’s the actual lesson, not just the numbers: the Job/Dispatcher pattern isn’t wrong, it’s scoped to a specific kind of workload — one where the <em>external</em> resource (S3, a network call, a database) is the thing you’re rationing, and your own CPU is basically idle waiting on it. In that world, a large fixed worker count is nearly free — you’re just capping how many outstanding waits you allow. libvips-backed image processing inverts that: the constrained resource is <em>your own CPU and memory</em>, fetch and process have genuinely different cost profiles, and a fixed <code class="language-plaintext highlighter-rouge">MAX_WORKERS</code> picked once has no way to track a queue that swings between bursty and empty. <code class="language-plaintext highlighter-rouge">iostat</code> on the EC2 box backed this up directly — CPU usage swinging from 80%+ down to 40% inside the same short window, <code class="language-plaintext highlighter-rouge">%steal</code> spiking as high as 8.74% (hypervisor-stolen cycles, which no amount of worker retuning fixes). A workload like that needs the worker count itself to be a live variable, not a constant — which is what actually motivated moving off any fixed-size pool entirely, GenStage-shaped or otherwise, toward something that watches queue depth and scales.</p>
+
+<p>It’s worth being precise about <em>where</em> the two patterns actually diverge structurally, because it’s not just “one has a scaler and one doesn’t.”</p>
+
+<p>The dispatcher pattern’s availability signal is a second layer of indirection: each worker owns a private <code class="language-plaintext highlighter-rouge">chan Job</code>, and “I’m free” is expressed by pushing that channel into a shared <code class="language-plaintext highlighter-rouge">WorkerPool chan chan Job</code>. That’s <code class="language-plaintext highlighter-rouge">N+1</code> channels for <code class="language-plaintext highlighter-rouge">N</code> workers — one pool channel plus one per-worker channel — and a dispatcher goroutine whose whole job is shuttling a channel out of the pool, handing it a job, and waiting for it to come back. It’s a clean pattern, but it exists to solve a problem optimux’s worker pool doesn’t have: every worker in <code class="language-plaintext highlighter-rouge">DynamicScaler</code> pulls directly off one shared <code class="language-plaintext highlighter-rouge">Queue chan T</code>. There’s no dispatcher goroutine, no per-worker channel, no explicit “I’m free” message at all — a worker’s availability <em>is</em> nothing more than “currently blocked on a receive from <code class="language-plaintext highlighter-rouge">Queue</code>,” which Go’s own runtime already arbitrates correctly among however many goroutines are competing to receive. The single-shared-queue shape showed up as early as the “single queue, 4 workers” experiment above, well before any scaler existed, and every version since kept it — the channel-of-channels indirection never came back, because a single channel with competing receivers gave equal or better throughput without the extra bookkeeping.</p>
+
+<p>The other divergence is what each pattern treats as fixed. The article’s <code class="language-plaintext highlighter-rouge">MAX_WORKERS</code> is an env var read once at startup — there’s no concept of a worker ever leaving the pool short of the whole process dying, because the workload it targets doesn’t need one: S3 upload capacity doesn’t really shrink at 2am. <code class="language-plaintext highlighter-rouge">DynamicScaler</code> has an explicit opposite belief baked into its registry — every <code class="language-plaintext highlighter-rouge">WorkerSlot</code> can be marked <code class="language-plaintext highlighter-rouge">Retiring</code> and needs a defined, race-free way to leave the pool without dropping in-flight work, because for this workload the <em>right</em> worker count at any moment is itself the thing under contention (CPU cores, memory for concurrently-decoded images), not a constant you get to pick once.</p>
+
+<h2 id="what-dynamicscaler-does">What DynamicScaler does</h2>
+
+<p><code class="language-plaintext highlighter-rouge">DynamicScaler[T]</code> (<code class="language-plaintext highlighter-rouge">src/mediahose/schedulers.go</code>) is a generic worker pool that grows and shrinks based on queue pressure instead of running a fixed goroutine count. The type parameter is the job type, so the same scaler independently drives image jobs, video jobs, and batch jobs off different queues with different thresholds.</p>
+
+<p>The registry is a single ordered slice, append-only in creation order:</p>
+
+<div class="language-go highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">type</span> <span class="n">WorkerSlot</span><span class="p">[</span><span class="n">T</span> <span class="n">any</span><span class="p">]</span> <span class="k">struct</span> <span class="p">{</span>
+    <span class="n">Idx</span>      <span class="kt">int64</span>
+    <span class="n">Retiring</span> <span class="kt">bool</span> <span class="c">// marked for retirement; reclaimed only on exit notify</span>
+    <span class="n">worker</span>   <span class="n">Worker</span><span class="p">[</span><span class="n">T</span><span class="p">]</span>
+    <span class="n">cancel</span>   <span class="n">context</span><span class="o">.</span><span class="n">CancelFunc</span>
+    <span class="n">retire</span>   <span class="k">chan</span> <span class="k">chan</span> <span class="kt">bool</span>
+<span class="p">}</span>
+
+<span class="k">type</span> <span class="n">DynamicScaler</span><span class="p">[</span><span class="n">T</span> <span class="n">any</span><span class="p">]</span> <span class="k">struct</span> <span class="p">{</span>
+    <span class="n">WorkerFactory</span>      <span class="k">func</span><span class="p">(</span><span class="n">idx</span> <span class="kt">int64</span><span class="p">,</span> <span class="n">done</span> <span class="k">chan</span> <span class="kt">int64</span><span class="p">)</span> <span class="n">Worker</span><span class="p">[</span><span class="n">T</span><span class="p">]</span>
+    <span class="n">Queue</span>              <span class="k">chan</span> <span class="n">T</span>
+    <span class="n">MinWorkers</span><span class="p">,</span> <span class="n">MaxWorkers</span> <span class="kt">int</span>
+    <span class="n">ScaleUpThreshold</span><span class="p">,</span> <span class="n">ScaleDownThreshold</span> <span class="kt">int</span>
+    <span class="n">CheckInterval</span><span class="p">,</span> <span class="n">ScaleCooldown</span><span class="p">,</span> <span class="n">RetireGrace</span> <span class="n">time</span><span class="o">.</span><span class="n">Duration</span>
+    <span class="n">workers</span> <span class="p">[]</span><span class="o">*</span><span class="n">WorkerSlot</span><span class="p">[</span><span class="n">T</span><span class="p">]</span> <span class="c">// tail = newest</span>
+<span class="p">}</span>
+</code></pre></div></div>
+
+<p>Because the slice is append-only, the tail is always the newest worker — which makes “retire the newest worker first” (LIFO) a deterministic scan instead of a random pick. There’s no separate counter tracking how many workers are active; the live count is derived on read:</p>
+
+<div class="language-go highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">func</span> <span class="n">countLive</span><span class="p">[</span><span class="n">T</span> <span class="n">any</span><span class="p">](</span><span class="n">workers</span> <span class="p">[]</span><span class="o">*</span><span class="n">WorkerSlot</span><span class="p">[</span><span class="n">T</span><span class="p">])</span> <span class="kt">int</span> <span class="p">{</span>
+    <span class="n">live</span> <span class="o">:=</span> <span class="m">0</span>
+    <span class="k">for</span> <span class="n">_</span><span class="p">,</span> <span class="n">wsl</span> <span class="o">:=</span> <span class="k">range</span> <span class="n">workers</span> <span class="p">{</span>
+        <span class="k">if</span> <span class="o">!</span><span class="n">wsl</span><span class="o">.</span><span class="n">Retiring</span> <span class="p">{</span>
+            <span class="n">live</span><span class="o">++</span>
+        <span class="p">}</span>
+    <span class="p">}</span>
+    <span class="k">return</span> <span class="n">live</span>
+<span class="p">}</span>
+</code></pre></div></div>
+
+<p>Nothing else exists to fall out of sync with the registry, because there’s nothing else — the count is a computation over the one piece of state, not a second piece of state someone has to remember to update alongside it.</p>
+
+<p><strong>Retirement happens at an idle boundary, not on demand.</strong> A worker that opts in (<code class="language-plaintext highlighter-rouge">FetchWorker</code>, the image/video processing worker, does) runs a single blocking <code class="language-plaintext highlighter-rouge">select</code> over three cases — context cancellation, a retire request, and the job queue — with no <code class="language-plaintext highlighter-rouge">default</code> branch:</p>
+
+<div class="language-go highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">select</span> <span class="p">{</span>
+<span class="k">case</span> <span class="o">&lt;-</span><span class="n">ctx</span><span class="o">.</span><span class="n">Done</span><span class="p">()</span><span class="o">:</span>
+    <span class="k">return</span>
+<span class="k">case</span> <span class="n">retireReq</span> <span class="o">:=</span> <span class="o">&lt;-</span><span class="n">fw</span><span class="o">.</span><span class="n">RetireCh</span><span class="o">:</span>
+    <span class="k">select</span> <span class="p">{</span>
+    <span class="k">case</span> <span class="n">retireReq</span> <span class="o">&lt;-</span> <span class="no">true</span><span class="o">:</span>
+    <span class="k">default</span><span class="o">:</span>
+    <span class="p">}</span>
+    <span class="k">return</span>
+<span class="k">case</span> <span class="n">job</span> <span class="o">:=</span> <span class="o">&lt;-</span><span class="n">jobQueueChan</span><span class="o">:</span>
+    <span class="c">// process it</span>
+<span class="p">}</span>
+</code></pre></div></div>
+
+<p>No <code class="language-plaintext highlighter-rouge">default</code> matters: the worker is genuinely parked, doing nothing, only while blocked in that select. A retire request lands the instant the worker goes idle, not after it happens to finish whatever job comes next. When the scaler decides to shrink the pool, it marks the newest slot <code class="language-plaintext highlighter-rouge">Retiring: true</code> and sends a one-shot ack request; the slot stays in the registry, still counted toward the hard <code class="language-plaintext highlighter-rouge">MaxWorkers</code> cap, until the worker actually exits and notifies the scaler on a close channel. There’s a bounded grace period (default 2s) — if the worker hasn’t idled out by then, the scaler cancels its context as a fallback nudge, but removal from the registry only ever happens on the real exit notification, never on the timeout itself.</p>
+
+<p><strong>Scale decisions are cooled down, with an escape hatch.</strong> The signal driving <code class="language-plaintext highlighter-rouge">scale()</code> is <code class="language-plaintext highlighter-rouge">len(ds.Queue)</code> — instantaneous backlog, sampled on a ticker. That’s not the same thing as, say, SQS handing you <code class="language-plaintext highlighter-rouge">ApproximateNumberOfMessagesVisible</code> alongside an in-flight count, smoothed over a window before an alarm fires. A raw instantaneous queue length is noisy under bursty traffic: it can cross <code class="language-plaintext highlighter-rouge">ScaleUpThreshold</code> and <code class="language-plaintext highlighter-rouge">ScaleDownThreshold</code> within a couple of ticks without the underlying load actually having changed, and a scaler with no way to tell a real trend from a blip would happily add a worker and retire it right back. The cooldown (default 30s between scale actions) exists because that better signal doesn’t exist yet — it’s a blunt fix for a noisy input, not a fundamental property of dynamic pools. The one case that bypasses it entirely: if live workers ever drop below <code class="language-plaintext highlighter-rouge">MinWorkers</code>, the scaler refills immediately regardless of cooldown, so a crash storm can’t leave the pool sitting empty for a full cooldown window waiting on a timer that doesn’t care capacity is gone.</p>
+
+<p>That’s the whole mechanism: one ordered registry as the single source of truth for both “who’s alive” and “who retires next,” idle-boundary handshakes instead of blind cancellation, and a cooldown standing in for a smarter scaling signal that isn’t built yet.</p>
+
+<h2 id="what-i-didnt-test-prefork">What I didn’t test: prefork</h2>
+
+<p>One pattern from a different corner of the same problem space I never actually tried: <a href="https://docs.gofiber.io/">Fiber’s prefork mode</a> — instead of one Go process handling everything under a single <code class="language-plaintext highlighter-rouge">GOMAXPROCS</code>, use <code class="language-plaintext highlighter-rouge">SO_REUSEPORT</code> to run N forked OS processes, each getting its own slice of cores, with the kernel load-balancing connections across them.</p>
+
+<p>My honest guess is it wouldn’t have moved the throughput numbers above. Every pool-shape experiment — single worker, 4 workers, split queues, weighted split — barely moved throughput (<code class="language-plaintext highlighter-rouge">2.1</code> to <code class="language-plaintext highlighter-rouge">3.15rps</code>), because the real cost is <code class="language-plaintext highlighter-rouge">~700ms</code> of libvips CPU work per image, not goroutine-scheduling or channel overhead. Prefork changes how many OS processes share a machine’s cores, not how many cores exist; the same physical CPU is doing the same total amount of resize work whether it’s one process running N goroutines or K processes each running fewer, and Go’s scheduler already multiplexes goroutines across cores efficiently for CPU-bound work like this.</p>
+
+<p>Where I’d actually expect it to help is somewhere none of these benchmarks were looking: tail latency and fault isolation. This worker loop allocates large image byte slices per job (there’s a <code class="language-plaintext highlighter-rouge">byts = nil</code> in it as a GC hint) — a GC pause or heavy mark-assist period in one process adds jitter to <em>every</em> concurrent request in that process. With prefork, GC pressure in one fork doesn’t stall requests being served by a sibling fork. Same story for a pathological input (corrupt file, huge dimensions) wedging or OOMing one process — the kernel keeps routing new connections to the survivors instead of the whole fleet going down. Neither of those is a throughput property, and neither is something <code class="language-plaintext highlighter-rouge">Progression.md</code>’s numbers (throughput, average latency) would have caught even if true. Genuinely untested — not a claim, a gap.</p>
+
+<h2 id="whats-next">What’s next</h2>
+
+<p>Three things this codebase is deliberately waiting on or missing rather than half-building now, documented in the repo for anyone who wants to pick them up.</p>
+
+<p><strong>Streaming instead of buffering, once govips ships it.</strong> Every image today gets fully buffered into a <code class="language-plaintext highlighter-rouge">[]byte</code> at each stage — load, encode, respond — before the next stage starts. govips just merged native streaming support (<code class="language-plaintext highlighter-rouge">LoadImageFromReader</code>, <code class="language-plaintext highlighter-rouge">SaveToWriter*</code>, PR <a href="https://github.com/davidbyttow/govips/pull/539">davidbyttow/govips#539</a>), which would let a load and an encode work directly against <code class="language-plaintext highlighter-rouge">io.Reader</code>/<code class="language-plaintext highlighter-rouge">io.Writer</code> instead of a fully materialized buffer — real memory savings for a service whose job is exactly this: dynamic compression of non-standard sizes at request time. It’s not in a tagged release yet (latest tag predates the merge by months), so this is parked as <code class="language-plaintext highlighter-rouge">docs/ADR-003</code> in the repo until that lands, rather than pinned to an untagged commit in something serving production traffic.</p>
+
+<p><strong>A real HTTP/2 cross-stream priority scheduler.</strong> This one came out of a completely different rabbit hole: <a href="https://blog.cloudflare.com/parallel-streaming-of-progressive-images/">Cloudflare’s parallel-streaming-of-progressive-images</a> work, where a server multiplexing many concurrently-loading images over one HTTP/2 connection sends every image’s size header first, then every preview, then remaining refinement data — instead of blasting one image’s full body before starting the next. Optimux already does the single-image version of this (<code class="language-plaintext highlighter-rouge">StreamEncoder</code>/<code class="language-plaintext highlighter-rouge">ProgressiveStreamEncoder</code> chunk header→preview→remainder), but the cross-stream scheduling piece — deciding, across every concurrently open image request, whose bytes go out next — turned out to be something almost nobody exposes as a plugin point. Go’s <code class="language-plaintext highlighter-rouge">x/net/http2.WriteScheduler</code> is deprecated by its own maintainers (“provides too much visibility into implementation internals, is difficult to use”); nginx has an internal RFC 7540 priority tree that’s private to its core module, not reachable from third-party modules; <code class="language-plaintext highlighter-rouge">fasthttp/http2</code> parses the <code class="language-plaintext highlighter-rouge">PRIORITY</code> frame’s weight and never reads it again anywhere. The real prior art turned out to be H2O (a genuine O(1) scheduler, but measurably unfair — Tempesta Tech’s own simulation found only 2 of 256 streams got ideal scheduling against it), nghttp2 (correct WFQ, but O(n)), and <a href="https://github.com/tempesta-tech/tempesta/pull/1973">Tempesta FW</a>, who landed on WFQ backed by HAProxy’s <code class="language-plaintext highlighter-rouge">ebtree</code> specifically for the 100-1000-stream range this kind of service would actually see. The plan, written up in <code class="language-plaintext highlighter-rouge">docs/EXPLORATION-HTTP2-Priority-Scheduler.md</code>, is a from-scratch server on <code class="language-plaintext highlighter-rouge">golang.org/x/net/http2.Framer</code> directly — bypassing the deprecated hook entirely — staged from a toy proving the interleaving works, up to real flow control, up to wiring in the actual image pipeline.</p>
+
+<p><strong>A scale-up signal that knows when adding a worker won’t help.</strong> <code class="language-plaintext highlighter-rouge">scale()</code> only ever asks “is the queue long” — it has no way to tell a genuine burst apart from a backlog that’s building because libvips’s own thread pool is already saturated, in which case another Go worker just queues behind the same C-level pool without adding real capacity, while still paying for a decoded image buffer’s worth of memory. I went looking for a way to read that saturation directly from govips and it isn’t there: <code class="language-plaintext highlighter-rouge">ConcurrencyLevel</code> is write-only in practice (set once via <code class="language-plaintext highlighter-rouge">vips_concurrency_set</code>, read back only for a startup log line), and <code class="language-plaintext highlighter-rouge">RuntimeStats</code> tracks cumulative operation counts, not current thread-pool occupancy. libvips’s underlying <code class="language-plaintext highlighter-rouge">GThreadPool</code> (GLib) does expose real introspection — <code class="language-plaintext highlighter-rouge">g_thread_pool_unprocessed()</code>, <code class="language-plaintext highlighter-rouge">g_thread_pool_get_num_threads()</code> — govips just never wraps it. The more practical fix doesn’t need any of that: an atomic in-flight counter around each worker’s <code class="language-plaintext highlighter-rouge">processor.Process()</code> call, gating <code class="language-plaintext highlighter-rouge">addWorkerLocked</code> when in-flight already matches <code class="language-plaintext highlighter-rouge">VipsConcurrency</code>. Documented as a finding, not built yet.</p>
+
+<h2 id="why-open-source-it-now">Why open-source it now</h2>
+
+<p>The scaler is the part of this codebase I’d actually want other people to read, argue with, or reuse — a fairly small, self-contained piece of generic Go with real constraints (goroutine lifecycle, backpressure, graceful shutdown) that most worker-pool tutorials, mine included at the start, wave away. The rest of optimux — image/video transforms, S3 wiring, the HTTP surface — is useful but unremarkable by comparison.</p>
+
+<p>Repo: <strong><a href="https://github.com/go-batteries/optimux">github.com/go-batteries/optimux</a></strong>, AGPL-3.0.</p>
+
+
+      <hr>
+      <div class="row mb-5 mt-5">
+  <div class="col-md-6 d-flex align-items-end ">
+    <span>Thanks. <i>mind sharing?</i></span>
+  </div>
+
+  <!-- Right Column with Social Media Icons (on the right for larger screens, on bottom for smaller screens) -->
+  <div class="col-md-6 order-md-2 order-1 text-md-right text-center mt-3 mt-md-0">
+    <div>
+
+      <a
+          href="https://www.linkedin.com/sharing/share-offsite?url=ikouchiha47.github.io/2026/08/10/optimux-dynamic-scaler.html"
+          onclick="window.open(this.href, 'pop-up', 'left=20,top=20,width=500,height=500,toolbar=1,resizable=0'); return false;"
+          class="d-inline-block mr-2"
+       >
+        <span class="fa-stack fa-lg" style="color: #0077b5;">
+          <i class="fas fa-square fa-stack-2x"></i>
+          <i class="fab fa-linkedin fa-stack-1x fa-inverse"></i>
+        </span>
+      </a>
+
+      <a
+          href="https://twitter.com/intent/tweet?text=Optimux: from a worker-pool tutorial to a DynamicScaler&url=ikouchiha47.github.io/2026/08/10/optimux-dynamic-scaler.html"
+          onclick="window.open(this.href, 'pop-up', 'left=20,top=20,width=500,height=500,toolbar=1,resizable=0'); return false;"
+          class="d-inline-block mr-2">
+        <span class="fa-stack fa-lg" style="color: #1DA1F2;">
+          <i class="fas fa-square fa-stack-2x"></i>
+          <i class="fab fa-twitter fa-stack-1x fa-inverse"></i>
+        </span>
+      </a>
+
+      <a
+          href="http://www.reddit.com/submit?url=ikouchiha47.github.io/2026/08/10/optimux-dynamic-scaler.html"
+          onclick="window.open(this.href, 'pop-up', 'left=20,top=20,width=500,height=500,toolbar=1,resizable=0'); return false;"
+          class="d-inline-block mr-2">
+        <span class="fa-stack fa-lg" style="color: #FF4500;">
+          <i class="fas fa-square fa-stack-2x"></i>
+          <i class="fab fa-reddit fa-stack-1x fa-inverse"></i>
+        </span>
+      </a>
+    </div>
+  </div>
+</div>
+
+<hr/>
+
+
+      <div class="clearfix">
+
+        
+        <a class="btn btn-primary float-left" href="/keyboard/" data-toggle="tooltip" data-placement="top" title="CodeKeyboard Rebuild Notes">&larr; Previous<span class="d-none d-md-inline">
+            Post</span></a>
+        
+        
+        <a class="btn btn-primary float-right" href="/2026/08/12/concurrency-and-gc.html" data-toggle="tooltip" data-placement="top" title="A Quick rundown on concurrency and gc">Next<span class="d-none d-md-inline">
+            Post</span> &rarr;</a>
+        
+
+      </div>
+
+    </div>
+  </div>
+</div>
+
+
+  <!-- Footer -->
+
+<hr>
+
+<footer>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <ul class="list-inline text-center">
+          
+          <li class="list-inline-item">
+            <a href="mailto:amitava.dev@proton.me" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="far fa-envelope fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          
+          
+          <li class="list-inline-item">
+            <a href="https://www.linkedin.com/in/amitavaag" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-linkedin fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          <li class="list-inline-item">
+            <a href="https://github.com/ikouchiha47" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-github fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+        </ul>
+
+        <p class="copyright text-muted">
+          Build with: 
+          <a 
+            href="https://github.com/StartBootstrap/startbootstrap-clean-blog-jekyll"
+            class="text-gray"
+            target="_blank">startbootstrap-clean-blog-jekyll</a></p>
+      </div>
+    </div>
+  </div>
+</footer>
+
+
+  <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="/assets/vendor/blog/js/scripts.js"></script>
+
+<script src="/assets/scripts.js"></script>
+
+
+
+
+
+  <script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+
+    document.querySelectorAll('pre > code.language-mermaid').forEach((codeBlock) => {
+      codeBlock.parentElement.outerHTML = `<pre class="mermaid">${codeBlock.textContent}</pre>`;
+    });
+
+
+    mermaid.initialize({ startOnLoad: true, theme: 'forest' });
+</script>
+
+
+  
+
+</body>
+
+</html>

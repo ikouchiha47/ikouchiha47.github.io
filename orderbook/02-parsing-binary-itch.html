@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+  <title>
+    Parsing Binary ITCH Without Lying to Yourself - iko&#39;s logs
+    
+  </title>
+
+  <meta name="description" content="">
+  <meta property="og:description" content="">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Parsing Binary ITCH Without Lying to Yourself">
+  <meta property="og:url" content="https://ikouchiha47.github.io/orderbook/02-parsing-binary-itch.html">
+
+  
+
+  <link href='https://fonts.googleapis.com/css?family=Lora:400,700,400italic,700italic' rel='stylesheet' type='text/css'>
+  <link href='https://fonts.googleapis.com/css?family=Open+Sans:300italic,400italic,600italic,700italic,800italic,400,300,600,700,800' rel='stylesheet' type='text/css'>
+
+  <!-- <script src="https://use.fontawesome.com/releases/v5.15.3/js/all.js" crossorigin="anonymous"></script> -->
+  <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.15.4/css/all.css" integrity="sha384-DyZ88mC6Up2uqS4h/KRgHuoeGwBcD4Ng9SiP4dIRy0EXTlnuz47vAwmeGwVChigm" crossorigin="anonymous"/>
+
+  <link rel="stylesheet" href="/assets/main.css">
+  <link rel="canonical" href="https://ikouchiha47.github.io/orderbook/02-parsing-binary-itch.html">
+  <link rel="alternate" type="application/rss+xml" title="iko&#39;s logs" href="/feed.xml">
+
+  <meta name="google-site-verification" content="lWkg6gIxJgzEKX_5XnhcxCtPE9QknaimFWWos_dTvPM" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fira+Sans:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Inconsolata:wght@200..900&family=Jersey+25&family=Kanit:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Merriweather+Sans:ital,wght@0,300..800;1,300..800&family=Nanum+Gothic+Coding&family=Space+Grotesk:wght@300..700&family=Titillium+Web:ital,wght@0,200;0,300;0,400;0,600;0,700;0,900;1,200;1,300;1,400;1,600;1,700&display=swap" rel="stylesheet">
+
+</head>
+
+
+<body>
+
+  <!-- Navigation -->
+<nav class="navbar navbar-expand-lg navbar-light fixed-top" id="mainNav">
+  <div class="container">
+    <a class="navbar-brand" href="/">iko&#39;s logs</a>
+    <button class="navbar-toggler navbar-toggler-right" type="button" data-toggle="collapse" data-target="#navbarResponsive" aria-controls="navbarResponsive" aria-expanded="false" aria-label="Toggle navigation">
+      Menu
+      <i class="fa fa-bars"></i>
+    </button>
+    <div class="collapse navbar-collapse" id="navbarResponsive">
+      <ul class="navbar-nav ml-auto">
+        <li class="nav-item">
+          <a class="nav-link" href="/">Home</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/about">About</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/posts">Posts</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/wall/">Wall</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/contact">Contact</a>
+        </li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+
+  <!-- Page Header -->
+
+<header class="masthead">
+
+  <div class="overlay"></div>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <div class="post-heading">
+          <h1>Parsing Binary ITCH Without Lying to Yourself</h1>
+          
+          <h2 class="subheading">endianness, offsets, and the day my own notes were wrong</h2>
+          
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="container space-grotesk">
+  <div class="row">
+    <div class="col-lg-8 col-md-10 mx-auto">
+
+      <!-- Breadcrumb -->
+      <nav aria-label="breadcrumb" style="margin-bottom: 1.5rem;">
+        <ol class="breadcrumb" style="background: transparent; padding: 0;">
+          
+            <li class="breadcrumb-item"><a href="/orderbook/">Building an Order Book</a></li>
+          
+          
+          <li class="breadcrumb-item active" aria-current="page">Parsing Binary ITCH Without Lying to Yourself</li>
+        </ol>
+      </nav>
+
+      <p>A parser is either provably correct or quietly wrong. There is no middle. This is the post where I learned that the hard way — and where I learned to stop trusting my own documentation.</p>
+
+<h2 id="the-byte-swap-that-doesnt-crash">The byte-swap that doesn’t crash</h2>
+
+<p>The feed is big-endian. My laptop is not. The lazy way to read a two-byte length is to reinterpret the bytes as a <code class="language-plaintext highlighter-rouge">uint16_t</code> — which, on a little-endian machine, silently flips them. No crash. Just a wrong number, forever.</p>
+
+<p>The right way is arithmetic:</p>
+
+<div class="language-cpp highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="kr">inline</span> <span class="kt">uint16_t</span> <span class="nf">be16</span><span class="p">(</span><span class="k">const</span> <span class="kt">uint8_t</span><span class="o">*</span> <span class="n">p</span><span class="p">)</span> <span class="p">{</span>
+  <span class="k">return</span> <span class="p">(</span><span class="kt">uint16_t</span><span class="p">(</span><span class="n">p</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span> <span class="o">&lt;&lt;</span> <span class="mi">8</span><span class="p">)</span> <span class="o">|</span> <span class="kt">uint16_t</span><span class="p">(</span><span class="n">p</span><span class="p">[</span><span class="mi">1</span><span class="p">]);</span>
+<span class="p">}</span>
+</code></pre></div></div>
+
+<p>High byte’s value, shifted up, OR the low byte. It works on any machine because it operates on byte <em>values</em>, not on how memory happens to be laid out. I now do this by reflex for every multi-byte field, and prices too — <code class="language-plaintext highlighter-rouge">$140.99</code> is stored as the integer <code class="language-plaintext highlighter-rouge">1409900</code>, and it never becomes a float.</p>
+
+<h2 id="i-wrote-the-tests-against-the-actual-file">I wrote the tests against the actual file</h2>
+
+<p>The single best decision of this whole project was refusing to test with made-up bytes. I dumped real payloads from the <code class="language-plaintext highlighter-rouge">.gz</code>, pasted them into the test, and asserted the decoded fields:</p>
+
+<div class="language-cpp highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="n">EXPECT_EQ</span><span class="p">(</span><span class="n">add</span><span class="p">.</span><span class="n">ref</span><span class="p">,</span> <span class="mi">8617u</span><span class="p">);</span>
+<span class="n">EXPECT_EQ</span><span class="p">(</span><span class="n">add</span><span class="p">.</span><span class="n">side</span><span class="p">,</span> <span class="sc">'B'</span><span class="p">);</span>
+<span class="n">EXPECT_EQ</span><span class="p">(</span><span class="n">add</span><span class="p">.</span><span class="n">shares</span><span class="p">,</span> <span class="mi">600u</span><span class="p">);</span>
+<span class="n">EXPECT_EQ</span><span class="p">(</span><span class="n">add</span><span class="p">.</span><span class="n">price_ticks</span><span class="p">,</span> <span class="mi">1409900u</span><span class="p">);</span>
+</code></pre></div></div>
+
+<p>Parsing bugs don’t throw. They produce numbers that look fine. A test against real bytes is the only thing between you and a book that quietly lies to you for a whole trading day.</p>
+
+<h2 id="then-my-notes-were-wrong">Then my notes were wrong</h2>
+
+<p>Here’s the part that humbled me. I have this <code class="language-plaintext highlighter-rouge">C</code> message — “executed with price.” My own notes said the price lived at bytes <code class="language-plaintext highlighter-rouge">31..34</code> and the printable flag at <code class="language-plaintext highlighter-rouge">35</code>. I wrote a test expecting <code class="language-plaintext highlighter-rouge">65900</code> (that’s <code class="language-plaintext highlighter-rouge">$6.59</code>).</p>
+
+<p>It failed. The parser produced <code class="language-plaintext highlighter-rouge">1308623105</code>.</p>
+
+<p>That is not a stock price. That’s a price of thirteen million dollars, or a garbage read. So I dumped six real <code class="language-plaintext highlighter-rouge">C</code> messages and looked at byte 31 by hand:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>byte31 = 'N'      ← the printable flag
+price (32..35) = 65900   ($6.59)   ← sane
+</code></pre></div></div>
+
+<p>Every single sample agreed. <strong>Printable is at 31. Price is at 32..35.</strong> My table had been off by one, and the old offsets had been reading the printable flag as the top byte of the price.</p>
+
+<p>The spec I’d written — the thing I was treating as ground truth — was simply wrong. The file was right.</p>
+
+<h2 id="what-i-actually-took-from-it">What I actually took from it</h2>
+
+<p>Three habits, ranked by how much pain they saved me:</p>
+
+<ol>
+  <li><strong>Decode with arithmetic, not casts.</strong> A misinterpreted pointer never tells you it’s wrong.</li>
+  <li><strong>Test against real bytes.</strong> Crafted inputs pass for the wrong reasons all day long.</li>
+  <li><strong>Assert sane values, not just equal values.</strong> <code class="language-plaintext highlighter-rouge">$6.59</code> versus <code class="language-plaintext highlighter-rouge">$130,862,310</code> — the second one points at the bug before you even know the correct offset. It’s the difference between a test that confirms a guess and a test that catches a mistake.</li>
+</ol>
+
+<p>I stopped trusting my notes after that, and started trusting the bytes. Which, in hindsight, is the whole job.</p>
+
+
+      <hr>
+
+      <!-- Prev / Next / Up navigation -->
+      
+      
+      
+
+      <div class="clearfix" style="margin-top: 2rem;">
+        
+          
+          
+
+          
+            
+            <a class="btn btn-primary float-left" href="/orderbook/01-reading-itch-bytes.html" title="Reading ITCH Bytes">&larr; Previous</a>
+          
+
+          
+            
+            <a class="btn btn-primary float-right" href="/orderbook/03-order-book-model.html" title="An Order Book Is a Biography">Next &rarr;</a>
+          
+        
+      </div>
+
+      
+      <div style="text-align: center; margin-top: 1rem;">
+        <a href="/orderbook/">&uarr; Back to Table of Contents</a>
+      </div>
+      
+
+    </div>
+  </div>
+</div>
+
+
+  <!-- Footer -->
+
+<hr>
+
+<footer>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <ul class="list-inline text-center">
+          
+          <li class="list-inline-item">
+            <a href="mailto:amitava.dev@proton.me" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="far fa-envelope fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          
+          
+          <li class="list-inline-item">
+            <a href="https://www.linkedin.com/in/amitavaag" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-linkedin fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          <li class="list-inline-item">
+            <a href="https://github.com/ikouchiha47" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-github fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+        </ul>
+
+        <p class="copyright text-muted">
+          Build with: 
+          <a 
+            href="https://github.com/StartBootstrap/startbootstrap-clean-blog-jekyll"
+            class="text-gray"
+            target="_blank">startbootstrap-clean-blog-jekyll</a></p>
+      </div>
+    </div>
+  </div>
+</footer>
+
+
+  <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="/assets/vendor/blog/js/scripts.js"></script>
+
+<script src="/assets/scripts.js"></script>
+
+
+
+
+
+  <script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+
+    document.querySelectorAll('pre > code.language-mermaid').forEach((codeBlock) => {
+      codeBlock.parentElement.outerHTML = `<pre class="mermaid">${codeBlock.textContent}</pre>`;
+    });
+
+
+    mermaid.initialize({ startOnLoad: true, theme: 'forest' });
+</script>
+
+
+  
+
+</body>
+
+</html>

@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+  <title>
+    std::map vs a Tick Ladder - iko&#39;s logs
+    
+  </title>
+
+  <meta name="description" content="">
+  <meta property="og:description" content="">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="std::map vs a Tick Ladder">
+  <meta property="og:url" content="https://ikouchiha47.github.io/orderbook/07-tree-vs-tick-ladder.html">
+
+  
+
+  <link href='https://fonts.googleapis.com/css?family=Lora:400,700,400italic,700italic' rel='stylesheet' type='text/css'>
+  <link href='https://fonts.googleapis.com/css?family=Open+Sans:300italic,400italic,600italic,700italic,800italic,400,300,600,700,800' rel='stylesheet' type='text/css'>
+
+  <!-- <script src="https://use.fontawesome.com/releases/v5.15.3/js/all.js" crossorigin="anonymous"></script> -->
+  <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.15.4/css/all.css" integrity="sha384-DyZ88mC6Up2uqS4h/KRgHuoeGwBcD4Ng9SiP4dIRy0EXTlnuz47vAwmeGwVChigm" crossorigin="anonymous"/>
+
+  <link rel="stylesheet" href="/assets/main.css">
+  <link rel="canonical" href="https://ikouchiha47.github.io/orderbook/07-tree-vs-tick-ladder.html">
+  <link rel="alternate" type="application/rss+xml" title="iko&#39;s logs" href="/feed.xml">
+
+  <meta name="google-site-verification" content="lWkg6gIxJgzEKX_5XnhcxCtPE9QknaimFWWos_dTvPM" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fira+Sans:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Inconsolata:wght@200..900&family=Jersey+25&family=Kanit:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Merriweather+Sans:ital,wght@0,300..800;1,300..800&family=Nanum+Gothic+Coding&family=Space+Grotesk:wght@300..700&family=Titillium+Web:ital,wght@0,200;0,300;0,400;0,600;0,700;0,900;1,200;1,300;1,400;1,600;1,700&display=swap" rel="stylesheet">
+
+</head>
+
+
+<body>
+
+  <!-- Navigation -->
+<nav class="navbar navbar-expand-lg navbar-light fixed-top" id="mainNav">
+  <div class="container">
+    <a class="navbar-brand" href="/">iko&#39;s logs</a>
+    <button class="navbar-toggler navbar-toggler-right" type="button" data-toggle="collapse" data-target="#navbarResponsive" aria-controls="navbarResponsive" aria-expanded="false" aria-label="Toggle navigation">
+      Menu
+      <i class="fa fa-bars"></i>
+    </button>
+    <div class="collapse navbar-collapse" id="navbarResponsive">
+      <ul class="navbar-nav ml-auto">
+        <li class="nav-item">
+          <a class="nav-link" href="/">Home</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/about">About</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/posts">Posts</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/wall/">Wall</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/contact">Contact</a>
+        </li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+
+  <!-- Page Header -->
+
+<header class="masthead">
+
+  <div class="overlay"></div>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <div class="post-heading">
+          <h1>std::map vs a Tick Ladder</h1>
+          
+          <h2 class="subheading">why an order book isn't a tree (and why I still haven't switched)</h2>
+          
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="container space-grotesk">
+  <div class="row">
+    <div class="col-lg-8 col-md-10 mx-auto">
+
+      <!-- Breadcrumb -->
+      <nav aria-label="breadcrumb" style="margin-bottom: 1.5rem;">
+        <ol class="breadcrumb" style="background: transparent; padding: 0;">
+          
+            <li class="breadcrumb-item"><a href="/orderbook/">Building an Order Book</a></li>
+          
+          
+          <li class="breadcrumb-item active" aria-current="page">std::map vs a Tick Ladder</li>
+        </ol>
+      </nav>
+
+      <p>My book stores prices in a <code class="language-plaintext highlighter-rouge">std::map</code>. It’s correct, it’s tested, and it is — by my own benchmarks — the most expensive thing I own. <code class="language-plaintext highlighter-rouge">add</code> is 14 ns, <code class="language-plaintext highlighter-rouge">remove</code> 18, <code class="language-plaintext highlighter-rouge">replace</code> 36. Every one of those nanoseconds is a red-black tree allocating a node and chasing a pointer to find a price.</p>
+
+<p>Every serious order book I’ve read avoids this. I finally understood why, and then made the slightly annoying decision not to switch yet.</p>
+
+<h2 id="the-idea-index-by-price-dont-search-for-it">The idea: index by price, don’t search for it</h2>
+
+<p>A tick ladder is just an array where the index <em>is</em> the price:</p>
+
+<div class="language-cpp highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="n">std</span><span class="o">::</span><span class="n">vector</span><span class="o">&lt;</span><span class="n">Level</span><span class="o">&gt;</span> <span class="n">levels</span><span class="p">;</span>   <span class="c1">// levels[(price - base) / increment]</span>
+</code></pre></div></div>
+
+<p>If prices are small integers and the range is bounded, lookup becomes a subtract and an array access. No node. No pointer chase. Contiguous memory, so a cache line holds several levels at once. That’s the entire pitch.</p>
+
+<p>Two numbers make it work:</p>
+
+<ul>
+  <li><strong>base</strong> — the lowest price in your window, so the index never goes negative.</li>
+  <li><strong>increment</strong> — the smallest price step. For a stock over a dollar, that’s a penny.</li>
+</ul>
+
+<p>Concretely, for a $141 stock with a ±10% window:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>base      = $126.90  (1,269,000 in raw units)
+upper     = $155.10  (1,551,000)
+increment = $0.01    (100 raw units)
+slots     = 2,820
+memory    = 2,820 × 8 bytes ≈ 22 KB
+</code></pre></div></div>
+
+<p>Twenty-two kilobytes. It fits in cache. The tree’s thousands of little heap nodes never will.</p>
+
+<h2 id="the-catch-and-its-a-real-one">The catch, and it’s a real one</h2>
+
+<p>An array can’t answer “what’s the best price” in O(1) the way an ordered tree can. You fix that with a bitmap (a bit per price; best bid is one <code class="language-plaintext highlighter-rouge">countlZero</code>, best ask one <code class="language-plaintext highlighter-rouge">countTrailingZero</code>) or just a cursor you nudge on insert and rescan when the top empties.</p>
+
+<p>And you have to pick a window. Prices leave it — a stock can fall 25% in a day. The usual answers: size with headroom, keep a cold <code class="language-plaintext highlighter-rouge">std::map</code> for the out-of-band tail (that’s what <code class="language-plaintext highlighter-rouge">itchbook</code> does), or page the array so the range is effectively unbounded.</p>
+
+<p>When I explained this to a friend who works on exchange software, he didn’t even blink. “Yeah, that’s the whole game,” he said. Then he told me the number I haven’t been able to stop thinking about: in a real matching engine, about <strong>30% of the time is spent on one line</strong> — dereferencing the order’s index, because it’s a cache miss. The cost isn’t computation. It’s memory access.</p>
+
+<h2 id="so-why-havent-i-switched">So why haven’t I switched?</h2>
+
+<p>Because I profiled first. The book is 15% of my replay; gzip is 75%. A faster tree swap is <em>invisible</em> in the macro number until the decompression is out of the way. I’d be optimising the 15% again, just more cleverly.</p>
+
+<p>The order that makes sense: <strong>decompress once, then ladder versus <code class="language-plaintext highlighter-rouge">std::map</code></strong>, and let the end-to-end run decide — not the micro-benchmark. It’s the next experiment. I’ve written the ADR; I know the design; I’m just doing it in the order the profile told me to.</p>
+
+<p>It’s the least exciting conclusion and the most useful one: the right data structure at the wrong time is still the wrong thing to do.</p>
+
+
+      <hr>
+
+      <!-- Prev / Next / Up navigation -->
+      
+      
+      
+
+      <div class="clearfix" style="margin-top: 2rem;">
+        
+          
+          
+
+          
+            
+            <a class="btn btn-primary float-left" href="/orderbook/06-profiling-the-replay.html" title="Where the Time Actually Goes">&larr; Previous</a>
+          
+
+          
+            
+            <a class="btn btn-primary float-right" href="/orderbook/08-building-an-exchange-jx.html" title="What Jane Street's Exchange Taught Me">Next &rarr;</a>
+          
+        
+      </div>
+
+      
+      <div style="text-align: center; margin-top: 1rem;">
+        <a href="/orderbook/">&uarr; Back to Table of Contents</a>
+      </div>
+      
+
+    </div>
+  </div>
+</div>
+
+
+  <!-- Footer -->
+
+<hr>
+
+<footer>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <ul class="list-inline text-center">
+          
+          <li class="list-inline-item">
+            <a href="mailto:amitava.dev@proton.me" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="far fa-envelope fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          
+          
+          <li class="list-inline-item">
+            <a href="https://www.linkedin.com/in/amitavaag" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-linkedin fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          <li class="list-inline-item">
+            <a href="https://github.com/ikouchiha47" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-github fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+        </ul>
+
+        <p class="copyright text-muted">
+          Build with: 
+          <a 
+            href="https://github.com/StartBootstrap/startbootstrap-clean-blog-jekyll"
+            class="text-gray"
+            target="_blank">startbootstrap-clean-blog-jekyll</a></p>
+      </div>
+    </div>
+  </div>
+</footer>
+
+
+  <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="/assets/vendor/blog/js/scripts.js"></script>
+
+<script src="/assets/scripts.js"></script>
+
+
+
+
+
+  <script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+
+    document.querySelectorAll('pre > code.language-mermaid').forEach((codeBlock) => {
+      codeBlock.parentElement.outerHTML = `<pre class="mermaid">${codeBlock.textContent}</pre>`;
+    });
+
+
+    mermaid.initialize({ startOnLoad: true, theme: 'forest' });
+</script>
+
+
+  
+
+</body>
+
+</html>
