@@ -1,6 +1,6 @@
 ---
 title: "The Ladder, Finally"
-subtitle: "a bitmap that jumps gaps, and the experiment that settled tree versus ladder"
+subtitle: "a bitmap that jumps gaps — and the counters that finally explained the slope"
 layout: group_page
 group: orderbook
 group_title: "Building an Order Book"
@@ -76,6 +76,52 @@ add/remove a NEW level      map          ladder
 
 The map's cost climbs with N: the tree gets deeper, cache misses multiply, and every level birth and death is a `malloc`/`free`. The ladder's cost stays flat: an index and a bit flip. That gap is a slope, and it's why the structure earns its place.
 
+## The why my laptop wouldn't give me
+
+The slope was clear; the *reason* needed hardware counters, and macOS has no `perf`. Valgrind and Instruments were dead ends on this machine too, so I rented a Linux box — an arm64 Graviton (the closest thing AWS has to the M4) and an x86 box — built the same probe there, and ran `perf stat`.
+
+At a million levels per side, per add-and-remove:
+
+```
+                    Graviton3    Sapphire Rapids
+cycles/op           931          961
+instructions/cycle  1.6          1.5
+L1d misses/op       27           34
+```
+
+The map's fourfold cycle cost is **misses**. Twenty-seven cache misses per operation, instructions-per-cycle sagging to 1.5 — the machine spends its time waiting on memory. The ladder, on the same workload:
+
+```
+cycles/op           223          230
+instructions/cycle  3.8          3.7
+L1d misses/op       0.006        0.005
+```
+
+It touches three bitmap words and one level per operation, and misses almost never. That is the whole difference between the two books in one number: **27 misses per op, against 0.006.** Everything the dense bench hid, and everything the sweep implied, the counters turned into a mechanism.
+
+## What the profiler added
+
+Counters say *how much*; a flamegraph says *where*, and an allocation counter says *which* alloc. Two quick ones.
+
+Allocations per operation, a million-level book:
+
+```
+             allocs/op   what
+map          2.0         order-ref node + a tree node for the level
+ladder       1.0         order-ref node only; the level is a preallocated slot
+```
+
+The map's extra allocation is exactly one tree node per operation. And the count holds flat across size — two at a thousand levels, two at a million — so allocation is a constant, and the thing that *grows* is the misses above. The two profiles interlock.
+
+The flamegraph surfaced one more thing I hadn't noticed:
+
+```
+map      add 33%    refresh 27%
+ladder   depth 24%  refresh 9%
+```
+
+`refresh` — the per-message lookup of the top-of-book *size* — is a quarter of the map's work. I had cached the best *price*; the *size* still resolves on every message, and on the map that's a tree walk. That's the next item on the list.
+
 ## On the real feed
 
 I wired the ladder in behind a flag and replayed the actual NASDAQ file, map versus ladder, on the same ten-million-message slice:
@@ -87,6 +133,6 @@ book=ladder   9.70M msgs/s   route 0.150s   best 141.0200 x 200 / 141.3900 x 200
 
 The two books land level — identical best, identical counters, both inside the noise. Gunzip owns eighty-five percent of the run, and it keeps that share.
 
-What the ladder buys is shape. Bounded work per level, cache-friendly memory, and a worst case that stays fixed as instruments get thin — the sparse book went from 205 ns to 45 ns, and that number is the whole story. The micro-benchmarks showed the structure; the replay showed adopting it costs nothing; and that structure is the thing an exchange actually cares about.
+What the ladder buys is shape. Bounded work per level, cache-friendly memory, and a worst case that stays fixed as instruments get thin — the sparse book went from 205 ns to 45 ns, and that number is the whole story. The micro-benchmarks showed the structure; the counters showed the mechanism; the replay showed adopting it costs nothing; and that structure is the thing an exchange actually cares about.
 
-The benchmark and the profiler finally agree.
+The benchmark, the profiler, and the counters finally agree.
