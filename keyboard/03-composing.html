@@ -1,0 +1,388 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+  <title>
+    CodeKeyboard Part 3: Composing, Selection, Recompose - iko&#39;s logs
+    
+  </title>
+
+  <meta name="description" content="">
+  <meta property="og:description" content="">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="CodeKeyboard Part 3: Composing, Selection, Reco...">
+  <meta property="og:url" content="https://ikouchiha47.github.io/keyboard/03-composing.html">
+
+  
+
+  <link href='https://fonts.googleapis.com/css?family=Lora:400,700,400italic,700italic' rel='stylesheet' type='text/css'>
+  <link href='https://fonts.googleapis.com/css?family=Open+Sans:300italic,400italic,600italic,700italic,800italic,400,300,600,700,800' rel='stylesheet' type='text/css'>
+
+  <!-- <script src="https://use.fontawesome.com/releases/v5.15.3/js/all.js" crossorigin="anonymous"></script> -->
+  <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.15.4/css/all.css" integrity="sha384-DyZ88mC6Up2uqS4h/KRgHuoeGwBcD4Ng9SiP4dIRy0EXTlnuz47vAwmeGwVChigm" crossorigin="anonymous"/>
+
+  <link rel="stylesheet" href="/assets/main.css">
+  <link rel="canonical" href="https://ikouchiha47.github.io/keyboard/03-composing.html">
+  <link rel="alternate" type="application/rss+xml" title="iko&#39;s logs" href="/feed.xml">
+
+  <meta name="google-site-verification" content="lWkg6gIxJgzEKX_5XnhcxCtPE9QknaimFWWos_dTvPM" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fira+Sans:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Inconsolata:wght@200..900&family=Jersey+25&family=Kanit:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Merriweather+Sans:ital,wght@0,300..800;1,300..800&family=Nanum+Gothic+Coding&family=Space+Grotesk:wght@300..700&family=Titillium+Web:ital,wght@0,200;0,300;0,400;0,600;0,700;0,900;1,200;1,300;1,400;1,600;1,700&display=swap" rel="stylesheet">
+
+</head>
+
+
+<body>
+
+  <!-- Navigation -->
+<nav class="navbar navbar-expand-lg navbar-light fixed-top" id="mainNav">
+  <div class="container">
+    <a class="navbar-brand" href="/">iko&#39;s logs</a>
+    <button class="navbar-toggler navbar-toggler-right" type="button" data-toggle="collapse" data-target="#navbarResponsive" aria-controls="navbarResponsive" aria-expanded="false" aria-label="Toggle navigation">
+      Menu
+      <i class="fa fa-bars"></i>
+    </button>
+    <div class="collapse navbar-collapse" id="navbarResponsive">
+      <ul class="navbar-nav ml-auto">
+        <li class="nav-item">
+          <a class="nav-link" href="/">Home</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/about">About</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/posts">Posts</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/wall/">Wall</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/contact">Contact</a>
+        </li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+
+  <!-- Page Header -->
+
+<header class="masthead" style="background: #0d0d0d">
+
+  <div class="overlay"></div>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <div class="post-heading">
+          <h1>CodeKeyboard Part 3: Composing, Selection, Recompose</h1>
+          
+          <h2 class="subheading">Buffer, selection guard, recompose, enter</h2>
+          
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="container space-grotesk">
+  <div class="row">
+    <div class="col-lg-8 col-md-10 mx-auto">
+
+      <!-- Breadcrumb -->
+      <nav aria-label="breadcrumb" style="margin-bottom: 1.5rem;">
+        <ol class="breadcrumb" style="background: transparent; padding: 0;">
+          
+            <li class="breadcrumb-item"><a href="/keyboard/">CodeKeyboard Rebuild Notes</a></li>
+          
+          
+          <li class="breadcrumb-item active" aria-current="page">CodeKeyboard Part 3: Composing, Selection, Recompose</li>
+        </ol>
+      </nav>
+
+      <h2 id="why-composing">Why composing</h2>
+
+<p><code class="language-plaintext highlighter-rouge">InputConnection.setComposingText(text, 1)</code> shows underlined in-progress text in many apps. <code class="language-plaintext highlighter-rouge">commitText</code> finalizes. Mid-word suggestions need a buffer the IME owns so a tap can replace the whole partial word. Without composing you only insert characters and scrape <code class="language-plaintext highlighter-rouge">getTextBeforeCursor</code> forever.</p>
+
+<h2 id="composingbuffer">ComposingBuffer</h2>
+
+<p>File: <code class="language-plaintext highlighter-rouge">ComposingBuffer.kt</code></p>
+
+<div class="language-kotlin highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="kd">class</span> <span class="nc">ComposingBuffer</span> <span class="p">{</span>
+    <span class="kd">val</span> <span class="py">text</span><span class="p">:</span> <span class="nc">String</span>
+    <span class="k">fun</span> <span class="nf">append</span><span class="p">(</span><span class="n">char</span><span class="p">:</span> <span class="nc">String</span><span class="p">):</span> <span class="nc">String</span>
+    <span class="k">fun</span> <span class="nf">backspace</span><span class="p">():</span> <span class="nc">Boolean</span>  <span class="c1">// false if empty</span>
+    <span class="k">fun</span> <span class="nf">flush</span><span class="p">():</span> <span class="nc">String</span>       <span class="c1">// return copy and clear</span>
+    <span class="k">fun</span> <span class="nf">setText</span><span class="p">(</span><span class="n">s</span><span class="p">:</span> <span class="nc">String</span><span class="p">)</span>    <span class="c1">// clear then append (recompose)</span>
+    <span class="k">fun</span> <span class="nf">clear</span><span class="p">()</span>
+<span class="p">}</span>
+</code></pre></div></div>
+
+<p>No Android types. Unit-testable alone (<code class="language-plaintext highlighter-rouge">ComposingBufferTest.kt</code>).</p>
+
+<h2 id="character-input-supportscomposing-true">Character input (supportsComposing true)</h2>
+
+<p>In <code class="language-plaintext highlighter-rouge">handleKey</code> else-branch for character keys (simplified):</p>
+
+<ol>
+  <li><code class="language-plaintext highlighter-rouge">text = kbState.resolveLabel(key)</code></li>
+  <li>If single char and meta active (ctrl/alt/meta): flush composing, send key events with meta, <code class="language-plaintext highlighter-rouge">onCharCommitted</code>, return</li>
+  <li>If <code class="language-plaintext highlighter-rouge">text == ";"</code>: append, setComposingText, snippet suggestions</li>
+  <li>Else if length 1 and not punctuation: append, setComposingText, dictionary suggestions with <code class="language-plaintext highlighter-rouge">context = prevCommittedWord</code></li>
+  <li>Else: flush, commitText</li>
+  <li>Always (for char path): <code class="language-plaintext highlighter-rouge">kbState.onCharCommitted()</code> and refresh key draw state</li>
+</ol>
+
+<p>Punctuation set is a fixed char set in <code class="language-plaintext highlighter-rouge">CodeKeyboardIME</code> (period, comma, operators, quotes, etc.).</p>
+
+<h2 id="space">Space</h2>
+
+<div class="language-kotlin highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="s">"space"</span> <span class="p">-&gt;</span> <span class="p">{</span>
+    <span class="nf">flushComposing</span><span class="p">(</span><span class="n">ic</span><span class="p">)</span>
+    <span class="n">ic</span><span class="o">?.</span><span class="nf">commitText</span><span class="p">(</span><span class="s">" "</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
+    <span class="kd">val</span> <span class="py">next</span> <span class="p">=</span> <span class="n">bigramModel</span><span class="p">.</span><span class="nf">nextWords</span><span class="p">(</span><span class="n">prevCommittedWord</span><span class="p">,</span> <span class="n">n</span> <span class="p">=</span> <span class="mi">5</span><span class="p">)</span>
+    <span class="k">if</span> <span class="p">(</span><span class="n">next</span><span class="p">.</span><span class="nf">isNotEmpty</span><span class="p">())</span> <span class="n">suggestionBar</span><span class="p">.</span><span class="nf">update</span><span class="p">(</span><span class="s">""</span><span class="p">,</span> <span class="n">next</span><span class="p">)</span>
+<span class="p">}</span>
+</code></pre></div></div>
+
+<h2 id="flushcomposing">flushComposing</h2>
+
+<div class="language-kotlin highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="kd">val</span> <span class="py">word</span> <span class="p">=</span> <span class="n">composing</span><span class="p">.</span><span class="nf">flush</span><span class="p">()</span>
+<span class="k">if</span> <span class="p">(</span><span class="n">word</span><span class="p">.</span><span class="nf">isNotEmpty</span><span class="p">())</span> <span class="p">{</span>
+    <span class="n">ic</span><span class="o">?.</span><span class="nf">commitText</span><span class="p">(</span><span class="n">word</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
+    <span class="n">wordLearner</span><span class="p">.</span><span class="nf">learnFromFlush</span><span class="p">(</span><span class="n">word</span><span class="p">)</span>
+    <span class="n">kbState</span><span class="p">.</span><span class="nf">onCharCommitted</span><span class="p">()</span>
+    <span class="c1">// metrics...</span>
+    <span class="k">if</span> <span class="p">(</span><span class="n">prevCommittedWord</span><span class="p">.</span><span class="nf">isNotEmpty</span><span class="p">())</span>
+        <span class="n">bigramModel</span><span class="p">.</span><span class="nf">recordTransition</span><span class="p">(</span><span class="n">prevCommittedWord</span><span class="p">,</span> <span class="n">word</span><span class="p">)</span>
+    <span class="n">prevCommittedWord</span> <span class="p">=</span> <span class="n">word</span>
+<span class="p">}</span>
+<span class="n">keystrokesSinceCommit</span> <span class="p">=</span> <span class="mi">0</span>
+<span class="n">suggestionBar</span><span class="p">.</span><span class="nf">clear</span><span class="p">()</span>  <span class="c1">// space path may refill immediately after</span>
+</code></pre></div></div>
+
+<p>Note: the space handler calls flush (which clears the bar) then may show bigrams.</p>
+
+<h2 id="onupdateselection">onUpdateSelection</h2>
+
+<p>Problem: user taps elsewhere; composing region is stale; next char would replace the wrong span.</p>
+
+<p>Also: IME calls that change selection must not look like user taps.</p>
+
+<div class="language-kotlin highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="kd">val</span> <span class="py">imedriven</span> <span class="p">=</span> <span class="nc">SystemClock</span><span class="p">.</span><span class="nf">uptimeMillis</span><span class="p">()</span> <span class="p">&lt;</span> <span class="n">expectSelectionUpdateBy</span>
+<span class="k">if</span> <span class="p">(</span><span class="n">composing</span><span class="p">.</span><span class="n">text</span><span class="p">.</span><span class="nf">isEmpty</span><span class="p">())</span> <span class="k">return</span>
+<span class="k">if</span> <span class="p">(</span><span class="n">imedriven</span><span class="p">)</span> <span class="k">return</span>
+<span class="c1">// if cursor outside candidatesStart..candidatesEnd (or candidates unset):</span>
+<span class="n">ic</span><span class="p">.</span><span class="nf">finishComposingText</span><span class="p">()</span>
+<span class="n">composing</span><span class="p">.</span><span class="nf">clear</span><span class="p">()</span>
+<span class="n">suggestionBar</span><span class="p">.</span><span class="nf">clear</span><span class="p">()</span>
+</code></pre></div></div>
+
+<h2 id="recompose-after-backspace-into-committed-text">Recompose after backspace into committed text</h2>
+
+<p>When composing is empty and backspace deletes one committed character:</p>
+
+<ol>
+  <li><code class="language-plaintext highlighter-rouge">deleteSurroundingText(1, 0)</code> (or DEL key event fallback)</li>
+  <li><code class="language-plaintext highlighter-rouge">recomposeWordAtCursor(ic)</code></li>
+</ol>
+
+<div class="language-kotlin highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="kd">val</span> <span class="py">before</span> <span class="p">=</span> <span class="n">ic</span><span class="p">.</span><span class="nf">getTextBeforeCursor</span><span class="p">(</span><span class="nc">RECOMPOSE_SCAN_CHARS</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span> <span class="c1">// 50</span>
+<span class="kd">val</span> <span class="py">fragment</span> <span class="p">=</span> <span class="n">before</span><span class="p">.</span><span class="nf">takeLastWhile</span> <span class="p">{</span> <span class="n">it</span><span class="p">.</span><span class="nf">isLetterOrDigit</span><span class="p">()</span> <span class="p">||</span> <span class="n">it</span> <span class="p">==</span> <span class="sc">'\''</span> <span class="p">}</span>
+<span class="c1">// get absolute cursor via ExtractedText</span>
+<span class="n">expectSelectionUpdateBy</span> <span class="p">=</span> <span class="n">now</span> <span class="p">+</span> <span class="mi">500L</span>
+<span class="n">ic</span><span class="p">.</span><span class="nf">beginBatchEdit</span><span class="p">()</span>
+<span class="n">ic</span><span class="p">.</span><span class="nf">finishComposingText</span><span class="p">()</span>
+<span class="n">ic</span><span class="p">.</span><span class="nf">setComposingRegion</span><span class="p">(</span><span class="n">absCursor</span> <span class="p">-</span> <span class="n">fragment</span><span class="p">.</span><span class="n">length</span><span class="p">,</span> <span class="n">absCursor</span><span class="p">)</span>
+<span class="n">composing</span><span class="p">.</span><span class="nf">setText</span><span class="p">(</span><span class="n">fragment</span><span class="p">)</span>
+<span class="n">ic</span><span class="p">.</span><span class="nf">endBatchEdit</span><span class="p">()</span>
+<span class="n">suggestionBar</span><span class="p">.</span><span class="nf">update</span><span class="p">(</span><span class="n">fragment</span><span class="p">,</span> <span class="n">suggestionStrategy</span><span class="p">.</span><span class="nf">suggest</span><span class="p">(</span><span class="n">fragment</span><span class="p">,</span> <span class="mi">5</span><span class="p">,</span> <span class="n">prevCommittedWord</span><span class="p">))</span>
+</code></pre></div></div>
+
+<p>Tests: <code class="language-plaintext highlighter-rouge">BackspaceRecomposeTest.kt</code>. Debug logs used tag <code class="language-plaintext highlighter-rouge">CKB_COMPOSE</code> during development.</p>
+
+<h2 id="backspace-order">Backspace order</h2>
+
+<ol>
+  <li>Non-empty selection: batch finish composing, clear buffer, <code class="language-plaintext highlighter-rouge">commitText("")</code> to delete selection</li>
+  <li>Else if <code class="language-plaintext highlighter-rouge">composing.backspace()</code>: update composing text + suggestions</li>
+  <li>Else: delete surrounding + recompose</li>
+</ol>
+
+<h2 id="enter">Enter</h2>
+
+<div class="language-kotlin highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="nf">flushComposing</span><span class="p">(</span><span class="n">ic</span><span class="p">)</span>
+<span class="c1">// if IME_FLAG_NO_ENTER_ACTION or action NONE/UNSPECIFIED -&gt; KEYCODE_ENTER</span>
+<span class="c1">// else performEditorAction(action), fallback KEYCODE_ENTER</span>
+</code></pre></div></div>
+
+<p>Search/done fields need <code class="language-plaintext highlighter-rouge">performEditorAction</code>.</p>
+
+<h2 id="onstartinput--onfinishinput">onStartInput / onFinishInput</h2>
+
+<p>Start: set supportsComposing, clear composing and prevCommittedWord, finishComposingText, clear bar.<br />
+Finish: finish composing, clear buffer/bar, <code class="language-plaintext highlighter-rouge">scheduleUserTrieFlush()</code> saves <code class="language-plaintext highlighter-rouge">user.trie</code>.</p>
+
+<hr />
+
+<h2 id="verification-part-3">Verification (part 3)</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>Claim</th>
+      <th>Evidence</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>RECOMPOSE_SCAN_CHARS = 50</td>
+      <td>CodeKeyboardIME companion</td>
+    </tr>
+    <tr>
+      <td>expectSelectionUpdateBy + 500ms</td>
+      <td>recomposeWordAtCursor</td>
+    </tr>
+    <tr>
+      <td>flush records bigram and WordLearner</td>
+      <td>flushComposing</td>
+    </tr>
+    <tr>
+      <td>space shows nextWords with empty word</td>
+      <td>handleKey “space”</td>
+    </tr>
+    <tr>
+      <td>ComposingBuffer API</td>
+      <td>ComposingBuffer.kt</td>
+    </tr>
+    <tr>
+      <td>Enter uses imeOptions mask</td>
+      <td>handleKey “enter”</td>
+    </tr>
+  </tbody>
+</table>
+
+
+      <hr>
+
+      <!-- Prev / Next / Up navigation -->
+      
+      
+      
+
+      <div class="clearfix" style="margin-top: 2rem;">
+        
+          
+          
+
+          
+            
+            <a class="btn btn-primary float-left" href="/keyboard/02-keys-and-gestures.html" title="CodeKeyboard Part 2: Keys, Dual Layout, Gestures">&larr; Previous</a>
+          
+
+          
+            
+            <a class="btn btn-primary float-right" href="/keyboard/04-suggestions-and-dictionaries.html" title="CodeKeyboard Part 4: Suggestion Bar, Strategy Stack, Tries, Learning">Next &rarr;</a>
+          
+        
+      </div>
+
+      
+      <div style="text-align: center; margin-top: 1rem;">
+        <a href="/keyboard/">&uarr; Back to Table of Contents</a>
+      </div>
+      
+
+    </div>
+  </div>
+</div>
+
+
+  <!-- Footer -->
+
+<hr>
+
+<footer>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <ul class="list-inline text-center">
+          
+          <li class="list-inline-item">
+            <a href="mailto:amitava.dev@proton.me" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="far fa-envelope fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          
+          
+          <li class="list-inline-item">
+            <a href="https://www.linkedin.com/in/amitavaag" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-linkedin fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          <li class="list-inline-item">
+            <a href="https://github.com/ikouchiha47" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-github fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+        </ul>
+
+        <p class="copyright text-muted">
+          Build with: 
+          <a 
+            href="https://github.com/StartBootstrap/startbootstrap-clean-blog-jekyll"
+            class="text-gray"
+            target="_blank">startbootstrap-clean-blog-jekyll</a></p>
+      </div>
+    </div>
+  </div>
+</footer>
+
+
+  <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="/assets/vendor/blog/js/scripts.js"></script>
+
+<script src="/assets/scripts.js"></script>
+
+
+
+
+
+  <script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+
+    document.querySelectorAll('pre > code.language-mermaid').forEach((codeBlock) => {
+      codeBlock.parentElement.outerHTML = `<pre class="mermaid">${codeBlock.textContent}</pre>`;
+    });
+
+
+    mermaid.initialize({ startOnLoad: true, theme: 'forest' });
+</script>
+
+
+  
+
+</body>
+
+</html>

@@ -1,0 +1,423 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+  <title>
+    CodeKeyboard Part 8: Optimizing a 583MB N-gram Pipeline - iko&#39;s logs
+    
+  </title>
+
+  <meta name="description" content="">
+  <meta property="og:description" content="">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="CodeKeyboard Part 8: Optimizing a 583MB N-gram ...">
+  <meta property="og:url" content="https://ikouchiha47.github.io/keyboard/08-ngram-pipeline-optimization.html">
+
+  
+
+  <link href='https://fonts.googleapis.com/css?family=Lora:400,700,400italic,700italic' rel='stylesheet' type='text/css'>
+  <link href='https://fonts.googleapis.com/css?family=Open+Sans:300italic,400italic,600italic,700italic,800italic,400,300,600,700,800' rel='stylesheet' type='text/css'>
+
+  <!-- <script src="https://use.fontawesome.com/releases/v5.15.3/js/all.js" crossorigin="anonymous"></script> -->
+  <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.15.4/css/all.css" integrity="sha384-DyZ88mC6Up2uqS4h/KRgHuoeGwBcD4Ng9SiP4dIRy0EXTlnuz47vAwmeGwVChigm" crossorigin="anonymous"/>
+
+  <link rel="stylesheet" href="/assets/main.css">
+  <link rel="canonical" href="https://ikouchiha47.github.io/keyboard/08-ngram-pipeline-optimization.html">
+  <link rel="alternate" type="application/rss+xml" title="iko&#39;s logs" href="/feed.xml">
+
+  <meta name="google-site-verification" content="lWkg6gIxJgzEKX_5XnhcxCtPE9QknaimFWWos_dTvPM" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fira+Sans:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Inconsolata:wght@200..900&family=Jersey+25&family=Kanit:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Merriweather+Sans:ital,wght@0,300..800;1,300..800&family=Nanum+Gothic+Coding&family=Space+Grotesk:wght@300..700&family=Titillium+Web:ital,wght@0,200;0,300;0,400;0,600;0,700;0,900;1,200;1,300;1,400;1,600;1,700&display=swap" rel="stylesheet">
+
+</head>
+
+
+<body>
+
+  <!-- Navigation -->
+<nav class="navbar navbar-expand-lg navbar-light fixed-top" id="mainNav">
+  <div class="container">
+    <a class="navbar-brand" href="/">iko&#39;s logs</a>
+    <button class="navbar-toggler navbar-toggler-right" type="button" data-toggle="collapse" data-target="#navbarResponsive" aria-controls="navbarResponsive" aria-expanded="false" aria-label="Toggle navigation">
+      Menu
+      <i class="fa fa-bars"></i>
+    </button>
+    <div class="collapse navbar-collapse" id="navbarResponsive">
+      <ul class="navbar-nav ml-auto">
+        <li class="nav-item">
+          <a class="nav-link" href="/">Home</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/about">About</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/posts">Posts</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/wall/">Wall</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/contact">Contact</a>
+        </li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+
+  <!-- Page Header -->
+
+<header class="masthead" style="background: #0d1b2a">
+
+  <div class="overlay"></div>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <div class="post-heading">
+          <h1>CodeKeyboard Part 8: Optimizing a 583MB N-gram Pipeline</h1>
+          
+          <h2 class="subheading">From OOM and 2-hour hangs to an 11-minute build on AWS</h2>
+          
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="container space-grotesk">
+  <div class="row">
+    <div class="col-lg-8 col-md-10 mx-auto">
+
+      <!-- Breadcrumb -->
+      <nav aria-label="breadcrumb" style="margin-bottom: 1.5rem;">
+        <ol class="breadcrumb" style="background: transparent; padding: 0;">
+          
+            <li class="breadcrumb-item"><a href="/keyboard/">CodeKeyboard Rebuild Notes</a></li>
+          
+          
+          <li class="breadcrumb-item active" aria-current="page">CodeKeyboard Part 8: Optimizing a 583MB N-gram Pipeline</li>
+        </ol>
+      </nav>
+
+      <h2 id="background-three-models">Background: three models</h2>
+
+<p>This post is about building the infrastructure to train next-word prediction models at scale. Three algorithm variants were evaluated: Kneser-Ney (KN), Katz backoff, and SwiftKey-style weighted-difference pruning (WDP). Each one scores and prunes word predictions differently. Part 9 covers what each variant does and why WDP ships. This post covers making the pipeline fast enough to build all three on real data.</p>
+
+<h2 id="1-the-problem">1. The problem</h2>
+
+<p>We’re building next-word prediction for a keyboard app. The training data is the SwiftKey en_US corpus: a single 583MB text file with 4.27 million lines of real-world typing. From it we need:</p>
+
+<ul>
+  <li><strong>Bigrams</strong> – shipped in the production keyboard (<code class="language-plaintext highlighter-rouge">bigrams.json</code>)</li>
+  <li><strong>Trigrams</strong> – for evaluation and future language packs (<code class="language-plaintext highlighter-rouge">trigrams.json</code>)</li>
+  <li>Both scored with <strong>Kneser-Ney smoothing</strong> (discount 0.75, top-10 followers, min-count thresholds)</li>
+</ul>
+
+<p>The constraints that made this interesting:</p>
+
+<ul>
+  <li>The corpus is far too big to hold in memory as raw text, let alone as counted n-grams</li>
+  <li>The pipeline must be <strong>resumable</strong> – it runs on AWS spot instances that can die at any moment</li>
+  <li>It must run on modest hardware: a 16GB laptop or a 4-vCPU spot instance</li>
+</ul>
+
+<h2 id="2-how-it-failed-before">2. How it failed before</h2>
+
+<p><strong>Attempt 1: naive in-memory.</strong> Read everything, count into dicts. Crashed with OOM. Not a surprise – 583MB of text expands to tens of millions of n-gram keys.</p>
+
+<p><strong>Attempt 2: durable multi-stage.</strong> A resumable count/merge/index/score rewrite (<code class="language-plaintext highlighter-rouge">extract_ngrams_durable.py</code>, still in <code class="language-plaintext highlighter-rouge">scripts/</code> for comparison). It ran, but a faster variant (<code class="language-plaintext highlighter-rouge">extract_ngrams_fast.py</code>) hit the real wall: each worker’s dump path did <strong>one in-memory <code class="language-plaintext highlighter-rouge">sorted()</code> of ~10M pairs</strong> at the end. On AWS the 4th worker (w002) sat there for hours – it had written its unigram and bigram files but never finished the trigram sort. The run was killed after ~8 hours.</p>
+
+<p><strong>Attempt 3: the k-way merge decision.</strong> The fix was external merge sort: each worker spills <strong>bounded sorted runs</strong> to disk as it counts, then a <strong>k-way heap merge</strong> (<code class="language-plaintext highlighter-rouge">heapq.merge</code>) sums duplicates across all runs – no single giant in-memory sort anywhere. A smoke test with 2 workers  10 spill runs merged all 20 runs exactly and matched the pre-rewrite baseline.</p>
+
+<p><strong>Attempt 4: streaming with a bug.</strong> The relaunch still hung – 2+ hours, 4 workers at 96% CPU, zero spill files. <code class="language-plaintext highlighter-rouge">py-spy</code> found the cause: the new line-splitting loop did <code class="language-plaintext highlighter-rouge">buf = buf[nl+1:]</code> per line, <strong>O(n) buffer slicing</strong> over a 1MB buffer. The workers never even reached the first spill.</p>
+
+<p>The lesson: <strong>a subtle O(n) in a hot loop is worse than no optimization at all.</strong></p>
+
+<h2 id="3-the-5-stage-pipeline">3. The 5-stage pipeline</h2>
+
+<p>The rewrite that fixed the architecture – five plain, resumable stages:</p>
+
+<ol>
+  <li><strong>Split</strong> – divide the file into byte ranges, aligned to line boundaries using <code class="language-plaintext highlighter-rouge">f.tell()</code>, so no worker ever gets a partial line.</li>
+  <li><strong>Count</strong> – N workers each read their whole range in one shot, count n-grams into dicts, and spill <strong>sorted runs</strong> to disk when the dict hits 2M entries (external merge sort).</li>
+  <li><strong>Reconcile</strong> – k-way merge the sorted runs with <code class="language-plaintext highlighter-rouge">heapq.merge</code>, summing duplicate keys, and insert into SQLite.</li>
+  <li><strong>Normalize</strong> – compute Kneser-Ney helper values (continuation probabilities, context totals) into a second SQLite DB.</li>
+  <li><strong>Score</strong> – stream contexts in key order, apply KN smoothing, write the JSON outputs.</li>
+</ol>
+
+<p>Every stage is <strong>streaming and memory-bounded</strong>. The spill-to-disk pattern is what makes a 583MB corpus countable on a laptop.</p>
+
+<h2 id="4-benchmarking-find-the-real-bottleneck">4. Benchmarking: find the real bottleneck</h2>
+
+<p>Before optimizing, we measured each stage on a 250MB sample (1.09M lines):</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>Stage</th>
+      <th>Wall time</th>
+      <th>Notes</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>count</td>
+      <td>112s</td>
+      <td>4 workers, 5 spills each</td>
+    </tr>
+    <tr>
+      <td><strong>reconcile</strong></td>
+      <td><strong>238s</strong></td>
+      <td>18M trigram rows</td>
+    </tr>
+    <tr>
+      <td>normalize</td>
+      <td>11s</td>
+      <td> </td>
+    </tr>
+    <tr>
+      <td><strong>score</strong></td>
+      <td><strong>161s</strong></td>
+      <td>1M contexts, single-threaded</td>
+    </tr>
+    <tr>
+      <td><strong>total</strong></td>
+      <td><strong>~8.7 min</strong></td>
+      <td> </td>
+    </tr>
+  </tbody>
+</table>
+
+<p>Two clear targets. Reconcile was #1.</p>
+
+<h2 id="5-fix-1-the-sqlite-bulk-load-pattern-238s---63s">5. Fix #1: the SQLite bulk-load pattern (238s -&gt; 63s)</h2>
+
+<p>Reconcile had two anti-patterns:</p>
+
+<p><strong>Dead-weight conflict handling.</strong> The k-way merge already sums adjacent equal keys, so every key it emits is unique. But the insert used <code class="language-plaintext highlighter-rouge">INSERT ... ON CONFLICT DO UPDATE</code> – SQLite paid for a conflict check on every one of 18M rows, and the branch never fired.</p>
+
+<p><strong>Index maintenance during insert.</strong> The tables were created with PRIMARY KEYs, so SQLite maintained the B-tree index incrementally across 18M inserts. That’s the classic bulk-load mistake.</p>
+
+<p>The fix is the standard bulk-load pattern:</p>
+
+<ul>
+  <li>Create <strong>heap tables</strong> (no index)</li>
+  <li>Plain <code class="language-plaintext highlighter-rouge">INSERT</code> (the merge guarantees uniqueness)</li>
+  <li>Build the indexes <strong>once, after</strong> the load</li>
+</ul>
+
+<p>Since the merge emits rows already sorted by key, the index build is nearly free.</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>238s -&gt; 63s   (3.8)
+</code></pre></div></div>
+
+<p>We also found and fixed a resume bug along the way: when a stage rebuilds its output, the downstream <code class="language-plaintext highlighter-rouge">.done</code> markers must be invalidated, or a later run silently uses stale data.</p>
+
+<h2 id="6-fix-2-algorithmic-scoring-hang---51s">6. Fix #2: algorithmic scoring (hang -&gt; 51s)</h2>
+
+<p>The score stage was the second bottleneck – it had hung for &gt;240s on just 50MB. The problem: for every trigram context, it recomputed the full backoff distribution from raw counts.</p>
+
+<p>Two algorithmic fixes:</p>
+
+<p><strong>Memoization.</strong> <code class="language-plaintext highlighter-rouge">backoff(w2)</code> depends only on the last word of the context, not the whole context. Compute it once per distinct <code class="language-plaintext highlighter-rouge">w2</code> instead of once per context.</p>
+
+<p><strong>Top-k dominance pruning.</strong> A word that only appears in the backoff distribution scores <code class="language-plaintext highlighter-rouge">P_backoff(w|w2)</code> – a monotonic function. So only the top <code class="language-plaintext highlighter-rouge">max_followers</code> backoff entries can ever reach the top-<code class="language-plaintext highlighter-rouge">max_followers</code> result. Use <code class="language-plaintext highlighter-rouge">heapq.nlargest</code> instead of sorting everything.</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>hanging (&gt;240s) -&gt; 51s on 250MB
+</code></pre></div></div>
+
+<h2 id="7-sqlite-wal-tuning">7. SQLite WAL tuning</h2>
+
+<p>Small but real: <code class="language-plaintext highlighter-rouge">journal_mode=WAL</code>, <code class="language-plaintext highlighter-rouge">synchronous=NORMAL</code>, 64MB journal limit, 64MB page cache, 128MB mmap. These are the same defaults Rails 7.1 adopted for SQLite. They made the reconcile writes and score reads noticeably faster.</p>
+
+<h2 id="8-results">8. Results</h2>
+
+<p><strong>250MB sample, same machine:</strong></p>
+
+<table>
+  <thead>
+    <tr>
+      <th>Stage</th>
+      <th>Before</th>
+      <th>After</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>count</td>
+      <td>112s</td>
+      <td>37s</td>
+    </tr>
+    <tr>
+      <td>reconcile</td>
+      <td>238s</td>
+      <td>63s</td>
+    </tr>
+    <tr>
+      <td>normalize</td>
+      <td>11s</td>
+      <td>3.7s</td>
+    </tr>
+    <tr>
+      <td>score</td>
+      <td>161s</td>
+      <td>51s</td>
+    </tr>
+    <tr>
+      <td><strong>total</strong></td>
+      <td><strong>~8.7 min</strong></td>
+      <td><strong>~2.6 min</strong></td>
+    </tr>
+  </tbody>
+</table>
+
+<p>Outputs were byte-identical before and after – the optimizations changed speed, not results.</p>
+
+<p><strong>Full 583MB corpus on a spot t3.xlarge (4 vCPU): ~11 minutes.</strong></p>
+
+<ul>
+  <li>427,651 unigrams  10.36M bigrams  <strong>35.9M trigram rows</strong></li>
+  <li>1,940,183 trigram contexts scored</li>
+  <li>Outputs: <code class="language-plaintext highlighter-rouge">trigrams.json</code> (377MB), <code class="language-plaintext highlighter-rouge">bigrams.json</code> (20.6MB), <code class="language-plaintext highlighter-rouge">bigrams_support.json</code> (2.6MB)</li>
+  <li>Instance self-terminated after upload</li>
+</ul>
+
+<p><strong>Operationalizing.</strong> The whole thing is now a one-command affair: a small <code class="language-plaintext highlighter-rouge">aws_ngrams.sh</code> wrapper handles upload -&gt; launch -&gt; wait -&gt; status, and a cron monitor kills any instance that runs past 3 hours without producing output. A failed run costs minutes, not hours.</p>
+
+<h2 id="9-lessons-learned">9. Lessons learned</h2>
+
+<ol>
+  <li><strong>Measure before optimizing.</strong> Per-stage timing turned “it’s slow” into “reconcile is 46% of the time.” We’d have wasted effort optimizing count otherwise.</li>
+  <li><strong>The bulk-load pattern is a superpower.</strong> Insert without an index, build the index after. It’s the difference between 18M incremental index updates and one sorted pass.</li>
+  <li><strong>Streaming + memory-bounded at every step.</strong> External merge sort is why a 583MB corpus fits on a laptop.</li>
+  <li><strong>Algorithmic wins beat micro-optimizations.</strong> Memoization and top-k pruning turned a hang into 51 seconds. No amount of loop tuning would have done that.</li>
+  <li><strong>Beware O(n) in hot loops.</strong> The buffer-slicing bug cost us an entire AWS run.</li>
+  <li><strong>Disk pressure is a silent killer.</strong> A 96%-full disk turned a 73-second stage into a 15-minute stall. Check <code class="language-plaintext highlighter-rouge">df</code> before long runs.</li>
+  <li><strong>Resumability pays for itself.</strong> Stage markers + self-terminating spot instances meant a failed run costs minutes, not hours.</li>
+</ol>
+
+
+      <hr>
+
+      <!-- Prev / Next / Up navigation -->
+      
+      
+      
+
+      <div class="clearfix" style="margin-top: 2rem;">
+        
+          
+          
+
+          
+            
+            <a class="btn btn-primary float-left" href="/keyboard/07-build-ci-fdroid-future.html" title="CodeKeyboard Part 7: Build, CI, F-Droid, Future Work">&larr; Previous</a>
+          
+
+          
+            
+            <a class="btn btn-primary float-right" href="/keyboard/09-ngram-smoothing-katz-swiftkey-wdp.html" title="CodeKeyboard Part 9: KN vs Katz vs SwiftKey WDP">Next &rarr;</a>
+          
+        
+      </div>
+
+      
+      <div style="text-align: center; margin-top: 1rem;">
+        <a href="/keyboard/">&uarr; Back to Table of Contents</a>
+      </div>
+      
+
+    </div>
+  </div>
+</div>
+
+
+  <!-- Footer -->
+
+<hr>
+
+<footer>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <ul class="list-inline text-center">
+          
+          <li class="list-inline-item">
+            <a href="mailto:amitava.dev@proton.me" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="far fa-envelope fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          
+          
+          <li class="list-inline-item">
+            <a href="https://www.linkedin.com/in/amitavaag" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-linkedin fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          <li class="list-inline-item">
+            <a href="https://github.com/ikouchiha47" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-github fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+        </ul>
+
+        <p class="copyright text-muted">
+          Build with: 
+          <a 
+            href="https://github.com/StartBootstrap/startbootstrap-clean-blog-jekyll"
+            class="text-gray"
+            target="_blank">startbootstrap-clean-blog-jekyll</a></p>
+      </div>
+    </div>
+  </div>
+</footer>
+
+
+  <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="/assets/vendor/blog/js/scripts.js"></script>
+
+<script src="/assets/scripts.js"></script>
+
+
+
+
+
+  <script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+
+    document.querySelectorAll('pre > code.language-mermaid').forEach((codeBlock) => {
+      codeBlock.parentElement.outerHTML = `<pre class="mermaid">${codeBlock.textContent}</pre>`;
+    });
+
+
+    mermaid.initialize({ startOnLoad: true, theme: 'forest' });
+</script>
+
+
+  
+
+</body>
+
+</html>

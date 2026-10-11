@@ -1,0 +1,549 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+  <title>
+    CodeKeyboard Part 7: Build, CI, F-Droid, Future Work - iko&#39;s logs
+    
+  </title>
+
+  <meta name="description" content="">
+  <meta property="og:description" content="">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="CodeKeyboard Part 7: Build, CI, F-Droid, Future...">
+  <meta property="og:url" content="https://ikouchiha47.github.io/keyboard/07-build-ci-fdroid-future.html">
+
+  
+
+  <link href='https://fonts.googleapis.com/css?family=Lora:400,700,400italic,700italic' rel='stylesheet' type='text/css'>
+  <link href='https://fonts.googleapis.com/css?family=Open+Sans:300italic,400italic,600italic,700italic,800italic,400,300,600,700,800' rel='stylesheet' type='text/css'>
+
+  <!-- <script src="https://use.fontawesome.com/releases/v5.15.3/js/all.js" crossorigin="anonymous"></script> -->
+  <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.15.4/css/all.css" integrity="sha384-DyZ88mC6Up2uqS4h/KRgHuoeGwBcD4Ng9SiP4dIRy0EXTlnuz47vAwmeGwVChigm" crossorigin="anonymous"/>
+
+  <link rel="stylesheet" href="/assets/main.css">
+  <link rel="canonical" href="https://ikouchiha47.github.io/keyboard/07-build-ci-fdroid-future.html">
+  <link rel="alternate" type="application/rss+xml" title="iko&#39;s logs" href="/feed.xml">
+
+  <meta name="google-site-verification" content="lWkg6gIxJgzEKX_5XnhcxCtPE9QknaimFWWos_dTvPM" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fira+Sans:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Inconsolata:wght@200..900&family=Jersey+25&family=Kanit:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Merriweather+Sans:ital,wght@0,300..800;1,300..800&family=Nanum+Gothic+Coding&family=Space+Grotesk:wght@300..700&family=Titillium+Web:ital,wght@0,200;0,300;0,400;0,600;0,700;0,900;1,200;1,300;1,400;1,600;1,700&display=swap" rel="stylesheet">
+
+</head>
+
+
+<body>
+
+  <!-- Navigation -->
+<nav class="navbar navbar-expand-lg navbar-light fixed-top" id="mainNav">
+  <div class="container">
+    <a class="navbar-brand" href="/">iko&#39;s logs</a>
+    <button class="navbar-toggler navbar-toggler-right" type="button" data-toggle="collapse" data-target="#navbarResponsive" aria-controls="navbarResponsive" aria-expanded="false" aria-label="Toggle navigation">
+      Menu
+      <i class="fa fa-bars"></i>
+    </button>
+    <div class="collapse navbar-collapse" id="navbarResponsive">
+      <ul class="navbar-nav ml-auto">
+        <li class="nav-item">
+          <a class="nav-link" href="/">Home</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/about">About</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/posts">Posts</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/wall/">Wall</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/contact">Contact</a>
+        </li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+
+  <!-- Page Header -->
+
+<header class="masthead" style="background: #101820">
+
+  <div class="overlay"></div>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <div class="post-heading">
+          <h1>CodeKeyboard Part 7: Build, CI, F-Droid, Future Work</h1>
+          
+          <h2 class="subheading">Assets, tests, CI, F-Droid, roadmap</h2>
+          
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="container space-grotesk">
+  <div class="row">
+    <div class="col-lg-8 col-md-10 mx-auto">
+
+      <!-- Breadcrumb -->
+      <nav aria-label="breadcrumb" style="margin-bottom: 1.5rem;">
+        <ol class="breadcrumb" style="background: transparent; padding: 0;">
+          
+            <li class="breadcrumb-item"><a href="/keyboard/">CodeKeyboard Rebuild Notes</a></li>
+          
+          
+          <li class="breadcrumb-item active" aria-current="page">CodeKeyboard Part 7: Build, CI, F-Droid, Future Work</li>
+        </ol>
+      </nav>
+
+      <h2 id="asset-pipeline">Asset pipeline</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>Output</th>
+      <th>Command / source</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">assets/en.trie</code></td>
+      <td>word list -&gt; <code class="language-plaintext highlighter-rouge">node tools/build-trie.js</code> (see script header for <code class="language-plaintext highlighter-rouge">gen_wordlist.py</code> pipe)</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">assets/bigrams.json</code></td>
+      <td><code class="language-plaintext highlighter-rouge">python3 scripts/extract_bigrams.py --input count_2w.txt --output android/app/src/main/assets/bigrams.json</code></td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">assets/emoji.json</code></td>
+      <td><code class="language-plaintext highlighter-rouge">python3 scripts/gen_emoji.py</code></td>
+    </tr>
+  </tbody>
+</table>
+
+<p>Measured sizes on this tree:</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>File</th>
+      <th style="text-align: right">Bytes</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>en.trie</td>
+      <td style="text-align: right">2316326</td>
+    </tr>
+    <tr>
+      <td>bigrams.json</td>
+      <td style="text-align: right">633187</td>
+    </tr>
+    <tr>
+      <td>emoji.json</td>
+      <td style="text-align: right">171457</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>Runtime-only:</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>File</th>
+      <th>Role</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">filesDir/user.trie</code></td>
+      <td>TRIE3 learned words</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">filesDir/user_bigrams.json</code></td>
+      <td>v2 user bigrams</td>
+    </tr>
+  </tbody>
+</table>
+
+<h2 id="local-apk">Local APK</h2>
+
+<div class="language-bash highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="nb">cd </span>android <span class="o">&amp;&amp;</span> ./gradlew testDebugUnitTest assembleRelease <span class="nt">--console</span><span class="o">=</span>plain
+<span class="c"># APK: app/build/outputs/apk/release/app-release.apk</span>
+</code></pre></div></div>
+
+<p>Version in <code class="language-plaintext highlighter-rouge">android/app/build.gradle</code> (verify when you release; do not trust stale docs):</p>
+
+<ul>
+  <li><code class="language-plaintext highlighter-rouge">versionCode 9</code></li>
+  <li><code class="language-plaintext highlighter-rouge">versionName "1.8"</code></li>
+</ul>
+
+<p><code class="language-plaintext highlighter-rouge">CLAUDE.md</code> semver: tag <code class="language-plaintext highlighter-rouge">vMajor.Minor.Patch</code>, versionName matches tag, versionCode +1 per release.</p>
+
+<h2 id="unit-tests-as-executable-spec">Unit tests as executable spec</h2>
+
+<p>Kotlin (<code class="language-plaintext highlighter-rouge">android/app/src/test/java/com/codekeyboard/</code>):</p>
+
+<ul>
+  <li>TapMachineTest, KeyboardStateTest</li>
+  <li>TrieTest, UserTrieTest, TrieDecayTest</li>
+  <li>BevaTrieSearchTest, FuzzyTrieSearchTest, FuzzyIntegrationTest</li>
+  <li>WordLearnerTest, ComposingBufferTest, BackspaceRecomposeTest</li>
+  <li>SnippetStoreTest, SuggestionSlotLogicTest</li>
+  <li>SofleLayoutComputerTest</li>
+  <li>benchmarks: Trie, UserTrie, Beva, Fuzzy</li>
+</ul>
+
+<p>JS (<code class="language-plaintext highlighter-rouge">__tests__/</code>):</p>
+
+<ul>
+  <li><code class="language-plaintext highlighter-rouge">trie.test.js</code>, <code class="language-plaintext highlighter-rouge">build-trie.test.js</code> - TRIF layout (magic, 12-byte nodes, u24 index)</li>
+  <li><code class="language-plaintext highlighter-rouge">modifier-state.test.js</code></li>
+</ul>
+
+<p>CI runs Gradle unit tests. TRIF/TRIE2 mismatch in tests was a real failure mode; readers must match the shipped magic.</p>
+
+<h2 id="github-actions">GitHub Actions</h2>
+
+<p>File: <code class="language-plaintext highlighter-rouge">CodeKeyboard/.github/workflows/build.yml</code></p>
+
+<table>
+  <tbody>
+    <tr>
+      <td>On push/PR to main</td>
+      <td>master:</td>
+    </tr>
+  </tbody>
+</table>
+
+<ol>
+  <li>checkout</li>
+  <li>setup-java 17 temurin</li>
+  <li>setup-node 20 + npm ci</li>
+  <li>Gradle cache</li>
+  <li>sdkmanager: platforms;android-36, build-tools;36.0.0, ndk;27.1.12297006, cmake;3.22.1</li>
+  <li><code class="language-plaintext highlighter-rouge">cd android &amp;&amp; ./gradlew testDebugUnitTest</code></li>
+  <li><code class="language-plaintext highlighter-rouge">assembleRelease</code></li>
+  <li>upload-artifact <code class="language-plaintext highlighter-rouge">app-release.apk</code></li>
+</ol>
+
+<p><code class="language-plaintext highlighter-rouge">workflow_dispatch</code> release job downloads the artifact and creates a GitHub Release with <code class="language-plaintext highlighter-rouge">softprops/action-gh-release</code>.</p>
+
+<h2 id="f-droid">F-Droid</h2>
+
+<p>Example recipe: <code class="language-plaintext highlighter-rouge">docs/fdroid-recipe.yml</code>.</p>
+
+<p><strong>Stale numbers warning:</strong> recipe lists versionName 1.6 / versionCode 7. App build.gradle is currently 1.8 / 9. When submitting, sync recipe to the git tag you want built.</p>
+
+<p>Shape of the recipe:</p>
+
+<ul>
+  <li>License MIT, source GitHub</li>
+  <li><code class="language-plaintext highlighter-rouge">subdir: android/app</code> (relative to how F-Droid lays out the clone - confirm against their docs for monorepo paths)</li>
+  <li>npm install steps, NDK 27.1.12297006</li>
+  <li><code class="language-plaintext highlighter-rouge">UpdateCheckMode: Tags</code></li>
+</ul>
+
+<p>Root also has LICENSE and fastlane metadata for store listing. F-Droid builds from source and resigns.</p>
+
+<p>Do not invent undocumented F-Droid breakage in this blog. If you hit RN gradle-plugin / includeBuild issues on their builders, log them as ops notes with the error text.</p>
+
+<h2 id="what-is-not-implemented">What is not implemented</h2>
+
+<h3 id="gif-picker">GIF picker</h3>
+
+<p><code class="language-plaintext highlighter-rouge">docs/adr-002-gif-picker.md</code> - Planned. BYOK for GIPHY/Tenor (public keys dead). Local MediaStore tab. Send with <code class="language-plaintext highlighter-rouge">commitContent</code>. Not in the Kotlin tree as a feature yet.</p>
+
+<h3 id="stronger-lm-seed">Stronger LM seed</h3>
+
+<p>Keep two-layer BigramModel. Improve the <strong>prior</strong>:</p>
+
+<ol>
+  <li>HeliBoard/AOSP dictionaries - https://codeberg.org/Helium314/aosp-dictionaries
+    <ul>
+      <li><code class="language-plaintext highlighter-rouge">.combined</code> + <code class="language-plaintext highlighter-rouge">dicttool_aosp</code> -&gt; <code class="language-plaintext highlighter-rouge">.dict</code></li>
+      <li>Offline extract into denser <code class="language-plaintext highlighter-rouge">bigrams.json</code> + maybe richer unigram table, <strong>or</strong> JNI binary dict like HeliBoard</li>
+    </ul>
+  </li>
+  <li>Trigram keys <code class="language-plaintext highlighter-rouge">"w2 w1"</code> with backoff to bigram</li>
+  <li>Unigram backoff when predecessor missing (smallest win)</li>
+</ol>
+
+<p>User <code class="language-plaintext highlighter-rouge">formula_d</code>/<code class="language-plaintext highlighter-rouge">formula_p</code> layer stays for personal and mixed-script pairs AOSP will never ship.</p>
+
+<h3 id="mixed-language-packs">Mixed language packs</h3>
+
+<p>User bigrams already store any string pair. <code class="language-plaintext highlighter-rouge">en.trie</code> and Norvig seed are English. Pack download / second trie is future.</p>
+
+<h3 id="other-gaps">Other gaps</h3>
+
+<ul>
+  <li>Slide typing: UX doc only, not IME</li>
+  <li>Tap-dance: designed in GESTURE_ARCHITECTURE, not coded</li>
+  <li>Full RN removal</li>
+  <li>Wire <code class="language-plaintext highlighter-rouge">TextInputConnection</code> through live IME</li>
+  <li>Infini-gram over personal history: research note only</li>
+</ul>
+
+<h2 id="five-things-that-make-a-reimplementation-real">Five things that make a reimplementation real</h2>
+
+<ol>
+  <li><code class="language-plaintext highlighter-rouge">InputMethodService</code> + canvas keys + correct <code class="language-plaintext highlighter-rouge">InputConnection</code> use</li>
+  <li>Composing buffer + selection guard + recompose on backspace</li>
+  <li>Dual tries + WordLearner policy (flush only known words)</li>
+  <li>Bigram seed + user decay + after-space next-words + context in suggest</li>
+  <li>Hold timing: 150ms home-row hold-tap, activate-on-down dedicated mods, 300ms double-tap lock</li>
+</ol>
+
+<p>Everything else is polish, packaging, and a denser seed.</p>
+
+<h2 id="file-map-quick">File map (quick)</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>Path</th>
+      <th>Role</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>CodeKeyboardIME.kt</td>
+      <td>IME</td>
+    </tr>
+    <tr>
+      <td>NativeKeyboardView.kt</td>
+      <td>Keys + touch</td>
+    </tr>
+    <tr>
+      <td>SofleKeyData.kt</td>
+      <td>Layers</td>
+    </tr>
+    <tr>
+      <td>KeyboardState.kt / TapMachine.kt</td>
+      <td>State</td>
+    </tr>
+    <tr>
+      <td>ComposingBuffer.kt</td>
+      <td>Composing</td>
+    </tr>
+    <tr>
+      <td>Trie.kt / UserTrie.kt / TrieWriter.kt</td>
+      <td>Dictionaries</td>
+    </tr>
+    <tr>
+      <td>BigramModel.kt</td>
+      <td>Bigrams</td>
+    </tr>
+    <tr>
+      <td>SuggestionStrategy.kt / BevaTrieSearch.kt</td>
+      <td>Ranking</td>
+    </tr>
+    <tr>
+      <td>SuggestionBarView.kt / EmojiPanelView.kt</td>
+      <td>Chrome</td>
+    </tr>
+    <tr>
+      <td>SnippetStore.kt</td>
+      <td>Snippets</td>
+    </tr>
+    <tr>
+      <td>TrieDecayWorker.kt / MainApplication.kt</td>
+      <td>Decay</td>
+    </tr>
+    <tr>
+      <td>tools/build-trie.js</td>
+      <td>TRIF</td>
+    </tr>
+    <tr>
+      <td>scripts/extract_bigrams.py</td>
+      <td>Seed</td>
+    </tr>
+    <tr>
+      <td>scripts/gen_emoji.py</td>
+      <td>Emoji</td>
+    </tr>
+    <tr>
+      <td>GESTURE_ARCHITECTURE.md</td>
+      <td>Gestures</td>
+    </tr>
+    <tr>
+      <td>docs/blog/*</td>
+      <td>This series</td>
+    </tr>
+  </tbody>
+</table>
+
+<hr />
+
+<h2 id="verification-part-7">Verification (part 7)</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>Claim</th>
+      <th>Evidence</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Asset byte sizes</td>
+      <td>measured under assets/</td>
+    </tr>
+    <tr>
+      <td>versionCode 9 / versionName 1.8</td>
+      <td>android/app/build.gradle</td>
+    </tr>
+    <tr>
+      <td>fdroid recipe 1.6/7</td>
+      <td>docs/fdroid-recipe.yml (stale vs app)</td>
+    </tr>
+    <tr>
+      <td>CI steps</td>
+      <td>.github/workflows/build.yml</td>
+    </tr>
+    <tr>
+      <td>Test class list</td>
+      <td>android/app/src/test/… directory listing</td>
+    </tr>
+    <tr>
+      <td>GIF planned not shipped</td>
+      <td>adr-002-gif-picker Status Planned; no Gif* feature module in main kotlin list</td>
+    </tr>
+    <tr>
+      <td>NDK 27.1 in CI and fdroid</td>
+      <td>build.yml; fdroid-recipe.yml</td>
+    </tr>
+  </tbody>
+</table>
+
+
+      <hr>
+
+      <!-- Prev / Next / Up navigation -->
+      
+      
+      
+
+      <div class="clearfix" style="margin-top: 2rem;">
+        
+          
+          
+
+          
+            
+            <a class="btn btn-primary float-left" href="/keyboard/06-fuzzy-emoji-snippets-decay.html" title="CodeKeyboard Part 6: Fuzzy Correction, Emoji, Snippets, Trie Decay">&larr; Previous</a>
+          
+
+          
+            
+            <a class="btn btn-primary float-right" href="/keyboard/08-ngram-pipeline-optimization.html" title="CodeKeyboard Part 8: Optimizing a 583MB N-gram Pipeline">Next &rarr;</a>
+          
+        
+      </div>
+
+      
+      <div style="text-align: center; margin-top: 1rem;">
+        <a href="/keyboard/">&uarr; Back to Table of Contents</a>
+      </div>
+      
+
+    </div>
+  </div>
+</div>
+
+
+  <!-- Footer -->
+
+<hr>
+
+<footer>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <ul class="list-inline text-center">
+          
+          <li class="list-inline-item">
+            <a href="mailto:amitava.dev@proton.me" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="far fa-envelope fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          
+          
+          <li class="list-inline-item">
+            <a href="https://www.linkedin.com/in/amitavaag" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-linkedin fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          <li class="list-inline-item">
+            <a href="https://github.com/ikouchiha47" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-github fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+        </ul>
+
+        <p class="copyright text-muted">
+          Build with: 
+          <a 
+            href="https://github.com/StartBootstrap/startbootstrap-clean-blog-jekyll"
+            class="text-gray"
+            target="_blank">startbootstrap-clean-blog-jekyll</a></p>
+      </div>
+    </div>
+  </div>
+</footer>
+
+
+  <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="/assets/vendor/blog/js/scripts.js"></script>
+
+<script src="/assets/scripts.js"></script>
+
+
+
+
+
+  <script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+
+    document.querySelectorAll('pre > code.language-mermaid').forEach((codeBlock) => {
+      codeBlock.parentElement.outerHTML = `<pre class="mermaid">${codeBlock.textContent}</pre>`;
+    });
+
+
+    mermaid.initialize({ startOnLoad: true, theme: 'forest' });
+</script>
+
+
+  
+
+</body>
+
+</html>

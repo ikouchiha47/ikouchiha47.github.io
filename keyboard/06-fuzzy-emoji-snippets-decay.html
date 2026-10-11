@@ -1,0 +1,400 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+  <title>
+    CodeKeyboard Part 6: Fuzzy Correction, Emoji, Snippets, Trie Decay - iko&#39;s logs
+    
+  </title>
+
+  <meta name="description" content="">
+  <meta property="og:description" content="">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="CodeKeyboard Part 6: Fuzzy Correction, Emoji, S...">
+  <meta property="og:url" content="https://ikouchiha47.github.io/keyboard/06-fuzzy-emoji-snippets-decay.html">
+
+  
+
+  <link href='https://fonts.googleapis.com/css?family=Lora:400,700,400italic,700italic' rel='stylesheet' type='text/css'>
+  <link href='https://fonts.googleapis.com/css?family=Open+Sans:300italic,400italic,600italic,700italic,800italic,400,300,600,700,800' rel='stylesheet' type='text/css'>
+
+  <!-- <script src="https://use.fontawesome.com/releases/v5.15.3/js/all.js" crossorigin="anonymous"></script> -->
+  <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.15.4/css/all.css" integrity="sha384-DyZ88mC6Up2uqS4h/KRgHuoeGwBcD4Ng9SiP4dIRy0EXTlnuz47vAwmeGwVChigm" crossorigin="anonymous"/>
+
+  <link rel="stylesheet" href="/assets/main.css">
+  <link rel="canonical" href="https://ikouchiha47.github.io/keyboard/06-fuzzy-emoji-snippets-decay.html">
+  <link rel="alternate" type="application/rss+xml" title="iko&#39;s logs" href="/feed.xml">
+
+  <meta name="google-site-verification" content="lWkg6gIxJgzEKX_5XnhcxCtPE9QknaimFWWos_dTvPM" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fira+Sans:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Inconsolata:wght@200..900&family=Jersey+25&family=Kanit:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Merriweather+Sans:ital,wght@0,300..800;1,300..800&family=Nanum+Gothic+Coding&family=Space+Grotesk:wght@300..700&family=Titillium+Web:ital,wght@0,200;0,300;0,400;0,600;0,700;0,900;1,200;1,300;1,400;1,600;1,700&display=swap" rel="stylesheet">
+
+</head>
+
+
+<body>
+
+  <!-- Navigation -->
+<nav class="navbar navbar-expand-lg navbar-light fixed-top" id="mainNav">
+  <div class="container">
+    <a class="navbar-brand" href="/">iko&#39;s logs</a>
+    <button class="navbar-toggler navbar-toggler-right" type="button" data-toggle="collapse" data-target="#navbarResponsive" aria-controls="navbarResponsive" aria-expanded="false" aria-label="Toggle navigation">
+      Menu
+      <i class="fa fa-bars"></i>
+    </button>
+    <div class="collapse navbar-collapse" id="navbarResponsive">
+      <ul class="navbar-nav ml-auto">
+        <li class="nav-item">
+          <a class="nav-link" href="/">Home</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/about">About</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/posts">Posts</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/wall/">Wall</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/contact">Contact</a>
+        </li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+
+  <!-- Page Header -->
+
+<header class="masthead" style="background: #14213d">
+
+  <div class="overlay"></div>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <div class="post-heading">
+          <h1>CodeKeyboard Part 6: Fuzzy Correction, Emoji, Snippets, Trie Decay</h1>
+          
+          <h2 class="subheading">BEVA, emoji panel, snippets, WorkManager</h2>
+          
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="container space-grotesk">
+  <div class="row">
+    <div class="col-lg-8 col-md-10 mx-auto">
+
+      <!-- Breadcrumb -->
+      <nav aria-label="breadcrumb" style="margin-bottom: 1.5rem;">
+        <ol class="breadcrumb" style="background: transparent; padding: 0;">
+          
+            <li class="breadcrumb-item"><a href="/keyboard/">CodeKeyboard Rebuild Notes</a></li>
+          
+          
+          <li class="breadcrumb-item active" aria-current="page">CodeKeyboard Part 6: Fuzzy Correction, Emoji, Snippets, Trie Decay</li>
+        </ol>
+      </nav>
+
+      <h2 id="spell-correction--fuzzy-fill">Spell correction / fuzzy fill</h2>
+
+<h3 id="adr-vs-code">ADR vs code</h3>
+
+<p><code class="language-plaintext highlighter-rouge">docs/architecture/decisions/ADR-005-spell-correction.md</code> evaluates:</p>
+
+<ul>
+  <li>Schulz &amp; Mihov Levenshtein automata</li>
+  <li>Hanov 2011 DP-row DFS on a trie</li>
+  <li>BEVA (Zhou et al. 2016)</li>
+  <li>SymSpell (rejected: memory)</li>
+  <li>BK-trees (rejected)</li>
+</ul>
+
+<p>ADR accepts Hanov as v1. <strong>Production path uses BEVA.</strong></p>
+
+<p><code class="language-plaintext highlighter-rouge">MergedSuggestionStrategy.fuzzyFill</code> calls <code class="language-plaintext highlighter-rouge">BevaTrieSearch.search</code> on <code class="language-plaintext highlighter-rouge">UserTrieAdapter</code> and <code class="language-plaintext highlighter-rouge">BaseTrieAdapter</code>.<br />
+<code class="language-plaintext highlighter-rouge">FuzzyTrieSearch.kt</code> still implements Hanov DFS and is used in tests/benchmarks.</p>
+
+<h3 id="when-fuzzy-runs">When fuzzy runs</h3>
+
+<div class="language-kotlin highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="kd">val</span> <span class="py">exact</span> <span class="p">=</span> <span class="nf">exactSuggest</span><span class="p">(</span><span class="n">prefix</span><span class="p">,</span> <span class="n">k</span><span class="p">)</span>
+<span class="k">if</span> <span class="p">(</span><span class="n">exact</span><span class="p">.</span><span class="n">size</span> <span class="p">&gt;=</span> <span class="n">k</span><span class="p">)</span> <span class="k">return</span> <span class="n">exact</span>
+<span class="kd">val</span> <span class="py">threshold</span> <span class="p">=</span> <span class="nc">FuzzyThreshold</span><span class="p">.</span><span class="nf">forLength</span><span class="p">(</span><span class="n">prefix</span><span class="p">.</span><span class="n">length</span><span class="p">)</span>
+<span class="k">if</span> <span class="p">(</span><span class="n">threshold</span> <span class="p">==</span> <span class="mi">0</span><span class="p">)</span> <span class="k">return</span> <span class="n">exact</span>
+<span class="c1">// fill k - exact.size</span>
+</code></pre></div></div>
+
+<div class="language-kotlin highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="c1">// FuzzyThreshold</span>
+<span class="n">len</span> <span class="p">&lt;=</span> <span class="mi">3</span> <span class="p">-&gt;</span> <span class="mi">0</span>
+<span class="n">len</span> <span class="p">==</span> <span class="mi">4</span> <span class="p">-&gt;</span> <span class="mi">1</span>
+<span class="k">else</span>     <span class="p">-&gt;</span> <span class="mi">2</span>
+</code></pre></div></div>
+
+<p>So fuzzy is not “only when exact is empty”; it fills remaining slots. Short prefixes skip fuzzy entirely.</p>
+
+<h3 id="ranking-rule">Ranking rule</h3>
+
+<p>Comment in Merged: collect <strong>all</strong> within threshold (Int.MAX_VALUE cap on search), then sort by edit distance, then longer common prefix with query, then frequency. Do not stop DFS early at <code class="language-plaintext highlighter-rouge">maxResults</code> if that yields alphabetical junk (historical bug).</p>
+
+<p>BEVA sketch (from file header): per-node edit-vector bitmasks <code class="language-plaintext highlighter-rouge">evBits[e]</code>; transitions for match/sub/del/ins; prune when no reachable bits; terminal edit distance = min e with bit n set. Words up to length 30 fit in 32-bit masks.</p>
+
+<h2 id="emoji-panel">Emoji panel</h2>
+
+<h3 id="data-pipeline">Data pipeline</h3>
+
+<p><code class="language-plaintext highlighter-rouge">scripts/gen_emoji.py</code>:</p>
+
+<ul>
+  <li>Source URL Unicode 15.0 <code class="language-plaintext highlighter-rouge">emoji-test.txt</code> (cached under <code class="language-plaintext highlighter-rouge">scripts/</code>)</li>
+  <li>fully-qualified only</li>
+  <li>skin tones stripped into <code class="language-plaintext highlighter-rouge">variants</code> under <code class="language-plaintext highlighter-rouge">base</code></li>
+  <li>writes <code class="language-plaintext highlighter-rouge">android/app/src/main/assets/emoji.json</code></li>
+</ul>
+
+<p>Measured size: 171457 bytes.</p>
+
+<h3 id="ui">UI</h3>
+
+<p><code class="language-plaintext highlighter-rouge">EmojiPanelView.kt</code>, not <code class="language-plaintext highlighter-rouge">SuggestionBarView</code>.</p>
+
+<p>IME:</p>
+
+<div class="language-kotlin highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="c1">// showEmojiPanel: build with kbHeight + nav padding, setInputView(emojiPanel)</span>
+<span class="c1">// hideEmojiPanel: emojiPanel = null; setInputView(onCreateInputView())</span>
+</code></pre></div></div>
+
+<p>Tap emoji: <code class="language-plaintext highlighter-rouge">currentInputConnection?.commitText(emoji, 1)</code>.</p>
+
+<p>Focus (prevents IME dismiss):</p>
+
+<div class="language-kotlin highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="n">descendantFocusability</span> <span class="p">=</span> <span class="nc">FOCUS_BLOCK_DESCENDANTS</span>
+<span class="n">isFocusable</span> <span class="p">=</span> <span class="k">false</span>
+</code></pre></div></div>
+
+<p>Category tab icons in companion <code class="language-plaintext highlighter-rouge">CATEGORY_ICONS</code> (Smileys, People, Animals, Food, Travel, Activities, Objects, Symbols, Flags, Component).</p>
+
+<p>Height: <code class="language-plaintext highlighter-rouge">onMeasure</code> can lock to <code class="language-plaintext highlighter-rouge">fixedHeightPx</code> so the panel matches the keyboard slot; nav padding keeps content above system chrome. Several git commits were about panel height and tab layout.</p>
+
+<h2 id="snippets">Snippets</h2>
+
+<p><code class="language-plaintext highlighter-rouge">SnippetStore</code> object, SharedPreferences via <code class="language-plaintext highlighter-rouge">KeyboardSettings</code>, key prefix <code class="language-plaintext highlighter-rouge">snippet_</code>.</p>
+
+<p>First run seeds empty: <code class="language-plaintext highlighter-rouge">em</code>, <code class="language-plaintext highlighter-rouge">ph</code>, <code class="language-plaintext highlighter-rouge">addr</code>, <code class="language-plaintext highlighter-rouge">me</code>, <code class="language-plaintext highlighter-rouge">gh</code>, <code class="language-plaintext highlighter-rouge">li</code> when <code class="language-plaintext highlighter-rouge">snippets_seeded</code> is false.</p>
+
+<div class="language-kotlin highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">fun</span> <span class="nf">matching</span><span class="p">(</span><span class="n">prefix</span><span class="p">:</span> <span class="nc">String</span><span class="p">):</span> <span class="nc">List</span><span class="p">&lt;</span><span class="nc">String</span><span class="p">&gt;</span>  <span class="c1">// expansions, max 3 non-empty</span>
+<span class="k">fun</span> <span class="nf">add</span><span class="p">(</span><span class="n">shortcode</span><span class="p">,</span> <span class="n">expansion</span><span class="p">):</span> <span class="nc">Boolean</span>     <span class="c1">// validates ^[a-z0-9_]+$, no collide</span>
+<span class="k">fun</span> <span class="nf">update</span> <span class="p">/</span> <span class="n">delete</span> <span class="p">/</span> <span class="k">get</span> <span class="p">/</span> <span class="n">exists</span> <span class="p">/</span> <span class="n">all</span>
+</code></pre></div></div>
+
+<p>IME: typing <code class="language-plaintext highlighter-rouge">;</code> starts composing with semicolon; suggestions from <code class="language-plaintext highlighter-rouge">SnippetStore.matching</code> instead of tries. Settings UI in RN writes the same prefs through the bridge.</p>
+
+<h2 id="user-trie-overnight-decay">User trie overnight decay</h2>
+
+<p>Problem: unbounded <code class="language-plaintext highlighter-rouge">user.trie</code> after months of inserts.</p>
+
+<p><code class="language-plaintext highlighter-rouge">MainApplication.scheduleTrieDecay</code>:</p>
+
+<div class="language-kotlin highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="nc">Constraints</span><span class="p">.</span><span class="nc">Builder</span><span class="p">()</span>
+    <span class="p">.</span><span class="nf">setRequiresCharging</span><span class="p">(</span><span class="k">true</span><span class="p">)</span>
+    <span class="p">.</span><span class="nf">setRequiresDeviceIdle</span><span class="p">(</span><span class="k">true</span><span class="p">)</span>
+    <span class="p">.</span><span class="nf">build</span><span class="p">()</span>
+<span class="nc">PeriodicWorkRequestBuilder</span><span class="p">&lt;</span><span class="nc">TrieDecayWorker</span><span class="p">&gt;(</span><span class="mi">1</span><span class="p">,</span> <span class="nc">TimeUnit</span><span class="p">.</span><span class="nc">DAYS</span><span class="p">)</span>
+<span class="nc">WorkManager</span><span class="p">.</span><span class="nf">enqueueUniquePeriodicWork</span><span class="p">(</span><span class="s">"trie_decay"</span><span class="p">,</span> <span class="nc">KEEP</span><span class="p">,</span> <span class="n">request</span><span class="p">)</span>
+</code></pre></div></div>
+
+<p><code class="language-plaintext highlighter-rouge">TrieDecayWorker</code>:</p>
+
+<div class="language-kotlin highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="kd">val</span> <span class="py">trie</span> <span class="p">=</span> <span class="nc">UserTrie</span><span class="p">.</span><span class="nf">load</span><span class="p">(</span><span class="n">file</span><span class="p">)</span>
+<span class="n">trie</span><span class="p">.</span><span class="nf">applyDecay</span><span class="p">(</span><span class="n">factor</span> <span class="p">=</span> <span class="mf">0.9</span><span class="p">,</span> <span class="n">newEpoch</span> <span class="p">=</span> <span class="n">trie</span><span class="p">.</span><span class="n">decayEpoch</span> <span class="p">+</span> <span class="mi">1</span><span class="p">)</span>
+<span class="n">trie</span><span class="p">.</span><span class="nf">save</span><span class="p">(</span><span class="n">file</span><span class="p">)</span>
+</code></pre></div></div>
+
+<p><code class="language-plaintext highlighter-rouge">UserTrie.applyDecay</code>: multiply terminal freqs by <code class="language-plaintext highlighter-rouge">0.9^deltaEpoch</code>, compact dead subtrees, recompute max freq, if <code class="language-plaintext highlighter-rouge">totalNodes &gt; 50_000</code> rebuild keeping top 5000 words by frequency.</p>
+
+<p>Typing path does not call decay. Session end only saves the trie as-is.</p>
+
+<p>ADR-004 describes the same constraints and hard cap idea.</p>
+
+<hr />
+
+<h2 id="verification-part-6">Verification (part 6)</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>Claim</th>
+      <th>Evidence</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Production fuzzy is BevaTrieSearch</td>
+      <td>SuggestionStrategy.fuzzyFill</td>
+    </tr>
+    <tr>
+      <td>FuzzyThreshold 0/1/2</td>
+      <td>FuzzyTrieSearch.kt object FuzzyThreshold; tests</td>
+    </tr>
+    <tr>
+      <td>Hanov still in FuzzyTrieSearch</td>
+      <td>file header + class</td>
+    </tr>
+    <tr>
+      <td>emoji.json from gen_emoji.py</td>
+      <td>script OUTPUT_FILE path</td>
+    </tr>
+    <tr>
+      <td>EmojiPanelView + setInputView</td>
+      <td>CodeKeyboardIME show/hide; EmojiPanelView</td>
+    </tr>
+    <tr>
+      <td>FOCUS_BLOCK_DESCENDANTS</td>
+      <td>EmojiPanelView init</td>
+    </tr>
+    <tr>
+      <td>Snippet defaults and regex</td>
+      <td>SnippetStore.kt</td>
+    </tr>
+    <tr>
+      <td>WorkManager charging+idle daily</td>
+      <td>MainApplication.kt</td>
+    </tr>
+    <tr>
+      <td>decay 0.9 and 50k/5000 cap</td>
+      <td>UserTrie.applyDecay / pruneToTop</td>
+    </tr>
+    <tr>
+      <td>emoji.json size ~171KB</td>
+      <td>measured</td>
+    </tr>
+  </tbody>
+</table>
+
+
+      <hr>
+
+      <!-- Prev / Next / Up navigation -->
+      
+      
+      
+
+      <div class="clearfix" style="margin-top: 2rem;">
+        
+          
+          
+
+          
+            
+            <a class="btn btn-primary float-left" href="/keyboard/05-bigrams.html" title="CodeKeyboard Part 5: Bigram Next-Word Prediction">&larr; Previous</a>
+          
+
+          
+            
+            <a class="btn btn-primary float-right" href="/keyboard/07-build-ci-fdroid-future.html" title="CodeKeyboard Part 7: Build, CI, F-Droid, Future Work">Next &rarr;</a>
+          
+        
+      </div>
+
+      
+      <div style="text-align: center; margin-top: 1rem;">
+        <a href="/keyboard/">&uarr; Back to Table of Contents</a>
+      </div>
+      
+
+    </div>
+  </div>
+</div>
+
+
+  <!-- Footer -->
+
+<hr>
+
+<footer>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-md-10 mx-auto">
+        <ul class="list-inline text-center">
+          
+          <li class="list-inline-item">
+            <a href="mailto:amitava.dev@proton.me" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="far fa-envelope fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          
+          
+          <li class="list-inline-item">
+            <a href="https://www.linkedin.com/in/amitavaag" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-linkedin fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+          <li class="list-inline-item">
+            <a href="https://github.com/ikouchiha47" class="text-gray">
+              <span class="fa-stack fa-lg">
+                <i class="fas fa-circle fa-stack-2x"></i>
+                <i class="fab fa-github fa-stack-1x fa-inverse"></i>
+              </span>
+            </a>
+          </li>
+          
+          
+        </ul>
+
+        <p class="copyright text-muted">
+          Build with: 
+          <a 
+            href="https://github.com/StartBootstrap/startbootstrap-clean-blog-jekyll"
+            class="text-gray"
+            target="_blank">startbootstrap-clean-blog-jekyll</a></p>
+      </div>
+    </div>
+  </div>
+</footer>
+
+
+  <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="/assets/vendor/blog/js/scripts.js"></script>
+
+<script src="/assets/scripts.js"></script>
+
+
+
+
+
+  <script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+
+    document.querySelectorAll('pre > code.language-mermaid').forEach((codeBlock) => {
+      codeBlock.parentElement.outerHTML = `<pre class="mermaid">${codeBlock.textContent}</pre>`;
+    });
+
+
+    mermaid.initialize({ startOnLoad: true, theme: 'forest' });
+</script>
+
+
+  
+
+</body>
+
+</html>
