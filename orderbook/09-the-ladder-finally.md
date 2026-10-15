@@ -120,7 +120,46 @@ map      add 33%    refresh 27%
 ladder   depth 24%  refresh 9%
 ```
 
-`refresh` — the per-message lookup of the top-of-book *size* — is a quarter of the map's work. I had cached the best *price*; the *size* still resolves on every message, and on the map that's a tree walk. That's the next item on the list.
+`refresh` — the per-message lookup of the top-of-book *size* — is a quarter of the map's work. I had cached the best *price*; the *size* still resolved on every message, and on the map that is a tree walk.
+
+## Closing that loop
+
+The flamegraph said *where*: `refresh`. To find *where the improvement could be*, I read the function and broke down what it does per message:
+
+```
+refresh():
+  best_bid() / best_ask()        cheap — a cached scalar / the tree edge
+  find_level(best_px, side)      the lookup — a tree walk on the map
+  copy into the cached top       cheap
+```
+
+`find_level` is the only real work, and it is redundant: it fetches the best level's *size*, which the book already knows at the exact moment the size changes. A value that gets recomputed every message but is known at an event is the one to cache.
+
+So I cached the size next to the price, in both books, and moved the two together:
+
+```cpp
+// add: a better price is a new level; the same price grows it
+if (px >  best_bid_) { best_bid_ = px; best_bid_sz_ = qty; }
+if (px == best_bid_) { best_bid_sz_ += qty; }
+// reduce/remove: subtract, and rescan the size only when the best level empties
+```
+
+`refresh` became three cached reads. A million levels, add-and-remove:
+
+```
+                 before   after
+map              223 ns   163 ns    −27%
+ladder            30 ns    26 ns    −15%
+```
+
+And the flamegraph afterwards:
+
+```
+map      add 38%   erase_order 31%     // refresh has left the top
+ladder   depth 27% erase_order 10%
+```
+
+The function dropping out of the profile is the proof the time moved out of that code. On the real feed it moved nothing — 0.158s against 0.156s — and that fits: the probe changes the best price on every operation, while the replay changes it rarely, and this win lives inside the fifteen-percent route stage. It is waste removed, and the throughput number stays owned by gunzip.
 
 ## On the real feed
 
